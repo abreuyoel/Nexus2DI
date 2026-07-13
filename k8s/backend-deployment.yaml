@@ -17,6 +17,15 @@ spec:
     metadata:
       labels: { app: nexus2di-backend }
     spec:
+      # Kubernetes inyecta automáticamente variables tipo {SVC}_PORT (formato
+      # "tcp://IP:PUERTO") para CADA Service que exista en el namespace —
+      # incluyendo el "redis" del otro proyecto (epran_backend), que comparte
+      # este mismo namespace "default". Esa var choca de nombre con
+      # REDIS_PORT que espera esta app (config.py, como int) y tumbaba el
+      # arranque con un error de validación de pydantic. Esta app no usa
+      # descubrimiento de servicios por env vars (llama a los Services por
+      # nombre DNS directo), así que se desactiva por completo.
+      enableServiceLinks: false
       imagePullSecrets:
         - name: ghcr-pull-secret
       securityContext:

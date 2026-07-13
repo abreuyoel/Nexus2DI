@@ -16,6 +16,9 @@ spec:
     metadata:
       labels: { app: nexus2di-frontend }
     spec:
+      # Ver comentario equivalente en backend-deployment.yaml — nginx no usa
+      # ninguna de estas variables, se desactiva por prevención/consistencia.
+      enableServiceLinks: false
       imagePullSecrets:
         - name: ghcr-pull-secret
       securityContext:
