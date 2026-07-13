@@ -1,0 +1,138 @@
+<!-- visits.component.html -->
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Registro de Visitas</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Supervisión y seguimiento de actividades en campo.</p>
+    </div>
+    
+    <!-- Filters Bar -->
+    <div class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
+      <div class="flex items-center gap-2 px-3 border-r border-slate-100 dark:border-white/5">
+        <mat-icon class="text-slate-400 text-sm">filter_list</mat-icon>
+        <span class="text-sm font-semibold text-slate-600 dark:text-slate-400">Filtrar:</span>
+      </div>
+      
+      <mat-form-field appearance="outline" class="density-compact !mb-0 w-44">
+        <mat-label>Estado</mat-label>
+        <mat-select [(ngModel)]="filterEstado" (ngModelChange)="loadVisits()">
+          <mat-option value="">Todos los estados</mat-option>
+          <mat-option value="pendiente">Pendientes</mat-option>
+          <mat-option value="en_progreso">En Progreso</mat-option>
+          <mat-option value="completada">Completadas</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <button 
+        (click)="loadVisits()"
+        class="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-500 hover:text-white transition-all duration-200"
+      >
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- Content Section -->
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Sincronizando visitas...</p>
+    </div>
+  } @else {
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden overflow-x-auto">
+      <table mat-table [dataSource]="visits()" class="w-full">
+        <!-- ID Column -->
+        <ng-container matColumnDef="id">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">ID</th>
+          <td mat-cell *matCellDef="let v" class="!py-4">
+            <span class="font-mono text-xs bg-slate-100 px-2 py-1 rounded text-slate-600">#{{ v.id }}</span>
+          </td>
+        </ng-container>
+
+        <!-- Mercaderista Column -->
+        <ng-container matColumnDef="mercaderista_id">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Mercaderista</th>
+          <td mat-cell *matCellDef="let v" class="!py-4">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-primary-50 flex items-center justify-center text-primary-700 font-bold text-xs">
+                M
+              </div>
+              <span class="font-medium text-slate-700">ID: {{ v.mercaderista_id }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <!-- Punto Column -->
+        <ng-container matColumnDef="punto_id">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Punto de Venta</th>
+          <td mat-cell *matCellDef="let v" class="!py-4">
+            <div class="flex flex-col">
+              <span class="font-semibold text-slate-800 dark:text-white">Punto #{{ v.punto_id }}</span>
+              <span class="text-xs text-slate-400 dark:text-slate-500">Ubicación asignada</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <!-- Fecha Column -->
+        <ng-container matColumnDef="fecha">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Fecha</th>
+          <td mat-cell *matCellDef="let v" class="!py-4 text-slate-600 dark:text-slate-300">
+            {{ v.fecha | date:'mediumDate' }}
+          </td>
+        </ng-container>
+
+        <!-- Estado Column -->
+        <ng-container matColumnDef="estado">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Estado</th>
+          <td mat-cell *matCellDef="let v" class="!py-4">
+            <span [class]="getStatusClasses(v.estado)" class="px-3 py-1.5 rounded-full text-xs font-bold flex items-center w-fit gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-current"></span>
+              {{ v.estado | uppercase }}
+            </span>
+          </td>
+        </ng-container>
+
+        <!-- Acciones Column -->
+        <ng-container matColumnDef="acciones">
+          <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5 text-right px-6">Acciones</th>
+          <td mat-cell *matCellDef="let v" class="!py-4 text-right px-6">
+            <div class="flex items-center justify-end gap-2">
+              <button 
+                mat-icon-button 
+                class="!text-primary-500 hover:!bg-primary-50 transition-colors"
+                (click)="viewPhotos(v)"
+                matTooltip="Ver Fotos"
+              >
+                <mat-icon>photo_library</mat-icon>
+              </button>
+              <button 
+                mat-icon-button 
+                class="!text-slate-400 hover:!bg-slate-50 transition-colors"
+                matTooltip="Detalles"
+              >
+                <mat-icon>info</mat-icon>
+              </button>
+            </div>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns;" class="hover:bg-slate-50/80 transition-colors cursor-pointer border-b border-slate-100 last:border-0"></tr>
+        
+        <!-- Empty State -->
+        <tr *matNoDataRow>
+          <td [attr.colspan]="columns.length" class="py-20 text-center">
+            <div class="flex flex-col items-center gap-3">
+              <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                <mat-icon class="!text-4xl">inventory_2</mat-icon>
+              </div>
+              <p class="text-slate-500 font-medium">No se encontraron visitas registradas.</p>
+              <button mat-button color="primary" (click)="loadVisits()">Actualizar listado</button>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  }
+</div>

@@ -1,0 +1,127 @@
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Horas Promedio Ejecución</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Tiempo promedio esperado por cliente y clasificación de PDV.</p>
+    </div>
+    <button mat-flat-button color="primary" class="!rounded-xl !font-bold" (click)="openCreate()">
+      <mat-icon class="!text-base align-middle mr-1">add_circle</mat-icon>
+      Nuevo registro
+    </button>
+  </div>
+
+  <!-- Filtros -->
+  <div class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-white/5">
+    <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Cliente</label>
+    <select class="input !w-auto" [(ngModel)]="filtroCliente" (ngModelChange)="cargar()">
+      <option [ngValue]="null">Todos</option>
+      @for (c of clientes(); track c.id) {
+        <option [ngValue]="c.id">{{ c.nombre }}</option>
+      }
+    </select>
+
+    <label class="text-xs font-bold text-slate-500 uppercase tracking-wide ml-2">Clasificación de PDV</label>
+    <select class="input !w-auto" [(ngModel)]="filtroTipoNegocio" (ngModelChange)="cargar()">
+      <option [ngValue]="null">Todas</option>
+      @for (t of tiposNegocio(); track t.id) {
+        <option [ngValue]="t.id">{{ t.nombre }}</option>
+      }
+    </select>
+  </div>
+
+  <!-- Formulario crear/editar -->
+  @if (showForm()) {
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
+      <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">{{ editing() ? 'Editar registro' : 'Nuevo registro' }}</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <select class="input" [(ngModel)]="form.id_cliente">
+          <option [ngValue]="null">Cliente...</option>
+          @for (c of clientes(); track c.id) {
+            <option [ngValue]="c.id">{{ c.nombre }}</option>
+          }
+        </select>
+
+        <select class="input" [(ngModel)]="form.id_tipo_negocio">
+          <option [ngValue]="null">Clasificación de PDV...</option>
+          @for (t of tiposNegocio(); track t.id) {
+            <option [ngValue]="t.id">{{ t.nombre }}</option>
+          }
+        </select>
+
+        <div class="space-y-1">
+          <input class="input" type="number" min="1" step="1" placeholder="Minutos promedio" [(ngModel)]="form.minutos_promedio" />
+          @if (form.minutos_promedio) {
+            <p class="text-[11px] text-slate-400">≈ {{ horasTexto(form.minutos_promedio) }}</p>
+          }
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <button mat-button class="!rounded-xl" (click)="cancelar()">Cancelar</button>
+        <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" [disabled]="saving()" (click)="guardar()">
+          {{ editing() ? 'Guardar cambios' : 'Crear' }}
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- Tabla -->
+  @if (loading()) {
+    <div class="flex flex-col items-center py-24 gap-3">
+      <mat-spinner diameter="40"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando registros...</p>
+    </div>
+  } @else {
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <th class="px-4 py-3">Cliente</th>
+              <th class="px-4 py-3">Clasificación de PDV</th>
+              <th class="px-4 py-3">Tiempo promedio</th>
+              <th class="px-4 py-3">Creado</th>
+              <th class="px-4 py-3">Modificado</th>
+              <th class="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of registros(); track r.id) {
+              <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                <td class="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{{ r.cliente_nombre || r.id_cliente }}</td>
+                <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ r.tipo_negocio_nombre || r.id_tipo_negocio }}</td>
+                <td class="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{{ horasTexto(r.minutos_promedio) }}</td>
+                <td class="px-4 py-3 text-slate-400 text-xs">
+                  {{ r.fecha_creado | date:'dd/MM/yy HH:mm' }}
+                  @if (r.usuario_creador_username) { <span class="block">{{ r.usuario_creador_username }}</span> }
+                </td>
+                <td class="px-4 py-3 text-slate-400 text-xs">
+                  @if (r.fecha_modificado) {
+                    {{ r.fecha_modificado | date:'dd/MM/yy HH:mm' }}
+                    @if (r.usuario_modificador_username) { <span class="block">{{ r.usuario_modificador_username }}</span> }
+                  } @else {
+                    <span class="italic opacity-60">Sin cambios</span>
+                  }
+                </td>
+                <td class="px-4 py-3 text-right whitespace-nowrap">
+                  <button mat-button class="!min-w-0 !px-2" (click)="openEdit(r)"><mat-icon class="!text-base">edit</mat-icon></button>
+                  <button mat-button class="!min-w-0 !px-2 !text-rose-600" (click)="eliminar(r)"><mat-icon class="!text-base">delete</mat-icon></button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="text-center py-16 text-slate-400">
+                  <mat-icon class="!text-5xl block mx-auto mb-2 opacity-40">schedule</mat-icon>
+                  Sin registros.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</div>

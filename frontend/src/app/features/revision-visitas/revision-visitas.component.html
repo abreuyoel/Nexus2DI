@@ -1,0 +1,397 @@
+<div class="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header + rango de fechas -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Todas las Visitas</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Revisa y aprueba/rechaza las fotos de gestión de cada visita.</p>
+    </div>
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex flex-col">
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Desde</label>
+        <input type="date" [(ngModel)]="desde" (change)="onDateChange()"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-primary-500">
+      </div>
+      <div class="flex flex-col">
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Hasta</label>
+        <input type="date" [(ngModel)]="hasta" (change)="onDateChange()"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-primary-500">
+      </div>
+      <button (click)="load()" class="flex items-center gap-1.5 px-4 py-2 border border-primary-500/40 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">refresh</mat-icon> Actualizar
+      </button>
+    </div>
+  </div>
+
+  <!-- Barra de estadísticas -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-blue-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ stats.visitas }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Visitas</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-indigo-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ stats.fotos }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Fotos Totales</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-emerald-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-emerald-600 dark:text-emerald-400">{{ stats.aprobadas }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Aprobadas</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-amber-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-amber-600 dark:text-amber-400">{{ stats.sin_revisar }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Sin Revisar</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-rose-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-rose-600 dark:text-rose-400">{{ stats.rechazadas }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Rechazadas</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-yellow-400 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ stats.progreso }}%</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Progreso</div>
+    </div>
+  </div>
+
+  <!-- Buscador + filtros -->
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-3 space-y-3 shadow-sm">
+    <div class="relative">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+      <input [(ngModel)]="search" placeholder="Buscar visita, cliente, punto, mercaderista, ruta..."
+        class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-24 py-2.5 text-sm font-semibold outline-none transition-colors">
+      <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{{ filtered.length }} resultados</span>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <select [(ngModel)]="filtroRuta" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todas las rutas</option>
+        @for (r of rutasOpts; track r) { <option [value]="r">{{ r }}</option> }
+      </select>
+      <select [(ngModel)]="filtroPunto" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los puntos</option>
+        @for (p of puntosOpts; track p) { <option [value]="p">{{ p }}</option> }
+      </select>
+      <select [(ngModel)]="filtroCliente" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los clientes</option>
+        @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
+      </select>
+      <select [(ngModel)]="filtroMercaderista" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los mercaderistas</option>
+        @for (m of mercaderistasOpts; track m) { <option [value]="m">{{ m }}</option> }
+      </select>
+      <select [(ngModel)]="filtroEstado" class="flex-1 min-w-[130px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los estados</option>
+        <option value="Pendiente">Pendientes</option>
+        <option value="Revisado">Revisadas</option>
+      </select>
+      <select [(ngModel)]="filtroChat" class="flex-1 min-w-[120px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los chats</option>
+        <option value="con">Con chat</option>
+        <option value="sin">Sin chat</option>
+      </select>
+      <button (click)="clearFilters()" matTooltip="Limpiar filtros"
+        class="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-300 transition-colors">
+        <mat-icon class="!text-base">close</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando visitas...</p>
+    </div>
+  } @else if (filtered.length === 0) {
+    <div class="py-20 text-center">
+      <div class="flex flex-col items-center gap-3 opacity-40">
+        <mat-icon class="!text-5xl">photo_library</mat-icon>
+        <p class="font-bold">No hay visitas con fotos para revisar en este período.</p>
+      </div>
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      @for (v of filtered; track v.id_visita) {
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+          <div class="px-4 py-2.5 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-white/5">
+            <span class="text-xs font-mono px-2 py-0.5 rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold">#{{ v.id_visita }}</span>
+            @if (v.revisada) {
+              <span class="text-[10px] font-black px-2 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">REVISADA</span>
+            } @else {
+              <span class="text-[10px] font-black px-2 py-1 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400">PENDIENTE</span>
+            }
+          </div>
+          <div class="p-4 flex-1 space-y-1.5">
+            <div class="font-black text-slate-800 dark:text-white text-sm">{{ v.cliente }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1"><mat-icon class="!text-sm">store</mat-icon>{{ v.punto_de_interes }}</div>
+            <div class="text-xs text-slate-400 flex items-center gap-1"><mat-icon class="!text-sm">person</mat-icon>{{ v.mercaderista }} · {{ v.ruta }}</div>
+            <div class="text-[11px] text-slate-400">{{ v.fecha | date:'dd/MM/yyyy HH:mm' }} · {{ v.ciudad }}</div>
+
+            <!-- progreso -->
+            <div class="pt-2">
+              <div class="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full bg-emerald-500 transition-all" [style.width.%]="pct(v)"></div>
+              </div>
+              <div class="flex items-center justify-between mt-1.5 text-[11px]">
+                <span class="text-slate-500">{{ v.aprobadas }}/{{ v.fotos_revisar }} aprobadas ({{ pct(v) }}%)</span>
+                <span class="text-amber-600 dark:text-amber-400 font-bold">{{ v.sin_revisar }} sin revisar</span>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5 pt-1">
+              @for (g of gruposDe(v); track g.key) {
+                <button (click)="openReview(v, g.key)"
+                  [matTooltip]="'Ver fotos: ' + g.label"
+                  class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors active:scale-95"
+                  [ngClass]="g.revisable ? 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-primary-400 hover:text-primary-600' : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900 text-blue-600 dark:text-blue-400 hover:border-blue-400'">
+                  <mat-icon class="!text-xs !w-3 !h-3 !leading-3">{{ g.icon }}</mat-icon>
+                  <span>{{ g.label }}</span>
+                  <span class="font-black">{{ g.total }}</span>
+                  @if (g.rechazadas) { <span class="text-rose-500">· {{ g.rechazadas }}✕</span> }
+                </button>
+              }
+            </div>
+          </div>
+          <div class="px-4 pb-4">
+            <button (click)="openReview(v)"
+              class="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">fact_check</mat-icon> Revisar fotos
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- ═══ MODAL REVISIÓN DE FOTOS ═══ -->
+@if (reviewOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="closeReview()"></div>
+    <div class="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height:92vh">
+      <!-- header -->
+      <div class="bg-gradient-to-r from-primary-700 to-indigo-600 px-6 py-4 flex items-center justify-between shrink-0">
+        <div>
+          <h3 class="font-black text-white text-lg">Revisión de Fotos · Visita #{{ selectedVisita()?.id_visita }}</h3>
+          <p class="text-primary-200 text-xs">{{ selectedVisita()?.cliente }} · {{ selectedVisita()?.punto_de_interes }}</p>
+        </div>
+        <button (click)="closeReview()" class="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
+      </div>
+
+      <!-- selector de GRUPO de foto -->
+      <div class="px-6 pt-3 pb-3 border-b border-slate-100 dark:border-white/5 shrink-0 flex flex-wrap gap-2">
+        <button (click)="setGrupoSel('all')"
+          [class]="grupoSel==='all' ? 'bg-primary-600 text-white border-primary-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent'"
+          class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border">
+          <mat-icon class="!text-sm">collections</mat-icon> Todas ({{ photos().length }})
+        </button>
+        @for (g of modalGrupos; track g.key) {
+          <button (click)="setGrupoSel(g.key)"
+            [class]="grupoSel===g.key ? 'bg-primary-600 text-white border-primary-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent'"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 border">
+            <mat-icon class="!text-sm">{{ g.icon }}</mat-icon> {{ g.label }} ({{ g.total }})
+          </button>
+        }
+      </div>
+
+      <!-- filtros por estado -->
+      <div class="px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 flex flex-wrap gap-2">
+        <button (click)="photoFilter='todas'" [class]="photoFilter==='todas' ? 'bg-slate-800 text-white' : 'bg-slate-100 dark:bg-slate-800/50 text-slate-500'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Todas ({{ grupoTotal }})</button>
+        <button (click)="photoFilter='pendientes'" [class]="photoFilter==='pendientes' ? 'bg-amber-600 text-white' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Pendientes ({{ countBy('pendiente') }})</button>
+        <button (click)="photoFilter='aprobadas'" [class]="photoFilter==='aprobadas' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Aprobadas ({{ countBy('Aprobada') }})</button>
+        <button (click)="photoFilter='rechazadas'" [class]="photoFilter==='rechazadas' ? 'bg-rose-600 text-white' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Rechazadas ({{ countBy('Rechazada') }})</button>
+        @if (groupHasPairs) {
+          <div class="flex-1"></div>
+          <button (click)="comparar = !comparar" [matTooltip]="comparar ? 'Ver en cuadrícula' : 'Comparar Antes/Después'"
+            [class]="comparar ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'"
+            class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1">
+            <mat-icon class="!text-sm">{{ comparar ? 'compare' : 'grid_view' }}</mat-icon>
+            {{ comparar ? 'Comparando A/D' : 'Comparar A/D' }}
+          </button>
+        }
+      </div>
+
+      <!-- grid fotos -->
+      <div class="flex-1 overflow-y-auto p-4">
+        @if (photosLoading()) {
+          <div class="flex justify-center py-16"><mat-spinner diameter="40"></mat-spinner></div>
+        } @else if (showCompare) {
+          <!-- Comparación Antes / Después lado a lado -->
+          <div class="grid grid-cols-2 gap-3 mb-3 sticky -top-4 z-10">
+            <div class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1"><mat-icon class="!text-sm">history</mat-icon> Antes</div>
+            <div class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1"><mat-icon class="!text-sm">check</mat-icon> Después</div>
+          </div>
+          @if (comparePairs.length === 0) {
+            <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
+          } @else {
+            <div class="space-y-3">
+              @for (p of comparePairs; track $index) {
+                <div class="grid grid-cols-2 gap-3 items-start">
+                  <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.antes }"></ng-container>
+                  <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.despues }"></ng-container>
+                </div>
+              }
+            </div>
+          }
+        } @else if (filteredPhotos.length === 0) {
+          <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
+        } @else {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            @for (f of filteredPhotos; track f.id) {
+              <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: f }"></ng-container>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- plantilla reusable de tarjeta de foto -->
+      <ng-template #photoCard let-f>
+        @if (f) {
+          <div class="rounded-2xl overflow-hidden border-2 transition-all"
+            [ngClass]="isAprobada(f) ? 'border-emerald-500' : isRechazada(f) ? 'border-rose-500' : 'border-slate-200 dark:border-white/10'">
+            <div class="relative">
+              <img [src]="f.url" (click)="openLightbox(f.url)" class="w-full h-52 object-cover cursor-pointer bg-slate-100 dark:bg-slate-800" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.opacity=0.3">
+              <span class="absolute top-2 left-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-black/60 text-white">{{ tipoLabel(f.id_tipo_foto) }}</span>
+              @if (isAprobada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-500 text-white">APROBADA</span> }
+              @else if (isRechazada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-500 text-white">RECHAZADA</span> }
+            </div>
+            @if (isRechazada(f) && f.razones?.length) {
+              <div class="px-2 py-1.5 bg-rose-50 dark:bg-rose-950/30 border-t border-rose-100 dark:border-rose-900/40">
+                <div class="flex flex-wrap gap-1">
+                  @for (rz of f.razones; track rz) {
+                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-300">{{ rz }}</span>
+                  }
+                </div>
+                @if (f.rechazado_por_nombre) {
+                  <div class="text-[9px] text-rose-500/80 mt-1 flex items-center gap-0.5"><mat-icon class="!text-[11px] !w-3 !h-3">person</mat-icon> Rechazada por {{ f.rechazado_por_nombre }}</div>
+                }
+              </div>
+            }
+            @if (isReviewable(f)) {
+              <div class="flex">
+                <button (click)="setDecision(f,'Aprobada')"
+                  [class]="isAprobada(f) ? 'bg-emerald-600 text-white' : 'bg-slate-50 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'"
+                  class="flex-1 flex items-center justify-center gap-1 py-2 text-xs font-black transition-colors">
+                  <mat-icon class="!text-base">check_circle</mat-icon> Aprobar
+                </button>
+                <button (click)="promptReject(f)"
+                  [class]="isRechazada(f) ? 'bg-rose-600 text-white' : 'bg-slate-50 dark:bg-slate-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40'"
+                  class="flex-1 flex items-center justify-center gap-1 py-2 text-xs font-black transition-colors border-l border-slate-200 dark:border-white/5">
+                  <mat-icon class="!text-base">cancel</mat-icon> Rechazar
+                </button>
+              </div>
+            } @else {
+              <div class="py-2 text-center text-[11px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800 flex items-center justify-center gap-1">
+                <mat-icon class="!text-sm">visibility</mat-icon> Solo lectura
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/10 h-52 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-1">
+            <mat-icon class="!text-3xl">image_not_supported</mat-icon>
+            <span class="text-[10px] font-bold">Sin foto</span>
+          </div>
+        }
+      </ng-template>
+
+      <!-- footer -->
+      <div class="px-6 py-4 border-t border-slate-200 dark:border-white/5 flex items-center justify-between gap-3 shrink-0 bg-slate-50 dark:bg-slate-800/50">
+        <span class="text-xs text-slate-400 flex items-center gap-1">
+          <mat-icon class="!text-sm text-emerald-500">cloud_done</mat-icon> Guardado automático · el cliente ve las fotos al aprobarlas
+        </span>
+        <div class="flex gap-2">
+          <button (click)="openChat()"
+            class="relative flex items-center gap-1.5 px-4 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-primary-400 rounded-xl font-bold text-sm transition-colors">
+            <mat-icon class="!text-base">chat</mat-icon> Chat
+            @if (selectedVisita()?.tiene_chat) { <span class="w-2 h-2 rounded-full bg-primary-500"></span> }
+          </button>
+          <button (click)="toggleRevisada()" [disabled]="revisando()"
+            [class]="isRevisada ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-primary-600 hover:bg-primary-500 text-white'"
+            class="flex items-center gap-2 px-5 py-2.5 disabled:opacity-50 font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+            @if (revisando()) { <mat-spinner diameter="16"></mat-spinner> }
+            @else { <mat-icon class="!text-base">{{ isRevisada ? 'task_alt' : 'fact_check' }}</mat-icon> }
+            {{ isRevisada ? 'Revisada ✓' : 'Marcar Revisada' }}
+          </button>
+          <button (click)="closeReview()" class="px-5 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-sm">Cerrar</button>
+        </div>
+      </div>
+
+      <!-- panel de chat (deslizable) -->
+      @if (chatOpen()) {
+        <div class="absolute inset-y-0 right-0 w-full sm:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
+          <div class="px-4 py-3 bg-gradient-to-r from-primary-700 to-indigo-600 flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-2 text-white">
+              <mat-icon class="!text-base">chat</mat-icon>
+              <span class="font-black text-sm">Chat · Visita #{{ selectedVisita()?.id_visita }}</span>
+            </div>
+            <button (click)="closeChat()" class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><mat-icon class="!text-base">close</mat-icon></button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50 dark:bg-slate-950/40">
+            @if (chatLoading()) {
+              <div class="flex justify-center py-8"><mat-spinner diameter="28"></mat-spinner></div>
+            } @else if (chatMessages().length === 0) {
+              <p class="text-center text-slate-400 text-xs py-8">No hay mensajes todavía.</p>
+            } @else {
+              @for (m of chatMessages(); track m.id) {
+                <div class="flex flex-col" [class.items-end]="m.sender_type !== 'cliente'">
+                  <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm"
+                    [ngClass]="m.sender_type !== 'cliente' ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-sm border border-slate-200 dark:border-white/5'">
+                    <div class="text-[10px] font-bold opacity-70 mb-0.5">{{ m.sender_nombre || 'Usuario' }}</div>
+                    {{ m.mensaje }}
+                    <div class="text-[9px] opacity-60 mt-0.5 text-right">{{ m.created_at | date:'dd/MM HH:mm' }}</div>
+                  </div>
+                </div>
+              }
+            }
+          </div>
+          <div class="p-3 border-t border-slate-200 dark:border-white/10 flex gap-2 shrink-0">
+            <input [(ngModel)]="chatInput" (keyup.enter)="sendChat()" placeholder="Escribe un mensaje..."
+              class="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white placeholder-slate-400 outline-none focus:border-primary-500">
+            <button (click)="sendChat()" [disabled]="chatSending() || !chatInput.trim()"
+              class="w-10 h-10 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white flex items-center justify-center"><mat-icon class="!text-base">send</mat-icon></button>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+}
+
+<!-- ═══ DIÁLOGO MULTI-RAZÓN DE RECHAZO ═══ -->
+@if (rejectDialogOpen()) {
+  <div class="fixed inset-0 z-[65] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="cancelReject()"></div>
+    <div class="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height:88vh">
+      <div class="bg-rose-600 px-5 py-4 flex items-center gap-2 text-white shrink-0">
+        <mat-icon>cancel</mat-icon>
+        <h3 class="font-black text-base">Razones de rechazo</h3>
+      </div>
+      <div class="p-4 overflow-y-auto space-y-1.5">
+        <p class="text-xs text-slate-500 mb-2">Selecciona una o varias razones:</p>
+        @for (r of rejectReasons(); track r.id) {
+          <label class="flex items-center gap-2 p-2.5 rounded-xl cursor-pointer border transition-colors"
+            [ngClass]="isReasonSel(r.id) ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800' : 'border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-slate-800'">
+            <input type="checkbox" [checked]="isReasonSel(r.id)" (change)="toggleReason(r.id)" class="w-4 h-4 accent-rose-600">
+            <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ r.razon }}</span>
+          </label>
+        }
+        @if (rejectReasons().length === 0) { <p class="text-center text-slate-400 text-sm py-4">No hay razones configuradas.</p> }
+      </div>
+      <div class="px-4 py-3 border-t border-slate-200 dark:border-white/5 flex justify-between items-center gap-2 shrink-0">
+        <span class="text-xs text-slate-400">{{ selectedReasonIds.length }} seleccionada(s)</span>
+        <div class="flex gap-2">
+          <button (click)="cancelReject()" class="px-4 py-2 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-sm">Cancelar</button>
+          <button (click)="confirmReject()" [disabled]="rejecting() || selectedReasonIds.length===0"
+            class="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-black rounded-xl text-sm">
+            @if (rejecting()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-base">block</mat-icon> }
+            Rechazar foto
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ LIGHTBOX ═══ -->
+@if (lightboxUrl()) {
+  <div class="fixed inset-0 z-[70] flex items-center justify-center p-4" (click)="closeLightbox()">
+    <div class="absolute inset-0 bg-black/85"></div>
+    <img [src]="lightboxUrl()" class="relative max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
+    <button (click)="closeLightbox()" class="absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
+  </div>
+}

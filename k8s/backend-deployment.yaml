@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus2di-backend
+spec:
+  # 1 sola réplica a propósito: app/websockets/manager.py mantiene las
+  # conexiones WebSocket en memoria de UN proceso — más réplicas causarían
+  # que un evento emitido en un pod nunca llegue a un cliente conectado a
+  # otro. Ver Dockerfile para el mismo razonamiento sobre --workers 1.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: nexus2di-backend }
+  template:
+    metadata:
+      labels: { app: nexus2di-backend }
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: nexus2di-backend
+          image: ghcr.io/abreuyoel/nexus2di-backend:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: nexus2di-backend-config }
+            - secretRef: { name: nexus2di-backend-secret }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            # Más pesado que un backend Node equivalente: pandas/opencv/
+            # scikit-learn quedan cargados en memoria del proceso.
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # ClusterIP puro — sin tipo LoadBalancer, sin hostname público propio en
+  # Cloudflare. Solo alcanzable desde dentro del clúster (el nginx del
+  # frontend). Ni siquiera /docs o /openapi.json quedan expuestos a internet.
+  name: nexus2di-backend-svc
+spec:
+  selector: { app: nexus2di-backend }
+  ports:
+    - port: 8000
+      targetPort: 8000

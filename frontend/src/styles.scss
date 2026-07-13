@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import '@angular/material/prebuilt-themes/indigo-pink.css';
+
+/* Material overlay (dialogs, snackbars, menus) debe quedar por encima
+   de nuestro lightbox de fotos (z-index 10000) para que se puedan abrir
+   diálogos como "Rechazar foto" sin tener que cerrar el lightbox primero. */
+.cdk-overlay-container {
+  z-index: 10500 !important;
+}
+
+/* Custom Font - Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark Mode Global Styles */
+.dark body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+/* Material Overrides for Premium Look */
+.mat-mdc-card {
+  border-radius: 24px !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease !important;
+}
+
+.dark .mat-mdc-card {
+  background-color: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  color: #f1f5f9 !important;
+}
+
+.mat-mdc-button, .mat-mdc-raised-button, .mat-mdc-flat-button {
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+/* Material Table Dark Mode */
+.dark .mat-mdc-table {
+  background-color: transparent !important;
+}
+
+.dark .mat-mdc-header-cell {
+  color: #94a3b8 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .mat-mdc-cell {
+  color: #e2e8f0 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .mat-mdc-row:hover,
+.dark .hover\:bg-slate-50:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Material Inputs Dark Mode */
+.dark .mat-mdc-form-field {
+  .mat-mdc-text-field-wrapper {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+  }
+  .mat-mdc-floating-label, .mat-mdc-select-value-text, .mat-mdc-input-element {
+    color: #f1f5f9 !important;
+  }
+  .mdc-notched-outline__leading, .mdc-notched-outline__notch, .mdc-notched-outline__trailing {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+}
+
+/* Hide native password reveal */
+input::-ms-reveal, input::-ms-clear {
+  display: none !important;
+}
+
+/* Custom Utilities */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass-effect {
+  background: rgba(15, 23, 42, 0.8);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #4f46e5 0%, #818cf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.density-compact {
+  .mat-mdc-form-field-subscript-wrapper {
+    display: none !important;
+  }
+}
+
+/* Premium Dialog Overlay */
+.premium-dialog-panel .mdc-dialog__surface {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 24px !important;
+  overflow: visible !important;
+}
+.premium-dialog-panel .mat-mdc-dialog-container {
+  padding: 0 !important;
+}
+@import 'leaflet/dist/leaflet.css';

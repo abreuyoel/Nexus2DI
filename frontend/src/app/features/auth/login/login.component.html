@@ -1,0 +1,119 @@
+<!-- login.component.html -->
+<div class="min-h-screen relative flex items-center justify-center overflow-hidden bg-slate-950 font-sans selection:bg-primary-500/30 selection:text-primary-200">
+  <!-- Dynamic Mesh Gradient Background -->
+  <div class="absolute inset-0 z-0">
+    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary-600/20 blur-[120px] animate-pulse"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-600/20 blur-[120px] animate-pulse delay-700"></div>
+    <div class="absolute top-[20%] right-[10%] w-[30%] h-[30%] rounded-full bg-fuchsia-600/10 blur-[100px]"></div>
+  </div>
+
+  <!-- Noise Overlay -->
+  <div class="absolute inset-0 z-[1] opacity-[0.03] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+
+  <div class="relative z-10 w-full max-w-[440px] px-6 animate-in fade-in zoom-in-95 duration-700">
+    <!-- Card Container -->
+    <div class="bg-white/[0.03] backdrop-blur-2xl rounded-[2.5rem] border border-white/10 shadow-2xl shadow-black/50 overflow-hidden">
+      <!-- Top Branding -->
+      <div class="px-10 pt-12 pb-8 text-center border-b border-white/5">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary-600 to-indigo-500 shadow-xl shadow-primary-500/20 mb-6 group transition-transform hover:scale-110">
+          <mat-icon class="text-white !text-3xl">rocket_launch</mat-icon>
+        </div>
+        <h1 class="text-4xl font-black text-white tracking-tighter mb-2">Nexus<span class="text-primary-400 italic">2DI</span></h1>
+        <p class="text-slate-400 font-medium text-sm">Plataforma de Gestión Inteligente</p>
+      </div>
+
+      <!-- Form Section -->
+      <div class="px-10 py-10">
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">
+          <!-- Username Input -->
+          <div class="space-y-2 group">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Identificación</label>
+            <div class="relative">
+              <mat-icon class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary-400 transition-colors">person</mat-icon>
+              <input 
+                matInput 
+                formControlName="username" 
+                placeholder="Ingrese su usuario"
+                class="w-full h-14 pl-12 pr-4 bg-white/5 border border-white/10 rounded-2xl text-white placeholder:text-slate-600 focus:border-primary-500/50 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none font-medium"
+              >
+            </div>
+          </div>
+
+          <!-- Password Input -->
+          <div class="space-y-2 group">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Contraseña</label>
+            <div class="relative">
+              <mat-icon class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary-400 transition-colors">lock</mat-icon>
+              <input 
+                matInput 
+                [type]="showPass() ? 'text' : 'password'" 
+                formControlName="password" 
+                placeholder="••••••••"
+                class="w-full h-14 pl-12 pr-12 bg-white/5 border border-white/10 rounded-2xl text-white placeholder:text-slate-600 focus:border-primary-500/50 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none font-medium"
+              >
+              <button 
+                type="button" 
+                (click)="showPass.set(!showPass())"
+                class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+              >
+                <mat-icon class="!text-xl">{{ showPass() ? 'visibility' : 'visibility_off' }}</mat-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- Options -->
+          <div class="flex items-center justify-between px-1">
+            <div class="flex items-center gap-2">
+              <mat-checkbox 
+                color="primary" 
+                [checked]="rememberMe()" 
+                (change)="rememberMe.set($event.checked)"
+                class="modern-checkbox"
+              >
+                <span class="text-xs text-slate-400 font-bold hover:text-slate-300 transition-colors">Recordarme</span>
+              </mat-checkbox>
+            </div>
+            <a routerLink="/forgot-password" class="text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors">¿Ayuda técnica?</a>
+          </div>
+
+          <!-- Error Alert -->
+          @if (error()) {
+            <div class="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-2 duration-300">
+              <mat-icon class="text-rose-500">warning</mat-icon>
+              <p class="text-xs font-bold text-rose-200">{{ error() }}</p>
+            </div>
+          }
+
+          <!-- Submit Button -->
+          <button 
+            type="submit" 
+            [disabled]="loading() || form.invalid"
+            class="group relative w-full h-14 bg-primary-500 hover:bg-primary-600 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-primary-500/20 transition-all active:scale-[0.98] overflow-hidden"
+          >
+            <div class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
+            @if (loading()) {
+              <mat-spinner diameter="24" class="mx-auto"></mat-spinner>
+            } @else {
+              Acceder al Portal
+            }
+          </button>
+        </form>
+      </div>
+
+      <!-- Footer Branding -->
+      <div class="px-10 py-6 bg-white/[0.02] border-t border-white/5 text-center">
+        <p class="text-[10px] font-black text-slate-600 uppercase tracking-[0.4em]">
+          Nexus2DI Operating System v2.0
+        </p>
+      </div>
+    </div>
+
+    <!-- External Links -->
+    <div class="mt-8 text-center">
+      <p class="text-slate-500 text-xs font-medium">
+        ¿No tienes una cuenta? 
+        <span class="text-primary-400 font-bold cursor-pointer hover:underline">Contactar soporte</span>
+      </p>
+    </div>
+  </div>
+</div>

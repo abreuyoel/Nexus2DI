@@ -1,0 +1,198 @@
+<div class="container mx-auto p-4">
+  <!-- Header con verificación de rol -->
+  <div *ngIf="!isAdmin()" class="mb-4 p-4 bg-red-100 text-red-700 rounded">
+    <mat-icon class="inline mr-2">lock</mat-icon>
+    <span>Acceso restringido: Solo Administradores pueden acceder a esta sección.</span>
+  </div>
+
+  <div *ngIf="isAdmin()" class="w-full">
+    <!-- Título y botón Nuevo -->
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-bold text-gray-800">Gestión de Productos</h1>
+      <button mat-raised-button color="primary" (click)="abrirModalNuevo()">
+        <mat-icon class="mr-2">add</mat-icon>
+        Agregar Producto
+      </button>
+    </div>
+
+    <!-- SECCIÓN DE BÚSQUEDA Y FILTROS -->
+    <mat-card class="mb-6">
+      <mat-card-content class="p-4">
+        <!-- Búsqueda Full-Text -->
+        <div class="mb-4">
+          <mat-form-field class="w-full">
+            <mat-label>Buscar por SKU, Fabricante, nombre...</mat-label>
+            <input
+              matInput
+              #searchInput
+              [value]="filtros().busqueda"
+              (keyup.enter)="buscar(searchInput.value)"
+              (change)="buscar(searchInput.value)"
+              placeholder="Ej: SKU001, LG, etc."
+            />
+            <mat-icon matSuffix>search</mat-icon>
+          </mat-form-field>
+        </div>
+
+        <!-- Filtros Dropdowns -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <!-- Categoría -->
+          <mat-form-field class="w-full">
+            <mat-label>Categoría</mat-label>
+            <mat-select [value]="filtros().categoria" (selectionChange)="filtrarCategoria($event.value)">
+              <mat-option value="">Todas</mat-option>
+              <mat-option *ngFor="let cat of categorias()" [value]="cat">{{ cat }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <!-- Fabricante -->
+          <mat-form-field class="w-full">
+            <mat-label>Fabricante</mat-label>
+            <mat-select [value]="filtros().fabricante" (selectionChange)="filtrarFabricante($event.value)">
+              <mat-option value="">Todos</mat-option>
+              <mat-option *ngFor="let fab of fabricantes()" [value]="fab">{{ fab }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <!-- Tipo de Servicio -->
+          <mat-form-field class="w-full">
+            <mat-label>Tipo de Servicio</mat-label>
+            <mat-select
+              [value]="filtros().tipo_servicio"
+              (selectionChange)="filtrarTipoServicio($event.value)"
+            >
+              <mat-option value="">Todos</mat-option>
+              <mat-option *ngFor="let tipo of tiposServicio()" [value]="tipo">{{ tipo }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <!-- Botón Limpiar -->
+          <div class="flex items-end">
+            <button mat-stroked-button class="w-full" (click)="limpiarFiltros()">
+              <mat-icon class="mr-1">clear</mat-icon>
+              Limpiar
+            </button>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- TABLA DE PRODUCTOS -->
+    <mat-card>
+      <mat-card-content class="p-0">
+        <!-- Loading Spinner -->
+        <div *ngIf="isLoading()" class="flex justify-center items-center p-8">
+          <mat-spinner diameter="40"></mat-spinner>
+        </div>
+
+        <!-- Tabla -->
+        <div *ngIf="!isLoading()" class="overflow-x-auto">
+          <table mat-table [dataSource]="productos()" class="w-full">
+            <!-- ID Column -->
+            <ng-container matColumnDef="ID_PRODUCT">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">ID</th>
+              <td mat-cell *matCellDef="let element">{{ element.ID_PRODUCT }}</td>
+            </ng-container>
+
+            <!-- SKU Column -->
+            <ng-container matColumnDef="SKUs">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">SKU</th>
+              <td mat-cell *matCellDef="let element" class="font-semibold">{{ element.SKUs }}</td>
+            </ng-container>
+
+            <!-- Categoría Column -->
+            <ng-container matColumnDef="categoria">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Categoría</th>
+              <td mat-cell *matCellDef="let element">{{ element.categoria || '-' }}</td>
+            </ng-container>
+
+            <!-- Fabricante Column -->
+            <ng-container matColumnDef="fabricante">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Fabricante</th>
+              <td mat-cell *matCellDef="let element">{{ element.fabricante || '-' }}</td>
+            </ng-container>
+
+            <!-- Tipo de Servicio Column -->
+            <ng-container matColumnDef="tipo_servicio">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Tipo Servicio</th>
+              <td mat-cell *matCellDef="let element">{{ element.tipo_servicio || '-' }}</td>
+            </ng-container>
+
+            <!-- Tipo de Fabricante Column -->
+            <ng-container matColumnDef="tipo_fabricante">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Tipo Fabricante</th>
+              <td mat-cell *matCellDef="let element">{{ element.tipo_fabricante || '-' }}</td>
+            </ng-container>
+
+            <!-- Código de Barras Column -->
+            <ng-container matColumnDef="cod_bar">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Código Barras</th>
+              <td mat-cell *matCellDef="let element">{{ element.cod_bar || '-' }}</td>
+            </ng-container>
+
+            <!-- Inagotable Column -->
+            <ng-container matColumnDef="inagotable">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Estado</th>
+              <td mat-cell *matCellDef="let element">
+                <span [class]="'px-2 py-1 rounded text-xs font-semibold ' + getInagotableClass(element.inagotable)">
+                  {{ getInagotableText(element.inagotable) }}
+                </span>
+              </td>
+            </ng-container>
+
+            <!-- Acciones Column -->
+            <ng-container matColumnDef="acciones">
+              <th mat-header-cell *matHeaderCellDef class="bg-gray-100 font-bold">Acciones</th>
+              <td mat-cell *matCellDef="let element" class="text-center">
+                <button
+                  mat-icon-button
+                  color="accent"
+                  (click)="abrirModalEditar(element)"
+                  matTooltip="Editar"
+                >
+                  <mat-icon>edit</mat-icon>
+                </button>
+                <button
+                  mat-icon-button
+                  color="warn"
+                  (click)="confirmarEliminar(element)"
+                  matTooltip="Eliminar"
+                >
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+
+            <!-- Header y Rows -->
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+
+            <!-- Empty State -->
+            <tr *ngIf="productos().length === 0" class="h-16">
+              <td [attr.colspan]="displayedColumns.length" class="text-center text-gray-500">
+                No hay productos
+              </td>
+            </tr>
+          </table>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- PAGINACIÓN -->
+    <div *ngIf="!isLoading() && productos().length > 0" class="mt-6">
+      <mat-paginator
+        [length]="totalProductos()"
+        [pageSize]="pageSize()"
+        [pageSizeOptions]="[25, 50, 100]"
+        (page)="onPageChange($event)"
+        showFirstLastButtons
+      >
+      </mat-paginator>
+      <div class="mt-2 text-sm text-gray-600">
+        <p>
+          Página {{ paginaActual() }} de {{ totalPages() }} | Total de registros: {{ totalProductos() }}
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

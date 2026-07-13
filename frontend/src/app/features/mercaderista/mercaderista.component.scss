@@ -1,0 +1,57 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.merc-tabs {
+  ::ng-deep {
+    .mat-mdc-tab-header {
+      background: white;
+      border-top: 1px solid rgba(0,0,0,0.05);
+      
+      .dark & {
+        background: #0f172a;
+        border-top-color: rgba(255,255,255,0.05);
+      }
+    }
+
+    .mat-mdc-tab-label-container {
+      padding: 4px 0;
+    }
+
+    .mat-mdc-tab-labels {
+      justify-content: space-around;
+    }
+
+    .mat-mdc-tab {
+      min-width: 0;
+      flex: 1;
+      height: 64px;
+      opacity: 0.6;
+      transition: all 0.2s;
+
+      &.mdc-tab--active {
+        opacity: 1;
+        .mat-icon { color: #6366f1; transform: translateY(-2px); }
+        .dark .mat-icon { color: #818cf8; }
+      }
+    }
+
+    .mat-mdc-tab-group.mat-tabs-with-background .mat-mdc-tab-header {
+      background-color: transparent;
+    }
+
+    .mat-mdc-tab-body-wrapper {
+      flex-grow: 1;
+    }
+
+    /* Hide ink bar for a cleaner look */
+    .mdc-tab-indicator__content--underline {
+      display: none;
+    }
+  }
+}
+
+.status-header {
+  height: 56px;
+}

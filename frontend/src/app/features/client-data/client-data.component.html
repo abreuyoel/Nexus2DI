@@ -1,0 +1,468 @@
+<div class="data-page flex flex-col gap-6">
+
+  <!-- ─── HERO HEADER ─────────────────────────────────────────────────── -->
+  <div class="hero-header relative rounded-3xl overflow-hidden p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <!-- Background gradient orbs -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <div class="relative z-10">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="icon-badge">
+          <mat-icon>table_chart</mat-icon>
+        </div>
+        <span class="badge-pill">CENTRO DE DATA</span>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
+        Análisis de Inventario
+      </h1>
+      <p class="text-indigo-200 mt-1 text-sm font-medium max-w-md">
+        Balances de productos registrados en todos tus puntos de venta
+      </p>
+    </div>
+
+    <!-- Stats row -->
+    <div class="relative z-10 flex gap-4 flex-wrap">
+      <div class="stat-card">
+        <span class="stat-value">{{ dataSource.data.length }}</span>
+        <span class="stat-label">Registros</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ filterOptions().productos.length }}</span>
+        <span class="stat-label">Productos</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value">{{ filterOptions().pdvs.length }}</span>
+        <span class="stat-label">PDV</span>
+      </div>
+      <button
+        (click)="exportExcel()"
+        [disabled]="dataSource.data.length === 0"
+        class="export-btn"
+      >
+        <mat-icon>download</mat-icon>
+        <span>Excel</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── FILTER PANEL ─────────────────────────────────────────────────── -->
+  <div class="filter-panel">
+    <div class="filter-panel-header">
+      <div class="flex items-center gap-2">
+        <mat-icon class="text-indigo-400 !text-base">tune</mat-icon>
+        <span class="text-sm font-bold text-slate-300 uppercase tracking-widest">Filtros</span>
+      </div>
+    </div>
+
+    <form [formGroup]="filterForm" class="filter-grid">
+
+      <!-- Date: Desde -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">calendar_today</mat-icon>
+          Desde
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <input matInput [matDatepicker]="pickerInicio" formControlName="fecha_inicio">
+          <mat-datepicker-toggle matSuffix [for]="pickerInicio"></mat-datepicker-toggle>
+          <mat-datepicker #pickerInicio></mat-datepicker>
+        </mat-form-field>
+      </div>
+
+      <!-- Date: Hasta -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">event</mat-icon>
+          Hasta
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <input matInput [matDatepicker]="pickerFin" formControlName="fecha_fin">
+          <mat-datepicker-toggle matSuffix [for]="pickerFin"></mat-datepicker-toggle>
+          <mat-datepicker #pickerFin></mat-datepicker>
+        </mat-form-field>
+      </div>
+
+      <!-- Región -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">public</mat-icon>
+          Región
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="region">
+            <mat-option value="">Todas las regiones</mat-option>
+            @for (r of filterOptions().regiones; track r) {
+              <mat-option [value]="r">{{ r }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Cadena -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">storefront</mat-icon>
+          Cadena
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="cadena">
+            <mat-option value="">Todas las cadenas</mat-option>
+            @for (c of filterOptions().cadenas; track c) {
+              <mat-option [value]="c">{{ c }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- PDV -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">store</mat-icon>
+          Punto de Venta
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="pdv">
+            <mat-option value="">Todos los PDV</mat-option>
+            @for (p of filterOptions().pdvs; track p.id) {
+              <mat-option [value]="p.id">{{ p.nombre }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Mercaderista -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">person</mat-icon>
+          Mercaderista
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="mercaderista">
+            <mat-option value="">Todos</mat-option>
+            @for (m of filterOptions().mercaderistas; track m) {
+              <mat-option [value]="m">{{ m }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Producto -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">inventory_2</mat-icon>
+          Producto
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="producto">
+            <mat-option value="">Todos los productos</mat-option>
+            @for (p of filterOptions().productos; track p) {
+              <mat-option [value]="p">{{ p }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Visita ID -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">tag</mat-icon>
+          ID de Visita
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <input matInput type="number" formControlName="visita_id" placeholder="Ej: 766">
+        </mat-form-field>
+      </div>
+
+      <!-- Categoría de producto -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">category</mat-icon>
+          Categoría
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="categoria">
+            <mat-option value="">Todas las categorías</mat-option>
+            @for (c of filterOptions().categorias; track c) {
+              <mat-option [value]="c">{{ c }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Departamento -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">map</mat-icon>
+          Departamento
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="departamento">
+            <mat-option value="">Todos los departamentos</mat-option>
+            @for (d of filterOptions().departamentos; track d) {
+              <mat-option [value]="d">{{ d }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Cuadrante -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">grid_view</mat-icon>
+          Cuadrante
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="cuadrante">
+            <mat-option value="">Todos los cuadrantes</mat-option>
+            @for (q of filterOptions().cuadrantes; track q) {
+              <mat-option [value]="q">{{ q }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Estado de la visita -->
+      <div class="filter-field-wrapper">
+        <label class="filter-label">
+          <mat-icon class="!text-sm">flag</mat-icon>
+          Estado
+        </label>
+        <mat-form-field appearance="outline" class="filter-field">
+          <mat-select formControlName="estado">
+            <mat-option value="">Todos los estados</mat-option>
+            @for (e of filterOptions().estados; track e) {
+              <mat-option [value]="e">{{ e }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+    </form>
+
+    <!-- Action row -->
+    <div class="filter-actions">
+      <button class="btn-clear" (click)="clearFilters()">
+        <mat-icon>refresh</mat-icon>
+        Limpiar
+      </button>
+      <button class="btn-apply" (click)="applyFilters()">
+        <mat-icon>search</mat-icon>
+        Aplicar Filtros
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── TOGGLE DE VISTA ─────────────────────────────────────────────── -->
+  <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-fit">
+    <button (click)="viewMode.set('tarjetas')"
+      [class]="viewMode()==='tarjetas' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      <mat-icon class="!text-base">grid_view</mat-icon> Tarjetas para revisar
+    </button>
+    <button (click)="viewMode.set('consolidada')"
+      [class]="viewMode()==='consolidada' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      <mat-icon class="!text-base">table_rows</mat-icon> Consolidada
+    </button>
+  </div>
+
+  <!-- ─── DATA TABLE / TARJETAS ───────────────────────────────────────── -->
+  <div class="table-container">
+
+    @if (loading()) {
+      <div class="loading-state">
+        <mat-spinner diameter="44" class="indigo-spinner"></mat-spinner>
+        <p>Cargando datos...</p>
+      </div>
+    } @else if (dataSource.data.length === 0) {
+      <div class="empty-state">
+        <div class="empty-icon">
+          <mat-icon>inbox</mat-icon>
+        </div>
+        <h3>Sin resultados</h3>
+        <p>No hay balances que coincidan con los filtros seleccionados.</p>
+      </div>
+    } @else if (viewMode() === 'consolidada') {
+      <div class="overflow-x-auto">
+        <table mat-table [dataSource]="dataSource" matSort class="data-table">
+
+          <!-- Fecha -->
+          <ng-container matColumnDef="fecha_balance">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Fecha</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="cell-date">
+                <span class="date-main">{{ row.fecha_balance | date:'dd/MM/yyyy' }}</span>
+                <span class="date-time">{{ row.fecha_balance | date:'HH:mm' }}</span>
+              </div>
+            </td>
+          </ng-container>
+
+          <!-- Visita -->
+          <ng-container matColumnDef="visita_id">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Visita</th>
+            <td mat-cell *matCellDef="let row">
+              <span class="badge-visita">#{{ row.visita_id }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Región -->
+          <ng-container matColumnDef="region">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Región</th>
+            <td mat-cell *matCellDef="let row" class="cell-muted">{{ row.region || '—' }}</td>
+          </ng-container>
+
+          <!-- Cadena -->
+          <ng-container matColumnDef="cadena">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Cadena</th>
+            <td mat-cell *matCellDef="let row" class="cell-semi">{{ row.cadena || '—' }}</td>
+          </ng-container>
+
+          <!-- PDV -->
+          <ng-container matColumnDef="pdv_nombre">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>PDV</th>
+            <td mat-cell *matCellDef="let row" class="cell-muted cell-truncate" [title]="row.pdv_nombre">{{ row.pdv_nombre || '—' }}</td>
+          </ng-container>
+
+          <!-- Mercaderista -->
+          <ng-container matColumnDef="mercaderista">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Mercaderista</th>
+            <td mat-cell *matCellDef="let row" class="cell-muted">{{ row.mercaderista || '—' }}</td>
+          </ng-container>
+
+          <!-- Producto -->
+          <ng-container matColumnDef="producto">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header>Producto</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="cell-product">
+                <span class="product-name" [title]="row.producto">{{ row.producto }}</span>
+                <span class="product-cat">{{ row.categoria }}</span>
+              </div>
+            </td>
+          </ng-container>
+
+          <!-- Inv Inicial -->
+          <ng-container matColumnDef="inv_inicial">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header class="text-center">Inv. Inicial</th>
+            <td mat-cell *matCellDef="let row" class="text-center">
+              <span class="badge-neutral">{{ row.inv_inicial }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Inv Final -->
+          <ng-container matColumnDef="inv_final">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header class="text-center">Inv. Final</th>
+            <td mat-cell *matCellDef="let row" class="text-center">
+              <span [class]="row.inv_final > 0 ? 'badge-success' : 'badge-danger'">{{ row.inv_final }}</span>
+            </td>
+          </ng-container>
+
+          <!-- Caras -->
+          <ng-container matColumnDef="caras">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header class="text-center">Caras</th>
+            <td mat-cell *matCellDef="let row" class="text-center cell-semi">{{ row.caras }}</td>
+          </ng-container>
+
+          <!-- Precio -->
+          <ng-container matColumnDef="precio_bs">
+            <th mat-header-cell *matHeaderCellDef mat-sort-header class="text-right">Precio</th>
+            <td mat-cell *matCellDef="let row">
+              <div class="cell-price">
+                <span class="price-bs">{{ row.precio_bs | number:'1.2-2' }} Bs</span>
+                @if (row.precio_ds) {
+                  <span class="price-ds">$ {{ row.precio_ds | number:'1.2-2' }}</span>
+                }
+              </div>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="data-row"></tr>
+        </table>
+      </div>
+
+      <mat-paginator
+        [pageSizeOptions]="[25, 50, 100, 200]"
+        [pageSize]="50"
+        showFirstLastButtons
+        class="table-paginator"
+      ></mat-paginator>
+    } @else {
+      <!-- ─── VISTA TARJETAS PARA REVISAR ─── -->
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+        @for (v of groupedVisits; track v.visita_id) {
+          <div class="bg-white dark:bg-slate-900 border rounded-2xl overflow-hidden shadow-sm transition-all"
+            [ngClass]="expandedVisit() === v.visita_id ? 'md:col-span-2 xl:col-span-3 border-indigo-400 dark:border-indigo-500/50' : 'border-slate-200 dark:border-white/5'">
+            <div class="bg-gradient-to-r from-indigo-600 to-primary-600 px-4 py-2.5 flex items-center justify-between">
+              <span class="text-white font-black text-sm">Visita #{{ v.visita_id }}</span>
+              <span class="text-[11px] text-indigo-100">{{ v.fecha | date:'dd/MM/yyyy HH:mm' }}</span>
+            </div>
+            <div class="p-4 space-y-1.5 text-sm">
+              <div class="flex items-center gap-2 text-slate-600 dark:text-slate-300"><mat-icon class="!text-sm text-slate-400">store</mat-icon><span class="font-bold truncate">{{ v.pdv || '—' }}</span></div>
+              <div class="flex items-center gap-2 text-slate-500 text-xs"><mat-icon class="!text-sm text-slate-400">storefront</mat-icon>{{ v.cadena || '—' }} · {{ v.region || '—' }}</div>
+              <div class="flex items-center gap-2 text-slate-500 text-xs"><mat-icon class="!text-sm text-slate-400">person</mat-icon>{{ v.mercaderista || '—' }}</div>
+              <div class="flex items-center gap-2 text-slate-500 text-xs"><mat-icon class="!text-sm text-slate-400">inventory_2</mat-icon>{{ v.items.length }} producto(s)</div>
+            </div>
+            <div class="px-4 pb-4">
+              <button (click)="toggleExpand(v.visita_id)"
+                class="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-all active:scale-95">
+                <mat-icon class="!text-base">{{ expandedVisit() === v.visita_id ? 'expand_less' : 'fact_check' }}</mat-icon>
+                {{ expandedVisit() === v.visita_id ? 'Ocultar' : 'Revisar datos' }}
+              </button>
+            </div>
+            @if (expandedVisit() === v.visita_id) {
+              <div class="border-t border-slate-100 dark:border-white/5">
+                @if (!puedeEditar) {
+                  <div class="px-4 py-2 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 flex items-center gap-1.5">
+                    <mat-icon class="!text-sm">visibility</mat-icon> Solo lectura — la data no es editable desde tu perfil.
+                  </div>
+                }
+                <div class="max-h-[60vh] overflow-y-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 sticky top-0 z-10">
+                      <tr>
+                        <th class="text-left px-4 py-3 font-black uppercase tracking-wider text-[11px]">Producto</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Inicial</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Final</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Depósito</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Caras</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Precio Bs</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Precio $</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (it of v.items; track it.id_balance; let odd = $odd) {
+                        <tr class="border-t border-slate-100 dark:border-white/5" [ngClass]="odd ? 'bg-slate-50 dark:bg-white/5' : ''">
+                          <td class="px-4 py-2.5 text-slate-800 dark:text-white font-bold w-2/5">{{ it.producto }}<span class="block text-[11px] font-medium text-slate-400">{{ it.categoria }}</span></td>
+                          <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.inv_inicial" [readonly]="!puedeEditar" class="w-20 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.inv_final" [readonly]="!puedeEditar" class="w-20 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.inv_deposito" [readonly]="!puedeEditar" class="w-20 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.caras" [readonly]="!puedeEditar" class="w-16 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_bs" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_ds" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+                <div class="flex items-center justify-end gap-2 p-3 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-slate-800/40">
+                  <button (click)="exportVisit(v)"
+                    class="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-all active:scale-95">
+                    <mat-icon class="!text-base">download</mat-icon> Excel de esta visita
+                  </button>
+                  @if (puedeEditar) {
+                    <button (click)="saveVisitBalances(v)" [disabled]="savingVisit() === v.visita_id"
+                      class="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all active:scale-95">
+                      @if (savingVisit() === v.visita_id) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+                      Guardar cambios
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

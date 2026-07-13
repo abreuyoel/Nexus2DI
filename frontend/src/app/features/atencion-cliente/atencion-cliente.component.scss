@@ -1,0 +1,42 @@
+/* atencion-cliente.component.scss */
+:host {
+  display: block;
+  width: 100%;
+}
+
+.input {
+  border-radius: 0.75rem;
+  border: 1px solid rgb(226 232 240);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  width: 100%;
+  background: white;
+  color: rgb(30 41 59);
+}
+
+:host-context(.dark) .input {
+  background: rgb(30 41 59);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+::ng-deep {
+  .modern-tabs {
+    .mat-mdc-tab-header {
+      background: white;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+    .mat-mdc-tab-group-inverted-header {
+      border-bottom: none;
+    }
+    .mdc-tab {
+      height: 64px;
+    }
+    .mat-mdc-tab-labels {
+      padding: 0 16px;
+    }
+  }
+}

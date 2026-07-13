@@ -1,0 +1,385 @@
+<!-- client-photos.component.html -->
+<div class="client-photos-container">
+
+  <!-- ═══ HEADER ═══ -->
+  <div class="cp-header">
+    <div class="cp-header-content">
+      <div>
+        <h1 class="cp-title">📸 Mis Fotos</h1>
+        <p class="cp-subtitle">Explora las fotografías de tus puntos de venta por región y cadena comercial.</p>
+      </div>
+    </div>
+
+    <!-- Breadcrumb -->
+    @if (view() !== 'regions' && view() !== 'select-client') {
+      <div class="cp-breadcrumb">
+        <button class="cp-back-btn" (click)="goBack()">
+          <mat-icon>arrow_back</mat-icon> Regresar
+        </button>
+        <div class="cp-crumbs">
+          @for (crumb of getBreadcrumb(); track crumb; let i = $index; let last = $last) {
+            <span [class.active]="last">{{ crumb }}</span>
+            @if (!last) { <mat-icon class="cp-crumb-sep">chevron_right</mat-icon> }
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Banner cliente seleccionado (Coordinador Exclusivo) -->
+    @if (isCoordinadorExclusivo() && selectedExclusiveClient() && view() !== 'select-client') {
+      <div class="cp-client-banner">
+        <div class="cp-client-banner-info">
+          <mat-icon>business</mat-icon>
+          <span><strong>Cliente:</strong> {{ selectedExclusiveClient()!.cliente }}</span>
+        </div>
+        <button class="cp-client-banner-change" (click)="changeExclusiveClient()">
+          <mat-icon>swap_horiz</mat-icon> Cambiar cliente
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- ═══ LOADING ═══ -->
+  @if (loading()) {
+    <div class="cp-loading">
+      <mat-spinner diameter="48"></mat-spinner>
+      <p>Cargando datos…</p>
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  VIEW: SELECT EXCLUSIVE CLIENT (solo coordinador)              -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  @if (view() === 'select-client' && !loading()) {
+    <div class="cp-section-label">
+      <mat-icon>business</mat-icon>
+      <span>Selecciona un Cliente</span>
+    </div>
+
+    <div class="cp-client-search">
+      <mat-icon>search</mat-icon>
+      <input type="text" placeholder="Buscar cliente..."
+             [ngModel]="exclusiveClientSearch()"
+             (ngModelChange)="exclusiveClientSearch.set($event)">
+    </div>
+
+    <div class="cp-client-grid">
+      @for (c of filteredExclusiveClients(); track c.id_cliente; let i = $index) {
+        <button class="cp-client-card" (click)="selectExclusiveClient(c)"
+                [style.animation-delay]="i * 40 + 'ms'">
+          <mat-icon class="cp-client-icon">business</mat-icon>
+          <span class="cp-client-name">{{ c.cliente }}</span>
+          @if (c.id_tipo_cliente === 3) {
+            <span class="cp-client-tag cp-tag-exclusivo">Exclusivo</span>
+          } @else if (c.id_tipo_cliente === 1) {
+            <span class="cp-client-tag cp-tag-tradex">Tradex</span>
+          }
+          <mat-icon class="cp-client-arrow">arrow_forward</mat-icon>
+        </button>
+      } @empty {
+        <div class="cp-empty">
+          <mat-icon>info</mat-icon>
+          <p>No hay clientes disponibles.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  VIEW: REGIONS                                                 -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  @if (view() === 'regions' && !loading()) {
+    <div class="cp-section-label">
+      <mat-icon>public</mat-icon>
+      <span>Selecciona una región</span>
+    </div>
+    <div class="cp-region-grid">
+      @for (r of regions(); track r.region; let i = $index) {
+        <button class="cp-region-card" (click)="selectRegion(r.region)"
+                [style.--region-color]="getRegionColor(r.region)"
+                [style.animation-delay]="i * 60 + 'ms'">
+          <span class="cp-region-emoji">{{ getRegionEmoji(r.region) }}</span>
+          <span class="cp-region-name">{{ r.region }}</span>
+          <mat-icon class="cp-region-arrow">arrow_forward</mat-icon>
+        </button>
+      } @empty {
+        <div class="cp-empty">
+          <mat-icon>info</mat-icon>
+          <p>No hay regiones disponibles para tu cuenta.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  VIEW: CHAINS (Accordion)                                      -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  @if (view() === 'chains' && !loading()) {
+    <div class="cp-section-label">
+      <mat-icon>store</mat-icon>
+      <span>Cadenas en <strong>{{ selectedRegion() }}</strong></span>
+    </div>
+
+    <div class="cp-chain-list">
+      <!-- Opción: Ver todos los puntos -->
+      <button class="cp-chain-card" (click)="selectChain(''); loadPoints()"
+              style="border-style: dashed; background: rgba(99,102,241,0.03);">
+        <div class="cp-chain-icon" style="background: linear-gradient(135deg, #f1f5f9, #e2e8f0);">
+          <mat-icon style="color: #64748b;">all_inclusive</mat-icon>
+        </div>
+        <div class="cp-chain-info">
+          <span class="cp-chain-name">Todos los Puntos</span>
+          <span class="cp-chain-hint">Explorar sin filtrar por cadena →</span>
+        </div>
+        <mat-icon class="cp-chain-arrow">chevron_right</mat-icon>
+      </button>
+
+      @for (c of chains(); track c.cadena; let i = $index) {
+        <button class="cp-chain-card" (click)="selectChain(c.cadena)"
+                [style.animation-delay]="(i + 1) * 50 + 'ms'">
+          <div class="cp-chain-icon">
+            <mat-icon>storefront</mat-icon>
+          </div>
+          <div class="cp-chain-info">
+            <span class="cp-chain-name">{{ c.cadena }}</span>
+            <span class="cp-chain-hint">Ver puntos de venta →</span>
+          </div>
+          <mat-icon class="cp-chain-arrow">chevron_right</mat-icon>
+        </button>
+      } @empty {
+        <div class="cp-empty">
+          <mat-icon>info</mat-icon>
+          <p>No hay cadenas en esta región.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  VIEW: POINTS                                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  @if (view() === 'points' && !loading()) {
+    <!-- Search bar & Active Filter -->
+    <div class="cp-search-bar">
+      <mat-icon class="cp-search-icon">search</mat-icon>
+      <input type="text" class="cp-search-input"
+             [placeholder]="selectedChain() ? 'Buscar en ' + selectedChain() + '...' : 'Buscar entre ' + points().length + ' puntos...'"
+             [ngModel]="pointSearch()"
+             (ngModelChange)="pointSearch.set($event)">
+      
+      @if (pointSearch() || selectedChain()) {
+        <div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px;">
+          @if (selectedChain()) {
+            <button class="cp-search-clear" (click)="selectedChain.set(''); pointSearch.set('')" matTooltip="Quitar filtro de cadena"
+                    style="background: #ede9fe; color: #6366f1; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: 700; height: 32px;">
+              {{ selectedChain() }} <mat-icon style="font-size: 14px; width: 14px; height: 14px; margin-left: 4px;">close</mat-icon>
+            </button>
+          }
+          @if (pointSearch()) {
+            <button class="cp-search-clear" (click)="pointSearch.set('')" style="height: 32px; width: 32px; justify-content: center;">
+              <mat-icon>close</mat-icon>
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    @if (pointSearch() || selectedChain()) {
+      <p class="cp-search-count">
+        Mostrando {{ filteredPoints().length }} de {{ points().length }} puntos
+        @if (selectedChain()) { en <strong>{{ selectedChain() }}</strong> }
+      </p>
+    }
+
+    <div class="cp-points-grid">
+      @for (p of filteredPoints(); track p.identificador; let i = $index) {
+        <button class="cp-point-card" (click)="selectPoint(p)"
+                [style.animation-delay]="i * 30 + 'ms'">
+          <div class="cp-point-icon-wrap">
+            <mat-icon>location_on</mat-icon>
+          </div>
+          <div class="cp-point-info">
+            <span class="cp-point-name">{{ p.punto_de_interes }}</span>
+            <span class="cp-point-chain">{{ p.cadena }}</span>
+          </div>
+          <mat-icon class="cp-point-arrow">chevron_right</mat-icon>
+        </button>
+      } @empty {
+        <div class="cp-empty">
+          <mat-icon>search_off</mat-icon>
+          <p>No se encontraron puntos.</p>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!--  VIEW: PHOTOS (Visit Expansion Panels)                         -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  @if (view() === 'photos' && !loading()) {
+    <div class="cp-point-header">
+      <div class="cp-point-header-icon">
+        <mat-icon>store</mat-icon>
+      </div>
+      <div>
+        <h2 class="cp-point-header-name">{{ selectedPoint()?.punto_de_interes }}</h2>
+        <p class="cp-point-header-detail">{{ selectedPoint()?.cadena }} · {{ selectedPoint()?.ciudad }}</p>
+      </div>
+    </div>
+
+    @if (visits().length === 0) {
+      <div class="cp-empty">
+        <mat-icon>photo_library</mat-icon>
+        <p>No hay visitas registradas en este punto.</p>
+      </div>
+    }
+
+    <mat-accordion multi class="cp-visits-accordion">
+      @for (v of visits(); track v.id_visita; let i = $index) {
+        <mat-expansion-panel [expanded]="i === 0" class="cp-visit-panel">
+          <mat-expansion-panel-header>
+            <mat-panel-title class="cp-visit-title" style="display:flex; align-items:center; width:100%">
+              <mat-icon class="cp-visit-icon">assignment</mat-icon>
+              <span class="cp-visit-label" style="flex:1">Visita #{{ v.id_visita }}</span>
+              <button mat-stroked-button color="primary"
+                      (click)="$event.stopPropagation(); goToChat(v.id_visita)"
+                      matTooltip="Abrir Chat de la visita"
+                      style="display:inline-flex; align-items:center; gap:6px; font-weight:600; line-height:1; min-width:0; padding:0 12px;">
+                <mat-icon style="font-size:18px; width:18px; height:18px;">chat_bubble_outline</mat-icon>
+                <span>Chat</span>
+              </button>
+            </mat-panel-title>
+            <mat-panel-description class="cp-visit-desc">
+              <span class="cp-visit-meta">
+                <mat-icon>person</mat-icon> {{ v.mercaderista }}
+              </span>
+              <span class="cp-visit-meta">
+                <mat-icon>calendar_today</mat-icon> {{ v.fecha }}
+              </span>
+              <span class="cp-visit-meta">
+                <mat-icon>photo</mat-icon> {{ v.total_fotos }} fotos
+              </span>
+            </mat-panel-description>
+          </mat-expansion-panel-header>
+
+          <!-- Photo Type Cards -->
+          <div class="cp-tipos-grid">
+            @for (tipo of getAllTipos(v.fotos); track tipo.tipo) {
+              <div class="cp-tipo-card" [class.has-photos]="tipo.count > 0"
+                   [style.background]="getTipoConfig(tipo.tipo).gradient">
+                <div class="cp-tipo-icon" [style.color]="getTipoConfig(tipo.tipo).color">
+                  <mat-icon>{{ getTipoConfig(tipo.tipo).icon }}</mat-icon>
+                </div>
+                <div class="cp-tipo-info">
+                  <span class="cp-tipo-name">{{ tipo.nombre }}</span>
+                  @if (tipo.count > 0) {
+                    <span class="cp-tipo-count" [style.color]="getTipoConfig(tipo.tipo).color">
+                      <mat-icon>photo</mat-icon> {{ tipo.count }} foto{{ tipo.count > 1 ? 's' : '' }}
+                    </span>
+                  } @else {
+                    <span class="cp-tipo-empty">Sin fotos</span>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <!-- Actual photos gallery -->
+          @if (v.total_fotos > 0) {
+            <div class="cp-gallery">
+              @for (grupo of groupFotosByTipo(v.fotos); track grupo.tipo) {
+                <div class="cp-gallery-section">
+                  <h4 class="cp-gallery-title" [style.color]="getTipoConfig(grupo.tipo).color">
+                    <mat-icon>{{ getTipoConfig(grupo.tipo).icon }}</mat-icon>
+                    {{ grupo.nombre }}
+                  </h4>
+                  <div class="cp-gallery-grid">
+                    @for (foto of grupo.fotos; track foto.id_foto; let i = $index) {
+                      <div class="cp-photo-thumb" (click)="openLightbox(grupo.fotos, i, grupo.nombre)">
+                        <img [src]="foto.url" [alt]="foto.tipo_nombre" loading="lazy">
+                        <div class="cp-photo-overlay">
+                          <mat-icon>zoom_in</mat-icon>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </mat-expansion-panel>
+      }
+    </mat-accordion>
+  }
+
+  <!-- ═══ LIGHTBOX (componente reutilizable) ═══ -->
+  <app-photo-lightbox
+    [open]="lightboxOpen()"
+    [photos]="lightboxPhotos()"
+    [startIndex]="lightboxIndex()"
+    [title]="lightboxTitle()"
+    (closed)="closeLightbox()"
+    (indexChange)="onLightboxIndexChange($event)">
+    <!-- CONTENIDO INFERIOR (FOOTER) -->
+    <ng-container>
+      @if (lightboxPhoto(); as f) {
+        @if (!isRejecting()) {
+          <div style="background:#fff; border-radius:8px; padding:.85rem 1rem; display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+            <div style="display:flex; flex-direction:column;">
+              <span style="font-weight:600; font-size:1rem; color:#1e293b;">
+                #{{ f.id_foto }} – {{ f.tipo_nombre }}
+              </span>
+              <span style="font-size:.85rem; color:#64748b; display:flex; gap:8px; align-items:center;">
+                {{ f.fecha | date:'medium' }}
+                <span style="background:#e2e8f0; color:#475569; padding:2px 8px; border-radius:4px; font-size:.75rem;">
+                  {{ f.estado }}
+                </span>
+              </span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button mat-stroked-button color="warn" (click)="startRejection()">Rechazar</button>
+              <button mat-flat-button color="primary" (click)="approvePhoto(f)">Aprobar</button>
+            </div>
+          </div>
+        }
+      }
+    </ng-container>
+
+    <!-- PANEL LATERAL DERECHO (SIDEBAR) -->
+    <ng-container lightbox-sidebar>
+      @if (lightboxPhoto(); as f) {
+        @if (isRejecting()) {
+          <app-photo-rejection-form
+            [foto]="f"
+            (cancel)="isRejecting.set(false)"
+            (confirm)="submitRejection($event, f)">
+          </app-photo-rejection-form>
+        }
+      }
+    </ng-container>
+  </app-photo-lightbox>
+
+  <!-- ═══ DASHBOARD FAB ═══ -->
+  <button class="cp-fab" (click)="toggleDashboard()" matTooltip="Dashboard">
+    <mat-icon>{{ dashboardOpen() ? 'close' : 'bar_chart' }}</mat-icon>
+  </button>
+
+  <!-- Dashboard Panel -->
+  @if (dashboardOpen()) {
+    <div class="cp-dashboard-panel">
+      <div class="cp-dashboard-header">
+        <h3><mat-icon>bar_chart</mat-icon> Dashboard</h3>
+        <button mat-icon-button (click)="dashboardOpen.set(false)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="cp-dashboard-body">
+        <div class="cp-dashboard-placeholder">
+          <mat-icon>analytics</mat-icon>
+          <p>El dashboard se cargará aquí con los datos de tu cuenta.</p>
+        </div>
+      </div>
+    </div>
+  }
+
+</div>

@@ -1,0 +1,294 @@
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Solicitudes</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Buzón de solicitudes de servicio.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      @if (isAnalyst() || isAtcOrAdmin()) {
+        <button mat-flat-button color="primary" class="!rounded-xl !font-bold" (click)="toggleForm()">
+          <mat-icon class="!text-base align-middle mr-1">add_circle</mat-icon>
+          Nueva solicitud
+        </button>
+      }
+      @if (solicitudes().length > 0) {
+        <span class="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-700 dark:text-amber-400 rounded-xl text-sm font-black">
+          <mat-icon class="!text-base animate-pulse">mark_email_unread</mat-icon>
+          {{ solicitudes().length }} resultado{{ solicitudes().length !== 1 ? 's' : '' }}
+        </span>
+      }
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-white/5">
+    <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Estado</label>
+    <select class="rounded-xl border border-slate-200 dark:border-white/10 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
+      [(ngModel)]="filtroEstado" (ngModelChange)="onFiltroChange()">
+      <option value="">Todos</option>
+      <option value="pendiente">Pendiente</option>
+      <option value="aprobada">Aprobada</option>
+      <option value="rechazada">Rechazada</option>
+    </select>
+
+    <label class="text-xs font-bold text-slate-500 uppercase tracking-wide ml-2">Tipo</label>
+    <select class="rounded-xl border border-slate-200 dark:border-white/10 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
+      [(ngModel)]="filtroTipo" (ngModelChange)="onFiltroChange()">
+      <option value="">Todos</option>
+      @for (t of tipoLabels | keyvalue; track t.key) {
+        <option [value]="t.key">{{ t.value }}</option>
+      }
+      <option value="creacion_centro_salud">Nuevo centro de salud</option>
+      <option value="creacion_mercaderista">Nuevo mercaderista</option>
+      <option value="eliminacion_mercaderista">Eliminar mercaderista</option>
+      <option value="cambio_estado_mercaderista">Cambio estado mercaderista</option>
+    </select>
+  </div>
+
+  <!-- Formulario nueva solicitud -->
+  @if (showForm()) {
+    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-5">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Tipo de solicitud</label>
+        <select class="rounded-xl border border-slate-200 dark:border-white/10 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
+          [(ngModel)]="formTipo">
+          <option value="creacion_usuario">Nuevo usuario</option>
+          <option value="creacion_pdv">Nuevo PDV</option>
+          <option value="creacion_producto">Nuevo producto</option>
+        </select>
+      </div>
+
+      @if (formTipo() === 'creacion_usuario') {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input class="input" placeholder="Username" [(ngModel)]="usuarioForm.username" />
+          <input class="input" placeholder="Email" [(ngModel)]="usuarioForm.email" />
+          <select class="input" [(ngModel)]="usuarioForm.id_rol">
+            <option [ngValue]="null">Rol solicitado...</option>
+            @for (r of rolesSolicitables; track r.id_rol) {
+              <option [ngValue]="r.id_rol">{{ r.label }}</option>
+            }
+          </select>
+          <select class="input" [(ngModel)]="usuarioForm.id_perfil">
+            <option [ngValue]="null">Cliente/entidad asociada (opcional)</option>
+            @for (c of clientesList(); track c.id) {
+              <option [ngValue]="c.id">{{ c.nombre }}</option>
+            }
+          </select>
+          <input class="input" type="password" placeholder="Contraseña inicial sugerida" [(ngModel)]="usuarioForm.password" />
+        </div>
+      }
+
+      @if (formTipo() === 'creacion_pdv') {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input class="input" placeholder="Nombre del punto" [(ngModel)]="pdvForm.nombre" />
+          <input class="input" placeholder="RIF (opcional)" [(ngModel)]="pdvForm.rif" />
+          <input class="input md:col-span-2" placeholder="Dirección" [(ngModel)]="pdvForm.direccion" />
+          <input class="input" placeholder="Latitud" [(ngModel)]="pdvForm.latitud" />
+          <input class="input" placeholder="Longitud" [(ngModel)]="pdvForm.longitud" />
+        </div>
+        <p class="text-xs text-slate-400 italic">Atención al Cliente completará jerarquía, canal y clasificación al aprobar.</p>
+      }
+
+      @if (formTipo() === 'creacion_producto') {
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input class="input" placeholder="Nombre del producto" [(ngModel)]="productoForm.producto_gu" />
+          <input class="input" placeholder="Código de barras" [(ngModel)]="productoForm.cod_prod" />
+          <input class="input md:col-span-2" placeholder="Descripción" [(ngModel)]="productoForm.descripcion_bi" />
+          <input class="input" type="number" placeholder="Gramos" [(ngModel)]="productoForm.gramos" />
+          <select class="input" [(ngModel)]="productoForm.id_subcategoria">
+            <option [ngValue]="null">Subcategoría...</option>
+            @for (s of subcategoriasList(); track s.id_subcategoria) {
+              <option [ngValue]="s.id_subcategoria">{{ s.nombre }}</option>
+            }
+          </select>
+          <select class="input" [(ngModel)]="productoForm.id_marca">
+            <option [ngValue]="null">Marca...</option>
+            @for (m of marcasList(); track m.id) {
+              <option [ngValue]="m.id">{{ m.nombre }}</option>
+            }
+          </select>
+          <select class="input" [(ngModel)]="productoForm.id_presentacion">
+            <option [ngValue]="null">Presentación...</option>
+            @for (p of presentacionesList(); track p.id) {
+              <option [ngValue]="p.id">{{ p.nombre }}</option>
+            }
+          </select>
+          <select class="input" [(ngModel)]="productoForm.id_clasificacion_tamano">
+            <option [ngValue]="null">Tamaño...</option>
+            @for (t of tamanosList(); track t.id) {
+              <option [ngValue]="t.id">{{ t.nombre }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      <div class="flex justify-end gap-3">
+        <button mat-button class="!rounded-xl" (click)="toggleForm()">Cancelar</button>
+        <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" [disabled]="submitting()" (click)="enviarSolicitud()">
+          Enviar solicitud
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- Content -->
+  @if (loadingSolicitudes()) {
+    <div class="flex flex-col items-center py-24 gap-3">
+      <mat-spinner diameter="40"></mat-spinner>
+      <p class="text-slate-400 font-medium">Buscando solicitudes...</p>
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      @for (sol of solicitudes(); track sol.id) {
+        <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-md transition-all flex flex-col gap-4 border-l-4"
+          [class.border-l-amber-400]="sol.estado === 'pendiente'"
+          [class.border-l-emerald-400]="sol.estado === 'aprobada'"
+          [class.border-l-rose-400]="sol.estado === 'rechazada'">
+          <div class="flex justify-between items-start">
+            <div class="space-y-1">
+              <span class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{{ tipoLabels[sol.tipo] || sol.tipo }}</span>
+              <h4 class="text-lg font-bold text-slate-800 dark:text-white">Solicitud #{{ sol.id }}</h4>
+            </div>
+            <span [class]="getSolicitudClasses(sol.estado)"
+              class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter">
+              {{ sol.estado }}
+            </span>
+          </div>
+
+          <div class="text-slate-600 dark:text-slate-300 text-sm leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-white/5 space-y-1">
+            @for (kv of descripcionEntries(sol.descripcion); track kv[0]) {
+              <div class="flex gap-2"><span class="font-bold text-slate-500 dark:text-slate-400">{{ kv[0] }}:</span> <span>{{ kv[1] }}</span></div>
+            } @empty {
+              <span class="italic text-slate-400">Sin datos adicionales</span>
+            }
+            @if (fotoTienda(sol.descripcion) || fotoRif(sol.descripcion)) {
+              <div class="flex gap-3 pt-2">
+                @if (fotoTienda(sol.descripcion); as ft) {
+                  <img [src]="ft" (click)="verFotoGrande(ft)" title="Foto de la tienda"
+                    class="w-20 h-20 object-cover rounded-lg border border-slate-200 dark:border-white/10 cursor-zoom-in" />
+                }
+                @if (fotoRif(sol.descripcion); as fr) {
+                  <img [src]="fr" (click)="verFotoGrande(fr)" title="Foto del RIF"
+                    class="w-20 h-20 object-cover rounded-lg border border-slate-200 dark:border-white/10 cursor-zoom-in" />
+                }
+              </div>
+            }
+          </div>
+
+          @if (sol.estado === 'pendiente' && isAtcOrAdmin() && editandoId() === sol.id) {
+            <div class="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800/30 rounded-2xl p-4 space-y-3">
+              <p class="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">Editar antes de aprobar</p>
+
+              @if (sol.tipo === 'creacion_pdv') {
+                <div class="grid grid-cols-2 gap-3">
+                  <input class="input" placeholder="Nombre del punto" [(ngModel)]="completarForm['nombre']" />
+                  <input class="input" placeholder="RIF" [(ngModel)]="completarForm['rif']" />
+                  <input class="input col-span-2" placeholder="Dirección" [(ngModel)]="completarForm['direccion']" />
+                  <input class="input" placeholder="Latitud" [(ngModel)]="completarForm['latitud']" />
+                  <input class="input" placeholder="Longitud" [(ngModel)]="completarForm['longitud']" />
+                  <input class="input" placeholder="Jerarquía nivel 2_2 *" [(ngModel)]="completarForm['jerarquia_n2_2']" />
+                  <input class="input" placeholder="Jerarquía nivel 2" [(ngModel)]="completarForm['jerarquia_n2']" />
+                  <input class="input" placeholder="Departamento" [(ngModel)]="completarForm['departamento']" />
+                  <input class="input" placeholder="Ciudad" [(ngModel)]="completarForm['ciudad']" />
+                  <input class="input" placeholder="Clasificación de canal" [(ngModel)]="completarForm['cadena']" />
+                  <input class="input" placeholder="Nivel de alcance" [(ngModel)]="completarForm['nivel_de_alcance']" />
+                </div>
+              }
+
+              @if (sol.tipo === 'creacion_usuario') {
+                <div class="grid grid-cols-2 gap-3">
+                  <input class="input" placeholder="Username" [(ngModel)]="completarForm['username']" />
+                  <input class="input" placeholder="Email" [(ngModel)]="completarForm['email']" />
+                  <select class="input" [(ngModel)]="completarForm['id_rol']">
+                    <option [ngValue]="null">Rol solicitado...</option>
+                    @for (r of rolesSolicitables; track r.id_rol) {
+                      <option [ngValue]="r.id_rol">{{ r.label }}</option>
+                    }
+                  </select>
+                  <select class="input" [(ngModel)]="completarForm['id_perfil']">
+                    <option [ngValue]="null">Cliente/entidad asociada (opcional)</option>
+                    @for (c of clientesList(); track c.id) {
+                      <option [ngValue]="c.id">{{ c.nombre }}</option>
+                    }
+                  </select>
+                  <input class="input" placeholder="Contraseña inicial" [(ngModel)]="completarForm['password']" />
+                </div>
+              }
+
+              @if (sol.tipo === 'creacion_producto') {
+                <div class="grid grid-cols-2 gap-3">
+                  <input class="input" placeholder="Nombre del producto" [(ngModel)]="completarForm['producto_gu']" />
+                  <input class="input" placeholder="Código de barras" [(ngModel)]="completarForm['cod_prod']" />
+                  <input class="input col-span-2" placeholder="Descripción" [(ngModel)]="completarForm['descripcion_bi']" />
+                  <input class="input" type="number" placeholder="Gramos" [(ngModel)]="completarForm['gramos']" />
+                  <select class="input" [(ngModel)]="completarForm['id_subcategoria']">
+                    <option [ngValue]="null">Subcategoría...</option>
+                    @for (s of subcategoriasList(); track s.id_subcategoria) {
+                      <option [ngValue]="s.id_subcategoria">{{ s.nombre }}</option>
+                    }
+                  </select>
+                  <select class="input" [(ngModel)]="completarForm['id_marca']">
+                    <option [ngValue]="null">Marca...</option>
+                    @for (m of marcasList(); track m.id) {
+                      <option [ngValue]="m.id">{{ m.nombre }}</option>
+                    }
+                  </select>
+                  <select class="input" [(ngModel)]="completarForm['id_presentacion']">
+                    <option [ngValue]="null">Presentación...</option>
+                    @for (p of presentacionesList(); track p.id) {
+                      <option [ngValue]="p.id">{{ p.nombre }}</option>
+                    }
+                  </select>
+                  <select class="input" [(ngModel)]="completarForm['id_clasificacion_tamano']">
+                    <option [ngValue]="null">Tamaño...</option>
+                    @for (t of tamanosList(); track t.id) {
+                      <option [ngValue]="t.id">{{ t.nombre }}</option>
+                    }
+                  </select>
+                </div>
+              }
+
+              <div class="flex justify-end gap-2">
+                <button mat-button class="!rounded-xl" (click)="cancelarEdicion()">Cancelar</button>
+                <button mat-button class="!text-rose-600 !font-bold !rounded-xl" (click)="rechazar(sol.id)">Rechazar</button>
+                <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" (click)="confirmarConEdicion(sol)">
+                  Confirmar y aprobar
+                </button>
+              </div>
+            </div>
+          } @else {
+            <div class="flex items-center justify-end gap-3 pt-2">
+              @if (sol.estado === 'pendiente' && isAtcOrAdmin()) {
+                <button mat-button
+                  class="!text-rose-600 !font-bold hover:!bg-rose-50 dark:hover:!bg-rose-900/20 !rounded-xl"
+                  (click)="rechazar(sol.id)">
+                  Rechazar
+                </button>
+                <button mat-button class="!font-bold !rounded-xl" (click)="iniciarEdicion(sol)">
+                  Editar
+                </button>
+                <button mat-flat-button color="primary"
+                  class="!rounded-xl !font-bold !bg-emerald-500 hover:!bg-emerald-600 shadow-sm"
+                  (click)="aprobar(sol)">
+                  Aprobar
+                </button>
+              } @else if (sol.estado !== 'pendiente') {
+                <span class="text-xs text-slate-400 font-medium italic">
+                  Procesada el {{ today | date:'short' }}
+                </span>
+              }
+            </div>
+          }
+        </div>
+      } @empty {
+        <div class="lg:col-span-2 py-24 flex flex-col items-center gap-3 opacity-40">
+          <mat-icon class="!text-6xl text-slate-400">all_inbox</mat-icon>
+          <p class="text-xl font-bold dark:text-white">Sin solicitudes</p>
+          <p class="text-sm dark:text-slate-400">No hay resultados para este filtro.</p>
+        </div>
+      }
+    </div>
+  }
+</div>

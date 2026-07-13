@@ -1,0 +1,959 @@
+<div class="cm-wrapper">
+
+  <!-- Toggle Activaciones / Visitas -->
+  <div class="flex justify-center mb-6">
+    <div class="inline-flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl shadow-sm">
+      <button (click)="vista.set('activaciones')"
+        [ngClass]="vista()==='activaciones' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+        class="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-black transition-all">
+        <mat-icon class="!text-base">bolt</mat-icon> Activaciones
+      </button>
+      <button (click)="vista.set('visitas')"
+        [ngClass]="vista()==='visitas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+        class="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-black transition-all">
+        <mat-icon class="!text-base">fact_check</mat-icon> Visitas
+      </button>
+    </div>
+  </div>
+
+  @if (vista() === 'visitas') {
+    <app-revision-visitas />
+  } @else {
+
+  <!-- ═══════════════════════════════════════════════════════ HEADER ══ -->
+  <div class="cm-header">
+    <div class="cm-header-left">
+      <mat-icon class="cm-header-icon">assignment</mat-icon>
+      <div>
+        <h1 class="cm-title">Resumen &mdash; {{ dateRangeDisplay }}</h1>
+        <p class="cm-subtitle">
+          {{ resumenDia()?.cliente_nombre || 'Todos los clientes' }}
+        </p>
+      </div>
+    </div>
+
+    <div class="cm-header-right">
+      <!-- Selector Cliente -->
+      <div class="cm-select-wrap">
+        <mat-icon class="cm-select-icon">business</mat-icon>
+        <select [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
+          <option [ngValue]="null">Todos los clientes</option>
+          @for (c of clientes(); track c.id_cliente) {
+            <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
+          }
+        </select>
+        <mat-icon class="cm-select-arrow">expand_more</mat-icon>
+      </div>
+
+      <!-- Rango de Fechas Global -->
+      <div class="cm-date-range-box">
+        <div class="cm-date-input">
+          <span>Desde:</span>
+          <input type="date" [(ngModel)]="filtroDesde" (change)="refresh()">
+        </div>
+        <div class="cm-date-sep"></div>
+        <div class="cm-date-input">
+          <span>Hasta:</span>
+          <input type="date" [(ngModel)]="filtroHasta" (change)="refresh()">
+        </div>
+      </div>
+
+
+      <button class="cm-hoy-btn" [class.active]="isHoy" (click)="irHoy()">Hoy</button>
+
+      <button class="cm-refresh-btn" (click)="refresh()">
+        <mat-icon>refresh</mat-icon>
+        Actualizar
+      </button>
+
+      <button class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-sm" (click)="openExportModal()" matTooltip="Exportar visitas a Excel">
+        <mat-icon class="!text-base">download</mat-icon>
+        Exportar
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════ RESUMEN LOADING ══ -->
+  @if (loadingResumen()) {
+    <div class="cm-loading-top">
+      <mat-spinner diameter="36" strokeWidth="3"></mat-spinner>
+      <span>Cargando resumen...</span>
+    </div>
+  } @else if (resumenDia()) {
+
+    <!-- ════════════════════════════════════ TOP STATS 4 CARDS ══ -->
+    <div class="cm-stats-grid">
+
+      <!-- Mercaderistas Asignados -->
+      <div class="cm-stat-card border-blue">
+        <div class="cm-stat-icon blue"><mat-icon>people</mat-icon></div>
+        <div class="cm-stat-body">
+          <div class="cm-stat-num">{{ resumenDia().mercaderistas.total_asignados }}</div>
+          <div class="cm-stat-label">MERCADERISTAS ASIGNADOS</div>
+          <div class="cm-stat-sub">
+            {{ resumenDia().mercaderistas.exclusivos }} Excl.
+            · {{ resumenDia().mercaderistas.tradex }} Tradex
+          </div>
+        </div>
+      </div>
+
+      <!-- Planificados Hoy -->
+      <div class="cm-stat-card border-purple">
+        <div class="cm-stat-icon purple"><mat-icon>event_available</mat-icon></div>
+        <div class="cm-stat-body">
+          <div class="cm-stat-num">{{ resumenDia().mercaderistas.planificados_hoy }}</div>
+          <div class="cm-stat-label">PLANIFICADOS {{ labelPeriodo }}</div>
+        </div>
+      </div>
+
+      <!-- Activaron Hoy -->
+      <div class="cm-stat-card border-green">
+        <div class="cm-stat-icon green"><mat-icon>check_circle</mat-icon></div>
+        <div class="cm-stat-body">
+          <div class="cm-stat-num">{{ resumenDia().mercaderistas.activos_hoy }}</div>
+          <div class="cm-stat-label">ACTIVARON {{ labelPeriodo }}</div>
+          <button class="cm-detail-link" (click)="toggleDetalle('activos')">
+            Ver detalle <mat-icon class="!text-[14px]">expand_more</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Faltaron Hoy -->
+      <div class="cm-stat-card border-red">
+        <div class="cm-stat-icon red"><mat-icon>person_off</mat-icon></div>
+        <div class="cm-stat-body">
+          <div class="cm-stat-num">{{ resumenDia().mercaderistas.faltantes_hoy }}</div>
+          <div class="cm-stat-label">FALTARON {{ labelPeriodo }}</div>
+          <button class="cm-detail-link" (click)="toggleDetalle('faltantes')">
+            Ver detalle <mat-icon class="!text-[14px]">expand_more</mat-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════ INLINE DETALLE MERCADERISTAS ══ -->
+    @if (showDetalle) {
+      <div class="cm-inline-detail">
+        <div class="cm-inline-header">
+          <div class="title">
+            <mat-icon>people</mat-icon>
+            Mercaderistas que {{ showDetalle === 'activos' ? 'activaron' : 'faltaron' }} {{ labelPeriodo === 'HOY' ? 'hoy' : 'en el período' }}
+          </div>
+          <div class="count">{{ detalleList.length }} de {{ resumenDia().mercaderistas.planificados_hoy }}</div>
+        </div>
+        
+        <div class="cm-inline-cards">
+          @for (m of detalleList; track m.id_mercaderista) {
+            <div class="cm-merc-inline-card">
+              <div class="mic-top">
+                <mat-icon class="user-ic">account_circle</mat-icon>
+                <span class="mic-name">{{ m.nombre }}</span>
+                <span class="status-pill" [class.green]="m.faltas === 0" [class.amber]="m.faltas > 0 && m.activos > 0" [class.gray]="m.activos === 0">
+                  @if (filtroDesde === filtroHasta) {
+                    {{ m.estado }}
+                  } @else {
+                    Act: {{ m.activos }}/{{ m.planificados }}
+                  }
+                </span>
+              </div>
+              <div class="mic-rutas">
+                <span class="l">Rutas:</span>
+                <span class="v" [title]="m.rutas_nombres.join(', ')">{{ m.rutas_nombres.join(', ') || 'N/A' }}</span>
+              </div>
+              <div class="mic-stats">
+                <div class="m-box">
+                  <span class="b">{{ m.pois_completados }}/{{ m.pois_planificados }}</span> POIs
+                </div>
+                <div class="m-box" title="Rutas (Planificadas / Activas / Completadas)">
+                  <span class="b">{{ m.rutas_planificadas }}/{{ m.rutas_activas }}/{{ m.rutas_completadas }}</span> rutas
+                </div>
+                @if (m.tipo_servicio) {
+                  <div class="m-tag {{ m.tipo_servicio === 'Tradex' ? 'yellow' : 'blue' }}">
+                    {{ m.tipo_servicio }}
+                  </div>
+                }
+              </div>
+            </div>
+          }
+          @if (!detalleList.length) {
+            <div class="mic-empty">Ningún mercaderista en esta categoría.</div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- ════════════════════════════════════ SECONDARY CARDS ══ -->
+    <div class="cm-secondary-grid mt-2">
+
+      <!-- Rutas -->
+      <div class="cm-sec-card">
+        <div class="cm-sec-header">
+          <mat-icon class="cm-sec-icon">route</mat-icon>
+          <span class="cm-sec-title">Rutas</span>
+        </div>
+        <div class="cm-sec-metrics">
+          <div class="cm-metric">
+            <span class="cm-metric-num">{{ resumenDia().rutas.planificadas }}</span>
+            <span class="cm-metric-lbl">Plan.</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.completadas }}</span>
+            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num orange">{{ resumenDia().rutas.completadas }}</span>
+            <span class="cm-metric-lbl">Comp. · {{ pct(resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Puntos -->
+      <div class="cm-sec-card">
+        <div class="cm-sec-header">
+          <mat-icon class="cm-sec-icon">location_on</mat-icon>
+          <span class="cm-sec-title">Puntos</span>
+        </div>
+        <div class="cm-sec-metrics">
+          <div class="cm-metric">
+            <span class="cm-metric-num">{{ resumenDia().puntos_interes.planificados }}</span>
+            <span class="cm-metric-lbl">Plan.</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.completados }}</span>
+            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.completados, resumenDia().puntos_interes.planificados) }}%</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.completados }}</span>
+            <span class="cm-metric-lbl">Comp. · {{ pct(resumenDia().puntos_interes.completados, resumenDia().puntos_interes.planificados) }}%</span>
+          </div>
+        </div>
+        <button class="cm-pdvs-link" (click)="openPdvsModal()">
+          Ver PDVs <mat-icon class="!text-[13px]">arrow_forward</mat-icon>
+        </button>
+      </div>
+
+      <!-- Clientes Tradex -->
+      <div class="cm-sec-card">
+        <div class="cm-sec-header">
+          <mat-icon class="cm-sec-icon">groups</mat-icon>
+          <span class="cm-sec-title">Clientes (Tradex)</span>
+        </div>
+        @if (resumenDia().clientes_tradex.aplica) {
+          <div class="cm-sec-metrics">
+            <div class="cm-metric">
+              <span class="cm-metric-num">{{ resumenDia().clientes_tradex.planificados }}</span>
+              <span class="cm-metric-lbl">Plan.</span>
+            </div>
+            <div class="cm-metric-sep"></div>
+            <div class="cm-metric">
+              <span class="cm-metric-num orange">{{ resumenDia().clientes_tradex.planificados - resumenDia().clientes_tradex.completados }}</span>
+              <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().clientes_tradex.planificados - resumenDia().clientes_tradex.completados, resumenDia().clientes_tradex.planificados) }}%</span>
+            </div>
+            <div class="cm-metric-sep"></div>
+            <div class="cm-metric">
+              <span class="cm-metric-num orange">{{ resumenDia().clientes_tradex.completados }}</span>
+              <span class="cm-metric-lbl">Comp. · {{ pct(resumenDia().clientes_tradex.completados, resumenDia().clientes_tradex.planificados) }}%</span>
+            </div>
+          </div>
+        } @else {
+          <p class="cm-no-tradex">No aplica (cliente exclusivo)</p>
+        }
+      </div>
+    </div>
+
+  }<!-- /resumenDia -->
+
+  <!-- ════════════════════════════════════ TABS BAR ══ -->
+  <div class="cm-tabs-bar">
+    <button class="cm-tab" [class.active]="activeView === 'dashboard'" (click)="activeView = 'dashboard'">
+      <mat-icon>grid_view</mat-icon> Dashboard
+    </button>
+    <button class="cm-tab" [class.active]="activeView === 'mercaderistas'" (click)="activeView = 'mercaderistas'">
+      <mat-icon>people</mat-icon> Por Mercaderista
+      <span class="cm-badge">{{ mercaderistasUnificados.length }}</span>
+    </button>
+    <button class="cm-tab" [class.active]="activeView === 'gestion'" (click)="activeView = 'gestion'">
+      <mat-icon>calendar_view_week</mat-icon> Gestión por Día
+    </button>
+    <button class="cm-tab" [class.active]="activeView === 'pendientes'" (click)="activeView = 'pendientes'">
+      <mat-icon>error_outline</mat-icon> Pendientes
+      <span class="cm-badge danger">{{ pendientes().length }}</span>
+    </button>
+    <button class="cm-tab" [class.active]="activeView === 'lista'" (click)="activeView = 'lista'">
+      <mat-icon>list_alt</mat-icon> Todas las visitas
+      <span class="cm-badge">{{ activaciones().length }}</span>
+    </button>
+  </div>
+
+  <div class="cm-dash-filters">
+    <!-- Buscador General Tabs -->
+    <div class="cm-search-box flex-1 max-w-[300px]">
+      <mat-icon>search</mat-icon>
+      <input type="text" [(ngModel)]="searchText" placeholder="Buscar en resultados...">
+      @if (searchText) {
+        <button (click)="searchText = ''"><mat-icon>close</mat-icon></button>
+      }
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════ CONTENT AREA ══ -->
+  <div class="cm-content">
+
+    @if (loadingActivaciones()) {
+      <div class="cm-loading-center">
+        <mat-spinner diameter="40" strokeWidth="3"></mat-spinner>
+        <span>Cargando datos...</span>
+      </div>
+    } @else {
+
+      <!-- ─── DASHBOARD TAB ─────────────────────────────────────── -->
+      @if (activeView === 'dashboard') {
+
+        <!-- Barras por Punto y por Cliente -->
+        <div class="cm-bars-grid">
+          
+          <!-- Por Punto -->
+          <div class="cm-bars-card">
+            <div class="cm-bars-header flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <span class="title flex items-center gap-1.5">
+                  <mat-icon class="!text-base text-[#58a6ff]">place</mat-icon> Por Punto
+                  <mat-icon class="!text-sm text-[#8b949e] cursor-help" [matTooltip]="barsTooltip" matTooltipClass="cm-tooltip">info</mat-icon>
+                </span>
+                <p class="text-[11px] text-[#8b949e] mt-0.5">{{ helpFor(tabPunto) }} El número es visitas con foto / visitas planificadas.</p>
+              </div>
+              <div class="flex gap-1 bg-[#161b22] border border-white/10 rounded-lg p-0.5 shrink-0">
+                <button (click)="tabPunto='act'" [ngClass]="tabPunto==='act' ? 'bg-[#1f6feb] text-white' : 'text-[#8b949e] hover:text-white'" class="px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all">
+                  <mat-icon class="!text-sm">play_circle</mat-icon> Act.
+                </button>
+                <button (click)="tabPunto='com'" [ngClass]="tabPunto==='com' ? 'bg-[#238636] text-white' : 'text-[#8b949e] hover:text-white'" class="px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all">
+                  <mat-icon class="!text-sm">check_circle</mat-icon> Comp.
+                </button>
+              </div>
+            </div>
+
+            <div class="px-1 pt-1">
+              @for (t of stats()?.pp_activaciones; track t.id) {
+                <div class="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0">
+                  <span class="flex-1 min-w-0 truncate text-sm font-semibold text-[#c9d1d9]" [title]="t.nombre">{{ t.nombre }}</span>
+                  <div class="w-28 sm:w-40 h-2 rounded-full bg-[#21262d] overflow-hidden shrink-0">
+                    <div class="h-full rounded-full transition-all duration-300" [style.width.%]="pctFor(t,'punto')" [style.background-color]="getBarColor(pctFor(t,'punto'))"></div>
+                  </div>
+                  <span class="w-11 text-right text-sm font-black shrink-0" [style.color]="getBarColor(pctFor(t,'punto'))">{{ pctFor(t,'punto') }}%</span>
+                  <span class="w-12 text-right text-xs text-[#8b949e] shrink-0">{{ countFor(t,'punto') }}</span>
+                </div>
+              }
+              @if (!stats()?.pp_activaciones?.length) {
+                <div class="cm-empty">No hay datos de puntos de venta para este rango.</div>
+              }
+            </div>
+          </div>
+
+          <!-- Por Cliente -->
+          <div class="cm-bars-card">
+            <div class="cm-bars-header flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <span class="title flex items-center gap-1.5">
+                  <mat-icon class="!text-base text-[#58a6ff]">storefront</mat-icon> Por Cliente
+                  <mat-icon class="!text-sm text-[#8b949e] cursor-help" [matTooltip]="barsTooltip" matTooltipClass="cm-tooltip">info</mat-icon>
+                </span>
+                <p class="text-[11px] text-[#8b949e] mt-0.5">{{ helpFor(tabCliente) }} El número es visitas con foto / visitas planificadas.</p>
+              </div>
+              <div class="flex gap-1 bg-[#161b22] border border-white/10 rounded-lg p-0.5 shrink-0">
+                <button (click)="tabCliente='act'" [ngClass]="tabCliente==='act' ? 'bg-[#1f6feb] text-white' : 'text-[#8b949e] hover:text-white'" class="px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all">
+                  <mat-icon class="!text-sm">play_circle</mat-icon> Act.
+                </button>
+                <button (click)="tabCliente='com'" [ngClass]="tabCliente==='com' ? 'bg-[#238636] text-white' : 'text-[#8b949e] hover:text-white'" class="px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-all">
+                  <mat-icon class="!text-sm">check_circle</mat-icon> Comp.
+                </button>
+              </div>
+            </div>
+
+            <div class="px-1 pt-1">
+              @for (t of stats()?.pc_activaciones; track t.id) {
+                <div class="flex items-center gap-3 py-2.5 border-b border-white/5 last:border-0">
+                  <span class="flex-1 min-w-0 truncate text-sm font-semibold text-[#c9d1d9]" [title]="t.nombre">{{ t.nombre }}</span>
+                  <div class="w-28 sm:w-40 h-2 rounded-full bg-[#21262d] overflow-hidden shrink-0">
+                    <div class="h-full rounded-full transition-all duration-300" [style.width.%]="pctFor(t,'cliente')" [style.background-color]="getBarColor(pctFor(t,'cliente'))"></div>
+                  </div>
+                  <span class="w-11 text-right text-sm font-black shrink-0" [style.color]="getBarColor(pctFor(t,'cliente'))">{{ pctFor(t,'cliente') }}%</span>
+                  <span class="w-12 text-right text-xs text-[#8b949e] shrink-0">{{ countFor(t,'cliente') }}</span>
+                </div>
+              }
+              @if (!stats()?.pc_activaciones?.length) {
+                <div class="cm-empty">No hay datos de clientes para este rango.</div>
+              }
+            </div>
+          </div>
+
+        </div><!-- /bars-grid -->
+      }
+
+      <!-- ─── MERCADERISTAS TAB ──────────────────────────────────── -->
+      @if (activeView === 'mercaderistas') {
+        <div class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
+          <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
+          <span>Cada tarjeta es un mercaderista asignado. Muestra lo <b>planificado</b> para el período y cuánto <b>activó</b> (entró al PDV), <b>completó</b> (entrada + salida) y queda <b>pendiente</b>. Las barras son sobre lo planificado. "Ver visitas" abre sus fotos y los PDV que le faltan.</span>
+        </div>
+        @if (!filteredMercaderistas.length) {
+          <div class="cm-empty-state"><mat-icon>people_outline</mat-icon><p>Sin mercaderistas para el período</p></div>
+        }
+        <div class="cm-merc-grid">
+          @for (m of filteredMercaderistas; track m.id_mercaderista) {
+            <div class="cm-merc-card">
+              <div class="cm-merc-top">
+                <div class="cm-avatar">{{ (m.nombre || '?').charAt(0).toUpperCase() }}</div>
+                <div class="cm-merc-info">
+                  <h4>{{ m.nombre }}</h4>
+                  <div class="flex items-center flex-wrap gap-1 mt-0.5 mb-1.5 text-[10px] text-slate-400 font-medium leading-tight">
+                    <div class="flex items-center gap-0.5" title="Cuadrante"><mat-icon class="!text-[14px] !h-3.5 !w-3.5 text-blue-400">explore</mat-icon> <span class="max-w-[80px] truncate">{{ m.cuadrantes_str || 'S/C' }}</span></div>
+                    <span class="opacity-30">|</span>
+                    <div class="flex items-center gap-0.5" title="Departamento"><mat-icon class="!text-[14px] !h-3.5 !w-3.5 text-red-400">location_on</mat-icon> <span class="max-w-[80px] truncate">{{ m.departamentos_str || 'S/D' }}</span></div>
+                    <span class="opacity-30">|</span>
+                    <div class="flex items-center gap-0.5" title="Rutas"><mat-icon class="!text-[14px] !h-3.5 !w-3.5 text-green-400">route</mat-icon> <span class="max-w-[80px] truncate">{{ m.rutas_str || 'S/R' }}</span></div>
+                  </div>
+                  @if (m.activo_ahora) {
+                    <span class="cm-pill green"><span class="dot"></span> En punto</span>
+                  } @else {
+                    <span class="cm-pill gray">Inactivo</span>
+                  }
+                </div>
+              </div>
+              <!-- info: puntos / clientes / duración -->
+              <div class="flex items-center gap-3 text-[11px] text-[#8b949e] mt-1 mb-2 px-0.5">
+                <span class="flex items-center gap-1"><mat-icon class="!text-sm">place</mat-icon>{{ m.total_puntos }} puntos</span>
+                <span class="flex items-center gap-1"><mat-icon class="!text-sm">storefront</mat-icon>{{ m.total_clientes }} clientes</span>
+                <span class="flex items-center gap-1"><mat-icon class="!text-sm">timer</mat-icon>{{ formatDuracion(m.duracion_prom) }}</span>
+              </div>
+              <!-- Activó / Completó / Pendiente (planificadas = activó + pendiente) -->
+              <div class="grid grid-cols-3 gap-2 mb-3">
+                <div class="text-center"><div class="text-xl font-black text-[#3fb950]">{{ m.activaciones }}</div><div class="text-[9px] text-[#8b949e] uppercase tracking-wider">Activó</div></div>
+                <div class="text-center"><div class="text-xl font-black text-[#58a6ff]">{{ m.completas }}</div><div class="text-[9px] text-[#8b949e] uppercase tracking-wider">Completó</div></div>
+                <div class="text-center"><div class="text-xl font-black text-[#f59e0b]">{{ m.pendientes }}</div><div class="text-[9px] text-[#8b949e] uppercase tracking-wider">Pendiente</div></div>
+              </div>
+              <!-- Barras: denominador = planificadas -->
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="w-[88px] text-[11px] text-[#8b949e] shrink-0">Activaciones</span>
+                  <div class="flex-1 h-2 rounded-full bg-[#21262d] overflow-hidden"><div class="h-full rounded-full" [style.width.%]="m.pct_activacion" [style.background]="getBarColor(m.pct_activacion)"></div></div>
+                  <span class="w-11 text-right text-[11px] font-bold shrink-0" [style.color]="getBarColor(m.pct_activacion)">{{ m.pct_activacion }}%</span>
+                  <span class="w-10 text-right text-[10px] text-[#8b949e] shrink-0">{{ m.activaciones }}/{{ m.planificadas }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-[88px] text-[11px] text-[#8b949e] shrink-0">Completas</span>
+                  <div class="flex-1 h-2 rounded-full bg-[#21262d] overflow-hidden"><div class="h-full rounded-full" [style.width.%]="m.pct_completas" [style.background]="getBarColor(m.pct_completas)"></div></div>
+                  <span class="w-11 text-right text-[11px] font-bold shrink-0" [style.color]="getBarColor(m.pct_completas)">{{ m.pct_completas }}%</span>
+                  <span class="w-10 text-right text-[10px] text-[#8b949e] shrink-0">{{ m.completas }}/{{ m.planificadas }}</span>
+                </div>
+              </div>
+              <button (click)="openMercDetail(m)" class="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-bold transition-all">
+                <mat-icon class="!text-sm">visibility</mat-icon> Ver visitas
+              </button>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ─── GESTIÓN POR DÍA TAB ───────────────────────────────── -->
+      @if (activeView === 'gestion') {
+        <div class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
+          <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
+          <span>Matriz por <b>cliente</b> (filas) y <b>día</b> (columnas, últimos 7 días). Cada celda = <b>visitas activadas / visitas registradas</b> ese día, con su %. El color indica el cumplimiento (verde alto, ámbar medio, rojo bajo). Sirve para ver el ritmo diario de ejecución por cliente.</span>
+        </div>
+        @if (!gestionPorDia()?.clientes?.length) {
+          <div class="cm-empty-state"><mat-icon>calendar_today</mat-icon><p>Sin datos para el período</p></div>
+        } @else {
+          <div class="cm-table-wrap">
+            <table class="cm-table">
+              <thead>
+                <tr>
+                  <th class="sticky-col">Cliente</th>
+                  @for (f of gestionPorDia().fechas; track f) {
+                    <th>{{ f | date:'dd/MM' }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of gestionPorDia().clientes; track c.cliente) {
+                  <tr>
+                    <td class="sticky-col name-col" [title]="c.cliente">{{ c.cliente }}</td>
+                    @for (f of gestionPorDia().fechas; track f) {
+                      <td>
+                        @if (c.dias && c.dias[f]) {
+                          <div [class]="'cell-badge ' + getGestionColorClass(c.dias[f].pct)">
+                            <span>{{ c.dias[f].label }}</span>
+                            <small>{{ c.dias[f].pct }}%</small>
+                          </div>
+                        } @else {
+                          <span class="cell-empty">-</span>
+                        }
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      }
+
+      <!-- ─── PENDIENTES TAB ────────────────────────────────────── -->
+      @if (activeView === 'pendientes') {
+        <div class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
+          <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
+          <span>PDV/clientes <b>planificados</b> en las rutas del día que <b>aún no fueron activados</b> (no visitados), agrupados por mercaderista. Es lo que falta por ejecutar en el período.</span>
+        </div>
+        @if (!pendientesGroupedByMerc.length) {
+          <div class="cm-empty-state"><mat-icon>check_circle_outline</mat-icon><p>¡Sin pendientes para el período!</p></div>
+        }
+        <div class="cm-pend-grid">
+          @for (group of pendientesGroupedByMerc; track group.mercaderista) {
+            <div class="cm-pend-card">
+              <div class="cm-pend-head">
+                <span>{{ group.mercaderista }}</span>
+                <span class="cm-pend-count">{{ group.items.length }}</span>
+              </div>
+              <div class="cm-pend-list">
+                @for (p of group.items; track p.id_punto + '_' + p.id_cliente) {
+                  <div class="cm-pend-item">
+                    <div class="cm-pend-name">{{ p.punto_de_interes }}</div>
+                    <div class="cm-pend-tags">
+                      <span class="tag blue">{{ p.cliente }}</span>
+                      <span class="tag gray">{{ p.ciudad }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ─── LISTA VISITAS TAB ─────────────────────────────────── -->
+      @if (activeView === 'lista') {
+        <div class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
+          <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
+          <span>Listado detallado de <b>cada visita registrada</b> en el período (con foto de entrada y/o salida): mercaderista, cliente, PDV, ruta, hora y estado. Es el detalle crudo, no agregados.</span>
+        </div>
+        @if (!filteredLista.length) {
+          <div class="cm-empty-state"><mat-icon>list_alt</mat-icon><p>Sin visitas para el período</p></div>
+        }
+        <div class="cm-table-wrap">
+          <table class="cm-table">
+            <thead>
+              <tr>
+                <th>Estado</th>
+                <th>Mercaderista</th>
+                <th>Cliente</th>
+                <th>Punto de Venta</th>
+                <th>Ciudad</th>
+                <th>Entrada</th>
+                <th>Salida</th>
+                <th>Duración</th>
+                <th class="text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (v of filteredLista; track v.id_visita) {
+                <tr>
+                  <td>
+                    @if (v.estado_presencia === 'completa') {
+                      <span class="status-pill green">Completa</span>
+                    } @else if (v.estado_presencia === 'activo') {
+                      <span class="status-pill amber">Activa</span>
+                    } @else {
+                      <span class="status-pill gray">Solo salida</span>
+                    }
+                  </td>
+                  <td class="fw">{{ v.mercaderista }}</td>
+                  <td class="cl">{{ v.cliente }}</td>
+                  <td>
+                    <div class="fw">{{ v.punto_de_interes }}</div>
+                    <div class="sub">{{ v.ruta }}</div>
+                  </td>
+                  <td>{{ v.ciudad }}</td>
+                  <td class="mono">{{ (v.fecha_activacion | date:'HH:mm') || '--:--' }}</td>
+                  <td class="mono">{{ (v.fecha_desactivacion | date:'HH:mm') || '--:--' }}</td>
+                  <td class="mono">
+                    @if (v.duracion_minutos != null) { <span class="dur">{{ formatDuracion(v.duracion_minutos) }}</span> }
+                    @else { <span class="no-dur">-</span> }
+                  </td>
+                  <td class="text-right">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button (click)="openChat(v)" matTooltip="Chat de la visita"
+                        class="w-8 h-8 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] inline-flex items-center justify-center transition-colors">
+                        <mat-icon class="!text-base">chat</mat-icon>
+                      </button>
+                      <button (click)="openVisitDetail(v)" matTooltip="Ver detalle"
+                        class="w-8 h-8 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white inline-flex items-center justify-center transition-colors">
+                        <mat-icon class="!text-base">visibility</mat-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+    }<!-- /!loadingActivaciones -->
+  </div><!-- /cm-content -->
+
+  }<!-- /@else vista activaciones -->
+</div><!-- /cm-wrapper -->
+
+<!-- ════════════════════════════════════ MODAL PDVS ══ -->
+@if (showModalPdvs) {
+  <div class="cm-modal-overlay" (click)="closeModal()">
+    <div class="cm-modal" (click)="$event.stopPropagation()">
+      <div class="cm-modal-header">
+        <div class="title">PDVs del período</div>
+        <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Todos los clientes' }}</div>
+      </div>
+      <div class="cm-modal-body">
+        
+        <!-- Pendientes (nunca activaron) -->
+        <div class="pdv-section overflow-hidden flex flex-col max-h-[300px] bg-[#161b22] border border-white/5 rounded-xl">
+          <div class="pdv-header gray">
+            <mat-icon>hourglass_empty</mat-icon> Pendientes
+            <span class="count">{{ modalPdvs.pendientes.length }}</span>
+          </div>
+          <div class="overflow-y-auto flex-1 min-h-0"><table class="pdv-table w-full">
+            <thead><tr class="sticky top-0 bg-[#21262d] z-10"><th>Prioridad</th><th>Ruta</th><th>PDV</th><th>Mercaderista</th>@if(filtroDesde !== filtroHasta){<th>Plan.</th>}</tr></thead>
+            <tbody>
+              @for (p of modalPdvs.pendientes; track p.id_punto + '_' + p.id_mercaderista) {
+                <tr>
+                    <td>
+                      <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        {{ p.prioridad || 'Baja' }}
+                      </span>
+                    </td>
+                    <td class="fw">{{ p.ruta }}</td>
+                    <td>
+                      <div class="font-bold">{{ p.punto_de_interes }}</div>
+                      <div class="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">{{ p.departamento || 'Sin Depto.' }}</div>
+                    </td>
+                  <td>{{ p.mercaderista }}</td>
+                  @if(filtroDesde !== filtroHasta) { <td class="text-center">{{ p.plan }}</td> }
+                </tr>
+              }
+              @if (!modalPdvs.pendientes.length) { <tr><td colspan="5" class="text-center text-muted">Ninguno</td></tr> }
+            </tbody>
+          </table></div>
+        </div>
+
+        <!-- Activos (activaron pero no completaron) -->
+        <div class="pdv-section overflow-hidden flex flex-col max-h-[300px] bg-[#161b22] border border-white/5 rounded-xl">
+          <div class="pdv-header blue">
+            <mat-icon>play_circle_outline</mat-icon> Activados
+            <span class="count">{{ modalPdvs.activos.length }}</span>
+          </div>
+          <div class="overflow-y-auto flex-1 min-h-0"><table class="pdv-table w-full">
+            <thead><tr class="sticky top-0 bg-[#21262d] z-10"><th>Prioridad</th><th>Ruta</th><th>PDV</th><th>Mercaderista</th>@if(filtroDesde !== filtroHasta){<th>Plan.</th><th>Act.</th>}</tr></thead>
+            <tbody>
+              @for (p of modalPdvs.activos; track p.id_punto + '_' + p.id_mercaderista) {
+                <tr>
+                    <td>
+                      <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        {{ p.prioridad || 'Baja' }}
+                      </span>
+                    </td>
+                    <td class="fw">{{ p.ruta }}</td>
+                    <td>
+                      <div class="font-bold">{{ p.punto_de_interes }}</div>
+                      <div class="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">{{ p.departamento || 'Sin Depto.' }}</div>
+                    </td>
+                  <td>{{ p.mercaderista }}</td>
+                  @if(filtroDesde !== filtroHasta) { <td class="text-center">{{ p.plan }}</td><td class="text-center">{{ p.act }}</td> }
+                </tr>
+              }
+              @if (!modalPdvs.activos.length) { <tr><td colspan="6" class="text-center text-muted">Ninguno</td></tr> }
+            </tbody>
+          </table></div>
+        </div>
+
+        <!-- Completados (activaron Y completaron) -->
+        <div class="pdv-section overflow-hidden flex flex-col max-h-[300px] bg-[#161b22] border border-white/5 rounded-xl">
+          <div class="pdv-header green">
+            <mat-icon>check_circle_outline</mat-icon> Completados
+            <span class="count">{{ modalPdvs.completados.length }}</span>
+          </div>
+          <div class="overflow-y-auto flex-1 min-h-0"><table class="pdv-table w-full">
+            <thead><tr class="sticky top-0 bg-[#21262d] z-10"><th>Prioridad</th><th>Ruta</th><th>PDV</th><th>Mercaderista</th>@if(filtroDesde !== filtroHasta){<th>Plan.</th><th>Comp.</th>}</tr></thead>
+            <tbody>
+              @for (p of modalPdvs.completados; track p.id_punto + '_' + p.id_mercaderista) {
+                <tr>
+                    <td>
+                      <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        {{ p.prioridad || 'Baja' }}
+                      </span>
+                    </td>
+                    <td class="fw">{{ p.ruta }}</td>
+                    <td>
+                      <div class="font-bold">{{ p.punto_de_interes }}</div>
+                      <div class="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">{{ p.departamento || 'Sin Depto.' }}</div>
+                    </td>
+                  <td>{{ p.mercaderista }}</td>
+                  @if(filtroDesde !== filtroHasta) { <td class="text-center">{{ p.plan }}</td><td class="text-center">{{ p.com }}</td> }
+                </tr>
+              }
+              @if (!modalPdvs.completados.length) { <tr><td colspan="6" class="text-center text-muted">Ninguno</td></tr> }
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="cm-modal-footer">
+        <button class="btn-close" (click)="closeModal()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ MODAL DETALLE MERCADERISTA ═══ -->
+@if (mercDetailOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="closeMercDetail()"></div>
+    <div class="relative w-full max-w-3xl bg-[#0d1117] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height:90vh">
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#1f6feb] to-indigo-600 flex items-center justify-center text-white font-black">{{ (selectedMercDet()?.nombre || '?').charAt(0).toUpperCase() }}</div>
+          <div>
+            <h3 class="text-lg font-black text-white">{{ selectedMercDet()?.nombre }}</h3>
+            <p class="text-xs text-[#8b949e]">{{ mercVisitas.length }} visitas · {{ dateRangeDisplay }}</p>
+          </div>
+        </div>
+        <button (click)="closeMercDetail()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400"><mat-icon>close</mat-icon></button>
+      </div>
+
+      <div class="grid grid-cols-4 sm:grid-cols-7 gap-2 px-6 py-3 border-b border-white/5 shrink-0 text-center">
+        <div><div class="text-lg font-black text-white">{{ selectedMercDet()?.planificadas ?? 0 }}</div><div class="text-[9px] text-[#8b949e] uppercase">Planif.</div></div>
+        <div><div class="text-lg font-black text-white">{{ mercVisitas.length }}</div><div class="text-[9px] text-[#8b949e] uppercase">Visitas</div></div>
+        <div><div class="text-lg font-black text-[#3fb950]">{{ selectedMercDet()?.activaciones }}</div><div class="text-[9px] text-[#8b949e] uppercase">Activó</div></div>
+        <div><div class="text-lg font-black text-[#58a6ff]">{{ selectedMercDet()?.completas }}</div><div class="text-[9px] text-[#8b949e] uppercase">Completó</div></div>
+        <div><div class="text-lg font-black text-[#f59e0b]">{{ selectedMercDet()?.pendientes }}</div><div class="text-[9px] text-[#8b949e] uppercase">Pendiente</div></div>
+        <div><div class="text-lg font-black" [style.color]="getBarColor(selectedMercDet()?.pct_activacion || 0)">{{ selectedMercDet()?.pct_activacion }}%</div><div class="text-[9px] text-[#8b949e] uppercase">Activación</div></div>
+        <div><div class="text-lg font-black" [style.color]="getBarColor(selectedMercDet()?.pct_completas || 0)">{{ selectedMercDet()?.pct_completas }}%</div><div class="text-[9px] text-[#8b949e] uppercase">Completas</div></div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 space-y-2">
+        @for (v of mercVisitas; track v.id_visita) {
+          <div class="bg-[#161b22] border border-white/5 rounded-2xl p-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="font-bold text-white text-sm truncate">{{ v.cliente }}</p>
+                <p class="text-xs text-[#8b949e] truncate">{{ v.punto_de_interes }} · {{ v.ciudad }}</p>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span [ngClass]="estadoClass(v)" class="px-2 py-1 rounded-lg text-[10px] font-black uppercase">{{ estadoLabel(v) }}</span>
+                <button (click)="openChat(v)" class="w-8 h-8 rounded-lg bg-[#1f6feb] hover:bg-[#388bfd] text-white flex items-center justify-center" matTooltip="Chat de la visita"><mat-icon class="!text-base">chat</mat-icon></button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mt-2">
+              <div class="flex-1">
+                @if (v.url_activacion) {
+                  @defer (on viewport) {
+                    <img [src]="v.url_activacion" (click)="openLightbox(v.url_activacion, 'Entrada · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
+                  } @placeholder {
+                    <div class="h-16 w-full rounded-lg bg-white/5 animate-pulse flex items-center justify-center border border-white/5 text-[10px] text-[#8b949e]">
+                      <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-white/30 mr-1 animate-spin">sync</mat-icon> Foto
+                    </div>
+                  }
+                } @else {
+                  <div class="h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]">Sin entrada</div>
+                }
+                <p class="text-[9px] text-center text-[#8b949e] mt-0.5">Entrada {{ v.fecha_activacion ? (v.fecha_activacion | date:'HH:mm') : '—' }}</p>
+              </div>
+              <mat-icon class="text-[#8b949e]">arrow_forward</mat-icon>
+              <div class="flex-1">
+                @if (v.url_desactivacion) {
+                  @defer (on viewport) {
+                    <img [src]="v.url_desactivacion" (click)="openLightbox(v.url_desactivacion, 'Salida · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
+                  } @placeholder {
+                    <div class="h-16 w-full rounded-lg bg-white/5 animate-pulse flex items-center justify-center border border-white/5 text-[10px] text-[#8b949e]">
+                      <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-white/30 mr-1 animate-spin">sync</mat-icon> Foto
+                    </div>
+                  }
+                } @else {
+                  <div class="h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]">Sin salida</div>
+                }
+                <p class="text-[9px] text-center text-[#8b949e] mt-0.5">Salida {{ v.fecha_desactivacion ? (v.fecha_desactivacion | date:'HH:mm') : '—' }}</p>
+              </div>
+            </div>
+          </div>
+        }
+        @if (!mercVisitas.length) { <div class="text-center text-[#8b949e] py-10">Sin visitas con actividad en el período.</div> }
+
+        <!-- Clientes / PDV pendientes (sin activación) -->
+        @if (mercPendientes.length) {
+          <div class="mt-3 pt-3 border-t border-white/10">
+            <p class="text-xs font-black text-[#f85149] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <mat-icon class="!text-base">error_outline</mat-icon> {{ mercPendientes.length }} cliente(s)/PDV pendiente(s)
+            </p>
+            <div class="space-y-1.5">
+              @for (p of mercPendientes; track p.id_punto + '_' + p.id_cliente) {
+                <div class="flex items-center justify-between gap-2 bg-[#1a1416] border border-[#5a1f1f] rounded-xl px-3 py-2">
+                  <div class="min-w-0">
+                    <p class="text-sm font-bold text-white truncate">{{ p.cliente }}</p>
+                    <p class="text-[11px] text-[#8b949e] truncate">{{ p.punto_de_interes }} · {{ p.ciudad }}</p>
+                  </div>
+                  <span class="text-[10px] text-[#8b949e] shrink-0 bg-[#21262d] rounded-lg px-2 py-1">{{ p.ruta }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ LIGHTBOX FOTO ═══ -->
+@if (lightboxOpen()) {
+  <div class="fixed inset-0 z-[70] flex items-center justify-center p-4" (click)="closeLightbox()">
+    <div class="absolute inset-0 bg-black/85"></div>
+    <div class="relative max-w-3xl w-full" (click)="$event.stopPropagation()">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-white font-black text-lg">{{ lightboxTitle }}</span>
+        <div class="flex items-center gap-2">
+          <a [href]="lightboxUrl()" target="_blank" download class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center" matTooltip="Descargar"><mat-icon>download</mat-icon></a>
+          <button (click)="closeLightbox()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
+        </div>
+      </div>
+      <img [src]="lightboxUrl()" class="w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl">
+    </div>
+  </div>
+}
+
+<!-- ═══ MODAL DETALLE DE VISITA ═══ -->
+@if (visitDetailOpen()) {
+  <div class="fixed inset-0 z-[55] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/75 backdrop-blur-sm" (click)="closeVisitDetail()"></div>
+    <div class="relative w-full max-w-3xl bg-[#0d1117] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height:92vh">
+      <div class="px-6 py-4 border-b border-white/10 shrink-0">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-400">bolt</mat-icon>
+            <span class="text-lg font-black text-white">Visita #{{ selectedVisit()?.id_visita }}</span>
+          </div>
+          <button (click)="closeVisitDetail()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 flex items-center justify-center shrink-0"><mat-icon>close</mat-icon></button>
+        </div>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <span class="px-2.5 py-1 bg-white/8 rounded-lg text-xs font-bold text-slate-200">{{ selectedVisit()?.mercaderista }}</span>
+          <span class="px-2.5 py-1 bg-[#1f6feb] rounded-lg text-xs font-bold text-white">{{ selectedVisit()?.cliente }}</span>
+          <span class="px-2.5 py-1 bg-white/8 rounded-lg text-xs font-bold text-slate-400">{{ selectedVisit()?.punto_de_interes }}</span>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-6 space-y-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div class="bg-[#161b22] border border-white/5 rounded-xl px-3 py-2"><div class="text-[10px] text-[#8b949e] uppercase">Ruta</div><div class="text-sm font-bold text-white">{{ selectedVisit()?.ruta || '—' }}</div></div>
+          <div class="bg-[#161b22] border border-white/5 rounded-xl px-3 py-2"><div class="text-[10px] text-[#8b949e] uppercase">Ciudad</div><div class="text-sm font-bold text-white">{{ selectedVisit()?.ciudad || '—' }}</div></div>
+          <div class="bg-[#161b22] border border-white/5 rounded-xl px-3 py-2"><div class="text-[10px] text-[#8b949e] uppercase">Duración</div><div class="text-sm font-bold text-white">{{ formatDuracion(selectedVisit()?.duracion_minutos) }}</div></div>
+          <div class="bg-[#161b22] border border-white/5 rounded-xl px-3 py-2"><div class="text-[10px] text-[#8b949e] uppercase">Analista</div><div class="text-sm font-bold text-white truncate">{{ selectedVisit()?.analista || '—' }}</div></div>
+        </div>
+
+        <div class="flex items-center gap-3 bg-[#161b22] border border-white/5 rounded-xl px-4 py-3 text-xs">
+          <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#3fb950]"></span><span class="text-[#8b949e]">Entrada</span><span class="font-bold text-white">{{ selectedVisit()?.fecha_activacion ? (selectedVisit()?.fecha_activacion | date:'HH:mm') : '—' }}</span></div>
+          <div class="flex-1 border-t border-dashed border-white/15 text-center -mt-2"><span class="bg-[#0d1117] px-2 text-amber-400 font-bold">{{ formatDuracion(selectedVisit()?.duracion_minutos) }}</span></div>
+          <div class="flex items-center gap-1.5"><span class="text-[#8b949e]">Salida</span><span class="font-bold text-white">{{ selectedVisit()?.fecha_desactivacion ? (selectedVisit()?.fecha_desactivacion | date:'HH:mm') : '—' }}</span><span class="w-2.5 h-2.5 rounded-full bg-[#f85149]"></span></div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="text-sm font-bold text-white mb-1">Entrada</p>
+            @if (selectedVisit()?.url_activacion) {
+              <img [src]="selectedVisit()?.url_activacion" (click)="openLightbox(selectedVisit()?.url_activacion, 'Entrada · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
+            } @else { <div class="w-full h-56 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-[#8b949e] text-sm">Sin entrada</div> }
+            <p class="text-[10px] text-[#8b949e] mt-1">{{ selectedVisit()?.fecha_activacion ? (selectedVisit()?.fecha_activacion | date:'dd/MM/yyyy HH:mm') : '—' }}</p>
+          </div>
+          <div>
+            <p class="text-sm font-bold text-white mb-1">Salida</p>
+            @if (selectedVisit()?.url_desactivacion) {
+              <img [src]="selectedVisit()?.url_desactivacion" (click)="openLightbox(selectedVisit()?.url_desactivacion, 'Salida · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
+            } @else { <div class="w-full h-56 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-[#8b949e] text-sm">Sin salida</div> }
+            <p class="text-[10px] text-[#8b949e] mt-1">{{ selectedVisit()?.fecha_desactivacion ? (selectedVisit()?.fecha_desactivacion | date:'dd/MM/yyyy HH:mm') : '—' }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-white/10 flex justify-end gap-2 shrink-0">
+        <button (click)="openChat(selectedVisit())" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] font-bold text-sm transition-colors"><mat-icon class="!text-base">chat</mat-icon> Chat</button>
+        <button (click)="verMercDesdeVisita(selectedVisit())" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1f6feb] hover:bg-[#388bfd] text-white font-bold text-sm transition-colors"><mat-icon class="!text-base">person</mat-icon> Ver mercaderista</button>
+        <button (click)="closeVisitDetail()" class="px-4 py-2 rounded-xl border border-white/15 text-slate-300 hover:text-white font-bold text-sm transition-colors">Cerrar</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ MODAL CHAT POR VISITA ═══ -->
+@if (chatOpen()) {
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="closeChat()"></div>
+    <div class="relative w-full max-w-lg bg-[#0d1117] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="height:min(80vh,560px)">
+      <div class="bg-gradient-to-r from-[#1f6feb] to-indigo-600 px-5 py-3 flex items-center justify-between shrink-0">
+        <span class="text-white font-black flex items-center gap-2"><mat-icon>chat</mat-icon> Chat de Visita #{{ chatVisita()?.id_visita }}</span>
+        <button (click)="closeChat()" class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 space-y-2">
+        @for (msg of chatMessages(); track $index) {
+          <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm" [ngClass]="msg.sender_type === 'mercaderista' ? 'bg-[#21262d] text-white mr-auto' : 'bg-[#1f6feb] text-white ml-auto'">
+            <p class="text-[10px] opacity-70 mb-0.5">{{ msg.sender_nombre }}</p>
+            {{ msg.mensaje }}
+          </div>
+        }
+        @if (!chatMessages().length) {
+          <div class="h-full flex flex-col items-center justify-center text-[#8b949e] gap-2"><mat-icon class="!text-4xl opacity-40">forum</mat-icon><p class="text-sm">No hay mensajes aún.</p></div>
+        }
+      </div>
+      <div class="p-3 border-t border-white/10 flex gap-2 shrink-0">
+        <input [(ngModel)]="chatInput" (keyup.enter)="sendChat()" placeholder="Escribe un mensaje..." class="flex-1 bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+        <button (click)="sendChat()" [disabled]="chatSending() || !chatInput.trim()" class="w-10 h-10 rounded-xl bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-40 text-white flex items-center justify-center"><mat-icon>send</mat-icon></button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showExportModal) {
+  <div class="cm-modal-overlay" (click)="closeExportModal()">
+    <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">
+      <div class="cm-modal-header">
+        <div class="title">Exportar Visitas a Excel</div>
+        <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Cliente seleccionado' }}</div>
+      </div>
+      <div class="cm-modal-body" style="padding:20px">
+        <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para exportar todo.</p>
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
+            <input type="text" [(ngModel)]="exportFilters.cuadrante" placeholder="Ej: Norte, Sur..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
+            <input type="text" [(ngModel)]="exportFilters.departamento" placeholder="Ej: Caracas, Miranda..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
+            <input type="text" [(ngModel)]="exportFilters.categoria" placeholder="Ej: Canal, Categoría..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+          </div>
+        </div>
+      </div>
+      <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
+        <button class="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50" (click)="exportVisitas()" [disabled]="exportLoading">
+          @if (exportLoading) {
+            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner>
+            Generando...
+          } @else {
+            <mat-icon class="!text-base">download</mat-icon>
+            Descargar Excel
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}

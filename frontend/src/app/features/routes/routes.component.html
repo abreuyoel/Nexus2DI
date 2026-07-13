@@ -1,0 +1,766 @@
+<!-- routes.component.html -->
+<div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- HEADER -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Gestión de Rutas</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Configura trayectos y asigna mercaderistas.</p>
+    </div>
+    @if (activeTab() === 'rutas') {
+      <button (click)="showCreateForm.set(!showCreateForm())"
+        class="flex items-center gap-2 px-6 py-3 bg-primary-500 hover:bg-primary-600 text-white rounded-2xl shadow-lg shadow-primary-500/20 transition-all active:scale-95 font-semibold">
+        <mat-icon>{{ showCreateForm() ? 'close' : 'add_location' }}</mat-icon>
+        {{ showCreateForm() ? 'Cerrar' : 'Nueva Ruta' }}
+      </button>
+    }
+  </div>
+
+  <!-- TABS -->
+  <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-fit">
+    <button (click)="switchTab('rutas')"
+      [class]="activeTab()==='rutas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      <mat-icon class="!text-base">alt_route</mat-icon> Rutas
+    </button>
+    @if (auth.can('routes.asignar_merc')) {
+      <button (click)="switchTab('mercaderistas')"
+        [class]="activeTab()==='mercaderistas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+        class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">people</mat-icon> Asignación Mercaderistas
+      </button>
+    }
+    @if (auth.can('routes.asignar_analista')) {
+      <button (click)="switchTab('analistas')"
+        [class]="activeTab()==='analistas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+        class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">analytics</mat-icon> Asignación Analistas
+      </button>
+    }
+    @if (auth.can('routes.asignar_supervisor')) {
+      <button (click)="switchTab('supervisores')"
+        [class]="activeTab()==='supervisores' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+        class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">supervisor_account</mat-icon> Asignación Supervisores
+      </button>
+    }
+  </div>
+
+  <!-- ═══ TAB: RUTAS ═══════════════════════════════════════ -->
+  @if (activeTab() === 'rutas') {
+
+    @if (showCreateForm()) {
+      <div class="rounded-3xl overflow-hidden shadow-2xl shadow-slate-900/20 animate-in zoom-in-95 duration-300 border border-white/10">
+        <div class="bg-gradient-to-r from-primary-700 via-primary-600 to-indigo-600 p-6 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+              <mat-icon class="text-white !text-2xl">alt_route</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-xl font-black text-white tracking-tight">Nueva Ruta</h3>
+              <p class="text-primary-200 text-sm">El nombre se asigna automáticamente según el tipo</p>
+            </div>
+          </div>
+          @if (createForm.get('nombre_previsto')?.value) {
+            <div class="hidden md:flex items-center gap-2 bg-white/15 border border-white/20 rounded-2xl px-5 py-2.5">
+              <mat-icon class="text-yellow-300 !text-lg">auto_awesome</mat-icon>
+              <span class="text-white font-black text-lg">{{ createForm.get('nombre_previsto')?.value }}</span>
+            </div>
+          }
+        </div>
+        <div class="bg-slate-900 p-8">
+          <form [formGroup]="createForm" (ngSubmit)="createRoute()">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+              <div class="space-y-2">
+                <label class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <mat-icon class="!text-sm text-primary-400">category</mat-icon> Tipo <span class="text-rose-400">*</span>
+                </label>
+                <div class="relative">
+                  <select formControlName="tipo" (change)="onTipoChange($any($event.target).value)"
+                    class="w-full bg-slate-800 border border-slate-700 focus:border-primary-500 text-white rounded-xl px-4 py-3.5 pr-10 font-semibold appearance-none outline-none transition-colors">
+                    <option value="E">E — Exclusiva</option>
+                    <option value="T">T — Tradex</option>
+                    <option value="A">A — Auditoría</option>
+                  </select>
+                  <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</mat-icon>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center justify-between gap-1.5">
+                  <span class="flex items-center gap-1.5"><mat-icon class="!text-sm text-primary-400">business_center</mat-icon> Servicio <span class="text-rose-400">*</span></span>
+                  <button type="button" (click)="openCatalogModal('servicios')" class="text-primary-400 hover:text-primary-300 inline-flex items-center gap-0.5 normal-case tracking-normal text-[11px] font-bold" matTooltip="Administrar servicios"><mat-icon class="!text-sm">settings</mat-icon></button>
+                </label>
+                <div class="relative">
+                  <select formControlName="servicio"
+                    class="w-full bg-slate-800 border border-slate-700 focus:border-primary-500 text-white rounded-xl px-4 py-3.5 pr-10 font-semibold appearance-none outline-none transition-colors">
+                    <option value="" disabled>Seleccionar...</option>
+                    @for (s of servicios(); track s.id) { <option [value]="s.nombre">{{ s.nombre }}</option> }
+                  </select>
+                  <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</mat-icon>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center justify-between gap-1.5">
+                  <span class="flex items-center gap-1.5"><mat-icon class="!text-sm text-primary-400">grid_view</mat-icon> Cuadrante <span class="text-rose-400">*</span></span>
+                  <button type="button" (click)="openCatalogModal('cuadrantes')" class="text-primary-400 hover:text-primary-300 inline-flex items-center gap-0.5 normal-case tracking-normal text-[11px] font-bold" matTooltip="Administrar cuadrantes"><mat-icon class="!text-sm">settings</mat-icon></button>
+                </label>
+                <div class="relative">
+                  <select formControlName="cuadrante"
+                    class="w-full bg-slate-800 border border-slate-700 focus:border-primary-500 text-white rounded-xl px-4 py-3.5 pr-10 font-semibold appearance-none outline-none transition-colors">
+                    <option value="" disabled>Seleccionar...</option>
+                    @for (c of cuadrantes(); track c.id) { <option [value]="c.nombre">{{ c.nombre }}</option> }
+                  </select>
+                  <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</mat-icon>
+                </div>
+              </div>
+            </div>
+
+            @if (isExclusiva) {
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5 animate-in fade-in duration-200">
+                <div class="space-y-2 md:col-span-1">
+                  <label class="text-xs font-black text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <mat-icon class="!text-sm">person_pin</mat-icon> Cliente exclusivo <span class="text-rose-400">*</span>
+                  </label>
+                  <div class="relative">
+                    <select formControlName="id_cliente_exclusivo"
+                      class="w-full bg-slate-800 border border-amber-700 focus:border-amber-500 text-white rounded-xl px-4 py-3.5 pr-10 font-semibold appearance-none outline-none transition-colors">
+                      <option value="" disabled>Seleccionar cliente...</option>
+                      @for (cl of clients(); track cl.id) { <option [value]="cl.id">{{ cl.nombre }}</option> }
+                    </select>
+                    <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">expand_more</mat-icon>
+                  </div>
+                  <p class="text-[11px] text-slate-500">Las rutas Exclusivas trabajan un único cliente; se precargará al asignar PDV.</p>
+                </div>
+              </div>
+            }
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+              <div class="space-y-2">
+                <label class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <mat-icon class="!text-sm text-primary-400">manage_accounts</mat-icon> Coordinador Principal <span class="text-rose-400">*</span>
+                </label>
+                <input formControlName="coordinador_1" placeholder="Nombre del coordinador principal"
+                  class="w-full bg-slate-800 border border-slate-700 focus:border-primary-500 text-white placeholder-slate-500 rounded-xl px-4 py-3.5 font-semibold outline-none transition-colors">
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <mat-icon class="!text-sm text-slate-500">person_outline</mat-icon> Coordinador Secundario
+                </label>
+                <input formControlName="coordinador_2" placeholder="Opcional"
+                  class="w-full bg-slate-800 border border-slate-700 text-white placeholder-slate-500 rounded-xl px-4 py-3.5 font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div class="flex items-center justify-end gap-3 pt-6 border-t border-slate-800">
+              <button type="button" (click)="showCreateForm.set(false)"
+                class="px-6 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white font-semibold transition-all">Cancelar</button>
+              <button type="submit" [disabled]="createForm.invalid || saving()"
+                class="flex items-center gap-2 px-8 py-2.5 bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-500 hover:to-indigo-500 disabled:opacity-40 text-white font-black rounded-xl shadow-lg transition-all active:scale-95">
+                @if (saving()) { <mat-spinner diameter="18"></mat-spinner> Creando... }
+                @else { <mat-icon class="!text-lg">rocket_launch</mat-icon> Crear Ruta }
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    }
+
+    <!-- Filtros dinámicos -->
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="relative flex-1 min-w-52">
+        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+        <input [(ngModel)]="searchTerm" placeholder="Buscar ruta..."
+          class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+      </div>
+      <div class="relative">
+        <select [(ngModel)]="filterCuadrante"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-4 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none transition-colors shadow-sm min-w-44">
+          <option value="">Todas las regiones</option>
+          @for (c of cuadrantes(); track c.id) { <option [value]="c.nombre">{{ c.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      <div class="relative">
+        <select [(ngModel)]="filterCliente"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-4 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none transition-colors shadow-sm min-w-44">
+          <option value="">Todos los clientes</option>
+          @for (cl of clienteOptions; track cl) { <option [value]="cl">{{ cl }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      @if (searchTerm || filterCuadrante || filterCliente) {
+        <button (click)="clearFilters()" matTooltip="Limpiar filtros"
+          class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 text-slate-500 hover:text-rose-500 transition-all shadow-sm">
+          <mat-icon>filter_alt_off</mat-icon>
+        </button>
+      }
+      <span class="text-sm font-bold text-slate-400 ml-auto">{{ filteredRoutes.length }} de {{ routes().length }} rutas</span>
+    </div>
+
+    @if (loading()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando rutas...</p>
+      </div>
+    } @else if (filteredRoutes.length === 0) {
+      <div class="py-20 text-center">
+        <div class="flex flex-col items-center gap-3 opacity-40">
+          <mat-icon class="!text-5xl">route</mat-icon>
+          <p class="font-bold">No se encontraron rutas.</p>
+        </div>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        @for (r of filteredRoutes; track r.id) {
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-primary-200 dark:hover:border-primary-900/50 transition-all flex flex-col">
+            <!-- Card header -->
+            <div class="bg-gradient-to-r from-primary-600 to-indigo-600 px-5 py-3 flex items-center justify-between">
+              <span class="text-white font-black text-lg tracking-tight">{{ r.nombre }}</span>
+              <span class="text-[10px] font-black px-2 py-1 rounded-full bg-white/20 text-white uppercase">{{ r.servicio || '—' }}</span>
+            </div>
+            <div class="p-5 flex-1 flex flex-col gap-3">
+              <div class="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                <mat-icon class="!text-base text-primary-500">place</mat-icon>{{ r.puntos_count ?? 0 }} puntos
+              </div>
+              <div>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 dark:bg-white/5 rounded-lg font-bold text-xs text-slate-600 dark:text-slate-300">
+                  <mat-icon class="!text-sm">grid_view</mat-icon>{{ r.region || r.cuadrante || 'Sin región' }}
+                </span>
+              </div>
+              @if (r.coordinador_1) {
+                <div class="text-xs text-slate-500 flex items-center gap-1.5"><mat-icon class="!text-sm">manage_accounts</mat-icon>{{ r.coordinador_1 }}<span *ngIf="r.coordinador_2"> · {{ r.coordinador_2 }}</span></div>
+              }
+              <div class="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+                @for (c of (r.clientes ?? []).slice(0, 4); track c) {
+                  <span class="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 rounded-md text-[11px] font-bold">{{ c }}</span>
+                }
+                @if ((r.clientes ?? []).length > 4) {
+                  <span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-md text-[11px] font-bold">+{{ (r.clientes ?? []).length - 4 }}</span>
+                }
+                @if ((r.clientes ?? []).length === 0) {
+                  <span class="text-[11px] text-slate-400 italic">Sin clientes asociados</span>
+                }
+              </div>
+            </div>
+            <!-- Card actions -->
+            <div class="px-5 pb-5 space-y-2">
+              <button (click)="viewPoints(r)"
+                class="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+                <mat-icon class="!text-base">visibility</mat-icon> Ver Detalles
+              </button>
+              <div class="grid grid-cols-3 gap-2">
+                <button (click)="viewPoints(r, true)" matTooltip="Editar ruta"
+                  class="flex items-center justify-center py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-primary-500 hover:border-primary-300 transition-all">
+                  <mat-icon class="!text-base">edit</mat-icon>
+                </button>
+                <button (click)="duplicateRoute(r)" matTooltip="Duplicar ruta"
+                  class="flex items-center justify-center py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-indigo-500 hover:border-indigo-300 transition-all">
+                  <mat-icon class="!text-base">content_copy</mat-icon>
+                </button>
+                <button (click)="deleteRoute(r)" matTooltip="Eliminar ruta"
+                  class="flex items-center justify-center py-2 rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 hover:text-rose-500 hover:border-rose-300 transition-all">
+                  <mat-icon class="!text-base">delete</mat-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- ═══ TAB: MERCADERISTAS ════════════════════════════════ -->
+  @if (activeTab() === 'mercaderistas') {
+
+    <!-- Filters -->
+    <div class="flex flex-wrap gap-3">
+      <div class="relative flex-1 min-w-52">
+        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+        <input [(ngModel)]="mercSearch" placeholder="Buscar por nombre, cédula o email..."
+          class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+      </div>
+      <div class="relative">
+        <select [(ngModel)]="mercFilterTipo"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-4 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none transition-colors shadow-sm min-w-40">
+          <option value="">Todos los tipos</option>
+          @for (t of mercTipos; track t) { <option [value]="t">{{ t }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      <button (click)="loadMercaderistas()"
+        class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 text-slate-500 hover:text-primary-500 transition-all shadow-sm">
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+
+    @if (mercLoading()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando mercaderistas...</p>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        @for (m of filteredMercaderistas; track m.id) {
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
+            <!-- Card header -->
+            <div class="flex items-start justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center shrink-0">
+                  <mat-icon class="text-primary-600 dark:text-primary-400">person</mat-icon>
+                </div>
+                <div>
+                  <h3 class="font-black text-slate-800 dark:text-white text-sm leading-tight">{{ m.nombre }}</h3>
+                  <p class="text-xs text-slate-400 font-mono">{{ m.cedula }}</p>
+                </div>
+              </div>
+              <span [class]="m.activo ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'"
+                class="text-[10px] font-black px-2 py-1 rounded-full border whitespace-nowrap">
+                {{ m.activo ? 'Activo' : 'Inactivo' }}
+              </span>
+            </div>
+
+            <!-- Card info -->
+            <div class="space-y-1.5 mb-4">
+              @if (m.telefono) {
+                <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <mat-icon class="!text-sm text-slate-400">phone</mat-icon> {{ m.telefono }}
+                </div>
+              }
+              @if (m.email) {
+                <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <mat-icon class="!text-sm text-slate-400">email</mat-icon> {{ m.email }}
+                </div>
+              }
+              <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <mat-icon class="!text-sm text-slate-400">badge</mat-icon>
+                <span class="px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 rounded-full font-bold">{{ m.tipo }}</span>
+              </div>
+            </div>
+
+            <!-- Routes count -->
+            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 mb-4">
+              <mat-icon class="!text-base text-primary-500">route</mat-icon>
+              <span class="text-sm font-bold text-slate-700 dark:text-slate-200">Rutas Asignadas:</span>
+              <span class="ml-auto text-sm font-black text-primary-600 dark:text-primary-400">{{ m.rutas_count }}</span>
+            </div>
+
+            <!-- Action -->
+            <button (click)="openPanel(m)"
+              class="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">edit_note</mat-icon>
+              Administrar Rutas
+            </button>
+          </div>
+        }
+        @if (filteredMercaderistas.length === 0 && !mercLoading()) {
+          <div class="col-span-3 py-20 text-center">
+            <div class="flex flex-col items-center gap-3 opacity-40">
+              <mat-icon class="!text-5xl">person_search</mat-icon>
+              <p class="font-bold">No se encontraron mercaderistas</p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- ═══ TAB: ANALISTAS ════════════════════════════════════ -->
+  @if (activeTab() === 'analistas') {
+    <div class="relative max-w-md">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+      <input [(ngModel)]="analystSearch" placeholder="Buscar analista..."
+        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+    </div>
+
+    @if (analystLoading()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando analistas...</p>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        @for (a of filteredAnalysts; track a.id) {
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-primary-200 dark:hover:border-primary-900/50 transition-all">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-11 h-11 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+                <mat-icon class="text-indigo-600 dark:text-indigo-400">analytics</mat-icon>
+              </div>
+              <h3 class="font-black text-slate-800 dark:text-white text-sm leading-tight">{{ a.nombre }}</h3>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+              <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2">
+                <mat-icon class="!text-base text-primary-500">alt_route</mat-icon>
+                <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Rutas</span>
+                <span class="ml-auto text-sm font-black text-primary-600 dark:text-primary-400">{{ a.rutas_count }}</span>
+              </div>
+              <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2">
+                <mat-icon class="!text-base text-emerald-500">groups</mat-icon>
+                <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Clientes</span>
+                <span class="ml-auto text-sm font-black text-emerald-600 dark:text-emerald-400">{{ a.clientes_count }}</span>
+              </div>
+            </div>
+            <button (click)="openAssignPanel(a, 'analista')"
+              class="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">edit_note</mat-icon> Administrar
+            </button>
+          </div>
+        }
+        @if (filteredAnalysts.length === 0) {
+          <div class="col-span-3 py-20 text-center">
+            <div class="flex flex-col items-center gap-3 opacity-40">
+              <mat-icon class="!text-5xl">person_search</mat-icon>
+              <p class="font-bold">No se encontraron analistas</p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- ═══ TAB: SUPERVISORES ═════════════════════════════════ -->
+  @if (activeTab() === 'supervisores') {
+    <div class="relative max-w-md">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+      <input [(ngModel)]="supervisorSearch" placeholder="Buscar supervisor..."
+        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+    </div>
+
+    @if (supervisorLoading()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando supervisores...</p>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        @for (s of filteredSupervisors; track s.id) {
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-amber-200 dark:hover:border-amber-900/50 transition-all">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                <mat-icon class="text-amber-600 dark:text-amber-400">supervisor_account</mat-icon>
+              </div>
+              <h3 class="font-black text-slate-800 dark:text-white text-sm leading-tight">{{ s.nombre }}</h3>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-4">
+              <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2">
+                <mat-icon class="!text-base text-primary-500">alt_route</mat-icon>
+                <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Rutas</span>
+                <span class="ml-auto text-sm font-black text-primary-600 dark:text-primary-400">{{ s.rutas_count }}</span>
+              </div>
+              <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2">
+                <mat-icon class="!text-base text-emerald-500">groups</mat-icon>
+                <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Clientes</span>
+                <span class="ml-auto text-sm font-black text-emerald-600 dark:text-emerald-400">{{ s.clientes_count }}</span>
+              </div>
+            </div>
+            <button (click)="openAssignPanel(s, 'supervisor')"
+              class="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">edit_note</mat-icon> Administrar
+            </button>
+          </div>
+        }
+        @if (filteredSupervisors.length === 0) {
+          <div class="col-span-3 py-20 text-center">
+            <div class="flex flex-col items-center gap-3 opacity-40">
+              <mat-icon class="!text-5xl">person_search</mat-icon>
+              <p class="font-bold">No se encontraron supervisores</p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+
+</div>
+
+<!-- ═══ ASSIGNMENT PANEL ════════════════════════════════════ -->
+@if (panelOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closePanel()"></div>
+    <div class="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height: 85vh">
+
+      <!-- Panel header -->
+      <div class="bg-gradient-to-r from-primary-700 to-indigo-600 px-6 py-5 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+            <mat-icon class="text-white">edit_note</mat-icon>
+          </div>
+          <div>
+            <h3 class="font-black text-white text-lg">{{ selectedMerc()?.nombre }} — Asignar Rutas</h3>
+            <p class="text-primary-200 text-xs">{{ selectedMerc()?.cedula }}</p>
+          </div>
+        </div>
+        <button (click)="closePanel()"
+          class="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Panel body: two columns -->
+      <div class="flex-1 overflow-hidden flex min-h-0">
+
+        <!-- Left: assigned routes -->
+        <div class="w-1/2 border-r border-slate-200 dark:border-white/5 flex flex-col">
+          <div class="bg-primary-600 px-5 py-3 flex items-center gap-2 shrink-0">
+            <mat-icon class="text-white !text-base">check_circle</mat-icon>
+            <span class="text-white font-black text-sm">Rutas Asignadas ({{ assignedRoutes().length }})</span>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            @if (assignedRoutes().length === 0) {
+              <div class="flex flex-col items-center justify-center h-full gap-3 opacity-40 py-12">
+                <mat-icon class="!text-4xl">route</mat-icon>
+                <p class="text-sm font-bold">Sin rutas asignadas</p>
+              </div>
+            } @else {
+              @for (r of assignedRoutes(); track r.id) {
+                <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-bold text-slate-800 dark:text-white text-sm truncate">{{ r.nombre }}</p>
+                    @if (r.servicio) { <p class="text-xs text-slate-400">{{ r.servicio }}</p> }
+                  </div>
+                  <div class="relative shrink-0">
+                    <select [ngModel]="r.tipo_ruta" (ngModelChange)="setTipoRuta(r.id, $event)"
+                      class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-white rounded-lg px-2 py-1 text-xs font-bold appearance-none pr-6 outline-none">
+                      <option value="Variable">Variable</option>
+                      <option value="Fija">Fija</option>
+                    </select>
+                    <mat-icon class="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-xs">expand_more</mat-icon>
+                  </div>
+                  <button (click)="removeRoute(r.id)" matTooltip="Quitar ruta"
+                    class="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950 hover:bg-rose-100 dark:hover:bg-rose-900 text-rose-500 flex items-center justify-center transition-all shrink-0">
+                    <mat-icon class="!text-sm">delete</mat-icon>
+                  </button>
+                </div>
+              }
+            }
+          </div>
+        </div>
+
+        <!-- Right: available routes -->
+        <div class="w-1/2 flex flex-col">
+          <div class="bg-emerald-600 px-5 py-3 flex items-center gap-2 shrink-0">
+            <mat-icon class="text-white !text-base">add_circle</mat-icon>
+            <span class="text-white font-black text-sm">Rutas Disponibles</span>
+          </div>
+          <div class="px-4 py-3 border-b border-slate-200 dark:border-white/5 shrink-0">
+            <div class="relative">
+              <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+              <input [(ngModel)]="panelRouteSearch" placeholder="Buscar ruta..."
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2 text-sm font-semibold outline-none transition-colors">
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto">
+            @if (availableRoutes.length === 0) {
+              <div class="flex flex-col items-center justify-center h-full gap-3 opacity-40 py-12">
+                <mat-icon class="!text-4xl">done_all</mat-icon>
+                <p class="text-sm font-bold">Todas las rutas están asignadas</p>
+              </div>
+            } @else {
+              @for (r of availableRoutes; track r.id) {
+                <div (click)="addRoute(r)"
+                  class="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/5 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 cursor-pointer transition-colors group">
+                  <div class="w-5 h-5 rounded border-2 border-slate-300 dark:border-slate-600 group-hover:border-emerald-500 group-hover:bg-emerald-500 flex items-center justify-center transition-all shrink-0">
+                    <mat-icon class="!text-xs text-white opacity-0 group-hover:opacity-100">check</mat-icon>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-bold text-slate-800 dark:text-white text-sm truncate">{{ r.nombre }}</p>
+                    @if (r.servicio) { <p class="text-xs text-slate-400">{{ r.servicio }}</p> }
+                  </div>
+                </div>
+              }
+            }
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Panel footer -->
+      <div class="px-6 py-4 border-t border-slate-200 dark:border-white/5 flex items-center justify-end gap-3 shrink-0 bg-slate-50 dark:bg-slate-800/50">
+        <button (click)="closePanel()"
+          class="px-6 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl font-bold text-sm transition-all">
+          Cancelar
+        </button>
+        <button (click)="saveRoutes()" [disabled]="panelSaving()"
+          class="flex items-center gap-2 px-8 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          @if (panelSaving()) { <mat-spinner diameter="16"></mat-spinner> }
+          @else { <mat-icon class="!text-base">save</mat-icon> }
+          Guardar Asignaciones
+        </button>
+      </div>
+
+    </div>
+  </div>
+}
+
+<!-- ═══ CATÁLOGO ABM (Cuadrantes / Servicios) ══════════════ -->
+@if (catalogModalOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closeCatalogModal()"></div>
+    <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height: 85vh">
+      <div class="bg-gradient-to-r from-primary-700 to-indigo-600 px-6 py-5 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+            <mat-icon class="text-white">{{ catalogKind() === 'cuadrantes' ? 'grid_view' : 'business_center' }}</mat-icon>
+          </div>
+          <h3 class="font-black text-white text-lg">{{ catalogKind() === 'cuadrantes' ? 'Cuadrantes' : 'Servicios' }}</h3>
+        </div>
+        <button (click)="closeCatalogModal()" class="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Add new -->
+      <div class="px-6 py-4 border-b border-slate-200 dark:border-white/5 flex gap-2 shrink-0">
+        <input [(ngModel)]="catalogNewName" (keyup.enter)="addCatalogItem()" placeholder="Nuevo nombre..."
+          class="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl px-4 py-2.5 text-sm font-semibold outline-none transition-colors">
+        <button (click)="addCatalogItem()" [disabled]="catalogSaving() || !catalogNewName.trim()"
+          class="flex items-center gap-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm transition-all active:scale-95">
+          <mat-icon class="!text-base">add</mat-icon> Agregar
+        </button>
+      </div>
+
+      <!-- List -->
+      <div class="flex-1 overflow-y-auto px-6 py-3 space-y-2">
+        @for (it of catalogItems; track it.id) {
+          <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2">
+            <input #nm [value]="it.nombre" (keyup.enter)="renameCatalogItem(it, nm.value)"
+              class="flex-1 bg-transparent border border-transparent hover:border-slate-300 focus:border-primary-500 text-slate-800 dark:text-white rounded-lg px-2 py-1 text-sm font-semibold outline-none transition-colors">
+            <button (click)="renameCatalogItem(it, nm.value)" matTooltip="Guardar nombre"
+              class="w-8 h-8 rounded-lg bg-primary-50 dark:bg-primary-950 text-primary-500 hover:bg-primary-100 flex items-center justify-center transition-all">
+              <mat-icon class="!text-base">save</mat-icon>
+            </button>
+            <button (click)="deleteCatalogItem(it)" matTooltip="Eliminar"
+              class="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950 text-rose-500 hover:bg-rose-100 flex items-center justify-center transition-all">
+              <mat-icon class="!text-base">delete</mat-icon>
+            </button>
+          </div>
+        }
+        @if (catalogItems.length === 0) {
+          <p class="text-center text-slate-400 py-8 text-sm">Sin elementos. Agrega el primero arriba.</p>
+        }
+      </div>
+
+      <div class="px-6 py-4 border-t border-slate-200 dark:border-white/5 flex justify-end shrink-0 bg-slate-50 dark:bg-slate-800/50">
+        <button (click)="closeCatalogModal()" class="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-bold text-sm transition-all">Listo</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══ PANEL ASIGNACIÓN ANALISTA ══════════════════════════ -->
+@if (analystPanelOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closeAnalystPanel()"></div>
+    <div class="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="max-height: 85vh">
+
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-indigo-700 to-primary-600 px-6 py-5 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+            <mat-icon class="text-white">analytics</mat-icon>
+          </div>
+          <h3 class="font-black text-white text-lg">{{ selectedAnalyst()?.nombre }} · {{ assignKindLabel }} — Asignaciones</h3>
+        </div>
+        <button (click)="closeAnalystPanel()" class="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Sub-tabs -->
+      <div class="flex gap-1 px-6 pt-4 shrink-0">
+        <button (click)="switchAnalystTab('rutas')"
+          [class]="analystTab()==='rutas' ? 'bg-slate-100 dark:bg-slate-800 text-primary-600 dark:text-primary-400' : 'text-slate-500'"
+          class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+          <mat-icon class="!text-base">alt_route</mat-icon> Rutas
+        </button>
+        <button (click)="switchAnalystTab('clientes')"
+          [class]="analystTab()==='clientes' ? 'bg-slate-100 dark:bg-slate-800 text-primary-600 dark:text-primary-400' : 'text-slate-500'"
+          class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+          <mat-icon class="!text-base">groups</mat-icon> Clientes
+        </button>
+      </div>
+
+      <!-- ── Sub-tab RUTAS ── -->
+      @if (analystTab() === 'rutas') {
+        <div class="flex-1 overflow-hidden flex min-h-0 mt-3">
+          <!-- Asignadas -->
+          <div class="w-1/2 border-r border-slate-200 dark:border-white/5 flex flex-col">
+            <div class="bg-primary-600 px-5 py-3 flex items-center gap-2 shrink-0">
+              <mat-icon class="text-white !text-base">check_circle</mat-icon>
+              <span class="text-white font-black text-sm">Rutas Asignadas ({{ assignedAnalystRoutes().length }})</span>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              @for (r of assignedAnalystRoutes(); track r.id) {
+                <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/5">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-bold text-slate-800 dark:text-white text-sm truncate">{{ r.nombre }}</p>
+                    @if (r.servicio) { <p class="text-xs text-slate-400">{{ r.servicio }}</p> }
+                  </div>
+                  <button (click)="removeAnalystRoute(r.id)" class="w-7 h-7 rounded-lg bg-rose-50 dark:bg-rose-950 hover:bg-rose-100 text-rose-500 flex items-center justify-center"><mat-icon class="!text-sm">delete</mat-icon></button>
+                </div>
+              }
+              @if (assignedAnalystRoutes().length === 0) {
+                <div class="flex flex-col items-center justify-center h-full gap-2 opacity-40 py-12"><mat-icon class="!text-4xl">route</mat-icon><p class="text-sm font-bold">Sin rutas</p></div>
+              }
+            </div>
+          </div>
+          <!-- Disponibles -->
+          <div class="w-1/2 flex flex-col">
+            <div class="bg-emerald-600 px-5 py-3 flex items-center gap-2 shrink-0">
+              <mat-icon class="text-white !text-base">add_circle</mat-icon>
+              <span class="text-white font-black text-sm">Rutas Disponibles</span>
+            </div>
+            <div class="px-4 py-3 border-b border-slate-200 dark:border-white/5 shrink-0">
+              <input [(ngModel)]="analystRouteSearch" placeholder="Buscar ruta..."
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none">
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              @for (r of availableAnalystRoutes; track r.id) {
+                <div (click)="addAnalystRoute(r)" class="flex items-center gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/5 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 cursor-pointer">
+                  <mat-icon class="!text-base text-slate-300">add</mat-icon>
+                  <div class="flex-1 min-w-0"><p class="font-bold text-slate-800 dark:text-white text-sm truncate">{{ r.nombre }}</p>@if (r.servicio) { <p class="text-xs text-slate-400">{{ r.servicio }}</p> }</div>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 dark:border-white/5 flex justify-end gap-3 shrink-0 bg-slate-50 dark:bg-slate-800/50">
+          <button (click)="closeAnalystPanel()" class="px-6 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-sm">Cerrar</button>
+          <button (click)="saveAnalystRoutes()" [disabled]="analystPanelSaving()" class="flex items-center gap-2 px-8 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm shadow-lg active:scale-95">
+            @if (analystPanelSaving()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+            Guardar Rutas
+          </button>
+        </div>
+      }
+
+      <!-- ── Sub-tab CLIENTES ── -->
+      @if (analystTab() === 'clientes') {
+        <div class="flex-1 overflow-y-auto p-6">
+          <div class="bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl px-4 py-3 mb-4 text-xs text-indigo-700 dark:text-indigo-300 flex items-start gap-2">
+            <mat-icon class="!text-base">info</mat-icon>
+            <span>Solo se listan los clientes presentes en las rutas asignadas a este {{ assignKindLabel.toLowerCase() }}. Verá únicamente los clientes que marques aquí, aunque sus rutas tengan más. Guarda primero las rutas si las cambiaste.</span>
+          </div>
+          @if (routeClientOptions().length === 0) {
+            <div class="flex flex-col items-center justify-center py-12 gap-2 opacity-40"><mat-icon class="!text-4xl">person_off</mat-icon><p class="text-sm font-bold">No hay clientes en las rutas asignadas</p></div>
+          } @else {
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              @for (c of routeClientOptions(); track c.id) {
+                <button (click)="toggleAnalystClient(c.id)"
+                  [ngClass]="isAnalystClientSelected(c.id) ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'"
+                  class="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-bold text-left transition-all">
+                  <mat-icon class="!text-base">{{ isAnalystClientSelected(c.id) ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
+                  <span class="truncate">{{ c.nombre }}</span>
+                </button>
+              }
+            </div>
+          }
+        </div>
+        <div class="px-6 py-4 border-t border-slate-200 dark:border-white/5 flex justify-end gap-3 shrink-0 bg-slate-50 dark:bg-slate-800/50">
+          <button (click)="closeAnalystPanel()" class="px-6 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-sm">Cerrar</button>
+          <button (click)="saveAnalystClients()" [disabled]="analystPanelSaving()" class="flex items-center gap-2 px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-xl text-sm shadow-lg active:scale-95">
+            @if (analystPanelSaving()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+            Guardar Clientes
+          </button>
+        </div>
+      }
+
+    </div>
+  </div>
+}

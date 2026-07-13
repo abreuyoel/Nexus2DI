@@ -1,0 +1,76 @@
+<!-- supervisor.component.html -->
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Panel de Supervisión</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Revisión de incidencias y aprobación de material gráfico.</p>
+    </div>
+    
+    <div class="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+      <div class="w-10 h-10 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center">
+        <mat-icon>security</mat-icon>
+      </div>
+      <div class="pr-4">
+        <p class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Estado Crítico</p>
+        <p class="text-lg font-black text-rose-600 dark:text-rose-400 leading-none">{{ photos().length }} Fotos</p>
+      </div>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Escaneando base de datos...</p>
+    </div>
+  } @else if (photos().length === 0) {
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 p-16 text-center flex flex-col items-center gap-4 shadow-sm">
+      <div class="w-24 h-24 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center text-emerald-500 mb-2">
+        <mat-icon class="!text-6xl">verified</mat-icon>
+      </div>
+      <h3 class="text-2xl font-bold text-slate-800 dark:text-white">Todo Aprobado</h3>
+      <p class="text-slate-500 dark:text-slate-400 max-w-sm mx-auto">No hay discrepancias pendientes. El sistema está operando bajo los estándares de calidad.</p>
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      @for (foto of photos(); track foto.id) {
+        <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col border-b-4 border-b-rose-500/20">
+          <div class="relative h-56 bg-slate-100 dark:bg-slate-800">
+            @if (foto.url) {
+              <img [src]="foto.url" alt="Foto rechazada" class="w-full h-full object-cover">
+            } @else {
+              <div class="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
+                <mat-icon class="!text-5xl">image_not_supported</mat-icon>
+              </div>
+            }
+            <div class="absolute bottom-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-lg px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">
+              Visita #{{ foto.visita_id }}
+            </div>
+          </div>
+
+          <div class="p-6 flex-1 flex flex-col justify-between space-y-4">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Observación Técnica</span>
+                <span class="text-rose-500 dark:text-rose-400 font-bold text-xs">ID: {{ foto.id }}</span>
+              </div>
+              <div class="p-4 bg-rose-50 dark:bg-rose-900/10 rounded-2xl border border-rose-100 dark:border-rose-900/20 text-sm font-semibold text-rose-800 dark:text-rose-400 italic leading-relaxed">
+                "{{ foto.motivo_rechazo || 'El supervisor debe definir el motivo del rechazo' }}"
+              </div>
+            </div>
+
+            <button 
+              mat-flat-button 
+              color="primary" 
+              (click)="approvePhoto(foto)" 
+              class="!w-full !rounded-2xl !h-12 !font-bold !bg-primary-600 hover:!bg-primary-700 transition-all shadow-lg shadow-primary-500/10"
+            >
+              <mat-icon class="mr-2">verified_user</mat-icon>
+              Aprobación Forzada
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

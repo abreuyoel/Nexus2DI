@@ -1,0 +1,40 @@
+/* login.component.scss */
+:host {
+  display: block;
+}
+
+::ng-deep {
+  .modern-checkbox {
+    .mdc-checkbox__native-control:enabled:checked ~ .mdc-checkbox__background {
+      background-color: #4a6cf7 !important;
+      border-color: #4a6cf7 !important;
+    }
+    .mdc-checkbox__ripple {
+      display: none;
+    }
+    .mdc-label {
+      padding-left: 8px !important;
+    }
+  }
+
+  /* Hide browser native password icons within Tailwind-styled inputs */
+  input[type="password"] {
+    &::-ms-reveal,
+    &::-ms-clear,
+    &::-webkit-password-reveal,
+    &::-webkit-credentials-auto-fill-button {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+  }
+}
+
+/* Custom transitions for the card */
+.animate-in {
+  animation-fill-mode: both;
+}

@@ -1,0 +1,222 @@
+<!-- data.component.html -->
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  
+  @if (!isReviewMode()) {
+    <!-- VISITS LIST MODE -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div>
+        <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Gestión de Data</h1>
+        <p class="text-slate-500 dark:text-slate-400 mt-1">Auditoría de balances e inventarios reportados en campo.</p>
+      </div>
+      <button (click)="loadVisits()"
+        class="w-12 h-12 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-500 transition-all shadow-sm">
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+
+    <!-- FILTER PANEL -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 space-y-4">
+      <div class="flex items-center gap-2 mb-1">
+        <mat-icon class="!text-base text-primary-500">filter_list</mat-icon>
+        <span class="text-sm font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">Filtros</span>
+        @if (hasFilters) {
+          <button (click)="clearFilters()"
+            class="ml-auto flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-rose-400 transition-colors">
+            <mat-icon class="!text-sm">close</mat-icon> Limpiar filtros
+          </button>
+        }
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <!-- Fecha inicio -->
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Desde</label>
+          <input type="date" [(ngModel)]="fechaInicio" (change)="loadVisits()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none transition-colors">
+        </div>
+
+        <!-- Fecha fin -->
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Hasta</label>
+          <input type="date" [(ngModel)]="fechaFin" (change)="loadVisits()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none transition-colors">
+        </div>
+
+        <!-- Cliente -->
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cliente</label>
+          <div class="relative">
+            <select [(ngModel)]="clienteId" (change)="loadVisits()"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+              <option value="">Todos</option>
+              @for (c of clients(); track c.id) { <option [value]="c.id">{{ c.nombre }}</option> }
+            </select>
+            <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+          </div>
+        </div>
+
+        <!-- Mercaderista -->
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Mercaderista</label>
+          <div class="relative">
+            <select [(ngModel)]="mercaderistaId" (change)="loadVisits()"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+              <option value="">Todos</option>
+              @for (m of mercaderistas(); track m.id) { <option [value]="m.id">{{ m.nombre_completo || m.nombre }}</option> }
+            </select>
+            <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+          </div>
+        </div>
+
+        <!-- Punto de Venta (ID) -->
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Punto de Venta</label>
+          <input [(ngModel)]="puntoSearch" (change)="loadVisits()" placeholder="ID del punto..."
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl px-3 py-2 text-sm font-semibold outline-none transition-colors">
+        </div>
+      </div>
+    </div>
+
+    @if (loadingVisits()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Consultando registros históricos...</p>
+      </div>
+    } @else {
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden overflow-x-auto">
+        <table mat-table [dataSource]="visits()" class="w-full">
+          <ng-container matColumnDef="fecha">
+            <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Fecha</th>
+            <td mat-cell *matCellDef="let v" class="!py-4 text-slate-600 dark:text-slate-300 font-medium">{{ v.fecha | date:'shortDate' }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="cliente">
+            <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Cliente</th>
+            <td mat-cell *matCellDef="let v" class="!py-4 text-slate-600 dark:text-slate-300 font-bold">{{ v.cliente?.nombre }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="pdv">
+            <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Punto de Venta</th>
+            <td mat-cell *matCellDef="let v" class="!py-4">
+              <div class="flex flex-col">
+                <span class="font-bold text-slate-800 dark:text-white">{{ v.punto?.nombre }}</span>
+                <span class="text-xs text-slate-400">{{ v.punto?.codigo }}</span>
+              </div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="mercaderista">
+            <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Mercaderista</th>
+            <td mat-cell *matCellDef="let v" class="!py-4 text-slate-500 dark:text-slate-400">{{ v.mercaderista?.nombre_completo }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="acciones">
+            <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5 text-right px-6">Acción</th>
+            <td mat-cell *matCellDef="let v" class="!py-4 text-right px-6">
+              <button 
+                mat-flat-button 
+                color="primary"
+                (click)="reviewVisit(v)"
+                class="!rounded-xl !font-bold !bg-primary-50 dark:!bg-primary-900/20 !text-primary-600 dark:!text-primary-400 hover:!bg-primary-500 hover:!text-white transition-all"
+              >
+                <mat-icon class="mr-1">edit_note</mat-icon>
+                Revisar Data
+              </button>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="visitColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: visitColumns;" class="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors border-b border-slate-100 dark:border-white/5 last:border-0"></tr>
+        </table>
+
+        @if (visits().length === 0) {
+          <div class="py-20 text-center flex flex-col items-center gap-3 grayscale opacity-40">
+            <mat-icon class="!text-6xl">database_off</mat-icon>
+            <p class="text-xl font-bold dark:text-white">No se encontró data para auditar</p>
+          </div>
+        }
+      </div>
+    }
+
+  } @else {
+    <!-- REVIEW MODE -->
+    <div class="space-y-6">
+      <div class="flex items-center justify-between bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+        <div class="flex items-center gap-4">
+          <button (click)="goBack()" mat-icon-button class="!bg-slate-100 dark:!bg-slate-800 !text-slate-500">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
+          <div>
+            <h2 class="text-xl font-bold text-slate-800 dark:text-white tracking-tight">Revisión de Visita #{{ selectedVisit()?.id }}</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400">{{ selectedVisit()?.punto?.nombre }} • {{ selectedVisit()?.fecha | date:'fullDate' }}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button (click)="goBack()" mat-button class="!rounded-xl !font-bold !text-slate-500">Cancelar</button>
+          <button 
+            (click)="saveChanges()" 
+            mat-flat-button 
+            color="primary" 
+            class="!rounded-xl !h-12 !px-8 !font-bold !bg-emerald-500 hover:!bg-emerald-600 shadow-lg shadow-emerald-500/20"
+          >
+            Guardar Auditoría
+          </button>
+        </div>
+      </div>
+
+      @if (loadingBalances()) {
+        <div class="flex flex-col items-center justify-center py-24 gap-4">
+          <mat-spinner diameter="40"></mat-spinner>
+          <p class="text-slate-400 font-medium italic">Sincronizando balances totales...</p>
+        </div>
+      } @else {
+        <form [formGroup]="balancesForm" class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-xl overflow-hidden overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-100 dark:border-white/5">
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest">Producto / Categoría</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-24">Ini</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-24">Fin</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-24">Dep</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-24">Caras</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-32">Precio (Bs)</th>
+                <th class="p-5 text-xs font-black text-slate-400 uppercase tracking-widest w-32">Precio ($)</th>
+              </tr>
+            </thead>
+            <tbody formArrayName="balances">
+              @for (ctrl of balancesArray.controls; track ctrl; let i = $index) {
+                <tr [formGroupName]="i" class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors">
+                  <td class="p-5">
+                    <div class="flex flex-col">
+                      <span class="font-bold text-slate-800 dark:text-white text-sm">{{ ctrl.get('producto')?.value }}</span>
+                      <span class="text-[10px] font-black text-primary-500 uppercase tracking-widest">{{ ctrl.get('categoria')?.value }}</span>
+                    </div>
+                  </td>
+                  <td class="p-3">
+                    <input type="number" formControlName="inv_inicial" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                  <td class="p-3">
+                    <input type="number" formControlName="inv_final" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                  <td class="p-3">
+                    <input type="number" formControlName="inv_deposito" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                  <td class="p-3">
+                    <input type="number" formControlName="caras" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                  <td class="p-3">
+                    <input type="number" step="0.01" formControlName="precio_bs" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                  <td class="p-3">
+                    <input type="number" step="0.01" formControlName="precio_usd" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg p-2 text-sm font-bold text-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none">
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </form>
+      }
+    </div>
+  }
+
+</div>

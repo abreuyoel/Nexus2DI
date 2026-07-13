@@ -1,0 +1,93 @@
+<!-- mercaderista.component.html -->
+<div class="merc-portal-container flex flex-col h-[calc(100vh-64px)] overflow-hidden">
+  
+  <!-- Status Header (Fixed) -->
+  <div class="status-header px-6 py-3 flex items-center justify-between bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 shadow-sm z-10">
+    <div class="flex flex-col">
+      <h2 class="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-tight">{{ titulo }}</h2>
+      <span class="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">{{ today }}</span>
+    </div>
+    
+    <div class="flex items-center gap-3">
+      <!-- Connection Badge -->
+      <div [class]="isOnline() ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'" 
+           class="flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all">
+        <div [class]="isOnline() ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'" class="w-1.5 h-1.5 rounded-full"></div>
+        {{ isOnline() ? 'Online' : 'Offline' }}
+      </div>
+
+      <!-- Sync Badge -->
+      @if (pendingPhotos() > 0) {
+        <div class="bg-amber-500 text-white px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg shadow-amber-500/20 animate-bounce">
+          <mat-icon class="!text-[14px] !w-[14px] !h-[14px]">sync</mat-icon>
+          <span class="text-[10px] font-black">{{ pendingPhotos() }}</span>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- Main Tabs (Flexible area) -->
+  <div class="flex-grow overflow-hidden">
+    <mat-tab-group class="h-full merc-tabs" headerPosition="below" animationDuration="200ms" mat-stretch-tabs="false" mat-align-tabs="center">
+      
+      <!-- Mi Ruta -->
+      <mat-tab>
+        <ng-template mat-tab-label>
+          <div class="flex flex-col items-center gap-1 pt-2">
+            <mat-icon>explore</mat-icon>
+            <span class="text-[9px] font-black uppercase tracking-widest">Mi Ruta</span>
+          </div>
+        </ng-template>
+        <div class="h-full overflow-y-auto">
+          <app-merc-ruta></app-merc-ruta>
+        </div>
+      </mat-tab>
+
+      <!-- Mis Visitas -->
+      <mat-tab>
+        <ng-template mat-tab-label>
+          <div class="flex flex-col items-center gap-1 pt-2">
+            <mat-icon>assignment</mat-icon>
+            <span class="text-[9px] font-black uppercase tracking-widest">Visitas</span>
+          </div>
+        </ng-template>
+        <div class="h-full overflow-y-auto bg-slate-50 dark:bg-slate-950">
+          <app-merc-visitas></app-merc-visitas>
+        </div>
+      </mat-tab>
+
+      <!-- Chat -->
+      <mat-tab>
+        <ng-template mat-tab-label>
+          <div class="flex flex-col items-center gap-1 pt-2">
+            <mat-icon [matBadge]="0" matBadgeOverlap="false" matBadgeColor="warn" [matBadgeHidden]="true">chat_bubble</mat-icon>
+            <span class="text-[9px] font-black uppercase tracking-widest">Chat</span>
+          </div>
+        </ng-template>
+        <div class="h-full">
+          <app-merc-chat></app-merc-chat>
+        </div>
+      </mat-tab>
+
+      <!-- Perfil -->
+      <mat-tab>
+        <ng-template mat-tab-label>
+          <div class="flex flex-col items-center gap-1 pt-2">
+            <mat-icon>account_circle</mat-icon>
+            <span class="text-[9px] font-black uppercase tracking-widest">Perfil</span>
+          </div>
+        </ng-template>
+        <div class="h-full overflow-y-auto bg-slate-50 dark:bg-slate-950">
+          <app-merc-perfil></app-merc-perfil>
+        </div>
+      </mat-tab>
+
+    </mat-tab-group>
+  </div>
+
+  <!-- Visit Panel Overlay -->
+  @if (ui.activeVisit()) {
+    <app-merc-visit-panel [visit]="ui.activeVisit()"></app-merc-visit-panel>
+  }
+
+</div>

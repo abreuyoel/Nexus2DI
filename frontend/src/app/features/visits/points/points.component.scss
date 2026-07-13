@@ -1,0 +1,13 @@
+/* points.component.scss */
+:host {
+  display: block;
+  width: 100%;
+}
+
+::ng-deep {
+  .density-compact {
+    .mat-mdc-form-field-subscript-wrapper {
+      display: none !important;
+    }
+  }
+}

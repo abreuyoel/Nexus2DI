@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus2di-backend-config
+data:
+  DB_DRIVER: "ODBC Driver 17 for SQL Server"
+  DB_SERVER: "172.174.41.110"
+  DB_NAME: "epran-qa"
+  # Conservador para 1 réplica x 1 worker — subir solo si kubectl top pods
+  # muestra margen y hace falta más throughput de BD.
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+  ENVIRONMENT: "production"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+  FRONTEND_URL: "https://www.nexus2di.net"
+  AZURE_CONTAINER_NAME: "epran"
+  AZURE_ACCOUNT_NAME: "saeprandat001"
+  SCHEDULER_INTERVAL_MINUTES: "60"
+  SCHEDULER_TIMEZONE: "America/Caracas"

@@ -1,0 +1,22 @@
+/* dashboard.component.scss */
+:host {
+  display: block;
+  width: 100%;
+}
+
+.dashboard-iframe-wrapper {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 250px);
+  min-height: 600px;
+  
+  ::ng-deep iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    border-radius: 12px;
+  }
+}

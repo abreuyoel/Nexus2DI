@@ -1,0 +1,20 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.input {
+  border-radius: 0.75rem;
+  border: 1px solid rgb(226 232 240);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  width: 100%;
+  background: white;
+  color: rgb(30 41 59);
+}
+
+:host-context(.dark) .input {
+  background: rgb(30 41 59);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}

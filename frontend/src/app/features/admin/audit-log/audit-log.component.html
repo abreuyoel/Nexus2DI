@@ -1,0 +1,187 @@
+<!-- audit-log.component.html -->
+<div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Auditoría del Sistema</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Registro completo de todas las acciones realizadas en la plataforma.</p>
+    </div>
+    <div class="px-4 py-2 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 text-slate-600 dark:text-slate-300 font-bold text-sm">
+      {{ total() | number }} registros
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 p-6 shadow-sm">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Usuario</label>
+        <input
+          [(ngModel)]="filters.username"
+          (keyup.enter)="applyFilters()"
+          placeholder="Buscar usuario..."
+          class="h-10 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Acción</label>
+        <input
+          [(ngModel)]="filters.action"
+          (keyup.enter)="applyFilters()"
+          placeholder="ej. LOGIN, CREATE..."
+          class="h-10 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo de entidad</label>
+        <select
+          [(ngModel)]="filters.entity_type"
+          class="h-10 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+        >
+          <option value="">Todos</option>
+          @for (et of entityTypes; track et) {
+            <option [value]="et">{{ et }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="datetime-local"
+          [(ngModel)]="filters.from_date"
+          class="h-10 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="datetime-local"
+          [(ngModel)]="filters.to_date"
+          class="h-10 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 mt-4">
+      <button (click)="clearFilters()" class="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 font-medium transition-colors">
+        Limpiar
+      </button>
+      <button
+        (click)="applyFilters()"
+        class="flex items-center gap-2 px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl text-sm font-semibold transition-all"
+      >
+        <mat-icon class="!text-base">search</mat-icon>
+        Filtrar
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  @if (loading()) {
+    <div class="flex items-center justify-center py-16 gap-4">
+      <mat-spinner diameter="40" strokeWidth="3"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando registros...</p>
+    </div>
+  } @else {
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-100 dark:border-white/5">
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[140px]">Fecha/Hora</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuario</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acción</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Entidad</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">IP</th>
+            <th class="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+            <th class="px-4 py-3 w-10"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of entries(); track e.id) {
+            <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+              <td class="px-4 py-3 text-xs font-mono text-slate-500 whitespace-nowrap">{{ e.timestamp | date:'dd/MM/yy HH:mm:ss' }}</td>
+              <td class="px-4 py-3">
+                <div class="flex flex-col">
+                  <span class="font-semibold text-slate-700 dark:text-slate-200 text-sm">{{ e.username || '—' }}</span>
+                  <span class="text-xs text-slate-400">{{ e.rol }}</span>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span [class]="actionClass(e.action)">{{ e.action }}</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">{{ e.entity_type || '—' }}</td>
+              <td class="px-4 py-3">
+                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ e.entity_name || '—' }}</span>
+                @if (e.entity_id) {
+                  <span class="ml-1 text-xs text-slate-400 font-mono">#{{ e.entity_id }}</span>
+                }
+              </td>
+              <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ e.ip_address || '—' }}</td>
+              <td class="px-4 py-3">
+                <span [class]="e.status === 'OK' ? 'text-emerald-600' : 'text-rose-600'" class="text-xs font-bold">
+                  {{ e.status || '—' }}
+                </span>
+              </td>
+              <td class="px-2 py-3 text-right">
+                @if (e.changes) {
+                  <button (click)="toggleExpand(e.id)"
+                          class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-primary-500 hover:text-white text-slate-500 inline-flex items-center justify-center transition-all">
+                    <mat-icon class="!text-base">{{ expandedId() === e.id ? 'expand_less' : 'expand_more' }}</mat-icon>
+                  </button>
+                }
+              </td>
+            </tr>
+            @if (expandedId() === e.id && e.changes) {
+              <tr class="bg-slate-50 dark:bg-slate-800/50">
+                <td colspan="8" class="px-6 py-4 border-b border-slate-100 dark:border-white/5">
+                  <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Cambios registrados</p>
+                  <pre class="text-xs font-mono text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-all">{{ formatChanges(e.changes) }}</pre>
+                </td>
+              </tr>
+            }
+          }
+          @if (entries().length === 0) {
+            <tr>
+              <td colspan="8" class="py-16 text-center">
+                <div class="flex flex-col items-center gap-2 opacity-40">
+                  <mat-icon class="!text-4xl">search_off</mat-icon>
+                  <p class="font-bold text-sm">No se encontraron registros</p>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between px-2">
+      <p class="text-sm text-slate-500">
+        Mostrando {{ offset + 1 }}–{{ showingEnd }} de {{ total() }} registros
+      </p>
+      <div class="flex items-center gap-2">
+        <button
+          (click)="prevPage()"
+          [disabled]="offset === 0"
+          class="flex items-center gap-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-medium text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+        >
+          <mat-icon class="!text-base">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="text-sm text-slate-500 font-medium px-2">{{ currentPage }} / {{ totalPages }}</span>
+        <button
+          (click)="nextPage()"
+          [disabled]="offset + limit >= total()"
+          class="flex items-center gap-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-medium text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+        >
+          Siguiente <mat-icon class="!text-base">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+  }
+</div>

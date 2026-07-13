@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus2di-frontend
+spec:
+  # 1 réplica inicial (conservador: el servidor ya corre epran-backend x2,
+  # cloudflared x2, redis, ollama) — nginx es liviano y sin estado, se puede
+  # subir a 2 después de medir uso real con kubectl top.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: nexus2di-frontend }
+  template:
+    metadata:
+      labels: { app: nexus2di-frontend }
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: nexus2di-frontend
+          image: ghcr.io/abreuyoel/nexus2di-frontend:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "200m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Este SÍ es el punto de entrada público — Cloudflare Tunnel enruta
+  # www.nexus2di.net hacia este Service (ver Parte E del plan).
+  name: nexus2di-frontend-svc
+spec:
+  selector: { app: nexus2di-frontend }
+  ports:
+    - port: 8080
+      targetPort: 8080

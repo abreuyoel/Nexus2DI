@@ -1,0 +1,418 @@
+<div class="flex flex-col bg-slate-950 text-white rounded-3xl overflow-hidden shadow-2xl border border-white/8"
+     style="width:min(96vw,1100px); max-height:90vh;">
+
+  <!-- HEADER -->
+  <div class="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-white/8 shrink-0">
+    <div class="flex items-start justify-between px-8 pt-7 pb-5">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-600 to-indigo-600 flex items-center justify-center shadow-lg shrink-0">
+          <mat-icon class="text-white !text-2xl">route</mat-icon>
+        </div>
+        <div>
+          <h2 class="text-xl font-black text-white tracking-tight leading-none mb-1">{{ ruta.nombre }}</h2>
+          <div class="flex flex-wrap gap-2 mt-2">
+            <span class="px-2.5 py-1 bg-white/8 rounded-lg text-xs font-bold text-slate-400 flex items-center gap-1">
+              <mat-icon class="!text-xs text-primary-400">grid_view</mat-icon>{{ ruta.cuadrante || '—' }}
+            </span>
+            <span class="px-2.5 py-1 bg-white/8 rounded-lg text-xs font-bold text-slate-400 flex items-center gap-1">
+              <mat-icon class="!text-xs text-indigo-400">business_center</mat-icon>{{ ruta.servicio || '—' }}
+            </span>
+            @if (isExclusiva) {
+              <span class="px-2.5 py-1 bg-amber-950 rounded-lg text-xs font-bold text-amber-400 flex items-center gap-1">
+                <mat-icon class="!text-xs">person_pin</mat-icon>{{ exclusiveClientName }}
+              </span>
+            }
+            <span class="px-2.5 py-1 bg-white/8 rounded-lg text-xs font-bold text-slate-400 flex items-center gap-1">
+              <mat-icon class="!text-xs text-emerald-400">manage_accounts</mat-icon>{{ ruta.coordinador_1 || '—' }}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 ml-4">
+        <button (click)="editingRoute.set(!editingRoute())"
+          [ngClass]="editingRoute() ? 'border-primary-500 text-primary-400 bg-primary-900' : 'border-slate-700 text-slate-400 hover:border-slate-500'"
+          class="flex items-center gap-1.5 px-4 py-2 rounded-xl border transition-all duration-200 text-sm font-bold">
+          <mat-icon class="!text-base">{{ editingRoute() ? 'close' : 'edit' }}</mat-icon>
+          {{ editingRoute() ? 'Cancelar' : 'Editar Ruta' }}
+        </button>
+        <button (click)="dialogRef.close()"
+          class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Edit Route Form -->
+    @if (editingRoute()) {
+      <div class="px-8 pb-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-800 rounded-2xl p-4 border border-white/5">
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cuadrante</label>
+            <input [formControl]="$any(editRouteForm.get('cuadrante'))" class="w-full bg-slate-700 border border-slate-600 focus:border-primary-500 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Servicio</label>
+            <input [formControl]="$any(editRouteForm.get('servicio'))" class="w-full bg-slate-700 border border-slate-600 focus:border-primary-500 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Coordinador 1</label>
+            <input [formControl]="$any(editRouteForm.get('coordinador_1'))" class="w-full bg-slate-700 border border-slate-600 focus:border-primary-500 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Coordinador 2</label>
+            <input [formControl]="$any(editRouteForm.get('coordinador_2'))" class="w-full bg-slate-700 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+          </div>
+          <div class="col-span-2 md:col-span-4 flex justify-end pt-1">
+            <button type="button" (click)="saveRoute()" [disabled]="savingRoute()"
+              class="flex items-center gap-2 px-6 py-2 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95 disabled:opacity-50">
+              @if (savingRoute()) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+              Guardar Cambios
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Tabs -->
+    <div class="flex gap-1 px-8">
+      <button type="button" (click)="loadTab('masivo')"
+        [ngClass]="activeTab()==='masivo' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
+        class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
+        <mat-icon class="!text-base">edit_note</mat-icon> Editor Masivo
+      </button>
+      <button type="button" (click)="loadTab('points')"
+        [ngClass]="activeTab()==='points' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
+        class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
+        <mat-icon class="!text-base">location_on</mat-icon> Puntos Actuales
+        <span class="bg-primary-900 text-primary-400 text-xs px-2 py-0.5 rounded-full">{{ routePoints().length }}</span>
+      </button>
+      <button type="button" (click)="loadTab('changes')"
+        [ngClass]="activeTab()==='changes' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
+        class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
+        <mat-icon class="!text-base">schedule</mat-icon> Cambios Futuros
+        <span class="bg-amber-900 text-amber-400 text-xs px-2 py-0.5 rounded-full">{{ futureChanges().length }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="flex-1 overflow-y-auto">
+
+    <!-- ══ TAB EDITOR MASIVO ══ -->
+    @if (activeTab() === 'masivo') {
+      <div class="px-8 py-6 space-y-6">
+
+        <!-- Clientes -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <mat-icon class="!text-base text-emerald-400">groups</mat-icon>
+            <span class="text-sm font-black text-slate-300 uppercase tracking-widest">Cliente(s)</span>
+          </div>
+          @if (isExclusiva) {
+            <div class="inline-flex items-center gap-2 bg-amber-950 border border-amber-800 rounded-xl px-4 py-2.5">
+              <mat-icon class="!text-base text-amber-400">lock</mat-icon>
+              <span class="text-sm font-bold text-amber-300">{{ exclusiveClientName }}</span>
+              <span class="text-[10px] text-amber-500 uppercase font-black ml-1">Exclusiva</span>
+            </div>
+          } @else {
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3">
+              <input [(ngModel)]="clientSearch" placeholder="Buscar cliente..."
+                class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-500 text-white placeholder-slate-500 rounded-xl px-3 py-2 text-sm font-semibold outline-none mb-2">
+              <p class="text-[11px] text-slate-500 mb-2">{{ isTradex ? 'Tradex: selecciona uno o varios clientes' : 'Selecciona cliente(s)' }} — {{ selectedClientIds().length }} seleccionado(s)</p>
+              <div class="max-h-40 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                @for (c of filteredClients; track c.id) {
+                  <button type="button" (click)="toggleClient(c.id)"
+                    [ngClass]="isClientSelected(c.id) ? 'bg-emerald-700 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500'"
+                    class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold text-left transition-all">
+                    <mat-icon class="!text-sm">{{ isClientSelected(c.id) ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
+                    <span class="truncate">{{ c.nombre }}</span>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Agregar punto -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <mat-icon class="!text-base text-emerald-400">add_location_alt</mat-icon>
+            <span class="text-sm font-black text-slate-300 uppercase tracking-widest">Agregar Punto de Interés</span>
+          </div>
+          <div class="flex gap-2 relative">
+            <div class="relative flex-1">
+              <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">search</mat-icon>
+              <input #ps [value]="pointSearchText()" (input)="onPointSearch(ps.value)" placeholder="Buscar punto de interés..." autocomplete="off"
+                class="w-full bg-slate-800 border border-slate-700 focus:border-emerald-500 text-white placeholder-slate-500 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold outline-none">
+              @if (pointResults().length > 0) {
+                <div class="absolute z-50 top-full mt-1 w-full bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-h-52 overflow-y-auto">
+                  @for (p of pointResults(); track p.id) {
+                    <button type="button" (click)="selectPoint(p)" class="w-full text-left px-4 py-2.5 hover:bg-slate-700 text-sm text-white font-semibold border-b border-slate-700 last:border-0">
+                      <span class="block truncate">{{ p.nombre }}</span>
+                      <span class="block text-xs text-slate-500 truncate">{{ p.direccion || p.ciudad }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+            <button type="button" (click)="addPointToEditor()" [disabled]="!selectedPoint"
+              class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-xl font-black text-sm flex items-center gap-1 whitespace-nowrap">
+              <mat-icon class="!text-base">add</mat-icon> Agregar
+            </button>
+          </div>
+        </div>
+
+        <!-- Filas del editor -->
+        @if (editorRows().length > 0) {
+          <div class="space-y-3">
+            @for (row of editorRows(); track row.point.id; let idx = $index) {
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <mat-icon class="!text-base text-primary-400">storefront</mat-icon>
+                    <span class="font-bold text-white text-sm truncate">{{ row.point.nombre }}</span>
+                  </div>
+                  <button type="button" (click)="removeEditorRow(idx)" class="w-7 h-7 rounded-lg bg-red-950 hover:bg-red-900 text-red-400 flex items-center justify-center">
+                    <mat-icon class="!text-base">delete</mat-icon>
+                  </button>
+                </div>
+
+                <!-- Chips de días -->
+                <div class="flex flex-wrap gap-1.5 mb-3">
+                  @for (d of row.days; track d.dia) {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-xs font-bold">
+                      {{ dayLabel(d.dia) }} — <span [ngClass]="getPriorityClass(d.prioridad)" class="px-1.5 rounded">{{ d.prioridad }}</span>
+                      <button type="button" (click)="removeDay(idx, d.dia)" class="text-slate-500 hover:text-red-400"><mat-icon class="!text-sm">close</mat-icon></button>
+                    </span>
+                  }
+                  @if (row.days.length === 0) { <span class="text-xs text-slate-500 italic">Sin días asignados</span> }
+                </div>
+
+                <!-- Asignar días con prioridad -->
+                <div class="flex flex-wrap items-end gap-3 bg-slate-950 rounded-xl p-3 border border-white/5">
+                  <div class="space-y-1">
+                    <label class="text-[10px] font-black text-slate-500 uppercase">Prioridad</label>
+                    <div class="relative">
+                      <select [(ngModel)]="row.prioridad" class="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none">
+                        <option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option>
+                      </select>
+                      <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+                    </div>
+                  </div>
+                  <div class="space-y-1 flex-1">
+                    <label class="text-[10px] font-black text-slate-500 uppercase">Días (misma prioridad)</label>
+                    <div class="flex flex-wrap gap-1.5">
+                      @for (d of dias; track d.v) {
+                        <label [ngClass]="row.dayChecks[d.v] ? 'bg-primary-700 border-primary-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'"
+                          class="flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-bold cursor-pointer select-none">
+                          <input type="checkbox" [(ngModel)]="row.dayChecks[d.v]" class="hidden">
+                          {{ d.l }}
+                        </label>
+                      }
+                    </div>
+                  </div>
+                  <button type="button" (click)="addDaysToRow(idx)"
+                    class="px-3 py-2 bg-primary-700 hover:bg-primary-600 text-white rounded-lg font-bold text-sm flex items-center gap-1">
+                    <mat-icon class="!text-base">playlist_add</mat-icon> Agregar
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button type="button" (click)="saveBulk()" [disabled]="savingBulk() || !canSaveBulk"
+              class="flex items-center gap-2 px-8 py-3 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-white font-black rounded-xl shadow-lg transition-all active:scale-95">
+              @if (savingBulk()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+              Guardar todos los cambios
+            </button>
+          </div>
+        } @else {
+          <div class="flex flex-col items-center justify-center py-12 gap-3 text-slate-600">
+            <mat-icon class="!text-4xl">playlist_add</mat-icon>
+            <p class="font-bold text-sm">Busca y agrega puntos para asignarles días y prioridad</p>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ══ TAB PUNTOS ACTUALES ══ -->
+    @if (activeTab() === 'points') {
+      <div class="px-8 py-5">
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <span class="text-sm font-black text-slate-300 uppercase tracking-widest mr-auto">{{ routePoints().length }} punto(s)</span>
+
+          @if (selectedCount > 0) {
+            <button type="button" (click)="bulkDelete()"
+              class="flex items-center gap-1.5 px-3 py-2 bg-red-950 hover:bg-red-900 text-red-400 rounded-xl font-bold text-sm">
+              <mat-icon class="!text-base">delete_sweep</mat-icon> Eliminar seleccionados ({{ selectedCount }})
+            </button>
+          }
+
+          <!-- Eliminar todos los de un día -->
+          <div class="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-xl px-1.5 py-1">
+            <select [(ngModel)]="bulkDeleteDay"
+              class="bg-slate-800 border border-slate-700 text-white rounded-lg px-2 py-1.5 text-xs font-semibold outline-none">
+              <option value="">Eliminar día…</option>
+              @for (d of dias; track d.v) { <option [value]="d.v">{{ d.l }}</option> }
+            </select>
+            <button type="button" (click)="applyDeleteDay()" [disabled]="!bulkDeleteDay"
+              class="w-7 h-7 rounded-lg bg-red-950 hover:bg-red-900 disabled:opacity-30 text-red-400 flex items-center justify-center" matTooltip="Eliminar todos los puntos de ese día">
+              <mat-icon class="!text-base">event_busy</mat-icon>
+            </button>
+          </div>
+
+          <!-- Eliminar toda la ruta -->
+          <button type="button" (click)="deleteAllRoute()"
+            class="flex items-center gap-1.5 px-3 py-2 bg-red-900 hover:bg-red-800 text-white rounded-xl font-bold text-sm" matTooltip="Eliminar TODOS los puntos de la ruta">
+            <mat-icon class="!text-base">delete_forever</mat-icon> Eliminar todo
+          </button>
+        </div>
+
+        @if (routePoints().length === 0) {
+          <div class="flex flex-col items-center justify-center py-16 gap-3 text-slate-600">
+            <mat-icon class="!text-3xl">location_off</mat-icon>
+            <p class="font-bold text-sm">No hay puntos programados</p>
+          </div>
+        }
+        <div class="space-y-2">
+          @for (p of routePoints(); track p.id) {
+            <div class="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3"
+                 [ngClass]="{ 'opacity-50': !p.activo }">
+              <button type="button" (click)="toggleProgSelected(p.id)" class="shrink-0">
+                <mat-icon class="!text-lg" [ngClass]="isProgSelected(p.id) ? 'text-primary-400' : 'text-slate-600'">{{ isProgSelected(p.id) ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
+              </button>
+              <div class="flex-1 min-w-0">
+                <p class="font-bold text-white text-sm truncate">{{ p.punto?.nombre || p.punto_interes_nombre || '—' }}</p>
+                <p class="text-xs text-slate-500">{{ p.cliente?.nombre || '—' }}</p>
+              </div>
+              <span class="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-xs font-black text-slate-400">{{ p.dia }}</span>
+              <span [ngClass]="getPriorityClass(p.prioridad)" class="px-2.5 py-1 rounded-lg text-xs font-black">{{ p.prioridad }}</span>
+              <button type="button" (click)="toggleActive(p)" [matTooltip]="p.activo ? 'Inactivar para ese día' : 'Activar'"
+                [ngClass]="p.activo ? 'bg-emerald-950 text-emerald-400' : 'bg-slate-800 text-slate-500'"
+                class="px-2.5 py-1 rounded-lg text-xs font-black flex items-center gap-1">
+                <mat-icon class="!text-sm">{{ p.activo ? 'check_circle' : 'cancel' }}</mat-icon>{{ p.activo ? 'Sí' : 'No' }}
+              </button>
+              <button type="button" (click)="openFutureModal(p)" matTooltip="Programar cambio futuro"
+                class="w-8 h-8 rounded-lg bg-amber-950 hover:bg-amber-900 text-amber-400 flex items-center justify-center">
+                <mat-icon class="!text-base">calendar_month</mat-icon>
+              </button>
+              <button type="button" (click)="deletePdvAllDays(p)" matTooltip="Eliminar este PDV en todos los días"
+                class="w-8 h-8 rounded-lg bg-orange-950 hover:bg-orange-900 text-orange-400 flex items-center justify-center">
+                <mat-icon class="!text-base">delete_sweep</mat-icon>
+              </button>
+              <button type="button" (click)="removePoint(p)" matTooltip="Eliminar este día"
+                class="w-8 h-8 rounded-lg bg-red-950 hover:bg-red-900 text-red-400 flex items-center justify-center">
+                <mat-icon class="!text-base">delete</mat-icon>
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- ══ TAB CAMBIOS FUTUROS ══ -->
+    @if (activeTab() === 'changes') {
+      <div class="px-8 py-6 space-y-3">
+        @if (futureChanges().length === 0) {
+          <div class="flex flex-col items-center justify-center py-16 gap-3 text-slate-600">
+            <mat-icon class="!text-3xl">event_available</mat-icon>
+            <p class="font-bold text-sm">No hay cambios futuros programados</p>
+          </div>
+        }
+        @for (c of futureChanges(); track c.id) {
+          <div class="flex items-start gap-4 bg-slate-900 border border-slate-800 rounded-2xl px-5 py-4">
+            <div class="w-10 h-10 rounded-xl bg-amber-950 flex items-center justify-center shrink-0 mt-0.5">
+              <mat-icon class="!text-lg text-amber-400">schedule</mat-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="font-black text-white text-sm">{{ c.punto_interes_nombre || '—' }}</span>
+                <span [ngClass]="getChangeBadge(c)" class="px-2 py-0.5 rounded-full text-xs font-black uppercase">{{ c.estado || 'pendiente' }}</span>
+              </div>
+              <div class="flex flex-wrap gap-3 text-xs text-slate-500">
+                @if (c.fecha_ejecucion) { <span class="flex items-center gap-1"><mat-icon class="!text-xs">calendar_today</mat-icon>{{ c.fecha_ejecucion | date:'dd/MM/yyyy' }}</span> }
+                @if (c.dia) { <span class="flex items-center gap-1"><mat-icon class="!text-xs">today</mat-icon>{{ c.dia }}</span> }
+                @if (c.tipo_cambio) { <span class="flex items-center gap-1"><mat-icon class="!text-xs">sync_alt</mat-icon>{{ c.tipo_cambio }}</span> }
+                @if (c.cliente_nombre) { <span class="flex items-center gap-1"><mat-icon class="!text-xs">business</mat-icon>{{ c.cliente_nombre }}</span> }
+              </div>
+              @if (c.observaciones) { <p class="mt-1.5 text-xs text-slate-600 italic">"{{ c.observaciones }}"</p> }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>
+
+<!-- ═══ MODAL: PROGRAMAR CAMBIO FUTURO ═══ -->
+@if (futureModalOpen()) {
+  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="closeFutureModal()"></div>
+    <div class="relative w-full max-w-md bg-slate-950 border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+      <div class="bg-gradient-to-r from-amber-700 to-orange-600 px-6 py-4 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+          <mat-icon class="text-white">calendar_month</mat-icon>
+        </div>
+        <h3 class="font-black text-white text-lg">Programar Cambio Futuro</h3>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div class="bg-slate-900 border border-white/5 rounded-xl px-4 py-2.5 text-sm">
+          <span class="text-slate-500">Punto:</span> <span class="font-bold text-white">{{ futurePoint?.punto?.nombre || futurePoint?.punto_interes_nombre }}</span>
+          <span class="text-slate-500 ml-2">·</span>
+          <span class="text-slate-500 ml-2">Cliente:</span> <span class="font-bold text-amber-300">{{ futurePoint?.cliente?.nombre || '—' }}</span>
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Fecha de ejecución <span class="text-rose-400">*</span></label>
+          <input type="date" [(ngModel)]="futureForm['fecha_ejecucion']"
+            class="w-full bg-slate-800 border border-amber-700 focus:border-amber-500 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de cambio</label>
+          <select [(ngModel)]="futureForm['tipo_cambio']"
+            class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+            <option value="modificacion">Actualizar (día / prioridad)</option>
+            <option value="inactivacion">Inactivar</option>
+            <option value="activacion">Activar</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Día de visita</label>
+            <select [(ngModel)]="futureForm['dia']"
+              class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+              @for (d of dias; track d.v) { <option [value]="d.v">{{ d.l }}</option> }
+            </select>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Prioridad</label>
+            <select [(ngModel)]="futureForm['prioridad']"
+              class="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none">
+              <option value="Alta">Alta</option><option value="Media">Media</option><option value="Baja">Baja</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Observaciones</label>
+          <textarea [(ngModel)]="futureForm['observaciones']" rows="2" placeholder="Opcional"
+            class="w-full bg-slate-800 border border-slate-700 focus:border-amber-500 text-white placeholder-slate-600 rounded-xl px-3 py-2.5 text-sm font-semibold outline-none resize-none"></textarea>
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-white/5 flex justify-end gap-3 bg-slate-900/50">
+        <button type="button" (click)="closeFutureModal()"
+          class="px-5 py-2.5 border border-slate-700 text-slate-400 hover:text-white rounded-xl font-bold text-sm transition-all">Cancelar</button>
+        <button type="button" (click)="saveFutureChange()" [disabled]="savingFuture()"
+          class="flex items-center gap-2 px-6 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          @if (savingFuture()) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+          Programar
+        </button>
+      </div>
+    </div>
+  </div>
+}

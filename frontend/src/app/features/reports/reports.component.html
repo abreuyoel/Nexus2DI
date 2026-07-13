@@ -1,0 +1,136 @@
+<!-- reports.component.html -->
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Reportería Avanzada</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Análisis de rendimiento y métricas operativas por período.</p>
+    </div>
+    
+    <!-- Controls Bar -->
+    <div class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5">
+      <mat-form-field appearance="outline" class="density-compact !mb-0 w-40">
+        <mat-label>Fecha Inicial</mat-label>
+        <input matInput type="date" [(ngModel)]="fechaInicio">
+      </mat-form-field>
+      
+      <div class="w-2 h-0.5 bg-slate-200 dark:bg-slate-800 rounded-full hidden sm:block"></div>
+      
+      <mat-form-field appearance="outline" class="density-compact !mb-0 w-40">
+        <mat-label>Fecha Final</mat-label>
+        <input matInput type="date" [(ngModel)]="fechaFin">
+      </mat-form-field>
+
+      <button 
+        (click)="loadReport()"
+        class="flex items-center gap-2 px-6 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-2xl shadow-lg shadow-primary-500/20 transition-all font-bold"
+      >
+        <mat-icon class="!text-lg">analytics</mat-icon>
+        Generar Reporte
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Procesando volúmenes de datos...</p>
+    </div>
+  } @else if (summary()) {
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+        <p class="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Visitas Totales</p>
+        <div class="flex items-end justify-between">
+          <h2 class="text-4xl font-black text-slate-800 dark:text-white tracking-tighter">{{ summary()?.visitas?.total }}</h2>
+          <div class="p-2 bg-primary-50 dark:bg-primary-900/20 text-primary-500 dark:text-primary-400 rounded-xl">
+            <mat-icon>stacked_line_chart</mat-icon>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+        <p class="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Efectividad</p>
+        <div class="flex items-end justify-between">
+          <h2 class="text-4xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">{{ summary()?.visitas?.porcentaje_completadas }}%</h2>
+          <div class="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 dark:text-emerald-400 rounded-xl">
+            <mat-icon>task_alt</mat-icon>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+        <p class="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Fotos Aprobadas</p>
+        <div class="flex items-end justify-between">
+          <h2 class="text-4xl font-black text-slate-800 dark:text-white tracking-tighter">{{ summary()?.fotos?.aprobadas }}</h2>
+          <div class="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 rounded-xl">
+            <mat-icon>done_all</mat-icon>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+        <p class="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Fotos Rechazadas</p>
+        <div class="flex items-end justify-between">
+          <h2 class="text-4xl font-black text-rose-600 dark:text-rose-400 tracking-tighter">{{ summary()?.fotos?.rechazadas }}</h2>
+          <div class="p-2 bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 rounded-xl">
+            <mat-icon>rule</mat-icon>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Details Card -->
+    <div class="bg-slate-900 dark:bg-slate-800/80 rounded-[2.5rem] p-10 text-white shadow-2xl relative overflow-hidden border border-white/5">
+      <!-- Decoration -->
+      <div class="absolute -top-20 -right-20 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl"></div>
+      
+      <div class="relative z-10 space-y-10">
+        <div class="flex items-center justify-between border-b border-white/10 pb-6">
+          <h3 class="text-2xl font-bold">Desglose del Período</h3>
+          <div class="flex items-center gap-2 text-slate-400 dark:text-slate-500 text-sm font-semibold">
+            <mat-icon class="!text-sm">date_range</mat-icon>
+            {{ summary()?.periodo?.inicio | date:'shortDate' }} — {{ summary()?.periodo?.fin | date:'shortDate' }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div class="space-y-4">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-black uppercase tracking-[0.2em]">Ejecución de Visitas</p>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300">Completadas</span>
+              <span class="text-xl font-bold text-emerald-400">{{ summary()?.visitas?.completadas }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300">Pendientes</span>
+              <span class="text-xl font-bold text-amber-400">{{ summary()?.visitas?.pendientes }}</span>
+            </div>
+            <div class="w-full bg-white/10 rounded-full h-1.5 mt-2">
+              <div class="bg-primary-500 h-1.5 rounded-full" [style.width.%]="summary()?.visitas?.porcentaje_completadas"></div>
+            </div>
+          </div>
+
+          <div class="space-y-4 border-l border-white/5 pl-12 hidden md:block">
+            <p class="text-slate-400 dark:text-slate-500 text-xs font-black uppercase tracking-[0.2em]">Calidad Fotográfica</p>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300">Total Capturadas</span>
+              <span class="text-xl font-bold text-white">{{ summary()?.fotos?.total }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-300">Tasa de Aceptación</span>
+              <span class="text-xl font-bold text-primary-400">
+                {{ (summary()?.fotos?.aprobadas / summary()?.fotos?.total * 100) | number:'1.0-1' }}%
+              </span>
+            </div>
+          </div>
+
+          <div class="flex flex-col justify-center items-center bg-white/5 rounded-3xl p-6 border border-white/10">
+            <mat-icon class="!text-5xl text-primary-500 mb-2">military_tech</mat-icon>
+            <span class="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Score Operativo</span>
+            <span class="text-3xl font-black italic tracking-tighter text-white">94.2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

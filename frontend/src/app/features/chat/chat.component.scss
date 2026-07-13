@@ -1,0 +1,127 @@
+/* chat.component.scss */
+
+/* ═══════════════════════════════════════════════════════════════
+   SELECTOR DE CLIENTE (Coordinador Exclusivo) — vista completa
+   ═══════════════════════════════════════════════════════════════ */
+.chat-client-selector {
+  background: var(--mat-app-background-color, #ffffff);
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  margin-bottom: 1rem;
+  max-width: 900px;
+}
+:host-context(.dark) .chat-client-selector { background: #0f172a; }
+
+.chat-client-selector-header {
+  display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem;
+  h2 { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 0; }
+  mat-icon { color: #16a34a; }
+}
+:host-context(.dark) .chat-client-selector-header h2 { color: #f1f5f9; }
+
+.chat-client-search {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 10px; padding: 0.5rem 0.85rem;
+  margin-bottom: 1rem; max-width: 480px;
+  mat-icon { color: #64748b; }
+  input {
+    flex: 1; border: none; outline: none; font-size: 0.95rem;
+    background: transparent; color: #1e293b;
+  }
+}
+:host-context(.dark) .chat-client-search {
+  background: #1e293b; border-color: #334155;
+  input { color: #f1f5f9; }
+}
+
+.chat-client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.chat-client-card {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.85rem;
+  background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 12px; cursor: pointer; text-align: left;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.chat-client-card:hover {
+  transform: translateY(-2px);
+  border-color: #16a34a;
+  box-shadow: 0 4px 10px rgba(22, 163, 74, 0.15);
+}
+:host-context(.dark) .chat-client-card {
+  background: #1e293b; border-color: #334155;
+}
+.chat-client-icon {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  color: #15803d; padding: 0.4rem; border-radius: 8px;
+  font-size: 1.3rem; width: 1.3rem; height: 1.3rem;
+}
+.chat-client-name {
+  flex: 1; font-weight: 600; font-size: 0.9rem; color: #1e293b;
+}
+:host-context(.dark) .chat-client-name { color: #f1f5f9; }
+.chat-client-tag {
+  font-size: 0.65rem; padding: 0.18rem 0.5rem;
+  border-radius: 999px; font-weight: 700;
+}
+.chat-tag-exclusivo { background: #dcfce7; color: #15803d; }
+.chat-tag-tradex    { background: #dbeafe; color: #1d4ed8; }
+
+.chat-empty {
+  grid-column: 1 / -1;
+  text-align: center; color: #64748b;
+  padding: 1.5rem; margin: 0; font-style: italic;
+}
+
+/* Banner cliente seleccionado dentro del sidebar */
+.chat-client-banner {
+  display: flex; justify-content: space-between; align-items: center;
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  border-left: 4px solid #16a34a;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  font-size: 0.78rem;
+  color: #14532d; gap: 0.5rem;
+}
+.chat-client-banner-info {
+  display: flex; align-items: center; gap: 0.4rem; min-width: 0;
+  flex: 1;
+  mat-icon { color: #15803d; font-size: 18px; width: 18px; height: 18px; }
+  span { font-weight: 600; }
+}
+.chat-client-banner-change {
+  background: #ffffff; border: 1px solid #16a34a; color: #15803d;
+  width: 32px; height: 32px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background-color 0.15s; flex-shrink: 0;
+  mat-icon { font-size: 16px; width: 16px; height: 16px; }
+}
+.chat-client-banner-change:hover { background: #f0fdf4; }
+
+:host {
+  display: block;
+  width: 100%;
+}
+
+.custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 10px;
+  }
+  &:hover::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
+  }
+}

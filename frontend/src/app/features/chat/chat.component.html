@@ -1,0 +1,278 @@
+<!-- chat.component.html -->
+
+<!-- ═══ Selector de Cliente (Coordinador Exclusivo) ═══ -->
+@if (isCoordinadorExclusivo() && !selectedExclusiveClient()) {
+  <div class="chat-client-selector">
+    <div class="chat-client-selector-header">
+      <mat-icon>business</mat-icon>
+      <h2>Selecciona un Cliente para ver sus Chats</h2>
+    </div>
+    <div class="chat-client-search">
+      <mat-icon>search</mat-icon>
+      <input type="text" placeholder="Buscar cliente..."
+             [ngModel]="exclusiveClientSearch()"
+             (ngModelChange)="exclusiveClientSearch.set($event)">
+    </div>
+    <div class="chat-client-grid">
+      @for (c of filteredExclusiveClients(); track c.id_cliente) {
+        <button class="chat-client-card" (click)="selectExclusiveClient(c)">
+          <mat-icon class="chat-client-icon">business</mat-icon>
+          <span class="chat-client-name">{{ c.cliente }}</span>
+          @if (c.id_tipo_cliente === 3) {
+            <span class="chat-client-tag chat-tag-exclusivo">Exclusivo</span>
+          } @else if (c.id_tipo_cliente === 1) {
+            <span class="chat-client-tag chat-tag-tradex">Tradex</span>
+          }
+        </button>
+      } @empty {
+        <p class="chat-empty">No hay clientes disponibles.</p>
+      }
+    </div>
+  </div>
+}
+
+@if (!isCoordinadorExclusivo() || selectedExclusiveClient()) {
+<div class="h-[calc(100vh-160px)] flex flex-col md:flex-row gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- INBOX SIDEBAR -->
+  <div class="w-full md:w-80 flex-shrink-0 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col overflow-hidden">
+    <div class="p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-slate-950/20">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+          <mat-icon class="text-primary-500">forum</mat-icon>
+          Chats
+        </h2>
+        <button (click)="openNewChatDialog()"
+                class="inline-flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold rounded-xl shadow-md shadow-primary-500/20 transition-all active:scale-95">
+          <mat-icon class="!text-[18px] !w-[18px] !h-[18px]">add</mat-icon>
+          Nuevo
+        </button>
+      </div>
+
+      <!-- Banner cliente seleccionado (coordinador exclusivo) -->
+      @if (isCoordinadorExclusivo() && selectedExclusiveClient()) {
+        <div class="chat-client-banner">
+          <div class="chat-client-banner-info">
+            <mat-icon>business</mat-icon>
+            <span class="truncate">{{ selectedExclusiveClient()!.cliente }}</span>
+          </div>
+          <button class="chat-client-banner-change" (click)="changeExclusiveClient()" matTooltip="Cambiar cliente">
+            <mat-icon>swap_horiz</mat-icon>
+          </button>
+        </div>
+      }
+
+      <div class="relative">
+        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</mat-icon>
+        <input
+          [formControl]="searchControl"
+          placeholder="Buscar visita por cadena, región..."
+          class="w-full h-10 pl-10 pr-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-white/10 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none text-sm font-medium text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
+        >
+        @if (isSearching()) {
+          <mat-spinner diameter="16" class="absolute right-3 top-1/2 -translate-y-1/2"></mat-spinner>
+        } @else if (searchControl.value) {
+          <button (click)="searchControl.setValue('')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <mat-icon class="text-[18px] w-[18px] h-[18px]">close</mat-icon>
+          </button>
+        }
+      </div>
+      <!-- Pestañas: Cliente / Equipo Operativo -->
+      <div class="flex gap-1 mt-3 bg-slate-100 dark:bg-slate-950/40 rounded-xl p-1">
+        <button (click)="setChatTab('cliente')"
+                [class]="activeChatTab() === 'cliente' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
+                class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
+          <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">store</mat-icon>
+          Cliente
+          @if (clienteCount() > 0) { <span class="text-[10px] opacity-70">({{ clienteCount() }})</span> }
+        </button>
+        <button (click)="setChatTab('equipo')"
+                [class]="activeChatTab() === 'equipo' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
+                class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
+          <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">groups</mat-icon>
+          Equipo Operativo
+          @if (equipoCount() > 0) { <span class="text-[10px] opacity-70">({{ equipoCount() }})</span> }
+        </button>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+      <!-- Search results (visitas) -->
+      @if (searchControl.value) {
+        @if (searchResults().length === 0) {
+          <div class="h-full flex flex-col items-center justify-center text-center opacity-40 p-4">
+            <mat-icon class="!text-4xl mb-2">search_off</mat-icon>
+            <p class="text-sm font-medium">No se encontraron visitas</p>
+          </div>
+        }
+        @for (chat of searchResults(); track chat.visita_id) {
+          <div
+            (click)="selectVisitFromSearch(chat.visita_id, chat.punto_nombre)"
+            class="p-4 mb-2 rounded-2xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent"
+          >
+            <div class="flex justify-between items-start mb-1">
+              <span class="font-bold text-slate-800 dark:text-slate-200 truncate pr-2 text-sm">{{ chat.punto_nombre }}</span>
+              <span class="text-[10px] text-slate-400 whitespace-nowrap pt-1">{{ chat.last_message_date | date:'dd/MM HH:mm' }}</span>
+            </div>
+            <div class="text-[10px] font-medium text-slate-400 dark:text-slate-500 mb-1 flex items-center gap-1">
+              <mat-icon class="text-[12px] w-[12px] h-[12px]">storefront</mat-icon>
+              {{ chat.cadena }} • {{ chat.region }}
+            </div>
+            <div class="text-[10px] font-medium text-slate-400 dark:text-slate-500 mb-1 flex items-center gap-1">
+              <mat-icon class="text-[12px] w-[12px] h-[12px]">person</mat-icon>
+              {{ chat.mercaderista_nombre }}
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-primary-600 font-medium truncate flex-1">
+                <span class="text-primary-500 font-medium mr-1">V-{{ chat.visita_id }}:</span>
+                Toca para iniciar chat
+              </span>
+            </div>
+          </div>
+        }
+      } @else {
+        <!-- Inbox filtrado por pestaña: Cliente (visitas) / Equipo Operativo (conversaciones) -->
+        @if (visibleInbox().length === 0) {
+          <div class="h-full flex flex-col items-center justify-center text-center opacity-40 p-4">
+            <mat-icon class="!text-4xl mb-2">speaker_notes_off</mat-icon>
+            <p class="text-sm font-medium">
+              {{ activeChatTab() === 'cliente' ? 'No tienes chats de cliente' : 'No tienes conversaciones de equipo' }}
+            </p>
+            <p class="text-xs mt-1">Crea una con el botón "+ Nuevo"</p>
+          </div>
+        }
+        @for (item of visibleInbox(); track item.kind + '-' + (item.visita_id || item.conversacion_id)) {
+          <div
+            (click)="selectInboxItem(item)"
+            [ngClass]="{'bg-primary-50 dark:bg-primary-900/20 border-primary-100 dark:border-primary-900/30': isItemActive(item)}"
+            class="p-4 mb-2 rounded-2xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent"
+          >
+            <div class="flex items-start gap-2 mb-1">
+              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] mt-0.5"
+                        [class.text-primary-500]="item.kind === 'visit'"
+                        [class.text-emerald-500]="item.kind === 'conversation'">
+                {{ iconForItem(item) }}
+              </mat-icon>
+              <span class="font-bold text-slate-800 dark:text-slate-200 truncate flex-1 text-sm">
+                {{ labelForItem(item) }}
+              </span>
+              <span class="text-[10px] text-slate-400 whitespace-nowrap pt-1">
+                {{ item.last_message_date | date:'dd/MM HH:mm' }}
+              </span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">
+                <span class="text-xs font-bold mr-1"
+                      [class.text-primary-500]="item.kind === 'visit'"
+                      [class.text-emerald-500]="item.kind === 'conversation'">
+                  {{ sublabelForItem(item) }}:
+                </span>
+                {{ item.last_message || '(Sin mensajes)' }}
+              </span>
+              @if (item.unread_count && item.unread_count > 0) {
+                <span class="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
+                  {{ item.unread_count }}
+                </span>
+              }
+            </div>
+          </div>
+        }
+      }
+    </div>
+  </div>
+
+  <!-- MAIN CHAT AREA -->
+  <div class="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col overflow-hidden relative">
+
+    @if (activeId()) {
+      <!-- Chat Header -->
+      <div class="p-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-slate-950/20 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <mat-icon class="text-primary-500">
+            {{ activeKind() === 'visit' ? 'store' : 'forum' }}
+          </mat-icon>
+          <div>
+            <h2 class="text-lg font-bold text-slate-800 dark:text-white">{{ activeTitle() }}</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              {{ activeKind() === 'visit' ? 'Visita #' + activeId() : 'Chat #' + activeId() }}
+            </p>
+          </div>
+        </div>
+        <div [class]="connected() ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/30'" class="px-3 py-1 rounded-2xl border flex items-center gap-2 font-bold text-[10px] shadow-sm">
+          <span class="relative flex h-2 w-2">
+            <span [class]="connected() ? 'bg-emerald-400' : 'bg-rose-400'" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+            <span [class]="connected() ? 'bg-emerald-500' : 'bg-rose-500'" class="relative inline-flex rounded-full h-2 w-2"></span>
+          </span>
+          {{ connected() ? 'ONLINE' : 'OFFLINE' }}
+        </div>
+      </div>
+
+      <!-- Messages Feed -->
+      <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-slate-950/20" #scrollContainer>
+        @if (messages().length === 0) {
+          <div class="h-full flex flex-col items-center justify-center text-center opacity-30 grayscale gap-4">
+            <mat-icon class="!text-6xl dark:text-white">chat</mat-icon>
+            <p class="font-medium dark:text-white">Envía un mensaje para iniciar la conversación.</p>
+          </div>
+        }
+        @for (msg of messages(); track msg.id) {
+          <div
+            [class.items-end]="msg.sender_id === currentUserId()"
+            class="flex flex-col gap-1 max-w-[85%] md:max-w-[75%]"
+            [class.self-end]="msg.sender_id === currentUserId()"
+          >
+            <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase px-2">
+              {{ msg.sender_id === currentUserId() ? 'Tú' : (msg.sender_nombre || 'Soporte') }}
+            </span>
+            <div
+              [class]="msg.sender_id === currentUserId() ? 'bg-primary-500 text-white rounded-l-2xl rounded-tr-2xl shadow-md shadow-primary-500/20' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-r-2xl rounded-tl-2xl shadow-sm border border-slate-100 dark:border-white/5'"
+              class="p-3 text-sm font-medium leading-relaxed"
+            >
+              {{ msg.mensaje }}
+            </div>
+            <span class="text-[9px] text-slate-400 dark:text-slate-500 font-semibold px-2">
+              {{ msg.created_at | date:'HH:mm' }}
+            </span>
+          </div>
+        }
+      </div>
+
+      <!-- Input Bar -->
+      <div class="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-white/5">
+        <div class="relative flex items-center gap-3">
+          <input
+            matInput
+            [formControl]="messageControl"
+            placeholder="Escribe tu mensaje..."
+            (keyup.enter)="sendMessage()"
+            class="flex-1 h-12 pl-4 pr-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-white/5 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all outline-none font-medium text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+          >
+          <button
+            (click)="sendMessage()"
+            [disabled]="!messageControl.value?.trim()"
+            class="w-12 h-12 bg-primary-500 hover:bg-primary-600 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white rounded-2xl flex items-center justify-center shadow-md shadow-primary-500/20 transition-all active:scale-95 shrink-0"
+          >
+            <mat-icon>send</mat-icon>
+          </button>
+        </div>
+      </div>
+    } @else {
+      <!-- Empty State -->
+      <div class="h-full flex flex-col items-center justify-center text-center p-8 bg-slate-50/30 dark:bg-slate-950/20">
+        <div class="w-24 h-24 bg-primary-50 dark:bg-primary-900/20 rounded-full flex items-center justify-center mb-6 shadow-inner">
+          <mat-icon class="!text-5xl text-primary-500">forum</mat-icon>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-800 dark:text-white mb-2">Centro de Mensajería</h2>
+        <p class="text-slate-500 dark:text-slate-400 max-w-md mb-4">
+          Selecciona un chat de la lista o crea uno nuevo con el botón <strong>+ Nuevo</strong>.
+        </p>
+        <button (click)="openNewChatDialog()"
+                class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-xl shadow-lg shadow-primary-500/30 transition-all active:scale-95">
+          <mat-icon>add</mat-icon> Crear chat nuevo
+        </button>
+      </div>
+    }
+
+  </div>
+</div>
+}

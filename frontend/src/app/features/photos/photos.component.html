@@ -1,0 +1,110 @@
+<!-- photos.component.html -->
+<div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+  <!-- Header Section -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Fotos Rechazadas</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Revisa y aprueba las fotografías que fueron marcadas con observaciones.</p>
+    </div>
+    
+    <div class="flex items-center gap-3">
+      <div class="px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-2xl border border-rose-100 dark:border-rose-900/30 flex items-center gap-2 font-bold shadow-sm">
+        <mat-icon class="text-sm">error_outline</mat-icon>
+        {{ photos().length }} Pendientes
+      </div>
+      <button 
+        (click)="loadPhotos()"
+        class="w-12 h-12 flex items-center justify-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-primary-500 transition-all duration-200 shadow-sm shadow-slate-200/50 dark:shadow-none"
+      >
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando galería de revisión...</p>
+    </div>
+  } @else if (photos().length === 0) {
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 p-12 text-center flex flex-col items-center gap-4 shadow-sm animate-in zoom-in-95 duration-500">
+      <div class="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center text-emerald-500 mb-2">
+        <mat-icon class="!text-5xl">verified_user</mat-icon>
+      </div>
+      <h3 class="text-2xl font-bold text-slate-800 dark:text-white">¡Todo en orden!</h3>
+      <p class="text-slate-500 dark:text-slate-400 max-w-md mx-auto">No hay fotografías rechazadas que requieran revisión en este momento.</p>
+      <button mat-flat-button color="primary" (click)="loadPhotos()" class="!rounded-xl !h-12 px-8 mt-4 shadow-lg shadow-primary-500/20">
+        Actualizar Galería
+      </button>
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+      @for (foto of photos(); track foto.id) {
+        <div class="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-2xl hover:shadow-slate-300/50 dark:hover:shadow-primary-500/10 transition-all duration-500 overflow-hidden flex flex-col">
+          <!-- Image Container -->
+          <div class="relative h-60 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            @if (foto.url) {
+              <img 
+                [src]="foto.url" 
+                [alt]="'Foto ' + foto.id" 
+                class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                (error)="onImgError($event)"
+              >
+            } @else {
+              <div class="w-full h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 gap-2">
+                <mat-icon class="!text-4xl">broken_image</mat-icon>
+                <span class="text-xs font-medium">Sin previsualización</span>
+              </div>
+            }
+            <!-- Badge Overlay -->
+            <div class="absolute top-4 left-4">
+              <span class="px-2.5 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-lg uppercase tracking-widest border border-white/10">
+                Nexus #{{ foto.id }}
+              </span>
+            </div>
+            <!-- Action Overlay -->
+            <div class="absolute inset-0 bg-primary-600/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-sm">
+              <button 
+                (click)="approvePhoto(foto)"
+                class="w-14 h-14 bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 rounded-2xl flex items-center justify-center shadow-xl hover:scale-110 transition-transform active:scale-95"
+                matTooltip="Aprobar Foto"
+              >
+                <mat-icon>check_circle</mat-icon>
+              </button>
+              <button 
+                class="w-14 h-14 bg-white/20 text-white rounded-2xl flex items-center justify-center border border-white/30 hover:bg-white/30 transition-colors"
+                matTooltip="Zoom"
+              >
+                <mat-icon>zoom_in</mat-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- Content Container -->
+          <div class="p-6 space-y-4 flex-1 flex flex-col justify-between">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
+                <span>Tipo: {{ foto.id_tipo_foto }}</span>
+                <span class="text-primary-500">Pendiente</span>
+              </div>
+              <div class="p-4 bg-rose-50 dark:bg-rose-900/10 border border-rose-100/50 dark:border-rose-900/20 rounded-2xl">
+                <p class="text-sm font-semibold text-rose-700 dark:text-rose-400 leading-snug">
+                  {{ foto.motivo_rechazo || 'Motivo de rechazo no especificado' }}
+                </p>
+              </div>
+            </div>
+
+            <button 
+              mat-flat-button 
+              color="primary" 
+              (click)="approvePhoto(foto)"
+              class="!w-full !rounded-2xl !h-12 !font-bold !bg-primary-500 hover:!bg-primary-600 shadow-md shadow-primary-500/10"
+            >
+              Aprobar Ahora
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

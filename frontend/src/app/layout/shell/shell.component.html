@@ -1,0 +1,189 @@
+<!-- shell.component.html -->
+<div class="min-h-screen flex bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
+  <!-- Mobile Backdrop -->
+  @if (sidenavOpen()) {
+    <div 
+      (click)="toggleSidenav()"
+      class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 lg:hidden animate-in fade-in duration-300"
+    ></div>
+  }
+
+  <!-- Modern Sidebar -->
+  <aside 
+    [class.w-72]="sidenavOpen()" 
+    [class.w-20]="!sidenavOpen()"
+    [class.-translate-x-full]="!sidenavOpen()"
+    class="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-300 transition-all duration-500 ease-in-out flex flex-col z-50 fixed h-screen lg:sticky lg:top-0 border-r border-white/5 lg:translate-x-0 overflow-hidden"
+  >
+    <!-- Sidebar Header -->
+    <div class="h-20 flex items-center px-6 gap-4 border-b border-white/5 shrink-0 overflow-hidden">
+      <div class="w-11 h-11 bg-gradient-to-tr from-primary-600 to-primary-400 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20 shrink-0">
+        <mat-icon class="text-white">rocket_launch</mat-icon>
+      </div>
+      <span 
+        [class.opacity-0]="!sidenavOpen()" 
+        [class.translate-x-4]="!sidenavOpen()"
+        class="text-2xl font-black tracking-tighter text-white transition-all duration-500 whitespace-nowrap"
+      >
+        Nexus<span class="text-primary-400 italic">2DI</span>
+      </span>
+    </div>
+
+    <!-- Navigation List -->
+    <nav class="flex-1 overflow-y-auto overflow-x-hidden py-8 px-3 space-y-2 custom-scrollbar">
+      @for (item of visibleNavItems(); track item.route) {
+        <a 
+          [routerLink]="item.route" 
+          routerLinkActive="bg-white/5 text-white !border-primary-500/30 shadow-inner"
+          class="flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-transparent transition-all duration-300 hover:bg-white/5 hover:text-white group relative overflow-hidden h-[52px]"
+          [matTooltip]="!sidenavOpen() ? item.label : ''"
+          matTooltipPosition="right"
+        >
+          <!-- Active Indicator -->
+          <div routerLinkActive="opacity-100 scale-y-100" class="absolute left-0 top-3 bottom-3 w-1 bg-primary-500 rounded-full opacity-0 scale-y-0 transition-all duration-300"></div>
+          
+          <mat-icon class="shrink-0 transition-transform group-hover:scale-110 text-slate-400 group-hover:text-primary-400" routerLinkActive="!text-primary-400">{{ item.icon }}</mat-icon>
+          
+          <span 
+            [class.opacity-0]="!sidenavOpen()"
+            [class.translate-x-4]="!sidenavOpen()"
+            class="font-bold text-sm tracking-tight whitespace-nowrap transition-all duration-500"
+          >
+            {{ item.label }}
+          </span>
+        </a>
+      }
+    </nav>
+
+    <!-- Sidebar Footer (User Info) -->
+    <div class="p-3 border-t border-white/5 bg-slate-950/30 shrink-0">
+      <div class="flex items-center gap-3 p-3 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors cursor-pointer group overflow-hidden">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border border-white/10 shadow-lg group-hover:border-primary-500/50 transition-colors shrink-0">
+          <mat-icon class="text-slate-400 group-hover:text-primary-400">person</mat-icon>
+        </div>
+        <div 
+          [class.opacity-0]="!sidenavOpen()"
+          [class.translate-x-4]="!sidenavOpen()"
+          class="flex flex-col min-w-0 transition-all duration-500"
+        >
+          <span class="text-sm font-bold text-white truncate tracking-tight">{{ user()?.username }}</span>
+          <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">{{ user()?.rol_nombre || user()?.rol }}</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <div class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+    <!-- Premium Header -->
+    <header class="h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-white/5 px-6 flex items-center justify-between sticky top-0 z-40 shrink-0">
+      <div class="flex items-center gap-3 md:gap-4">
+        <button 
+          (click)="toggleSidenav()"
+          class="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors bg-slate-50 dark:bg-slate-800/50"
+        >
+          <mat-icon>{{ sidenavOpen() ? 'menu_open' : 'menu' }}</mat-icon>
+        </button>
+        <div class="flex flex-col">
+          <h2 class="text-sm md:text-lg font-bold text-slate-800 dark:text-white leading-none">Portal de Gestión</h2>
+          <span class="text-[10px] font-black text-primary-500 uppercase tracking-widest md:hidden">Nexus2DI</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 md:gap-3">
+        <!-- Theme Toggle -->
+        <button 
+          (click)="toggleTheme()"
+          class="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+          [matTooltip]="isDark() ? 'Modo Claro' : 'Modo Oscuro'"
+        >
+          <mat-icon>{{ isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
+        </button>
+
+        <!-- Search (Desktop) -->
+        <div class="hidden lg:flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-1.5 border border-slate-200 dark:border-slate-700 focus-within:border-primary-500/50 transition-all">
+          <mat-icon class="text-slate-400 !text-lg">search</mat-icon>
+          <input type="text" placeholder="Buscar..." class="bg-transparent border-none outline-none text-xs font-medium text-slate-600 dark:text-slate-300 px-2 w-32 focus:w-48 transition-all">
+        </div>
+
+        <!-- Notifications -->
+        <button 
+          class="relative w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-500 transition-colors"
+          [matMenuTriggerFor]="notifMenu"
+        >
+          <mat-icon class="!text-xl">notifications</mat-icon>
+          @if (notifCount > 0) {
+            <span class="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
+          }
+        </button>
+        <mat-menu #notifMenu="matMenu" xPosition="before" class="modern-menu">
+          <div class="px-4 py-3 border-b border-slate-100">
+            <p class="font-semibold text-slate-800">Notificaciones</p>
+          </div>
+          @if (notifCount === 0) {
+            <button mat-menu-item disabled class="text-slate-400">No hay notificaciones nuevas</button>
+          } @else {
+            <button mat-menu-item routerLink="/visits" class="py-3">
+              <mat-icon class="text-rose-500">warning</mat-icon>
+              <span>Tienes {{ notifCount }} visitas rechazadas</span>
+            </button>
+          }
+        </mat-menu>
+
+        <!-- User Menu Trigger -->
+        <button 
+          [matMenuTriggerFor]="userMenu"
+          class="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full hover:bg-slate-100 transition-colors group border border-transparent hover:border-slate-200"
+        >
+          <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold overflow-hidden border border-white">
+            {{ user()?.username?.charAt(0)?.toUpperCase() }}
+          </div>
+          <mat-icon class="text-slate-400 group-hover:text-slate-600">expand_more</mat-icon>
+        </button>
+        
+        <mat-menu #userMenu="matMenu" xPosition="before" class="modern-menu">
+          <div class="px-4 py-3 border-b border-slate-100 flex flex-col min-w-[200px]">
+            <span class="font-semibold text-slate-800">{{ user()?.username }}</span>
+            <span class="text-xs text-slate-500">{{ user()?.rol_nombre || user()?.rol }}</span>
+          </div>
+          <button mat-menu-item routerLink="/profile"><mat-icon>person_outline</mat-icon> Mi Perfil</button>
+          <button mat-menu-item routerLink="/settings"><mat-icon>settings_outline</mat-icon> Configuración</button>
+          <hr class="my-1 border-slate-100">
+          <button mat-menu-item (click)="logout()" class="text-rose-600">
+            <mat-icon class="!text-rose-600">logout</mat-icon> Cerrar sesión
+          </button>
+        </mat-menu>
+      </div>
+    </header>
+
+    <!-- Page Content Container -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-slate-50/50 dark:bg-slate-950/20 relative">
+      <div class="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <router-outlet />
+      </div>
+
+      <!-- Floating Chat Button (Admin/Analyst) -->
+      @if (user()?.rol === 'admin' || user()?.rol === 'analyst' || user()?.rol === 'superadmin') {
+        <button [matMenuTriggerFor]="chatFabMenu" matTooltip="Opciones de Chat" matTooltipPosition="left"
+           class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-primary-600 hover:bg-primary-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-primary-500/30 transition-all hover:scale-110 active:scale-95 group">
+          <mat-icon class="!text-3xl transition-transform group-hover:-rotate-12">chat</mat-icon>
+        </button>
+        <mat-menu #chatFabMenu="matMenu" xPosition="before" class="modern-menu">
+          <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+            <p class="font-semibold text-slate-800 dark:text-slate-200">Nuevo Mensaje</p>
+          </div>
+          <a mat-menu-item routerLink="/chat" [queryParams]="{ mode: 'equipo_cliente' }">
+            <mat-icon class="text-primary-500">groups</mat-icon>
+            <span>Equipo + Cliente</span>
+          </a>
+          <a mat-menu-item routerLink="/chat" [queryParams]="{ mode: 'solo_equipo' }">
+            <mat-icon class="text-indigo-500">shield_person</mat-icon>
+            <span>Solo Equipo</span>
+          </a>
+        </mat-menu>
+      }
+    </main>
+  </div>
+</div>
+
+<app-confirm-dialog />

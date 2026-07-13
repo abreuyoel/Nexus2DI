@@ -1,0 +1,320 @@
+<div class="mv-main-container">
+
+  <!-- ═══ Selector de Cliente (Coordinador Exclusivo) ═══ -->
+  @if (needsClientSelection()) {
+    <div class="mv-client-selector">
+      <div class="mv-client-selector-header">
+        <mat-icon>business</mat-icon>
+        <h2>Selecciona un Cliente</h2>
+      </div>
+      <div class="mv-client-search">
+        <mat-icon>search</mat-icon>
+        <input type="text" placeholder="Buscar cliente..."
+               [ngModel]="exclusiveClientSearch()"
+               (ngModelChange)="exclusiveClientSearch.set($event)">
+      </div>
+      @if (loading()) {
+        <div class="mv-loading">
+          <mat-spinner diameter="40"></mat-spinner>
+          <p>Cargando clientes...</p>
+        </div>
+      } @else {
+        <div class="mv-client-grid">
+          @for (c of filteredExclusiveClients(); track c.id_cliente; let i = $index) {
+            <button class="mv-client-card" (click)="selectExclusiveClient(c)"
+                    [style.animation-delay]="i * 40 + 'ms'">
+              <mat-icon class="mv-client-icon">business</mat-icon>
+              <span class="mv-client-name">{{ c.cliente }}</span>
+              @if (c.id_tipo_cliente === 3) {
+                <span class="mv-client-tag mv-tag-exclusivo">Exclusivo</span>
+              } @else if (c.id_tipo_cliente === 1) {
+                <span class="mv-client-tag mv-tag-tradex">Tradex</span>
+              }
+              <mat-icon class="mv-client-arrow">arrow_forward</mat-icon>
+            </button>
+          } @empty {
+            <p class="mv-empty">No hay clientes disponibles.</p>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  @if (!needsClientSelection()) {
+
+  <!-- Banner cliente seleccionado (Coordinador Exclusivo) -->
+  @if (isCoordinadorExclusivo() && selectedExclusiveClient()) {
+    <div class="mv-client-banner">
+      <div class="mv-client-banner-info">
+        <mat-icon>business</mat-icon>
+        <span><strong>Cliente:</strong> {{ selectedExclusiveClient()!.cliente }}</span>
+      </div>
+      <button class="mv-client-banner-change" (click)="changeExclusiveClient()">
+        <mat-icon>swap_horiz</mat-icon> Cambiar cliente
+      </button>
+    </div>
+  }
+
+  <!-- ── Banner ── -->
+  <div class="mv-banner">
+    <div class="mv-banner-content">
+      <div class="mv-banner-text">
+        <h1 id="bannerFecha">
+          @if (bannerInfo().esHoy) {
+            📅 Visitas de hoy
+          } @else if (bannerInfo().fechaInicio === bannerInfo().fechaFin) {
+            📅 Visitas del {{ formatDateShort(bannerInfo().fechaInicio) }}
+          } @else {
+            📅 Visitas ({{ formatDateShort(bannerInfo().fechaInicio) }} - {{ formatDateShort(bannerInfo().fechaFin) }})
+          }
+        </h1>
+        <p id="bannerFechaSub">
+          @if (bannerInfo().fechaInicio === bannerInfo().fechaFin) {
+            {{ formatDateHuman(bannerInfo().fechaInicio) }}
+          } @else {
+            Del {{ formatDateHuman(bannerInfo().fechaInicio) }} al {{ formatDateHuman(bannerInfo().fechaFin) }}
+          }
+        </p>
+      </div>
+      <div class="mv-banner-stats">
+        <div class="mv-stat-box">
+          <span class="mv-stat-label">Visitas</span>
+          <span class="mv-stat-value" id="statVisitas">{{ bannerInfo().totalVisitas }}</span>
+        </div>
+        <div class="mv-stat-box">
+          <span class="mv-stat-label">Fotos</span>
+          <span class="mv-stat-value" id="statFotos">{{ bannerInfo().totalFotos }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Filtros ── -->
+  <div class="mv-filters">
+    <div class="mv-filter-group">
+      <div class="mv-filter-item">
+        <label>Desde</label>
+        <div class="mv-input-with-icon">
+          <mat-icon>event</mat-icon>
+          <input type="date" [ngModel]="fechaInicio()" (ngModelChange)="fechaInicio.set($event); cargarVisitas()">
+        </div>
+      </div>
+      <div class="mv-filter-item">
+        <label>Hasta</label>
+        <div class="mv-input-with-icon">
+          <mat-icon>event</mat-icon>
+          <input type="date" [ngModel]="fechaFin()" (ngModelChange)="fechaFin.set($event); cargarVisitas()">
+        </div>
+      </div>
+      <div class="mv-filter-item">
+        <label>Ruta</label>
+        <app-searchable-select
+          [options]="rutaOptions()"
+          [value]="ruta()"
+          icon="directions_car"
+          placeholder="Todas las rutas"
+          searchPlaceholder="Buscar ruta..."
+          allLabel="Todas las rutas"
+          (valueChange)="onRutaChange($event)">
+        </app-searchable-select>
+      </div>
+      <div class="mv-filter-item">
+        <label>Cadena</label>
+        <app-searchable-select
+          [options]="cadenaOptions()"
+          [value]="cadena()"
+          icon="storefront"
+          placeholder="Todas las cadenas"
+          searchPlaceholder="Buscar cadena..."
+          allLabel="Todas las cadenas"
+          (valueChange)="onCadenaChange($event)">
+        </app-searchable-select>
+      </div>
+      <div class="mv-filter-item">
+        <label>Punto de Venta</label>
+        <app-searchable-select
+          [options]="puntoOptions()"
+          [value]="puntoId()"
+          icon="location_on"
+          placeholder="Todos los puntos"
+          searchPlaceholder="Buscar punto de venta..."
+          allLabel="Todos los puntos"
+          (valueChange)="onPuntoChange($event)">
+        </app-searchable-select>
+      </div>
+    </div>
+    <div class="mv-filter-actions">
+
+      <button class="mv-btn-secondary" (click)="volverAHoy()">
+        <mat-icon>today</mat-icon> Volver a Hoy
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Contenedor de Visitas ── -->
+  <div id="mvListContainer" class="mv-list-container">
+    
+    @if (loading()) {
+      <div class="mv-skeleton">
+        <div class="mv-skeleton-card"></div>
+        <div class="mv-skeleton-card"></div>
+        <div class="mv-skeleton-card"></div>
+      </div>
+    } @else if (error()) {
+      <div class="mv-empty">
+        <span class="mv-empty-icon">⚠️</span>
+        <p class="mv-empty-title">Ocurrió un error</p>
+        <p class="mv-empty-sub">{{ error() }}</p>
+        <button class="mv-btn-secondary" style="margin-top: 1rem;" (click)="cargarVisitas()">
+          <mat-icon>refresh</mat-icon> Reintentar
+        </button>
+      </div>
+    } @else if (visitas().length === 0) {
+      <div class="mv-empty">
+        <span class="mv-empty-icon">🔍</span>
+        <p class="mv-empty-title">Sin visitas para este día</p>
+        <p class="mv-empty-sub">No se encontraron visitas con los filtros aplicados.<br>Prueba cambiando la fecha o limpiando los filtros.</p>
+      </div>
+    } @else {
+      <div class="mv-visita-groups">
+        @for (ruta of groupedVisitas(); track ruta.name) {
+          <div class="mv-region-section">
+            <h2 class="mv-region-title">
+              <mat-icon>directions_car</mat-icon> {{ ruta.name }}
+            </h2>
+            
+            @for (cadena of ruta.cadenas; track cadena.name) {
+              <div class="mv-cadena-section">
+                <h3 class="mv-cadena-title">
+                  <mat-icon>storefront</mat-icon> {{ cadena.name }}
+                </h3>
+                
+                @for (pdv of cadena.pdvs; track pdv.name) {
+                  <div class="mv-pdv-section">
+                    <h4 class="mv-pdv-title">
+                      <mat-icon>location_on</mat-icon> {{ pdv.name }}
+                    </h4>
+                    
+                    <div class="mv-visita-list">
+                      @for (visita of pdv.visitas; track visita.id_visita; let idx = $index) {
+                        
+                        <div class="mv-card" (click)="toggleCard(visita)" [style.animation-delay]="idx * 40 + 'ms'">
+                          <div class="mv-card-inner">
+                            <div class="mv-card-thumb">
+                              @if (visita.preview_foto) {
+                                <img [src]="visita.preview_foto" alt="Preview" loading="lazy">
+                              } @else {
+                                <div class="mv-card-thumb-placeholder">📷</div>
+                              }
+                              @if (visita.total_fotos > 0) {
+                                <span class="mv-thumb-count">{{ visita.total_fotos }} 📸</span>
+                              }
+                            </div>
+                            
+                            <div class="mv-card-body">
+                              <div>
+                                <div class="mv-card-top">
+                                  <span class="mv-card-punto">{{ visita.punto_nombre }}</span>
+                                  <span class="mv-card-visita-id">#{{ visita.id_visita }}</span>
+                                </div>
+                                <div class="mv-card-meta">
+                                  <span class="mv-card-meta-item">
+                                    <mat-icon>person</mat-icon>
+                                    {{ visita.mercaderista || 'Sin asignar' }}
+                                  </span>
+                                  @if (visita.fecha_visita) {
+                                    <span class="mv-card-meta-item">
+                                      <mat-icon>schedule</mat-icon>
+                                      {{ formatTime(visita.fecha_visita) }}
+                                    </span>
+                                  }
+                                  <span class="mv-card-meta-item">
+                                    <mat-icon>business</mat-icon>
+                                    {{ visita.cliente_nombre || '' }}
+                                  </span>
+                                </div>
+                                <div class="mv-card-tags">
+                                  @if (visita.ciudad) { <span class="mv-tag mv-tag-ciudad">🌆 {{ visita.ciudad }}</span> }
+                                  <span class="mv-tag mv-tag-fotos">🖼 {{ visita.total_fotos }} foto{{ visita.total_fotos !== 1 ? 's' : '' }}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div class="mv-card-arrow">
+                              <mat-icon>{{ visita.expanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+                            </div>
+                          </div>
+                          
+                          <!-- Categorías expandibles -->
+                          <div class="mv-cat-expand" [class.open]="visita.expanded">
+                            <div class="mv-cat-grid-inner">
+                              
+                              @for (cfg of CATEGORIAS; track cfg.nombre) {
+                                @if (getFotosForCategoria(visita, cfg.nombre); as fotos) {
+                                  
+                                  <div class="mv-cat-item" 
+                                       [class.has-fotos]="fotos.length > 0" 
+                                       [class.empty]="fotos.length === 0"
+                                       (click)="openCarousel(cfg.nombre, fotos, $event)"
+                                       [attr.role]="fotos.length > 0 ? 'button' : null"
+                                       [attr.tabindex]="fotos.length > 0 ? '0' : null">
+                                    
+                                    <div class="mv-cat-preview">
+                                      @if (fotos.length > 0 && fotos[0].file_path) {
+                                        <img [src]="fotos[0].file_path" [alt]="cfg.nombre" loading="lazy" (error)="onImageError($event)">
+                                        <div class="mv-cat-overlay">
+                                          <span class="mv-cat-overlay-count">{{ fotos.length }}</span>
+                                        </div>
+                                      } @else {
+                                        <div class="mv-cat-preview-icon" 
+                                             [style.color]="cfg.color + '80'" 
+                                             [style.background-color]="cfg.color + '12'">
+                                          {{ cfg.emoji }}
+                                        </div>
+                                      }
+                                    </div>
+                                    
+                                    <div class="mv-cat-info">
+                                      <p class="mv-cat-name">{{ cfg.nombre }}</p>
+                                      <p class="mv-cat-count" [class.has-fotos]="fotos.length > 0">
+                                        {{ fotos.length > 0 ? fotos.length + ' foto' + (fotos.length !== 1 ? 's' : '') : 'Sin fotos' }}
+                                      </p>
+                                    </div>
+                                    
+                                  </div>
+                                }
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- ── Lightbox de fotos ── -->
+  <app-photo-lightbox
+    [open]="carouselOpen()"
+    [photos]="lightboxPhotos()"
+    [startIndex]="carouselIndex()"
+    [title]="carouselTitle()"
+    (closed)="closeCarousel()"
+    (indexChange)="onCarouselIndexChange($event)">
+    @if (currentCarouselFoto(); as f) {
+      <div class="mv-car-info" style="display:flex; gap:.5rem; align-items:center; justify-content:center;">
+        <span class="mv-badge">{{ f.tipo_desc }}</span>
+        <span class="mv-badge-outline">#{{ f.id_foto }}</span>
+        <span class="mv-badge-text">{{ formatDateShort(f.fecha) }}</span>
+      </div>
+    }
+  </app-photo-lightbox>
+
+  } <!-- fin @if (!needsClientSelection()) -->
+</div>
