@@ -3,11 +3,14 @@ FROM python:3.12-slim-bookworm AS builder
 
 # Driver ODBC de Microsoft + toolchain para compilar pyodbc/dependencias sin
 # wheel prebuilt. curl/gnupg solo hacen falta para agregar el repo de MS.
+# La línea del repo se escribe directa (no se descarga prod.list y se le
+# mete sed) porque el prod.list oficial ya trae su propio "[arch=...]", y
+# agregarle un segundo bloque "[signed-by=...]" con sed produce una entrada
+# malformada que apt rechaza ("Malformed entry ... URI parse").
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl gnupg unixodbc-dev gcc g++ \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list -o /etc/apt/sources.list.d/mssql-release.list \
-    && sed -i 's#deb #deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] #' /etc/apt/sources.list.d/mssql-release.list \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql17 \
     && rm -rf /var/lib/apt/lists/*
@@ -23,8 +26,7 @@ FROM python:3.12-slim-bookworm AS production
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl gnupg unixodbc \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list -o /etc/apt/sources.list.d/mssql-release.list \
-    && sed -i 's#deb #deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] #' /etc/apt/sources.list.d/mssql-release.list \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql17 \
     && apt-get purge -y --auto-remove curl gnupg \
