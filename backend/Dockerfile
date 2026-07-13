@@ -42,9 +42,13 @@ COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
-RUN useradd --create-home --shell /bin/false appuser \
+# UID numérico explícito (no solo el nombre): Kubernetes con
+# securityContext.runAsNonRoot no puede verificar que un usuario nombrado
+# sea distinto de root sin resolverlo primero, y rechaza el contenedor
+# (CreateContainerConfigError) — con un UID numérico lo verifica directo.
+RUN useradd --create-home --shell /bin/false --uid 10001 appuser \
     && chown -R appuser:appuser /app
-USER appuser
+USER 10001
 
 EXPOSE 8000
 
