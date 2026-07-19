@@ -67,13 +67,16 @@ def get_recipients(
     cid = _resolve_cliente_id(current_user, cliente_id)
 
     # Analistas asignados al cliente → usuario asociado
-    # USUARIOS.id_perfil = id_analista cuando id_rol = 2 (Analista)
+    # USUARIOS.id_perfil = id_analista cuando id_rol = 2 (Analista).
+    # Fuente de verdad: analistas_rutas -> RUTA_PROGRAMACION, no
+    # ANALISTAS_CLIENTE (desactualizada) — mismo criterio que centro_mando.py.
     analistas = db.execute(text("""
         SELECT DISTINCT u.id_usuario, COALESCE(a.nombre_analista, u.username) AS nombre, u.username
-        FROM ANALISTAS_CLIENTE ac
-        JOIN ANALISTAS a ON ac.id_analista = a.id_analista
+        FROM analistas_rutas ar
+        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
         JOIN USUARIOS  u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE ac.id_cliente = :cid
+        WHERE rp.id_cliente = :cid AND rp.activa = 1
           AND ISNULL(u.activo, 1) = 1
         ORDER BY nombre
     """), {"cid": cid}).fetchall()
@@ -153,12 +156,14 @@ def _get_team_user_ids(db: Session, cid: int) -> set[int]:
       - id_rol IN (1,3,4,9,11,12):  id_perfil = id_cliente
     """
     rows = db.execute(text("""
-        -- Analistas asignados
+        -- Analistas asignados (analistas_rutas -> RUTA_PROGRAMACION, no
+        -- ANALISTAS_CLIENTE — desactualizada, ver centro_mando.py)
         SELECT u.id_usuario
-        FROM ANALISTAS_CLIENTE ac
-        JOIN ANALISTAS a ON ac.id_analista = a.id_analista
+        FROM analistas_rutas ar
+        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
         JOIN USUARIOS u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE ac.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
+        WHERE rp.id_cliente = :cid AND rp.activa = 1 AND ISNULL(u.activo, 1) = 1
 
         UNION
         -- Mercaderistas asignados vía rutas

@@ -14,10 +14,12 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
     """Restringe los balances a los clientes+rutas asignados al analista.
 
     Espeja `mk_analyst` de centro_mando.py: el analista solo ve un balance si
-    (a) el PDV está en alguna ruta asignada al analista (`analistas_rutas`) con
-    programación activa, y (b) el cliente del balance está en `ANALISTAS_CLIENTE`.
-    Devuelve ("", {}) para usuarios que no son analistas (sin restricción aquí).
-    `user.id_perfil` apunta a ANALISTAS.id_analista para el rol analista.
+    el PDV está en alguna ruta asignada al analista (`analistas_rutas`) con
+    programación activa — única fuente de verdad, ya no se cruza además con
+    `ANALISTAS_CLIENTE` (desactualizada): un analista con ruta asignada pero
+    sin fila ahí quedaba viendo 0 balances de ese cliente pese a tener acceso
+    real. Devuelve ("", {}) para usuarios que no son analistas (sin
+    restricción aquí). `user.id_perfil` apunta a ANALISTAS.id_analista.
     """
     if not (user.is_analyst and user.id_perfil):
         return "", {}
@@ -26,8 +28,6 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
             JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
             WHERE rp_a.id_punto_interes = {alias}.identificador_pdv
               AND rp_a.activa = 1 AND ar_a.id_analista = :analista_id)
-        AND EXISTS (SELECT 1 FROM ANALISTAS_CLIENTE ac_a
-            WHERE ac_a.id_cliente = {alias}.id_cliente AND ac_a.id_analista = :analista_id)
     """
     return frag, {"analista_id": int(user.id_perfil)}
 
@@ -54,6 +54,14 @@ def get_client_data_filters(
     af, ap = _analyst_filter(current_user)
     where_clause += af
     query_params.update(ap)
+
+    if current_user.is_client:
+        # Mismo criterio que /balances: el cliente solo debe ver (y filtrar
+        # sobre) datos de visitas ya Revisado.
+        where_clause += """ AND EXISTS (
+            SELECT 1 FROM VISITAS_MERCADERISTA v2
+            WHERE v2.id_visita = b.id_visita AND v2.estado = 'Revisado'
+        )"""
 
     # Get distinct productos
     productos = db.execute(text(f"SELECT DISTINCT producto FROM BALANCES_TOTALES b {where_clause} AND producto IS NOT NULL"), query_params).scalars().all()
@@ -249,6 +257,14 @@ def get_client_balances(
     if estado:
         query_str += " AND v.estado = :estado"
         params["estado"] = estado
+    elif current_user.is_client:
+        # El cliente (incluye coordinador_exclusivo/tradex/general — is_client
+        # los agrupa) solo debe ver balances de visitas ya aprobadas/revisadas
+        # por el analista. Antes no había ningún filtro por defecto acá: un
+        # cliente veía balances de visitas Pendiente/En Progreso igual que
+        # Revisado. Admin/analyst no se filtran (necesitan ver/editar
+        # balances antes de que la visita quede Revisado).
+        query_str += " AND v.estado = 'Revisado'"
 
     query_str += " ORDER BY b.fecha_balance DESC"
 

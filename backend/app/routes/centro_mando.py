@@ -35,18 +35,33 @@ DIAS_ES = {
 def _dia_es(fecha: _date) -> str:
     return DIAS_ES[fecha.strftime('%A')]
 
+def _clientes_de_analista(db: Session, analista_id: int) -> List[int]:
+    """Clientes que el analista tiene asignados vía analistas_rutas ->
+    RUTA_PROGRAMACION (activa=1) — misma fuente de verdad que mk_analyst()."""
+    if not analista_id:
+        return []
+    rows = execute_query(db, """
+        SELECT DISTINCT rp.id_cliente
+        FROM analistas_rutas ar
+        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+        WHERE ar.id_analista = ? AND rp.activa = 1
+    """, (analista_id,))
+    return [r[0] for r in rows if r[0] is not None]
+
 def mk_analyst(is_analyst: bool, analista_id: int, vm_a='vm', pin_a='pin', c_a='c'):
     if not (is_analyst and analista_id):
         return "", []
+    # Fuente de verdad única: analistas_rutas -> RUTA_PROGRAMACION. Antes esto
+    # además exigía una fila en ANALISTAS_CLIENTE (tabla desactualizada) — un
+    # analista con ruta asignada pero sin fila ahí quedaba viendo 0 resultados
+    # para ese cliente pese a tener acceso real.
     f = f"""
     AND EXISTS (SELECT 1 FROM RUTA_PROGRAMACION rp_a
         JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
         WHERE rp_a.id_punto_interes = {pin_a}.identificador
           AND rp_a.activa = 1 AND ar_a.id_analista = ?)
-    AND EXISTS (SELECT 1 FROM ANALISTAS_CLIENTE ac_a
-        WHERE ac_a.id_cliente = {c_a}.id_cliente AND ac_a.id_analista = ?)
     """
-    return f, [analista_id, analista_id]
+    return f, [analista_id]
 
 @router.get("/clientes")
 def listar_clientes(
@@ -55,19 +70,18 @@ def listar_clientes(
 ):
     try:
         # El analista solo debe ver los clientes de SUS rutas asignadas
-        # (analistas_rutas) y de su cartera (ANALISTAS_CLIENTE). Admin y
-        # coordinador general/exclusivo ven "todos los clientes" sin filtro
-        # (es justamente lo que este dropdown/vista debe mostrarles).
+        # (analistas_rutas -> RUTA_PROGRAMACION, fuente de verdad única — no
+        # ANALISTAS_CLIENTE, desactualizada). Admin y coordinador
+        # general/exclusivo ven "todos los clientes" sin filtro (es
+        # justamente lo que este dropdown/vista debe mostrarles).
         filtro = ""
         params: tuple = ()
         if current_user.is_analyst and current_user.id_perfil:
             filtro = """
                 AND EXISTS (SELECT 1 FROM analistas_rutas ar_a
                     WHERE ar_a.id_ruta = rp.id_ruta AND ar_a.id_analista = ?)
-                AND EXISTS (SELECT 1 FROM ANALISTAS_CLIENTE ac_a
-                    WHERE ac_a.id_cliente = c.id_cliente AND ac_a.id_analista = ?)
             """
-            params = (current_user.id_perfil, current_user.id_perfil)
+            params = (current_user.id_perfil,)
 
         rows = execute_query(db, f"""
             SELECT DISTINCT c.id_cliente, c.cliente
@@ -95,6 +109,29 @@ def resumen_dia(
     try:
         if current_user.is_client and not current_user.rol == 'admin':
             cliente_id = current_user.id_perfil
+
+        # Un analista sin cliente_id explícito veía el resumen agregado de
+        # "todos los clientes" del sistema — acá no había NINGÚN filtro de
+        # analista, a diferencia de /activaciones (que sí usa mk_analyst()).
+        # Se acota a sus propios clientes (analistas_rutas), igual que ahí.
+        analista_cliente_ids: List[int] = []
+        if current_user.is_analyst and current_user.id_perfil:
+            analista_cliente_ids = _clientes_de_analista(db, current_user.id_perfil)
+            if cliente_id and cliente_id not in analista_cliente_ids:
+                raise HTTPException(status_code=403, detail="No autorizado para este cliente")
+        is_analyst_scoped = current_user.is_analyst and current_user.id_perfil and not cliente_id
+        if is_analyst_scoped and not analista_cliente_ids:
+            return {
+                "success": True, "cliente_id": None, "cliente_nombre": "Sin clientes asignados",
+                "desde": _date.today().isoformat(), "hasta": _date.today().isoformat(),
+                "mercaderistas": {"total_asignados": 0, "planificados_hoy": 0, "activos_hoy": 0,
+                                   "faltantes_hoy": 0, "exclusivos": 0, "tradex": 0,
+                                   "detalle": [], "faltantes": [], "activos": []},
+                "rutas": {"planificadas": 0, "activas": 0, "completadas": 0, "detalle": []},
+                "puntos_interes": {"planificados": 0, "activos": 0, "completados": 0, "detalle": []},
+                "clientes_tradex": {"planificados": 0, "activos": 0, "completados": 0, "aplica": False},
+            }
+        cli_ph = ",".join("?" for _ in analista_cliente_ids)
 
         try:
             d_desde = datetime.strptime(desde, '%Y-%m-%d').date() if desde else _date.today()
@@ -141,15 +178,16 @@ def resumen_dia(
             """
             asignados = execute_query(db, merc_asig_q, (cliente_id,))
         else:
-            merc_asig_q = """
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            merc_asig_q = f"""
                 SELECT DISTINCT m.id_mercaderista, m.nombre, m.cedula,
                                 ISNULL(m.tipo,'Mercaderista') AS tipo_camp
                 FROM MERCADERISTAS m
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_mercaderista = m.id_mercaderista
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = mr.id_ruta
-                WHERE m.activo = 1 AND rp.activa = 1
+                WHERE m.activo = 1 AND rp.activa = 1{cli_filter}
             """
-            asignados = execute_query(db, merc_asig_q)
+            asignados = execute_query(db, merc_asig_q, tuple(analista_cliente_ids))
 
         asignados_map = {r[0]: {"id_mercaderista": r[0], "nombre": r[1],
                                 "cedula": r[2], "tipo_campo": r[3]}
@@ -169,15 +207,16 @@ def resumen_dia(
             """
             plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range + [cliente_id]))
         else:
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             plan_hoy_q = f"""
                 SELECT DISTINCT m.id_mercaderista, rp.dia
                 FROM MERCADERISTAS m
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_mercaderista = m.id_mercaderista
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta         = mr.id_ruta
                 WHERE m.activo = 1 AND rp.activa = 1
-                  AND rp.dia IN ({ph})
+                  AND rp.dia IN ({ph}){cli_filter}
             """
-            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range))
+            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range + analista_cliente_ids))
             
         plan_counts = {}
         for r in plan_hoy:
@@ -201,15 +240,16 @@ def resumen_dia(
             """
             activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id))
         else:
-            activos_hoy_q = """
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            activos_hoy_q = f"""
                 SELECT DISTINCT ra.id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE)
                 FROM RUTAS_ACTIVADAS ra
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
                 WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
-                  AND mr.id_mercaderista = ra.id_mercaderista
+                  AND mr.id_mercaderista = ra.id_mercaderista{cli_filter}
             """
-            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta))
+            activos_rows = execute_query(db, activos_hoy_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
             
         act_counts = {}
         for r in activos_rows:
@@ -255,6 +295,7 @@ def resumen_dia(
             """
             rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range + [cliente_id]))
         else:
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             rutas_plan_q = f"""
                 SELECT DISTINCT rp.id_ruta, rn.ruta, mr.id_mercaderista, m.nombre, rp.dia
                 FROM RUTA_PROGRAMACION rp
@@ -262,9 +303,9 @@ def resumen_dia(
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
                 JOIN MERCADERISTAS m        ON m.id_mercaderista = mr.id_mercaderista
                 WHERE rp.activa = 1 AND m.activo = 1
-                  AND rp.dia IN ({ph})
+                  AND rp.dia IN ({ph}){cli_filter}
             """
-            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range))
+            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range + analista_cliente_ids))
 
         ruta_merc_pairs = {}
         for r in rutas_plan_rows:
@@ -322,6 +363,7 @@ def resumen_dia(
             """
             pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + [cliente_id]))
         else:
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             pois_plan_q = f"""
                 SELECT DISTINCT rp.id_punto_interes, mr.id_mercaderista,
                                 pin.punto_de_interes, rp.id_ruta, rn.ruta, rp.dia,
@@ -332,9 +374,9 @@ def resumen_dia(
                 JOIN PUNTOS_INTERES1 pin    ON pin.identificador = rp.id_punto_interes
                 JOIN MERCADERISTAS m        ON m.id_mercaderista = mr.id_mercaderista
                 WHERE rp.activa = 1 AND m.activo = 1
-                  AND rp.dia IN ({ph})
+                  AND rp.dia IN ({ph}){cli_filter}
             """
-            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range))
+            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + analista_cliente_ids))
 
         if cliente_id:
             estado_visita_q = """
@@ -349,16 +391,17 @@ def resumen_dia(
             """
             ev_rows = execute_query(db, estado_visita_q, (d_desde, d_hasta, cliente_id))
         else:
-            estado_visita_q = """
+            cli_filter_vm = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            estado_visita_q = f"""
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
                        MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
                        MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_des
                 FROM VISITAS_MERCADERISTA vm
                 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
-                WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
+                WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?{cli_filter_vm}
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             """
-            ev_rows = execute_query(db, estado_visita_q, (d_desde, d_hasta))
+            ev_rows = execute_query(db, estado_visita_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
             
         estado_visita = {(r[0], r[1], r[2], r[3]): {"act": bool(r[4]), "des": bool(r[5])}
                          for r in ev_rows}
@@ -426,14 +469,19 @@ def resumen_dia(
 
         if tradex_ids:
             ph2 = ",".join("?" for _ in tradex_ids)
+            # Este breakdown es intencionalmente cruzado entre TODOS los
+            # clientes del mercaderista Tradex — pero para un analista debe
+            # quedar acotado a SUS clientes, para no filtrar totales de
+            # clientes que no maneja.
+            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             tradex_pois_q = f"""
                 SELECT rp.id_punto_interes, mr.id_mercaderista, rp.id_cliente, rp.dia
                 FROM RUTA_PROGRAMACION rp
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
                 WHERE rp.activa = 1 AND rp.dia IN ({ph})
-                  AND mr.id_mercaderista IN ({ph2})
+                  AND mr.id_mercaderista IN ({ph2}){cli_filter}
             """
-            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids))
+            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids + analista_cliente_ids))
 
             estado_visita_full_q = """
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),

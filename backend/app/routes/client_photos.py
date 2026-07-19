@@ -566,7 +566,6 @@ def get_client_mis_visitas(
         WHERE vm.id_cliente = :cliente_id
           AND CAST(vm.fecha_visita AS DATE) >= :fecha_inicio_sql
           AND CAST(vm.fecha_visita AS DATE) <= :fecha_fin_sql
-          AND vm.estado = 'Revisado'
     """
     base_where += route_filter_sql
     base_params = {"cliente_id": resolved_cliente_id, "fecha_inicio_sql": fecha_inicio_sql, "fecha_fin_sql": fecha_fin_sql}

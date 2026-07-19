@@ -10,7 +10,6 @@ from app.models.visita import Visita
 from app.models.foto import Foto, NotificacionRechazoFoto
 from app.models.foto_razon import FotoRazonRechazo
 from app.models.balance import Balance
-from app.models.analista import AnalistaCliente
 from app.schemas.visita import VisitaCreate, VisitaUpdate, VisitaResponse, UpdateBalancesRequest, BalanceResponse
 from app.schemas.foto import FotoResponse, ApprovePhotosRequest, RejectPhotoRequest, SavePhotoDecisionsRequest, RejectReason
 from app.services.audit_service import log_action
@@ -76,10 +75,15 @@ def get_visits_with_balances(
     query = db.query(Visita).join(Balance, Visita.id == Balance.visita_id).distinct()
 
     if current_user.is_analyst and current_user.id_perfil:
-        managed_clients = db.query(AnalistaCliente.id_cliente).filter(
-            AnalistaCliente.id_analista == current_user.id_perfil
-        ).all()
-        managed_ids = [c[0] for c in managed_clients]
+        # analistas_rutas -> RUTA_PROGRAMACION, no ANALISTAS_CLIENTE
+        # (desactualizada) — mismo criterio que /review-list y centro_mando.
+        managed_rows = db.execute(text("""
+            SELECT DISTINCT rp.id_cliente
+            FROM analistas_rutas ar
+            JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+            WHERE ar.id_analista = :aid AND rp.activa = 1
+        """), {"aid": current_user.id_perfil}).fetchall()
+        managed_ids = [r[0] for r in managed_rows]
         query = query.filter(Balance.id_cliente.in_(managed_ids))
 
     if fecha_inicio:
@@ -129,7 +133,18 @@ def review_list(
         where += f" AND v.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
     analyst_join = ""
     if current_user.is_analyst and current_user.id_perfil:
-        analyst_join = "JOIN ANALISTAS_CLIENTE ac ON ac.id_cliente = v.id_cliente AND ac.id_analista = :aid"
+        # analistas_rutas -> RUTA_PROGRAMACION es la fuente de verdad — antes
+        # esto usaba ANALISTAS_CLIENTE (desactualizada) sola, sin cruce con
+        # rutas: un analista con ruta asignada pero sin fila ahí veía 0
+        # visitas para ese cliente pese a tener acceso real.
+        analyst_join = """
+            JOIN (
+                SELECT DISTINCT rp.id_cliente
+                FROM analistas_rutas ar
+                JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+                WHERE ar.id_analista = :aid AND rp.activa = 1
+            ) ac ON ac.id_cliente = v.id_cliente
+        """
         params["aid"] = current_user.id_perfil
 
     q = text(f"""
@@ -380,9 +395,20 @@ def reject_photo(
         if merc:
             merc_cedula = merc.cedula
 
+    # NotificacionRechazoFoto no tiene columna mercaderista_cedula (el modelo
+    # real usa id_visita/id_cliente/nombre_cliente/punto_venta/rechazado_por)
+    # — pasar ese kwarg tiraba TypeError antes de cualquier commit, así que
+    # el rechazo entero fallaba sin persistir nada, ni siquiera foto.estado.
+    ahora = datetime.now()
     notif = NotificacionRechazoFoto(
         foto_id=foto.id,
-        mercaderista_cedula=merc_cedula,
+        id_visita=visita.id if visita else foto.visita_id,
+        id_cliente=visita.cliente.id if visita and visita.cliente else None,
+        nombre_cliente=visita.cliente.nombre if visita and visita.cliente else None,
+        punto_venta=visita.punto.nombre if visita and visita.punto else None,
+        rechazado_por=current_user.username,
+        fecha_rechazo=ahora,
+        fecha_notificacion=ahora,
         descripcion=motivo,
     )
     db.add(notif)
@@ -434,10 +460,12 @@ def get_visit_balances(
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     
     if current_user.is_analyst and current_user.id_perfil:
-        is_managed = db.query(AnalistaCliente).filter(
-            AnalistaCliente.id_analista == current_user.id_perfil,
-            AnalistaCliente.id_cliente == visita.id_cliente
-        ).first()
+        is_managed = db.execute(text("""
+            SELECT TOP 1 1
+            FROM analistas_rutas ar
+            JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+            WHERE ar.id_analista = :aid AND rp.activa = 1 AND rp.id_cliente = :cid
+        """), {"aid": current_user.id_perfil, "cid": visita.id_cliente}).first()
         if not is_managed:
             raise HTTPException(status_code=403, detail="No tiene permiso para ver esta visita")
 
