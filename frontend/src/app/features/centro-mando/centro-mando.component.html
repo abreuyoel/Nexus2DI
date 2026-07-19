@@ -890,34 +890,6 @@
   </div>
 }
 
-<!-- ═══ MODAL CHAT POR VISITA ═══ -->
-@if (chatOpen()) {
-  <div class="fixed inset-0 z-[60] flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" (click)="closeChat()"></div>
-    <div class="relative w-full max-w-lg bg-[#0d1117] border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col" style="height:min(80vh,560px)">
-      <div class="bg-gradient-to-r from-[#1f6feb] to-indigo-600 px-5 py-3 flex items-center justify-between shrink-0">
-        <span class="text-white font-black flex items-center gap-2"><mat-icon>chat</mat-icon> Chat de Visita #{{ chatVisita()?.id_visita }}</span>
-        <button (click)="closeChat()" class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
-      </div>
-      <div class="flex-1 overflow-y-auto p-4 space-y-2">
-        @for (msg of chatMessages(); track $index) {
-          <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm" [ngClass]="msg.sender_type === 'mercaderista' ? 'bg-[#21262d] text-white mr-auto' : 'bg-[#1f6feb] text-white ml-auto'">
-            <p class="text-[10px] opacity-70 mb-0.5">{{ msg.sender_nombre }}</p>
-            {{ msg.mensaje }}
-          </div>
-        }
-        @if (!chatMessages().length) {
-          <div class="h-full flex flex-col items-center justify-center text-[#8b949e] gap-2"><mat-icon class="!text-4xl opacity-40">forum</mat-icon><p class="text-sm">No hay mensajes aún.</p></div>
-        }
-      </div>
-      <div class="p-3 border-t border-white/10 flex gap-2 shrink-0">
-        <input [(ngModel)]="chatInput" (keyup.enter)="sendChat()" placeholder="Escribe un mensaje..." class="flex-1 bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
-        <button (click)="sendChat()" [disabled]="chatSending() || !chatInput.trim()" class="w-10 h-10 rounded-xl bg-[#1f6feb] hover:bg-[#388bfd] disabled:opacity-40 text-white flex items-center justify-center"><mat-icon>send</mat-icon></button>
-      </div>
-    </div>
-  </div>
-}
-
 @if (showExportModal) {
   <div class="cm-modal-overlay" (click)="closeExportModal()">
     <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">

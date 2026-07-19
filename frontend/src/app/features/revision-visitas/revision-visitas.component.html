@@ -312,42 +312,6 @@
         </div>
       </div>
 
-      <!-- panel de chat (deslizable) -->
-      @if (chatOpen()) {
-        <div class="absolute inset-y-0 right-0 w-full sm:w-96 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
-          <div class="px-4 py-3 bg-gradient-to-r from-primary-700 to-indigo-600 flex items-center justify-between shrink-0">
-            <div class="flex items-center gap-2 text-white">
-              <mat-icon class="!text-base">chat</mat-icon>
-              <span class="font-black text-sm">Chat · Visita #{{ selectedVisita()?.id_visita }}</span>
-            </div>
-            <button (click)="closeChat()" class="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><mat-icon class="!text-base">close</mat-icon></button>
-          </div>
-          <div class="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50 dark:bg-slate-950/40">
-            @if (chatLoading()) {
-              <div class="flex justify-center py-8"><mat-spinner diameter="28"></mat-spinner></div>
-            } @else if (chatMessages().length === 0) {
-              <p class="text-center text-slate-400 text-xs py-8">No hay mensajes todavía.</p>
-            } @else {
-              @for (m of chatMessages(); track m.id) {
-                <div class="flex flex-col" [class.items-end]="m.sender_type !== 'cliente'">
-                  <div class="max-w-[80%] rounded-2xl px-3 py-2 text-sm"
-                    [ngClass]="m.sender_type !== 'cliente' ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-sm border border-slate-200 dark:border-white/5'">
-                    <div class="text-[10px] font-bold opacity-70 mb-0.5">{{ m.sender_nombre || 'Usuario' }}</div>
-                    {{ m.mensaje }}
-                    <div class="text-[9px] opacity-60 mt-0.5 text-right">{{ m.created_at | date:'dd/MM HH:mm' }}</div>
-                  </div>
-                </div>
-              }
-            }
-          </div>
-          <div class="p-3 border-t border-slate-200 dark:border-white/10 flex gap-2 shrink-0">
-            <input [(ngModel)]="chatInput" (keyup.enter)="sendChat()" placeholder="Escribe un mensaje..."
-              class="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white placeholder-slate-400 outline-none focus:border-primary-500">
-            <button (click)="sendChat()" [disabled]="chatSending() || !chatInput.trim()"
-              class="w-10 h-10 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white flex items-center justify-center"><mat-icon class="!text-base">send</mat-icon></button>
-          </div>
-        </div>
-      }
     </div>
   </div>
 }

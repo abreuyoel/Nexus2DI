@@ -124,6 +124,12 @@ export class ChatComponent implements OnInit, OnDestroy {
       const visitaId = params['visita'] ? parseInt(params['visita'], 10) : null;
       if (visitaId) {
         this.selectChat('visit', visitaId);
+        return;
+      }
+      const convId = params['conversacion'] ? parseInt(params['conversacion'], 10) : null;
+      if (convId) {
+        this.activeChatTab.set('equipo');
+        this.selectChat('conversation', convId, params['titulo'] || undefined);
       }
     });
 
@@ -331,8 +337,13 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   // Helpers de UI
+  isVisitThread(item: InboxItem): boolean {
+    return item.tipo === 'visit_team' || item.tipo === 'visit_team_client';
+  }
+
   iconForItem(item: InboxItem): string {
     if (item.kind === 'visit') return 'store';
+    if (this.isVisitThread(item)) return item.tipo === 'visit_team_client' ? 'diversity_3' : 'groups';
     switch (item.tipo) {
       case 'direct': return 'person';
       case 'group_team': return 'groups';
@@ -349,6 +360,10 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   sublabelForItem(item: InboxItem): string {
     if (item.kind === 'visit') return `V-${item.visita_id}`;
+    if (this.isVisitThread(item)) {
+      const suf = item.tipo === 'visit_team_client' ? 'Equipo+Cliente' : 'Solo equipo';
+      return item.visita_id ? `V-${item.visita_id} · ${suf}` : suf;
+    }
     const map: Record<string, string> = {
       direct: 'Directo', group_team: 'Equipo', group_region: 'Región', group_pdv: 'PDV',
     };

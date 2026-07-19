@@ -60,6 +60,7 @@ class ConversacionResponse(BaseModel):
     titulo: Optional[str] = None
     region: Optional[str] = None
     punto_interes_id: Optional[str] = None
+    visita_id: Optional[int] = None
     creado_por: int
     fecha_creacion: Optional[datetime] = None
     # Helpers que llenamos manualmente
@@ -70,6 +71,15 @@ class ConversacionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── SUB-HILO DE CHAT POR VISITA (solo equipo / equipo+cliente) ───────────
+VisitThreadTipo = Literal["visit_team", "visit_team_client"]
+
+
+class VisitThreadRequest(BaseModel):
+    visita_id: int
+    tipo: VisitThreadTipo
 
 
 # ── DESTINATARIOS DISPONIBLES (para construir la UI del modal) ───────────
@@ -101,7 +111,8 @@ class RecipientsResponse(BaseModel):
 # ── INBOX (lista de conversaciones + chats por visita unificados) ────────
 class InboxItem(BaseModel):
     kind: Literal["visit", "conversation"]
-    # Visit chat
+    # Visit chat (kind='visit') y también sub-hilos de visita
+    # (kind='conversation' con tipo IN visit_team/visit_team_client)
     visita_id: Optional[int] = None
     punto_nombre: Optional[str] = None
     punto_id: Optional[str] = None

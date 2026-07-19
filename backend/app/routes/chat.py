@@ -10,7 +10,7 @@ from app.models.user import Usuario
 from app.models.chat import ChatMensaje, ChatConversacion, ChatParticipante, ChatMensajeLectura
 from app.schemas.chat import (
     ChatMensajeCreate, ChatMensajeResponse, LectorInfo,
-    CrearConversacionRequest, ConversacionResponse,
+    CrearConversacionRequest, ConversacionResponse, VisitThreadRequest,
     RecipientsResponse, RecipientUser, RegionRecipient, PdvRecipient,
     InboxItem,
 )
@@ -260,6 +260,34 @@ def _get_team_user_ids(db: Session, cid: int) -> set[int]:
     return {r[0] for r in rows}
 
 
+def _get_team_user_ids_solo_equipo(db: Session, cid: int) -> set[int]:
+    """Igual que _get_team_user_ids() pero SIN la rama de usuarios cliente —
+    para el sub-hilo de visita 'visit_team' (solo equipo, sin el cliente).
+    Coordinadores Exclusivos se mantienen (no son la rama "usuarios cliente";
+    tienen visibilidad cross-cliente y actúan como staff en este contexto)."""
+    rows = db.execute(text("""
+        SELECT u.id_usuario
+        FROM analistas_rutas ar
+        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
+        JOIN USUARIOS u ON u.id_perfil = a.id_analista AND u.id_rol = 2
+        WHERE rp.id_cliente = :cid AND rp.activa = 1 AND ISNULL(u.activo, 1) = 1
+
+        UNION
+        SELECT u.id_usuario
+        FROM RUTA_PROGRAMACION rp
+        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
+        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
+        WHERE rp.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
+
+        UNION
+        SELECT u.id_usuario
+        FROM USUARIOS u
+        WHERE u.id_rol = 3 AND ISNULL(u.activo, 1) = 1
+    """), {"cid": cid}).fetchall()
+    return {r[0] for r in rows}
+
+
 def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
     """Mercaderistas de cierta región del cliente."""
     rows = db.execute(text("""
@@ -388,6 +416,89 @@ def _build_direct_title(db: Session, user_a: int, user_b: int) -> str:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# SUB-HILO DE CHAT POR VISITA (solo equipo / equipo+cliente)
+# ════════════════════════════════════════════════════════════════════════════
+@router.post("/visit-thread", response_model=ConversacionResponse, status_code=201)
+def get_or_create_visit_thread(
+    body: VisitThreadRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Punto de entrada del botón de chat de una visita en Centro de Mando /
+    revision-visitas: reemplaza el chat plano legacy por visita_id para el
+    STAFF (el chat legacy del cliente, tab "Cliente" del inbox, no se toca).
+
+    Find-or-create sobre (id_cliente, id_visita, tipo): si ya existe la
+    conversación la reutiliza (agregando al usuario actual como
+    participante si no lo era — auto-provisión de membresía, igual que en
+    v1), si no la crea con los participantes resueltos según el tipo.
+    """
+    visita_row = db.execute(text("""
+        SELECT id_cliente FROM VISITAS_MERCADERISTA WHERE id_visita = :vid
+    """), {"vid": body.visita_id}).fetchone()
+    if not visita_row:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    cid = visita_row[0]
+
+    existing = db.execute(text("""
+        SELECT id_conversacion FROM CHAT_CONVERSACIONES
+        WHERE id_cliente = :cid AND id_visita = :vid AND tipo = :tipo
+    """), {"cid": cid, "vid": body.visita_id, "tipo": body.tipo}).fetchone()
+
+    if existing:
+        conv = db.query(ChatConversacion).filter(ChatConversacion.id == existing[0]).first()
+        if not _is_participant(db, conv.id, current_user.id):
+            db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=current_user.id,
+                                     fecha_union=datetime.now()))
+            db.commit()
+        cnt = db.execute(text("""
+            SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
+        """), {"c": conv.id}).scalar()
+        return ConversacionResponse(
+            id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
+            region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
+            creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
+            participantes_count=int(cnt or 0),
+        )
+
+    participantes = (
+        _get_team_user_ids_solo_equipo(db, cid) if body.tipo == "visit_team"
+        else _get_team_user_ids(db, cid)
+    )
+    participantes.add(current_user.id)
+
+    info = db.execute(text("""
+        SELECT p.punto_de_interes
+        FROM VISITAS_MERCADERISTA v
+        LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
+        WHERE v.id_visita = :vid
+    """), {"vid": body.visita_id}).fetchone()
+    punto_nombre = (info[0] if info and info[0] else None) or f"Visita #{body.visita_id}"
+    sufijo = " (equipo + cliente)" if body.tipo == "visit_team_client" else " (solo equipo)"
+    titulo = f"{punto_nombre}{sufijo}"[:200]
+
+    conv = ChatConversacion(
+        cliente_id=cid, tipo=body.tipo, titulo=titulo, visita_id=body.visita_id,
+        creado_por=current_user.id, fecha_creacion=datetime.now(),
+    )
+    db.add(conv)
+    db.flush()
+
+    for uid in participantes:
+        db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=uid, fecha_union=datetime.now()))
+
+    db.commit()
+    db.refresh(conv)
+
+    return ConversacionResponse(
+        id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
+        region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
+        creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
+        participantes_count=len(participantes),
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # LISTAR / VER CONVERSACIONES
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/conversations", response_model=List[ConversacionResponse])
@@ -475,7 +586,7 @@ def get_conversation(
 
     return ConversacionResponse(
         id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
-        region=conv.region, punto_interes_id=conv.punto_interes_id,
+        region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
         creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
         participantes_count=int(cnt or 0),
     )
@@ -659,7 +770,7 @@ def get_chat_inbox(
     # ── Conversaciones ────────────────────────────────────────────────────
     if current_user.is_coordinador_exclusivo:
         conv_rows = db.execute(text("""
-            SELECT c.id_conversacion, c.tipo, c.titulo,
+            SELECT c.id_conversacion, c.tipo, c.titulo, c.id_visita,
                    (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
                    (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
@@ -675,7 +786,7 @@ def get_chat_inbox(
         """), {"cid": cid}).fetchall()
     else:
         conv_rows = db.execute(text("""
-            SELECT c.id_conversacion, c.tipo, c.titulo,
+            SELECT c.id_conversacion, c.tipo, c.titulo, c.id_visita,
                    (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
                    (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
@@ -699,9 +810,10 @@ def get_chat_inbox(
             conversacion_id=r[0],
             tipo=r[1],
             titulo=r[2] or "(Sin título)",
-            last_message=r[3],
-            last_message_date=str(r[4]) if r[4] else None,
-            unread_count=int(r[5] or 0),
+            visita_id=r[3],
+            last_message=r[4],
+            last_message_date=str(r[5]) if r[5] else None,
+            unread_count=int(r[6] or 0),
         ))
 
     # Orden global por último mensaje (los None van al final)

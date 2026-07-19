@@ -26,10 +26,14 @@ class ChatConversacion(Base):
     """Conversación independiente de visitas (chats directos y grupos).
 
     tipo:
-      - 'direct'        → 1:1 entre cliente y un staff (analista/mercaderista)
-      - 'group_team'    → todo el equipo del cliente (analistas, mercs, supervisores, coords + usuarios del cliente)
-      - 'group_region'  → grupo de mercaderistas de una región específica (+ creador)
-      - 'group_pdv'     → grupo de mercaderistas de un PDV específico (+ creador)
+      - 'direct'             → 1:1 entre cliente y un staff (analista/mercaderista)
+      - 'group_team'         → todo el equipo del cliente (analistas, mercs, supervisores, coords + usuarios del cliente)
+      - 'group_region'       → grupo de mercaderistas de una región específica (+ creador)
+      - 'group_pdv'          → grupo de mercaderistas de un PDV específico (+ creador)
+      - 'visit_team'         → sub-hilo de una visita puntual, SOLO equipo (sin usuarios cliente)
+      - 'visit_team_client'  → sub-hilo de una visita puntual, equipo + usuarios cliente
+
+    `visita_id` solo aplica a los dos tipos 'visit_*' — el resto lo deja NULL.
     """
     __tablename__ = "CHAT_CONVERSACIONES"
 
@@ -39,6 +43,7 @@ class ChatConversacion(Base):
     titulo = Column(String(200), nullable=True)
     region = Column(String(100), nullable=True)
     punto_interes_id = Column("id_punto_interes", String(50), nullable=True)
+    visita_id = Column("id_visita", Integer, ForeignKey("VISITAS_MERCADERISTA.id_visita"), nullable=True, index=True)
     creado_por = Column(Integer, ForeignKey("USUARIOS.id_usuario"), nullable=False)
     fecha_creacion = Column(DateTime, nullable=True)
 

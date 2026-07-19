@@ -1,13 +1,16 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
+import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
 
 type Periodo = 'hoy' | 'semana' | 'mes';
 type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
@@ -15,7 +18,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 @Component({
   selector: 'app-revision-visitas',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule],
   templateUrl: './revision-visitas.component.html',
 })
 export class RevisionVisitasComponent implements OnInit {
@@ -56,7 +59,10 @@ export class RevisionVisitasComponent implements OnInit {
   // Lightbox
   lightboxUrl = signal<string | null>(null);
 
-  constructor(private api: ApiService, private snack: MatSnackBar, private auth: AuthService, private realtime: RealtimeService) {}
+  constructor(
+    private api: ApiService, private snack: MatSnackBar, private auth: AuthService, private realtime: RealtimeService,
+    private dialog: MatDialog, private router: Router,
+  ) {}
 
   private rtDebounce?: any;
 
@@ -67,11 +73,6 @@ export class RevisionVisitasComponent implements OnInit {
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
     // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos
     this.realtime.events$.subscribe(ev => {
-      // Chat del visita abierto: refrescar mensajes en vivo
-      if (ev.tipo === 'chat.message' && this.chatOpen() && ev.data?.visita_id === this.selectedVisita()?.id_visita) {
-        this.loadChat();
-        return;
-      }
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
         if (this.reviewOpen()) return; // no interrumpir una revisión en curso
         clearTimeout(this.rtDebounce);
@@ -205,7 +206,6 @@ export class RevisionVisitasComponent implements OnInit {
     // grupo inicial: el del chip pulsado, o el primero revisable, o todos
     this.grupoSel = grupoKey ?? (this.modalGrupos.find(g => g.revisable)?.key ?? 'all');
     this.reviewOpen.set(true);
-    this.chatOpen.set(false);
     this.photosLoading.set(true);
     this.api.getVisitPhotos(v.id_visita).subscribe({
       next: (ph) => { this.photos.set(ph as any[]); this.photosLoading.set(false); },
@@ -213,7 +213,7 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
   closeReview(): void {
-    this.reviewOpen.set(false); this.chatOpen.set(false);
+    this.reviewOpen.set(false);
     this.selectedVisita.set(null); this.photos.set([]); this.modalGrupos = [];
   }
 
@@ -307,34 +307,21 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
-  // ── Chat por visita ──────────────────────────────────────
-  chatOpen = signal(false);
-  chatMessages = signal<any[]>([]);
-  chatInput = '';
-  chatLoading = signal(false);
-  chatSending = signal(false);
-
-  openChat(): void { this.chatOpen.set(true); this.loadChat(); }
-  closeChat(): void { this.chatOpen.set(false); }
-  loadChat(): void {
-    const v = this.selectedVisita(); if (!v) return;
-    this.chatLoading.set(true);
-    this.api.getMessagesByVisit(v.id_visita).subscribe({
-      next: (m) => { this.chatMessages.set(m as any[]); this.chatLoading.set(false); },
-      error: () => { this.chatMessages.set([]); this.chatLoading.set(false); },
+  // ── Chat por visita (sub-hilo: solo equipo / equipo+cliente) ─────────────
+  // Reemplaza el chat plano legacy 1-a-1: el botón navega al ChatComponent
+  // con la conversación de la visita ya creada/encontrada. El chat legacy
+  // del cliente (tab "Cliente" del inbox) no se toca.
+  openChat(): void {
+    const v = this.selectedVisita();
+    if (!v?.id_visita) return;
+    const ref = this.dialog.open(VisitThreadDialogComponent, {
+      data: { visitaId: v.id_visita, puntoNombre: v.punto_de_interes },
+      autoFocus: false,
     });
-  }
-  sendChat(): void {
-    const v = this.selectedVisita(); const txt = this.chatInput.trim();
-    if (!v || !txt) return;
-    this.chatSending.set(true);
-    this.api.sendMessage({ visita_id: v.id_visita, mensaje: txt, cliente_id: v.id_cliente }).subscribe({
-      next: (m) => {
-        this.chatMessages.update(list => [...list, m]);
-        this.chatInput = ''; this.chatSending.set(false);
-        this.visitas.update(list => list.map(x => x.id_visita === v.id_visita ? { ...x, tiene_chat: true } : x));
-      },
-      error: () => { this.chatSending.set(false); this.snack.open('No se pudo enviar', 'OK', { duration: 3000 }); },
+    ref.afterClosed().subscribe(conv => {
+      if (conv?.id) {
+        this.router.navigate(['/chat'], { queryParams: { conversacion: conv.id, titulo: conv.titulo } });
+      }
     });
   }
 

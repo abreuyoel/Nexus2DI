@@ -249,6 +249,11 @@ export class ApiService {
     return this.http.post<ChatMensaje>(`${this.base}/api/chat/conversations/${convId}/messages`, { mensaje });
   }
 
+  // --- CHAT — SUB-HILO POR VISITA (solo equipo / equipo+cliente) ---
+  getOrCreateVisitThread(visitaId: number, tipo: 'visit_team' | 'visit_team_client'): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/visit-thread`, { visita_id: visitaId, tipo });
+  }
+
   // --- NOTIFICACIONES ---
   getRejectionNotifications(cedula?: string): Observable<object[]> {
     return this.http.get<object[]>(`${this.base}/api/notifications/rejection`, { params: this.params({ cedula }) });

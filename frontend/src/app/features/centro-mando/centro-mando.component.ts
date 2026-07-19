@@ -1,14 +1,17 @@
 import { Component, OnInit, signal, HostListener } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.component';
+import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
 
 @Component({
   selector: 'app-centro-mando',
@@ -16,7 +19,7 @@ import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.c
   imports: [
     CommonModule, FormsModule,
     MatIconModule, MatButtonModule,
-    MatProgressSpinnerModule, MatTooltipModule,
+    MatProgressSpinnerModule, MatTooltipModule, MatDialogModule,
     RevisionVisitasComponent
   ],
   templateUrl: './centro-mando.component.html',
@@ -107,7 +110,10 @@ export class CentroMandoComponent implements OnInit {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
   }
 
-  constructor(private api: ApiService, private auth: AuthService, private realtime: RealtimeService) {}
+  constructor(
+    private api: ApiService, private auth: AuthService, private realtime: RealtimeService,
+    private dialog: MatDialog, private router: Router,
+  ) {}
 
   private rtDebounce?: any;
 
@@ -431,40 +437,21 @@ export class CentroMandoComponent implements OnInit {
       : v.estado_presencia === 'activo' ? 'bg-amber-950 text-amber-400' : 'bg-red-950 text-red-400';
   }
 
-  // ─── Chat por visita (modal) ──────────────────────────────────────────────
-  chatOpen = signal(false);
-  chatVisita = signal<any>(null);
-  chatMessages = signal<any[]>([]);
-  chatInput = '';
-  chatSending = signal(false);
-
+  // ─── Chat por visita (sub-hilo: solo equipo / equipo+cliente) ────────────
+  // El chat plano legacy por visita_id (1-a-1) se reemplazó por el selector
+  // de sub-hilo — el botón de chat ahora navega al ChatComponent con la
+  // conversación ya creada/encontrada. El chat legacy del cliente (tab
+  // "Cliente" del inbox de ChatComponent) no se toca.
   openChat(v: any): void {
-    this.chatVisita.set(v);
-    this.chatOpen.set(true);
-    this.chatInput = '';
-    this.loadChat();
-  }
-  loadChat(): void {
-    const v = this.chatVisita();
-    if (!v) return;
-    this.api.getMessagesByVisit(v.id_visita).subscribe({
-      next: (msgs) => this.chatMessages.set((msgs as any[]) || []),
-      error: () => this.chatMessages.set([]),
+    if (!v?.id_visita) return;
+    const ref = this.dialog.open(VisitThreadDialogComponent, {
+      data: { visitaId: v.id_visita, puntoNombre: v.punto_de_interes },
+      autoFocus: false,
     });
-  }
-  closeChat(): void {
-    this.chatOpen.set(false);
-    this.chatVisita.set(null);
-    this.chatMessages.set([]);
-  }
-  sendChat(): void {
-    const v = this.chatVisita();
-    const txt = this.chatInput.trim();
-    if (!v || !txt) return;
-    this.chatSending.set(true);
-    this.api.sendMessage({ visita_id: v.id_visita, mensaje: txt }).subscribe({
-      next: () => { this.chatInput = ''; this.chatSending.set(false); this.loadChat(); },
-      error: () => this.chatSending.set(false),
+    ref.afterClosed().subscribe(conv => {
+      if (conv?.id) {
+        this.router.navigate(['/chat'], { queryParams: { conversacion: conv.id, titulo: conv.titulo } });
+      }
     });
   }
 
