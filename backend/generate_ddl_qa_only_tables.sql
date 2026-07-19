@@ -54,32 +54,38 @@ BEGIN
     DECLARE @sql NVARCHAR(MAX) = 'CREATE TABLE dbo.' + QUOTENAME(@tabla) + ' (' + CHAR(10);
     DECLARE @cols NVARCHAR(MAX) = '';
 
-    SELECT @cols = @cols + '    ' + QUOTENAME(c.name) + ' ' +
-        CASE
-            WHEN ty.name IN ('varchar', 'char', 'varbinary', 'binary')
-                THEN ty.name + '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS VARCHAR(10)) END + ')'
-            WHEN ty.name IN ('nvarchar', 'nchar')
-                THEN ty.name + '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length / 2 AS VARCHAR(10)) END + ')'
-            WHEN ty.name IN ('decimal', 'numeric')
-                THEN ty.name + '(' + CAST(c.precision AS VARCHAR(10)) + ',' + CAST(c.scale AS VARCHAR(10)) + ')'
-            WHEN ty.name IN ('datetime2', 'datetimeoffset', 'time')
-                THEN ty.name + '(' + CAST(c.scale AS VARCHAR(10)) + ')'
-            WHEN ty.name = 'float' AND c.precision <> 53
-                THEN ty.name + '(' + CAST(c.precision AS VARCHAR(10)) + ')'
-            ELSE ty.name
-        END
-        + CASE WHEN c.is_identity = 1
-               THEN ' IDENTITY(' + CAST(ISNULL(ic.seed_value, 1) AS VARCHAR(20)) + ',' + CAST(ISNULL(ic.increment_value, 1) AS VARCHAR(20)) + ')'
-               ELSE '' END
-        + CASE WHEN c.is_nullable = 0 THEN ' NOT NULL' ELSE ' NULL' END
-        + CASE WHEN dc.definition IS NOT NULL THEN ' DEFAULT ' + dc.definition ELSE '' END
-        + ',' + CHAR(10)
+    -- STRING_AGG (no el truco de "SELECT @v = @v + expr", que no está
+    -- garantizado por SQL Server y se rompe si el optimizador elige un
+    -- plan en paralelo -- se quedaba con una sola fila en vez de todas).
+    SELECT @cols = STRING_AGG(
+        CAST(
+            '    ' + QUOTENAME(c.name) + ' ' +
+            CASE
+                WHEN ty.name IN ('varchar', 'char', 'varbinary', 'binary')
+                    THEN ty.name + '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS VARCHAR(10)) END + ')'
+                WHEN ty.name IN ('nvarchar', 'nchar')
+                    THEN ty.name + '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length / 2 AS VARCHAR(10)) END + ')'
+                WHEN ty.name IN ('decimal', 'numeric')
+                    THEN ty.name + '(' + CAST(c.precision AS VARCHAR(10)) + ',' + CAST(c.scale AS VARCHAR(10)) + ')'
+                WHEN ty.name IN ('datetime2', 'datetimeoffset', 'time')
+                    THEN ty.name + '(' + CAST(c.scale AS VARCHAR(10)) + ')'
+                WHEN ty.name = 'float' AND c.precision <> 53
+                    THEN ty.name + '(' + CAST(c.precision AS VARCHAR(10)) + ')'
+                ELSE ty.name
+            END
+            + CASE WHEN c.is_identity = 1
+                   THEN ' IDENTITY(' + CAST(ISNULL(ic.seed_value, 1) AS VARCHAR(20)) + ',' + CAST(ISNULL(ic.increment_value, 1) AS VARCHAR(20)) + ')'
+                   ELSE '' END
+            + CASE WHEN c.is_nullable = 0 THEN ' NOT NULL' ELSE ' NULL' END
+            + CASE WHEN dc.definition IS NOT NULL THEN ' DEFAULT ' + dc.definition ELSE '' END
+        AS NVARCHAR(MAX)),
+        ',' + CHAR(10)
+    ) WITHIN GROUP (ORDER BY c.column_id) + ',' + CHAR(10)
     FROM sys.columns c
     JOIN sys.types ty ON ty.user_type_id = c.user_type_id
     LEFT JOIN sys.identity_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
     LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
-    WHERE c.object_id = OBJECT_ID('dbo.' + @tabla)
-    ORDER BY c.column_id;
+    WHERE c.object_id = OBJECT_ID('dbo.' + @tabla);
 
     SET @sql = @sql + @cols;
 
@@ -97,6 +103,7 @@ BEGIN
 
     SET @sql = @sql + ');';
     PRINT @sql;
+    PRINT 'GO';
     PRINT '';
 
     FETCH NEXT FROM cur INTO @tabla;
@@ -133,6 +140,7 @@ IF @@FETCH_STATUS <> 0
 WHILE @@FETCH_STATUS = 0
 BEGIN
     PRINT @fk_ddl_text;
+    PRINT 'GO';
     FETCH NEXT FROM fkcur INTO @fk_ddl_text;
 END
 CLOSE fkcur;

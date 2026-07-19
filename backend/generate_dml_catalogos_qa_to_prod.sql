@@ -88,6 +88,7 @@ BEGIN
         SET @sql = @sql + CHAR(10) + 'SET IDENTITY_INSERT epran.dbo.' + QUOTENAME(@tabla) + ' OFF;';
 
     PRINT @sql;
+    PRINT 'GO';
     PRINT '';
 
     FETCH NEXT FROM cur INTO @tabla;
