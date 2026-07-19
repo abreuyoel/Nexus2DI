@@ -16,9 +16,14 @@
 
 SET NOCOUNT ON;
 
-DECLARE @tablas TABLE (nombre sysname);
+-- Orden explicito (no alfabetico): CAT_DEPARTAMENTOS debe insertarse ANTES
+-- que CAT_CIUDADES porque esta ultima tiene FK a CAT_DEPARTAMENTOS -- en
+-- orden alfabetico CAT_CIUDADES queda primero y el INSERT fallaria por
+-- violacion de FK (los departamentos todavia no existirian en destino).
+DECLARE @tablas TABLE (orden INT IDENTITY(1,1), nombre sysname);
 INSERT INTO @tablas (nombre) VALUES
-    ('CAT_ALCANCE'), ('CAT_CANAL_VENTA'), ('CAT_CIUDADES'), ('CAT_DEPARTAMENTOS'),
+    ('CAT_DEPARTAMENTOS'), ('CAT_CIUDADES'),
+    ('CAT_ALCANCE'), ('CAT_CANAL_VENTA'),
     ('CAT_ESTADOS'), ('CAT_SUBTIPO_NEGOCIO'), ('CAT_TIPO_NEGOCIO'),
     ('MODULOS'), ('SERVICIOS'), ('CUADRANTES');
 
@@ -31,7 +36,7 @@ PRINT '-- ═══════════════════════�
 PRINT '';
 
 DECLARE @tabla sysname;
-DECLARE cur CURSOR FAST_FORWARD FOR SELECT nombre FROM @tablas ORDER BY nombre;
+DECLARE cur CURSOR FAST_FORWARD FOR SELECT nombre FROM @tablas ORDER BY orden;
 OPEN cur;
 FETCH NEXT FROM cur INTO @tabla;
 
