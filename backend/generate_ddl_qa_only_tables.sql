@@ -51,7 +51,7 @@ BEGIN
         CONTINUE;
     END
 
-    DECLARE @sql NVARCHAR(MAX) = 'CREATE TABLE dbo.' + QUOTENAME(@tabla) + ' (' + CHAR(13);
+    DECLARE @sql NVARCHAR(MAX) = 'CREATE TABLE dbo.' + QUOTENAME(@tabla) + ' (' + CHAR(10);
     DECLARE @cols NVARCHAR(MAX) = '';
 
     SELECT @cols = @cols + '    ' + QUOTENAME(c.name) + ' ' +
@@ -73,7 +73,7 @@ BEGIN
                ELSE '' END
         + CASE WHEN c.is_nullable = 0 THEN ' NOT NULL' ELSE ' NULL' END
         + CASE WHEN dc.definition IS NOT NULL THEN ' DEFAULT ' + dc.definition ELSE '' END
-        + ',' + CHAR(13)
+        + ',' + CHAR(10)
     FROM sys.columns c
     JOIN sys.types ty ON ty.user_type_id = c.user_type_id
     LEFT JOIN sys.identity_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
@@ -91,9 +91,9 @@ BEGIN
     WHERE kc.parent_object_id = OBJECT_ID('dbo.' + @tabla) AND kc.type = 'PK';
 
     IF @pkcols IS NOT NULL
-        SET @sql = @sql + '    CONSTRAINT PK_' + @tabla + ' PRIMARY KEY CLUSTERED (' + @pkcols + ')' + CHAR(13);
+        SET @sql = @sql + '    CONSTRAINT PK_' + @tabla + ' PRIMARY KEY CLUSTERED (' + @pkcols + ')' + CHAR(10);
     ELSE
-        SET @sql = LEFT(@sql, LEN(@sql) - 2) + CHAR(13); -- quita la ultima coma+CR si no hay PK
+        SET @sql = LEFT(@sql, LEN(@sql) - 2) + CHAR(10); -- quita la ultima coma+LF si no hay PK
 
     SET @sql = @sql + ');';
     PRINT @sql;
