@@ -32,6 +32,7 @@ class ChatMensajeResponse(BaseModel):
     leido: Optional[bool] = None
     created_at: Optional[datetime] = None
     leido_por: List[LectorInfo] = []
+    foto_adjunta: Optional[str] = None
 
     class Config:
         from_attributes = True

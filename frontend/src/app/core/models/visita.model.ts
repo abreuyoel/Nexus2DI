@@ -63,6 +63,7 @@ export interface ChatMensaje {
   visita_id?: number;
   conversacion_id?: number;
   foto_id?: number;
+  foto_adjunta?: string;
   sender_type: string;
   sender_id?: number;
   sender_nombre?: string;

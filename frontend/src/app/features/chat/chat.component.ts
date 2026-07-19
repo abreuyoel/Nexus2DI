@@ -280,6 +280,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     return this.readersOf(msg).length > 0;
   }
 
+  openFotoAdjunta(url?: string): void {
+    if (url) window.open(url, '_blank');
+  }
+
   sendMessage(): void {
     const text = this.messageControl.value?.trim();
     if (!text || this.activeId() === null) return;

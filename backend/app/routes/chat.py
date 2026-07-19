@@ -112,6 +112,8 @@ def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMens
                 LectorInfo(id_usuario=r[1], username=r[2], fecha_lectura=r[3])
             )
 
+    from app.services.azure_service import azure_service
+
     return [
         ChatMensajeResponse(
             id=m.id, visita_id=m.visita_id, cliente_id=m.cliente_id,
@@ -119,6 +121,7 @@ def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMens
             sender_id=m.sender_id, sender_nombre=m.sender_nombre, mensaje=m.mensaje,
             leido=m.leido, created_at=m.created_at,
             leido_por=lecturas_map.get(m.id, []),
+            foto_adjunta=azure_service.get_sas_url(m.foto_adjunta) if m.foto_adjunta else None,
         )
         for m in mensajes
     ]
@@ -418,24 +421,18 @@ def _build_direct_title(db: Session, user_a: int, user_b: int) -> str:
 # ════════════════════════════════════════════════════════════════════════════
 # SUB-HILO DE CHAT POR VISITA (solo equipo / equipo+cliente)
 # ════════════════════════════════════════════════════════════════════════════
-@router.post("/visit-thread", response_model=ConversacionResponse, status_code=201)
-def get_or_create_visit_thread(
-    body: VisitThreadRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    """Punto de entrada del botón de chat de una visita en Centro de Mando /
-    revision-visitas: reemplaza el chat plano legacy por visita_id para el
-    STAFF (el chat legacy del cliente, tab "Cliente" del inbox, no se toca).
+def _find_or_create_visit_thread(db: Session, visita_id: int, tipo: str, actor_user_id: int) -> ChatConversacion:
+    """Find-or-create sobre (id_cliente, id_visita, tipo): si ya existe la
+    conversación la reutiliza (agregando a actor_user_id como participante
+    si no lo era — auto-provisión de membresía, igual que en v1), si no la
+    crea con los participantes resueltos según el tipo.
 
-    Find-or-create sobre (id_cliente, id_visita, tipo): si ya existe la
-    conversación la reutiliza (agregando al usuario actual como
-    participante si no lo era — auto-provisión de membresía, igual que en
-    v1), si no la crea con los participantes resueltos según el tipo.
-    """
+    Compartida por POST /visit-thread (botón de chat en Centro de Mando /
+    revision-visitas) y por el aviso automático de foto rechazada
+    (visits.py::reject_photo)."""
     visita_row = db.execute(text("""
         SELECT id_cliente FROM VISITAS_MERCADERISTA WHERE id_visita = :vid
-    """), {"vid": body.visita_id}).fetchone()
+    """), {"vid": visita_id}).fetchone()
     if not visita_row:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     cid = visita_row[0]
@@ -443,43 +440,35 @@ def get_or_create_visit_thread(
     existing = db.execute(text("""
         SELECT id_conversacion FROM CHAT_CONVERSACIONES
         WHERE id_cliente = :cid AND id_visita = :vid AND tipo = :tipo
-    """), {"cid": cid, "vid": body.visita_id, "tipo": body.tipo}).fetchone()
+    """), {"cid": cid, "vid": visita_id, "tipo": tipo}).fetchone()
 
     if existing:
         conv = db.query(ChatConversacion).filter(ChatConversacion.id == existing[0]).first()
-        if not _is_participant(db, conv.id, current_user.id):
-            db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=current_user.id,
+        if not _is_participant(db, conv.id, actor_user_id):
+            db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=actor_user_id,
                                      fecha_union=datetime.now()))
             db.commit()
-        cnt = db.execute(text("""
-            SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
-        """), {"c": conv.id}).scalar()
-        return ConversacionResponse(
-            id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
-            region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
-            creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
-            participantes_count=int(cnt or 0),
-        )
+        return conv
 
     participantes = (
-        _get_team_user_ids_solo_equipo(db, cid) if body.tipo == "visit_team"
+        _get_team_user_ids_solo_equipo(db, cid) if tipo == "visit_team"
         else _get_team_user_ids(db, cid)
     )
-    participantes.add(current_user.id)
+    participantes.add(actor_user_id)
 
     info = db.execute(text("""
         SELECT p.punto_de_interes
         FROM VISITAS_MERCADERISTA v
         LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
         WHERE v.id_visita = :vid
-    """), {"vid": body.visita_id}).fetchone()
-    punto_nombre = (info[0] if info and info[0] else None) or f"Visita #{body.visita_id}"
-    sufijo = " (equipo + cliente)" if body.tipo == "visit_team_client" else " (solo equipo)"
+    """), {"vid": visita_id}).fetchone()
+    punto_nombre = (info[0] if info and info[0] else None) or f"Visita #{visita_id}"
+    sufijo = " (equipo + cliente)" if tipo == "visit_team_client" else " (solo equipo)"
     titulo = f"{punto_nombre}{sufijo}"[:200]
 
     conv = ChatConversacion(
-        cliente_id=cid, tipo=body.tipo, titulo=titulo, visita_id=body.visita_id,
-        creado_por=current_user.id, fecha_creacion=datetime.now(),
+        cliente_id=cid, tipo=tipo, titulo=titulo, visita_id=visita_id,
+        creado_por=actor_user_id, fecha_creacion=datetime.now(),
     )
     db.add(conv)
     db.flush()
@@ -489,12 +478,28 @@ def get_or_create_visit_thread(
 
     db.commit()
     db.refresh(conv)
+    return conv
 
+
+@router.post("/visit-thread", response_model=ConversacionResponse, status_code=201)
+def get_or_create_visit_thread(
+    body: VisitThreadRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Punto de entrada del botón de chat de una visita en Centro de Mando /
+    revision-visitas: reemplaza el chat plano legacy por visita_id para el
+    STAFF (el chat legacy del cliente, tab "Cliente" del inbox, no se toca).
+    """
+    conv = _find_or_create_visit_thread(db, body.visita_id, body.tipo, current_user.id)
+    cnt = db.execute(text("""
+        SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
+    """), {"c": conv.id}).scalar()
     return ConversacionResponse(
         id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
         region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
         creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
-        participantes_count=len(participantes),
+        participantes_count=int(cnt or 0),
     )
 
 

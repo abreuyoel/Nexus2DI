@@ -361,8 +361,53 @@ def approve_photos(
     return {"updated": updated, "message": "Fotos aprobadas"}
 
 
+async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: Foto, motivo: str,
+                                   current_user: Usuario) -> None:
+    """Postea un mensaje de sistema con la foto rechazada en el sub-hilo
+    'solo equipo' de la visita (se crea si todavía no existía) — mismo
+    espíritu que el aviso de rechazo al chat de v1, pero sobre el modelo de
+    conversaciones de v2. Best-effort: si falla, no debe tumbar el rechazo
+    de la foto (que ya se persistió antes de llamar esto)."""
+    if not visita:
+        return
+    try:
+        from app.routes.chat import _find_or_create_visit_thread
+        from app.models.chat import ChatMensaje
+        from app.websockets.manager import manager
+
+        conv = _find_or_create_visit_thread(db, visita.id, "visit_team", current_user.id)
+        texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
+        mensaje = ChatMensaje(
+            conversacion_id=conv.id,
+            cliente_id=conv.cliente_id,
+            sender_id=None,
+            sender_nombre="Sistema",
+            sender_type="sistema",
+            mensaje=texto,
+            foto_adjunta=foto.blob_path,
+            created_at=datetime.now(),
+        )
+        db.add(mensaje)
+        db.commit()
+        db.refresh(mensaje)
+
+        await manager.broadcast_to_room(f"chat_conv_{conv.id}", {
+            "id": mensaje.id,
+            "conversacion_id": conv.id,
+            "sender_id": None,
+            "sender_nombre": "Sistema",
+            "sender_type": "sistema",
+            "mensaje": texto,
+            "foto_adjunta": foto.url,
+            "created_at": str(mensaje.created_at),
+            "leido_por": [],
+        })
+    except Exception:
+        pass
+
+
 @router.post("/reject-photo")
-def reject_photo(
+async def reject_photo(
     data: RejectPhotoRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -424,6 +469,8 @@ def reject_photo(
             notify_photo_rejected(db, merc_cedula, foto.id, motivo)
         except Exception:
             pass
+
+    await _post_rejection_to_chat(db, visita, foto, motivo, current_user)
 
     notify_event("photo.decided", {"foto_id": foto.id, "estado": "Rechazada", "visita_id": foto.visita_id})
     return {"message": "Foto rechazada", "foto_id": foto.id, "razones": razones_nombres}

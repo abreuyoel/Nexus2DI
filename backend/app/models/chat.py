@@ -17,6 +17,7 @@ class ChatMensaje(Base):
     leido = Column("visto", Boolean, default=False)
     created_at = Column("fecha_envio", DateTime, nullable=True)
     metadata_json = Column("metadata", String(1000), nullable=True)
+    foto_adjunta = Column(String(500), nullable=True)
 
     visita = relationship("Visita", back_populates="mensajes_chat")
     conversacion = relationship("ChatConversacion", back_populates="mensajes")
