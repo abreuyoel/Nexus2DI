@@ -10,12 +10,13 @@
 -- luego se corre CONTRA epran (produccion) como paso separado.
 --
 -- Cobertura: columnas (tipo, longitud/precision/escala, IDENTITY, NULL/NOT
--- NULL, DEFAULT), PRIMARY KEY, y FOREIGN KEYs (en un segundo bloque, para
--- que el orden de creacion entre estas 22 tablas no importe).
--- NO cubre: constraints UNIQUE fuera de la PK, CHECK constraints, indices
--- no-PK, columnas calculadas, triggers. Si alguna de estas 22 tablas tiene
--- algo de eso, revisar con la funcion "Generate Scripts" de SSMS/Azure
--- Data Studio antes de correr en produccion.
+-- NULL, DEFAULT), PRIMARY KEY, UNIQUE constraints, y FOREIGN KEYs con su
+-- ON DELETE/ON UPDATE (en un segundo bloque, para que el orden de creacion
+-- entre estas 22 tablas no importe).
+-- NO cubre: CHECK constraints, indices no-PK/no-UNIQUE, columnas
+-- calculadas, triggers. Si alguna de estas 22 tablas tiene algo de eso,
+-- revisar con la funcion "Generate Scripts" de SSMS/Azure Data Studio
+-- antes de correr en produccion.
 
 SET NOCOUNT ON;
 
@@ -106,6 +107,32 @@ BEGIN
     PRINT 'GO';
     PRINT '';
 
+    -- UNIQUE constraints (fuera de la PK) -- ej. usuario_permisos tiene
+    -- UQ_permisos_usuario_module (id_usuario, module) que un CREATE TABLE
+    -- basico no captura.
+    DECLARE uqcur CURSOR FAST_FORWARD FOR
+        SELECT kc.name,
+               STRING_AGG(CAST(QUOTENAME(col.name) AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY ic.key_ordinal)
+        FROM sys.key_constraints kc
+        JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+        JOIN sys.columns col ON col.object_id = ic.object_id AND col.column_id = ic.column_id
+        WHERE kc.parent_object_id = OBJECT_ID('dbo.' + @tabla) AND kc.type = 'UQ'
+        GROUP BY kc.name;
+
+    DECLARE @uqname sysname, @uqcols NVARCHAR(MAX);
+    OPEN uqcur;
+    FETCH NEXT FROM uqcur INTO @uqname, @uqcols;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT 'ALTER TABLE dbo.' + QUOTENAME(@tabla) + ' ADD CONSTRAINT ' + QUOTENAME(@uqname)
+            + ' UNIQUE (' + @uqcols + ');';
+        PRINT 'GO';
+        PRINT '';
+        FETCH NEXT FROM uqcur INTO @uqname, @uqcols;
+    END
+    CLOSE uqcur;
+    DEALLOCATE uqcur;
+
     FETCH NEXT FROM cur INTO @tabla;
 END
 CLOSE cur;
@@ -121,7 +148,19 @@ INSERT INTO @fk_ddl (ddl)
 SELECT
     'ALTER TABLE dbo.' + QUOTENAME(tp.name) + ' ADD CONSTRAINT ' + QUOTENAME(fk.name) +
     ' FOREIGN KEY (' + STRING_AGG(CAST(QUOTENAME(cp.name) AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) + ')' +
-    ' REFERENCES dbo.' + QUOTENAME(tr.name) + ' (' + STRING_AGG(CAST(QUOTENAME(cr.name) AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) + ');'
+    ' REFERENCES dbo.' + QUOTENAME(tr.name) + ' (' + STRING_AGG(CAST(QUOTENAME(cr.name) AS NVARCHAR(MAX)), ', ') WITHIN GROUP (ORDER BY fkc.constraint_column_id) + ')' +
+    CASE fk.delete_referential_action
+        WHEN 1 THEN ' ON DELETE CASCADE'
+        WHEN 2 THEN ' ON DELETE SET NULL'
+        WHEN 3 THEN ' ON DELETE SET DEFAULT'
+        ELSE ''
+    END +
+    CASE fk.update_referential_action
+        WHEN 1 THEN ' ON UPDATE CASCADE'
+        WHEN 2 THEN ' ON UPDATE SET NULL'
+        WHEN 3 THEN ' ON UPDATE SET DEFAULT'
+        ELSE ''
+    END + ';'
 FROM sys.foreign_keys fk
 JOIN sys.tables tp ON tp.object_id = fk.parent_object_id
 JOIN sys.tables tr ON tr.object_id = fk.referenced_object_id
@@ -129,7 +168,7 @@ JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
 JOIN sys.columns cp ON cp.object_id = fkc.parent_object_id AND cp.column_id = fkc.parent_column_id
 JOIN sys.columns cr ON cr.object_id = fkc.referenced_object_id AND cr.column_id = fkc.referenced_column_id
 WHERE tp.name IN (SELECT nombre FROM @tablas)
-GROUP BY tp.name, fk.name, tr.name;
+GROUP BY tp.name, fk.name, tr.name, fk.delete_referential_action, fk.update_referential_action;
 
 DECLARE @fk_ddl_text NVARCHAR(MAX);
 DECLARE fkcur CURSOR FAST_FORWARD FOR SELECT ddl FROM @fk_ddl ORDER BY id;
