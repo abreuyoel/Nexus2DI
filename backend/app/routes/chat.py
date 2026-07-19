@@ -7,9 +7,9 @@ from datetime import datetime
 from app.db.session import get_db, SessionLocal
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
-from app.models.chat import ChatMensaje, ChatConversacion, ChatParticipante
+from app.models.chat import ChatMensaje, ChatConversacion, ChatParticipante, ChatMensajeLectura
 from app.schemas.chat import (
-    ChatMensajeCreate, ChatMensajeResponse,
+    ChatMensajeCreate, ChatMensajeResponse, LectorInfo,
     CrearConversacionRequest, ConversacionResponse,
     RecipientsResponse, RecipientUser, RegionRecipient, PdvRecipient,
     InboxItem,
@@ -52,6 +52,76 @@ def _can_access_conversation(db: Session, conv: ChatConversacion, user: Usuario)
     if user.is_admin or user.is_coordinador_exclusivo:
         return True
     return _is_participant(db, conv.id, user.id)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# RECIBOS DE LECTURA (estilo WhatsApp)
+# ════════════════════════════════════════════════════════════════════════════
+def _mark_leidos(db: Session, user: Usuario, conv_id: Optional[int] = None,
+                  visita_id: Optional[int] = None) -> List[int]:
+    """Inserta un recibo de lectura por cada mensaje ajeno de la conversación
+    (o del chat de visita legacy) que este usuario todavía no había leído, y
+    devuelve los id_mensaje recién marcados (para el broadcast por websocket).
+
+    No es responsabilidad de esta función decidir si el usuario tiene acceso
+    a la conversación/visita — eso ya se valida antes de llamarla.
+    """
+    if conv_id is not None:
+        where = "m.id_conversacion = :ref"
+        ref = conv_id
+    else:
+        where = "m.id_visita = :ref AND m.id_conversacion IS NULL"
+        ref = visita_id
+
+    pending = db.execute(text(f"""
+        SELECT m.id_mensaje FROM CHAT_MENSAJES_CLIENTE m
+        WHERE {where} AND m.id_usuario <> :uid
+          AND NOT EXISTS (
+              SELECT 1 FROM CHAT_MENSAJE_LECTURAS l
+              WHERE l.id_mensaje = m.id_mensaje AND l.id_usuario = :uid
+          )
+    """), {"ref": ref, "uid": user.id}).fetchall()
+
+    ids = [r[0] for r in pending]
+    if not ids:
+        return []
+
+    ahora = datetime.now()
+    for mid in ids:
+        db.add(ChatMensajeLectura(mensaje_id=mid, usuario_id=user.id,
+                                   username=user.username, fecha_lectura=ahora))
+    db.commit()
+    return ids
+
+
+def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMensajeResponse]:
+    """Construye ChatMensajeResponse a mano para cada mensaje, con su lista
+    de lectores (leido_por) — no es un campo mapeado en el ORM, así que no
+    se puede depender de la conversión automática de response_model."""
+    ids = [m.id for m in mensajes]
+    lecturas_map: dict[int, list[LectorInfo]] = {}
+    if ids:
+        ph = ",".join(str(int(i)) for i in ids)
+        rows = db.execute(text(f"""
+            SELECT id_mensaje, id_usuario, username, fecha_lectura
+            FROM CHAT_MENSAJE_LECTURAS WHERE id_mensaje IN ({ph})
+            ORDER BY fecha_lectura
+        """)).fetchall()
+        for r in rows:
+            lecturas_map.setdefault(r[0], []).append(
+                LectorInfo(id_usuario=r[1], username=r[2], fecha_lectura=r[3])
+            )
+
+    return [
+        ChatMensajeResponse(
+            id=m.id, visita_id=m.visita_id, cliente_id=m.cliente_id,
+            conversacion_id=m.conversacion_id, sender_type=m.sender_type,
+            sender_id=m.sender_id, sender_nombre=m.sender_nombre, mensaje=m.mensaje,
+            leido=m.leido, created_at=m.created_at,
+            leido_por=lecturas_map.get(m.id, []),
+        )
+        for m in mensajes
+    ]
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -412,7 +482,7 @@ def get_conversation(
 
 
 @router.get("/conversations/{conv_id}/messages", response_model=List[ChatMensajeResponse])
-def get_conversation_messages(
+async def get_conversation_messages(
     conv_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -423,7 +493,7 @@ def get_conversation_messages(
     if not _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso")
 
-    # Marcar como leídos los mensajes ajenos
+    # Marcar como leídos los mensajes ajenos (badge de no-leídos del inbox)
     db.execute(text("""
         UPDATE CHAT_MENSAJES_CLIENTE
         SET visto = 1
@@ -431,10 +501,57 @@ def get_conversation_messages(
     """), {"c": conv_id, "u": current_user.id})
     db.commit()
 
+    # Recibos de lectura por mensaje (tick doble) + avisar por websocket
+    leidos_ids = _mark_leidos(db, current_user, conv_id=conv_id)
+    if leidos_ids:
+        try:
+            await manager.broadcast_to_room(f"chat_conv_{conv_id}", {
+                "tipo": "lectura",
+                "conversacion_id": conv_id,
+                "id_usuario": current_user.id,
+                "username": current_user.username,
+                "mensajes_ids": leidos_ids,
+                "fecha_lectura": str(datetime.now()),
+            })
+        except Exception:
+            pass
+
     mensajes = db.query(ChatMensaje).filter(
         ChatMensaje.conversacion_id == conv_id
     ).order_by(ChatMensaje.created_at).all()
-    return mensajes
+    return _attach_leido_por(db, mensajes)
+
+
+@router.post("/conversations/{conv_id}/mark-read")
+async def mark_conversation_read(
+    conv_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Marca como leídos (recibo por mensaje) los mensajes ajenos pendientes
+    de esta conversación. `get_conversation_messages` ya hace esto al abrir
+    el chat — este endpoint existe para que el frontend pueda marcarlo leído
+    explícitamente sin recargar el historial completo."""
+    conv = db.query(ChatConversacion).filter(ChatConversacion.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    if not _can_access_conversation(db, conv, current_user):
+        raise HTTPException(status_code=403, detail="No tienes acceso")
+
+    leidos_ids = _mark_leidos(db, current_user, conv_id=conv_id)
+    if leidos_ids:
+        try:
+            await manager.broadcast_to_room(f"chat_conv_{conv_id}", {
+                "tipo": "lectura",
+                "conversacion_id": conv_id,
+                "id_usuario": current_user.id,
+                "username": current_user.username,
+                "mensajes_ids": leidos_ids,
+                "fecha_lectura": str(datetime.now()),
+            })
+        except Exception:
+            pass
+    return {"marcados": len(leidos_ids)}
 
 
 @router.post("/conversations/{conv_id}/messages", response_model=ChatMensajeResponse, status_code=201)
@@ -655,13 +772,13 @@ def search_chat_visits(
 
 
 @router.get("/visit/{visita_id}/messages", response_model=List[ChatMensajeResponse])
-def get_messages_by_visit(
+async def get_messages_by_visit(
     visita_id: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     mensajes = db.query(ChatMensaje).filter(
-        ChatMensaje.visita_id == visita_id
+        ChatMensaje.visita_id == visita_id, ChatMensaje.conversacion_id.is_(None)
     ).order_by(ChatMensaje.created_at).all()
 
     for msg in mensajes:
@@ -671,7 +788,57 @@ def get_messages_by_visit(
             if merc and merc.nombre:
                 msg.sender_nombre = merc.nombre
 
-    return mensajes
+    # Marcar como leídos los mensajes ajenos (badge de no-leídos del inbox
+    # de chats de visita — antes este endpoint no lo hacía, a diferencia de
+    # get_conversation_messages, dejando el contador de no-leídos "pegado").
+    db.execute(text("""
+        UPDATE CHAT_MENSAJES_CLIENTE
+        SET visto = 1
+        WHERE id_visita = :v AND id_conversacion IS NULL
+          AND id_usuario <> :u AND ISNULL(visto, 0) = 0
+    """), {"v": visita_id, "u": current_user.id})
+    db.commit()
+
+    # Recibos de lectura por mensaje (tick doble) + avisar por websocket
+    leidos_ids = _mark_leidos(db, current_user, visita_id=visita_id)
+    if leidos_ids:
+        try:
+            await manager.broadcast_to_room(f"chat_{visita_id}", {
+                "tipo": "lectura",
+                "visita_id": visita_id,
+                "id_usuario": current_user.id,
+                "username": current_user.username,
+                "mensajes_ids": leidos_ids,
+                "fecha_lectura": str(datetime.now()),
+            })
+        except Exception:
+            pass
+
+    return _attach_leido_por(db, mensajes)
+
+
+@router.post("/visit/{visita_id}/mark-read")
+async def mark_visit_read(
+    visita_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Equivalente a mark_conversation_read pero para el chat de visita
+    legacy (id_visita, sin id_conversacion)."""
+    leidos_ids = _mark_leidos(db, current_user, visita_id=visita_id)
+    if leidos_ids:
+        try:
+            await manager.broadcast_to_room(f"chat_{visita_id}", {
+                "tipo": "lectura",
+                "visita_id": visita_id,
+                "id_usuario": current_user.id,
+                "username": current_user.username,
+                "mensajes_ids": leidos_ids,
+                "fecha_lectura": str(datetime.now()),
+            })
+        except Exception:
+            pass
+    return {"marcados": len(leidos_ids)}
 
 
 @router.post("/send", response_model=ChatMensajeResponse, status_code=201)
@@ -739,6 +906,7 @@ async def websocket_chat(websocket: WebSocket, room: str):
                     "mensaje": mensaje.mensaje,
                     "created_at": str(mensaje.created_at),
                     "sender_type": mensaje.sender_type,
+                    "leido_por": [],
                 })
             finally:
                 db.close()

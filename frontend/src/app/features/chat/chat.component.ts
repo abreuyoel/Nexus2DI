@@ -9,14 +9,25 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatMenuModule } from '@angular/material/menu';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { WebSocketService } from '../../core/services/websocket.service';
 import { AuthService } from '../../core/services/auth.service';
-import { ChatMensaje } from '../../core/models/visita.model';
+import { ChatMensaje, ChatMensajeLector } from '../../core/models/visita.model';
 import { NewChatDialogComponent } from './new-chat-dialog.component';
+
+interface LecturaEvent {
+  tipo: 'lectura';
+  conversacion_id?: number;
+  visita_id?: number;
+  id_usuario: number;
+  username?: string;
+  mensajes_ids: number[];
+  fecha_lectura?: string;
+}
 
 interface ExclusiveClient { id_cliente: number; cliente: string; id_tipo_cliente: number; }
 interface InboxItem {
@@ -39,7 +50,7 @@ interface InboxItem {
   imports: [
     CommonModule, ReactiveFormsModule, FormsModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
-    MatListModule, MatProgressSpinnerModule, MatDialogModule,
+    MatListModule, MatProgressSpinnerModule, MatDialogModule, MatMenuModule,
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']
@@ -221,6 +232,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     const room = kind === 'visit' ? id.toString() : `conv_${id}`;
     this.wsSubscription = this.ws.connectToChat(room).subscribe({
       next: (msg) => {
+        if (msg?.tipo === 'lectura') {
+          this.applyReadReceipt(msg);
+          return;
+        }
         this.messages.update((ms) => [...ms, msg]);
         this.connected.set(true);
         setTimeout(() => this.scrollToBottom(), 50);
@@ -228,6 +243,35 @@ export class ChatComponent implements OnInit, OnDestroy {
       },
       error: () => this.connected.set(false),
     });
+  }
+
+  // ─── RECIBOS DE LECTURA (tick doble estilo WhatsApp) ──────────────
+  private applyReadReceipt(evt: LecturaEvent): void {
+    const ids = new Set(evt.mensajes_ids || []);
+    if (ids.size === 0) return;
+    this.messages.update((ms) => ms.map((m) => {
+      if (!ids.has(m.id)) return m;
+      const yaListado = (m.leido_por || []).some((l) => l.id_usuario === evt.id_usuario);
+      if (yaListado) return m;
+      const lector: ChatMensajeLector = {
+        id_usuario: evt.id_usuario,
+        username: evt.username,
+        fecha_lectura: evt.fecha_lectura,
+      };
+      return { ...m, leido_por: [...(m.leido_por || []), lector] };
+    }));
+  }
+
+  isOwnMessage(msg: ChatMensaje): boolean {
+    return msg.sender_id === this.currentUserId();
+  }
+
+  readersOf(msg: ChatMensaje): ChatMensajeLector[] {
+    return msg.leido_por || [];
+  }
+
+  isReadByOthers(msg: ChatMensaje): boolean {
+    return this.readersOf(msg).length > 0;
   }
 
   sendMessage(): void {

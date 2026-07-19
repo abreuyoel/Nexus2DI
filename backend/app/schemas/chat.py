@@ -14,6 +14,12 @@ class ChatMensajeCreate(BaseModel):
     sender_nombre: Optional[str] = None
 
 
+class LectorInfo(BaseModel):
+    id_usuario: int
+    username: Optional[str] = None
+    fecha_lectura: Optional[datetime] = None
+
+
 class ChatMensajeResponse(BaseModel):
     id: int
     visita_id: Optional[int] = None
@@ -25,6 +31,7 @@ class ChatMensajeResponse(BaseModel):
     mensaje: Optional[str] = None
     leido: Optional[bool] = None
     created_at: Optional[datetime] = None
+    leido_por: List[LectorInfo] = []
 
     class Config:
         from_attributes = True

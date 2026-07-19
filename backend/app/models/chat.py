@@ -56,3 +56,20 @@ class ChatParticipante(Base):
     fecha_union = Column(DateTime, nullable=True)
 
     conversacion = relationship("ChatConversacion", back_populates="participantes")
+
+
+class ChatMensajeLectura(Base):
+    """Recibo de lectura por mensaje y usuario (estilo WhatsApp).
+
+    Independiente del booleano `ChatMensaje.leido` (que solo indica si
+    *alguien* ajeno al emisor ya vio el mensaje, usado para el badge de
+    no-leídos del inbox) — esta tabla registra quién exactamente lo leyó
+    y cuándo, para el tick doble + lista de lectores en la UI.
+    """
+    __tablename__ = "CHAT_MENSAJE_LECTURAS"
+
+    id = Column("id_lectura", Integer, primary_key=True, index=True)
+    mensaje_id = Column("id_mensaje", Integer, ForeignKey("CHAT_MENSAJES_CLIENTE.id_mensaje"), nullable=False, index=True)
+    usuario_id = Column("id_usuario", Integer, nullable=False, index=True)
+    username = Column(String(150), nullable=True)
+    fecha_lectura = Column(DateTime, nullable=True)

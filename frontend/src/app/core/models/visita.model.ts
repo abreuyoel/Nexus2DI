@@ -52,15 +52,23 @@ export interface Balance {
   visita_id?: number;
 }
 
+export interface ChatMensajeLector {
+  id_usuario: number;
+  username?: string;
+  fecha_lectura?: string;
+}
+
 export interface ChatMensaje {
   id: number;
   visita_id?: number;
+  conversacion_id?: number;
   foto_id?: number;
   sender_type: string;
   sender_id?: number;
   sender_nombre?: string;
   mensaje: string;
   leido: boolean;
+  leido_por?: ChatMensajeLector[];
   created_at?: string;
 }
 
