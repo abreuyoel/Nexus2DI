@@ -10,10 +10,15 @@
 --     (String(500)) y app/routes/chat_grupos.py, que la usa al mandar/leer
 --     mensajes y al postear el rechazo de foto.
 --
--- NO se toco RUTAS_ACTIVADAS.id_cliente / identificador_punto_interes
--- (tambien SOLO_EN_epran): no aparecen referenciadas en ningun INSERT/SELECT
--- de app/routes ni en app/models/ruta.py -- probablemente una columna de
--- v1 sin uso en v2. Avisar antes de agregarlas si hace falta.
+--   - VENDEDOR_VISITAS.monto: DECIMAL(18,2) en epran vs FLOAT en epran-qa.
+--     El lado de produccion es el mas correcto -- decimal evita el error de
+--     redondeo binario de float en montos de dinero. Se alinea epran-qa a
+--     produccion (direccion contraria a las demas correcciones de este
+--     archivo, que van de epran hacia epran-qa).
+--
+-- RUTAS_ACTIVADAS.id_cliente / identificador_punto_interes (tambien
+-- SOLO_EN_epran) se resuelven con generate_ddl_missing_columns.sql, que
+-- introspecciona el tipo real en vez de adivinarlo -- ver ese archivo.
 --
 -- Correr con: sqlcmd -S 172.174.41.110 -U <usuario> -P <password> -C -d epran-qa -i fix_epran_qa_schema_gaps.sql
 
@@ -29,3 +34,8 @@ BEGIN
 END
 ELSE
     PRINT 'CHAT_MENSAJES_GRUPO_VISITA.foto_adjunta ya existia, no se toco';
+GO
+
+ALTER TABLE VENDEDOR_VISITAS ALTER COLUMN monto DECIMAL(18,2) NULL;
+PRINT 'VENDEDOR_VISITAS.monto alineado a DECIMAL(18,2)';
+GO
