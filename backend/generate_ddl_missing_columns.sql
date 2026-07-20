@@ -48,7 +48,7 @@ WHILE @@FETCH_STATUS = 0
 BEGIN
     IF EXISTS (SELECT 1 FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.' + @tabla) AND c.name = @columna)
     BEGIN
-        DECLARE @coldef NVARCHAR(200);
+        DECLARE @coldef NVARCHAR(200), @has_default BIT, @is_nullable BIT;
         SELECT @coldef =
             CASE
                 WHEN ty.name IN ('varchar', 'char', 'varbinary', 'binary')
@@ -62,16 +62,42 @@ BEGIN
                 WHEN ty.name = 'float' AND c.precision <> 53
                     THEN ty.name + '(' + CAST(c.precision AS VARCHAR(10)) + ')'
                 ELSE ty.name
-            END
-            + CASE WHEN c.is_nullable = 0 THEN ' NOT NULL' ELSE ' NULL' END
+            END,
+            @is_nullable = c.is_nullable,
+            @has_default = CASE WHEN dc.definition IS NOT NULL THEN 1 ELSE 0 END
         FROM sys.columns c
         JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+        LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
         WHERE c.object_id = OBJECT_ID('dbo.' + @tabla) AND c.name = @columna;
 
-        PRINT 'IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ''' + @tabla + ''' AND COLUMN_NAME = ''' + @columna + ''')';
-        PRINT '    ALTER TABLE dbo.' + QUOTENAME(@tabla) + ' ADD ' + QUOTENAME(@columna) + ' ' + @coldef + ';';
-        PRINT 'GO';
-        PRINT '';
+        -- ADD COLUMN ... NOT NULL en una tabla con filas EXIGE un DEFAULT
+        -- (si no, SQL Server no tiene con que rellenar las filas
+        -- existentes y el ALTER falla). Si la columna fuente es NOT NULL
+        -- pero no tiene DEFAULT declarado, se avisa en vez de generar un
+        -- ALTER que va a tronar.
+        IF @is_nullable = 0 AND @has_default = 0
+        BEGIN
+            PRINT '-- ADVERTENCIA: ' + @tabla + '.' + @columna + ' es NOT NULL en el origen pero SIN DEFAULT.';
+            PRINT '-- Agregarla NOT NULL fallaria si la tabla ya tiene filas (no hay con que rellenarlas).';
+            PRINT '-- Revisar a mano que valor por defecto tiene sentido antes de correr esto.';
+            PRINT '-- ALTER TABLE dbo.' + QUOTENAME(@tabla) + ' ADD ' + QUOTENAME(@columna) + ' ' + @coldef + ' NOT NULL DEFAULT <revisar>;';
+            PRINT '';
+        END
+        ELSE
+        BEGIN
+            DECLARE @default_clause NVARCHAR(500) = '';
+            IF @has_default = 1
+                SELECT @default_clause = ' DEFAULT ' + dc.definition
+                FROM sys.columns c
+                JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+                WHERE c.object_id = OBJECT_ID('dbo.' + @tabla) AND c.name = @columna;
+
+            PRINT 'IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ''' + @tabla + ''' AND COLUMN_NAME = ''' + @columna + ''')';
+            PRINT '    ALTER TABLE dbo.' + QUOTENAME(@tabla) + ' ADD ' + QUOTENAME(@columna) + ' ' + @coldef
+                + @default_clause + CASE WHEN @is_nullable = 0 THEN ' NOT NULL' ELSE ' NULL' END + ';';
+            PRINT 'GO';
+            PRINT '';
+        END
     END
     FETCH NEXT FROM cur INTO @tabla, @columna;
 END
