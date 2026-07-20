@@ -71,19 +71,48 @@ BEGIN
     PRINT 'Agregada CHAT_MENSAJES_CLIENTE.foto_adjunta';
 END
 ELSE PRINT 'CHAT_MENSAJES_CLIENTE.foto_adjunta ya existia, no se toco';
+GO
 
--- 2) SESIONES_ACTIVAS.session_id: ensanchar a VARCHAR(1000)
+-- 2) SESIONES_ACTIVAS.session_id: ensanchar a VARCHAR(1000).
+-- Tiene un indice (IX_SESIONES_SESSION_ID, probablemente UNIQUE por el
+-- unique=True del modelo) que depende de la columna -- SQL Server no deja
+-- alterar una columna indexada directamente. Se guarda si el indice era
+-- unique, se elimina, se altera la columna, y se recrea igual que estaba.
+DECLARE @is_unique BIT, @index_exists BIT = 0;
+SELECT @is_unique = is_unique, @index_exists = 1
+FROM sys.indexes
+WHERE object_id = OBJECT_ID('SESIONES_ACTIVAS') AND name = 'IX_SESIONES_SESSION_ID';
+
+IF @index_exists = 1
+BEGIN
+    DROP INDEX IX_SESIONES_SESSION_ID ON SESIONES_ACTIVAS;
+    PRINT 'Indice IX_SESIONES_SESSION_ID eliminado temporalmente';
+END
+
 ALTER TABLE SESIONES_ACTIVAS ALTER COLUMN session_id VARCHAR(1000) NOT NULL;
 PRINT 'SESIONES_ACTIVAS.session_id ensanchado a VARCHAR(1000)';
+
+IF @index_exists = 1
+BEGIN
+    IF @is_unique = 1
+        CREATE UNIQUE NONCLUSTERED INDEX IX_SESIONES_SESSION_ID ON SESIONES_ACTIVAS(session_id);
+    ELSE
+        CREATE NONCLUSTERED INDEX IX_SESIONES_SESSION_ID ON SESIONES_ACTIVAS(session_id);
+    PRINT 'Indice IX_SESIONES_SESSION_ID recreado';
+END
+GO
 
 -- 3) VENDEDOR_VISITAS.id_punto_interes: ensanchar a VARCHAR(100)
 ALTER TABLE VENDEDOR_VISITAS ALTER COLUMN id_punto_interes VARCHAR(100) NOT NULL;
 PRINT 'VENDEDOR_VISITAS.id_punto_interes ensanchado a VARCHAR(100)';
+GO
 
 -- 4) RUTAS_ACTIVADAS.motivo_no_activacion: ensanchar a NVARCHAR(500)
 ALTER TABLE RUTAS_ACTIVADAS ALTER COLUMN motivo_no_activacion NVARCHAR(500) NULL;
 PRINT 'RUTAS_ACTIVADAS.motivo_no_activacion ensanchado a NVARCHAR(500)';
+GO
 
 -- 5) VENDEDOR_JORNADAS.estado: ensanchar a VARCHAR(50)
 ALTER TABLE VENDEDOR_JORNADAS ALTER COLUMN estado VARCHAR(50) NOT NULL;
 PRINT 'VENDEDOR_JORNADAS.estado ensanchado a VARCHAR(50)';
+GO
