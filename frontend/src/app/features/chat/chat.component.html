@@ -130,27 +130,22 @@
             </div>
           </div>
         }
-      } @else {
-        <!-- Inbox filtrado por pestaña: Cliente (visitas) / Equipo Operativo (conversaciones) -->
+      } @else if (activeChatTab() === 'cliente') {
+        <!-- Inbox de Cliente (chats de visita legacy) -->
         @if (visibleInbox().length === 0) {
           <div class="h-full flex flex-col items-center justify-center text-center opacity-40 p-4">
             <mat-icon class="!text-4xl mb-2">speaker_notes_off</mat-icon>
-            <p class="text-sm font-medium">
-              {{ activeChatTab() === 'cliente' ? 'No tienes chats de cliente' : 'No tienes conversaciones de equipo' }}
-            </p>
-            <p class="text-xs mt-1">Crea una con el botón "+ Nuevo"</p>
+            <p class="text-sm font-medium">No tienes chats de cliente</p>
           </div>
         }
-        @for (item of visibleInbox(); track item.kind + '-' + (item.visita_id || item.conversacion_id)) {
+        @for (item of visibleInbox(); track item.visita_id) {
           <div
             (click)="selectInboxItem(item)"
             [ngClass]="{'bg-primary-50 dark:bg-primary-900/20 border-primary-100 dark:border-primary-900/30': isItemActive(item)}"
             class="p-4 mb-2 rounded-2xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent"
           >
             <div class="flex items-start gap-2 mb-1">
-              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] mt-0.5"
-                        [class.text-primary-500]="item.kind === 'visit'"
-                        [class.text-emerald-500]="item.kind === 'conversation'">
+              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] mt-0.5 text-primary-500">
                 {{ iconForItem(item) }}
               </mat-icon>
               <span class="font-bold text-slate-800 dark:text-slate-200 truncate flex-1 text-sm">
@@ -162,9 +157,120 @@
             </div>
             <div class="flex justify-between items-center">
               <span class="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">
-                <span class="text-xs font-bold mr-1"
-                      [class.text-primary-500]="item.kind === 'visit'"
-                      [class.text-emerald-500]="item.kind === 'conversation'">
+                <span class="text-xs font-bold mr-1 text-primary-500">
+                  {{ sublabelForItem(item) }}:
+                </span>
+                {{ item.last_message || '(Sin mensajes)' }}
+              </span>
+              @if (item.unread_count && item.unread_count > 0) {
+                <span class="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
+                  {{ item.unread_count }}
+                </span>
+              }
+            </div>
+          </div>
+        }
+      } @else {
+        <!-- Equipo Operativo: grupos por cliente (solo equipo / equipo+cliente)
+             + visitas con sub-hilo activo, más los grupos ad-hoc region/pdv -->
+        @if (grupos().length === 0 && adHocConversations().length === 0) {
+          <div class="h-full flex flex-col items-center justify-center text-center opacity-40 p-4">
+            <mat-icon class="!text-4xl mb-2">speaker_notes_off</mat-icon>
+            <p class="text-sm font-medium">No tienes chats de equipo</p>
+            <p class="text-xs mt-1">Los grupos por región/PDV se crean con "+ Nuevo"</p>
+          </div>
+        }
+
+        @for (g of grupos(); track g.id_grupo) {
+          <div class="mb-2">
+            <div
+              (click)="selectGrupo(g)"
+              [ngClass]="{'bg-primary-50 dark:bg-primary-900/20 border-primary-100 dark:border-primary-900/30': isGrupoActive(g)}"
+              class="p-4 rounded-2xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent"
+            >
+              <div class="flex items-start gap-2 mb-1">
+                <mat-icon class="!text-[18px] !w-[18px] !h-[18px] mt-0.5 text-emerald-500">
+                  {{ g.tipo_grupo === 'operativo_cliente' ? 'diversity_3' : 'groups' }}
+                </mat-icon>
+                <span class="font-bold text-slate-800 dark:text-slate-200 truncate flex-1 text-sm">
+                  {{ nombreGrupo(g) }}
+                </span>
+                <button (click)="toggleGrupoVisitas(g, $event)"
+                        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
+                  <mat-icon class="!text-[18px] !w-[18px] !h-[18px]">
+                    {{ expandedGrupoId() === g.id_grupo ? 'expand_less' : 'expand_more' }}
+                  </mat-icon>
+                </button>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">
+                  {{ g.ultimo_mensaje || '(Sin mensajes)' }}
+                </span>
+                @if (g.no_leidos > 0) {
+                  <span class="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
+                    {{ g.no_leidos }}
+                  </span>
+                }
+              </div>
+            </div>
+
+            @if (expandedGrupoId() === g.id_grupo) {
+              <div class="pl-6 mt-1 space-y-1">
+                @if (loadingVisitasGrupo() === g.id_grupo) {
+                  <div class="flex items-center gap-2 p-2 opacity-50">
+                    <mat-spinner diameter="14"></mat-spinner>
+                    <span class="text-xs">Cargando visitas...</span>
+                  </div>
+                }
+                @for (v of visitasDe(g); track v.id_visita) {
+                  <div
+                    (click)="selectGrupoVisita(g, v)"
+                    [ngClass]="{'bg-primary-50 dark:bg-primary-900/20 border-primary-100 dark:border-primary-900/30': isGrupoVisitaActive(g, v)}"
+                    class="p-2.5 rounded-xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent flex items-center gap-2"
+                  >
+                    <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-slate-400">store</mat-icon>
+                    <div class="min-w-0 flex-1">
+                      <span class="block text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                        {{ v.punto || ('Visita #' + v.id_visita) }}
+                      </span>
+                      <span class="block text-[10px] text-slate-400 truncate">
+                        {{ v.ultimo_mensaje || '(Sin mensajes)' }}
+                      </span>
+                    </div>
+                  </div>
+                } @empty {
+                  @if (loadingVisitasGrupo() !== g.id_grupo) {
+                    <p class="text-[11px] opacity-40 px-2 py-1">No hay visitas con chat activo.</p>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
+
+        @if (adHocConversations().length > 0) {
+          <p class="px-2 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Grupos por región/PDV</p>
+        }
+        @for (item of adHocConversations(); track item.conversacion_id) {
+          <div
+            (click)="selectInboxItem(item)"
+            [ngClass]="{'bg-primary-50 dark:bg-primary-900/20 border-primary-100 dark:border-primary-900/30': isItemActive(item)}"
+            class="p-4 mb-2 rounded-2xl cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent"
+          >
+            <div class="flex items-start gap-2 mb-1">
+              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] mt-0.5 text-emerald-500">
+                {{ iconForItem(item) }}
+              </mat-icon>
+              <span class="font-bold text-slate-800 dark:text-slate-200 truncate flex-1 text-sm">
+                {{ labelForItem(item) }}
+              </span>
+              <span class="text-[10px] text-slate-400 whitespace-nowrap pt-1">
+                {{ item.last_message_date | date:'dd/MM HH:mm' }}
+              </span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">
+                <span class="text-xs font-bold mr-1 text-emerald-500">
                   {{ sublabelForItem(item) }}:
                 </span>
                 {{ item.last_message || '(Sin mensajes)' }}
@@ -184,17 +290,17 @@
   <!-- MAIN CHAT AREA -->
   <div class="flex-1 bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl shadow-slate-200/50 dark:shadow-none flex flex-col overflow-hidden relative">
 
-    @if (activeId()) {
+    @if (activeKind()) {
       <!-- Chat Header -->
       <div class="p-4 border-b border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-slate-950/20 flex justify-between items-center">
         <div class="flex items-center gap-2">
           <mat-icon class="text-primary-500">
-            {{ activeKind() === 'visit' ? 'store' : 'forum' }}
+            {{ activeIcon() }}
           </mat-icon>
           <div>
             <h2 class="text-lg font-bold text-slate-800 dark:text-white">{{ activeTitle() }}</h2>
             <p class="text-xs text-slate-500 dark:text-slate-400">
-              {{ activeKind() === 'visit' ? 'Visita #' + activeId() : 'Chat #' + activeId() }}
+              {{ activeSubtitle() }}
             </p>
           </div>
         </div>

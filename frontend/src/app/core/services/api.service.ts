@@ -221,7 +221,8 @@ export class ApiService {
   getMessagesByVisit(visitId: number): Observable<ChatMensaje[]> { return this.http.get<ChatMensaje[]>(`${this.base}/api/chat/visit/${visitId}/messages`); }
   sendMessage(data: object): Observable<ChatMensaje> { return this.http.post<ChatMensaje>(`${this.base}/api/chat/send`, data); }
 
-  // --- CHAT — CONVERSACIONES (chats no atados a visita) ---
+  // --- CHAT — CONVERSACIONES (grupos ad-hoc de mercaderistas: region/pdv;
+  // el chat de equipo/visita vive en CHAT — GRUPOS más abajo) ---
   getChatRecipients(clienteId?: number): Observable<any> {
     return this.http.get<any>(`${this.base}/api/chat/recipients`, { params: this.params({ cliente_id: clienteId }) });
   }
@@ -229,9 +230,8 @@ export class ApiService {
     return this.http.get<any[]>(`${this.base}/api/chat/conversations`, { params: this.params({ cliente_id: clienteId }) });
   }
   createConversation(body: {
-    tipo: 'direct' | 'group_team' | 'group_region' | 'group_pdv';
+    tipo: 'group_region' | 'group_pdv';
     cliente_id?: number;
-    destinatario_id?: number;
     region?: string;
     punto_interes_id?: string;
     titulo?: string;
@@ -249,9 +249,41 @@ export class ApiService {
     return this.http.post<ChatMensaje>(`${this.base}/api/chat/conversations/${convId}/messages`, { mensaje });
   }
 
-  // --- CHAT — SUB-HILO POR VISITA (solo equipo / equipo+cliente) ---
-  getOrCreateVisitThread(visitaId: number, tipo: 'visit_team' | 'visit_team_client'): Observable<any> {
-    return this.http.post<any>(`${this.base}/api/chat/visit-thread`, { visita_id: visitaId, tipo });
+  // --- CHAT — GRUPOS (equipo operativo / equipo+cliente + sub-hilo por
+  // visita) — mismas tablas que AppWeb v1 y la APK del mercaderista ---
+  getMisGrupos(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/chat/grupos/mis-grupos`);
+  }
+  getMensajesGrupo(idGrupo: number, beforeId?: number, limit = 50): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/chat/grupos/${idGrupo}/mensajes`,
+      { params: this.params({ before_id: beforeId, limit }) });
+  }
+  enviarMensajeGrupo(idGrupo: number, mensaje: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/grupos/${idGrupo}/mensajes`, { mensaje });
+  }
+  getMiembrosGrupo(idGrupo: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/chat/grupos/${idGrupo}/miembros`);
+  }
+  marcarLeidoGrupo(idGrupo: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/grupos/${idGrupo}/marcar-leido`, {});
+  }
+  getVisitasConChat(idCliente: number, tipoGrupo: 'operativo' | 'operativo_cliente'): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/chat/grupos/visitas-chat/${idCliente}/${tipoGrupo}`);
+  }
+  getMensajesGrupoVisita(idCliente: number, tipoGrupo: 'operativo' | 'operativo_cliente', idVisita: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/chat/grupos/visita-mensajes/${idCliente}/${tipoGrupo}/${idVisita}`);
+  }
+  enviarMensajeGrupoVisita(idCliente: number, tipoGrupo: 'operativo' | 'operativo_cliente', idVisita: number, mensaje: string): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/grupos/visita-mensajes/${idCliente}/${tipoGrupo}/${idVisita}`, { mensaje });
+  }
+  marcarLeidoGrupoVisita(idCliente: number, tipoGrupo: 'operativo' | 'operativo_cliente', idVisita: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/grupos/visita-marcar-leido/${idCliente}/${tipoGrupo}/${idVisita}`, {});
+  }
+  getInfoGrupoCliente(idCliente: number, tipoGrupo: 'operativo' | 'operativo_cliente'): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/chat/grupos/info-cliente/${idCliente}/${tipoGrupo}`);
+  }
+  getOrCreateVisitaThread(visitaId: number, tipoGrupo: 'operativo' | 'operativo_cliente'): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/chat/grupos/visita-thread`, { visita_id: visitaId, tipo_grupo: tipoGrupo });
   }
 
   // --- NOTIFICACIONES ---

@@ -19,10 +19,13 @@ import { AuthService } from '../../core/services/auth.service';
 import { ChatMensaje, ChatMensajeLector } from '../../core/models/visita.model';
 import { NewChatDialogComponent } from './new-chat-dialog.component';
 
+type TipoGrupo = 'operativo' | 'operativo_cliente';
+
 interface LecturaEvent {
   tipo: 'lectura';
   conversacion_id?: number;
   visita_id?: number;
+  id_grupo?: number;
   id_usuario: number;
   username?: string;
   mensajes_ids: number[];
@@ -30,6 +33,7 @@ interface LecturaEvent {
 }
 
 interface ExclusiveClient { id_cliente: number; cliente: string; id_tipo_cliente: number; }
+
 interface InboxItem {
   kind: 'visit' | 'conversation';
   visita_id?: number;
@@ -43,6 +47,27 @@ interface InboxItem {
   last_message_date?: string;
   unread_count?: number;
 }
+
+interface Grupo {
+  id_grupo: number;
+  id_cliente: number;
+  tipo_grupo: TipoGrupo;
+  nombre?: string;
+  no_leidos: number;
+  ultimo_mensaje?: string;
+  ultimo_mensaje_fecha?: string;
+}
+
+interface VisitaConChat {
+  id_visita: number;
+  fecha_visita?: string;
+  mercaderista?: string;
+  punto?: string;
+  ultimo_mensaje?: string;
+  fecha_ultimo?: string;
+}
+
+interface GrupoVisitaKey { id_cliente: number; tipo_grupo: TipoGrupo; id_visita: number; }
 
 @Component({
   selector: 'app-chat',
@@ -67,22 +92,29 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   currentUserId = signal<number | null>(null);
 
-  // Active chat: visita o conversación
-  activeKind = signal<'visit' | 'conversation' | null>(null);
+  // Chat activo: visita (legacy) / conversación ad-hoc (region/pdv) /
+  // grupo (equipo operativo, chat general) / grupo_visita (su sub-hilo)
+  activeKind = signal<'visit' | 'conversation' | 'grupo' | 'grupo_visita' | null>(null);
   activeId = signal<number | null>(null);
+  activeGrupoVisita = signal<GrupoVisitaKey | null>(null);
   activeTitle = signal<string>('');
 
-  // Pestañas: Cliente (chats de visita) vs Equipo Operativo (conversaciones internas)
+  // Pestañas: Cliente (chats de visita) vs Equipo Operativo (grupos + ad-hoc)
   activeChatTab = signal<'cliente' | 'equipo'>('cliente');
   clienteCount = computed(() => this.inbox().filter(i => i.kind === 'visit').length);
-  equipoCount = computed(() => this.inbox().filter(i => i.kind === 'conversation').length);
-  visibleInbox = computed(() => {
-    const want = this.activeChatTab() === 'cliente' ? 'visit' : 'conversation';
-    return this.inbox().filter(i => i.kind === want);
-  });
+  adHocConversations = computed(() => this.inbox().filter(i => i.kind === 'conversation'));
+  equipoCount = computed(() => this.grupos().length + this.adHocConversations().length);
+  visibleInbox = computed(() => this.inbox().filter(i => i.kind === 'visit'));
+
+  // Grupos de equipo operativo (mis-grupos) + sus visitas con sub-hilo
+  grupos = signal<Grupo[]>([]);
+  expandedGrupoId = signal<number | null>(null);
+  visitasPorGrupo = signal<Record<number, VisitaConChat[]>>({});
+  loadingVisitasGrupo = signal<number | null>(null);
 
   setChatTab(tab: 'cliente' | 'equipo'): void {
     this.activeChatTab.set(tab);
+    if (tab === 'equipo' && this.grupos().length === 0) this.loadGrupos();
   }
 
   // Coordinador exclusivo
@@ -118,6 +150,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.loadExclusiveClients();
     } else {
       this.loadInbox();
+      this.loadGrupos();
     }
 
     this.route.queryParams.subscribe(params => {
@@ -126,10 +159,13 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.selectChat('visit', visitaId);
         return;
       }
-      const convId = params['conversacion'] ? parseInt(params['conversacion'], 10) : null;
-      if (convId) {
+      const idCliente = params['grupo_cliente'] ? parseInt(params['grupo_cliente'], 10) : null;
+      const tipoGrupo = params['tipo_grupo'] as TipoGrupo | undefined;
+      const idVisitaGrupo = params['grupo_visita'] ? parseInt(params['grupo_visita'], 10) : null;
+      if (idCliente && tipoGrupo && idVisitaGrupo) {
         this.activeChatTab.set('equipo');
-        this.selectChat('conversation', convId, params['titulo'] || undefined);
+        this.selectGrupoVisitaByKey({ id_cliente: idCliente, tipo_grupo: tipoGrupo, id_visita: idVisitaGrupo },
+          params['titulo'] || undefined);
       }
     });
 
@@ -162,18 +198,21 @@ export class ChatComponent implements OnInit, OnDestroy {
   selectExclusiveClient(c: ExclusiveClient): void {
     this.selectedExclusiveClient.set(c);
     this.loadInbox();
+    this.loadGrupos();
   }
 
   changeExclusiveClient(): void {
     this.selectedExclusiveClient.set(null);
     this.inbox.set([]);
+    this.grupos.set([]);
     this.activeKind.set(null);
     this.activeId.set(null);
+    this.activeGrupoVisita.set(null);
     this.wsSubscription?.unsubscribe();
     this.ws.disconnectAll();
   }
 
-  // ─── INBOX ────────────────────────────────────────────────────────
+  // ─── INBOX (tab Cliente) ──────────────────────────────────────────
   loadInbox(): void {
     const clienteId = this.selectedExclusiveClient()?.id_cliente;
     this.api.getChatInbox(clienteId).subscribe({
@@ -181,14 +220,54 @@ export class ChatComponent implements OnInit, OnDestroy {
     });
   }
 
+  // ─── GRUPOS DE EQUIPO OPERATIVO (tab Equipo) ──────────────────────
+  loadGrupos(): void {
+    this.api.getMisGrupos().subscribe({
+      next: (data) => this.grupos.set(data),
+    });
+  }
+
+  toggleGrupoVisitas(g: Grupo, ev: Event): void {
+    ev.stopPropagation();
+    if (this.expandedGrupoId() === g.id_grupo) {
+      this.expandedGrupoId.set(null);
+      return;
+    }
+    this.expandedGrupoId.set(g.id_grupo);
+    if (!this.visitasPorGrupo()[g.id_grupo]) {
+      this.loadingVisitasGrupo.set(g.id_grupo);
+      this.api.getVisitasConChat(g.id_cliente, g.tipo_grupo).subscribe({
+        next: (visitas) => {
+          this.visitasPorGrupo.update(m => ({ ...m, [g.id_grupo]: visitas }));
+          this.loadingVisitasGrupo.set(null);
+        },
+        error: () => this.loadingVisitasGrupo.set(null),
+      });
+    }
+  }
+
+  visitasDe(g: Grupo): VisitaConChat[] {
+    return this.visitasPorGrupo()[g.id_grupo] || [];
+  }
+
   get activeList(): InboxItem[] | any[] {
-    return this.searchControl.value ? this.searchResults() : this.inbox();
+    return this.searchControl.value ? this.searchResults() : this.visibleInbox();
   }
 
   isItemActive(item: InboxItem): boolean {
     if (item.kind === 'visit') return this.activeKind() === 'visit' && this.activeId() === item.visita_id;
     if (item.kind === 'conversation') return this.activeKind() === 'conversation' && this.activeId() === item.conversacion_id;
     return false;
+  }
+
+  isGrupoActive(g: Grupo): boolean {
+    return this.activeKind() === 'grupo' && this.activeId() === g.id_grupo;
+  }
+
+  isGrupoVisitaActive(g: Grupo, v: VisitaConChat): boolean {
+    const gv = this.activeGrupoVisita();
+    return this.activeKind() === 'grupo_visita' && !!gv
+      && gv.id_cliente === g.id_cliente && gv.tipo_grupo === g.tipo_grupo && gv.id_visita === v.id_visita;
   }
 
   selectInboxItem(item: InboxItem): void {
@@ -204,25 +283,27 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.selectChat('visit', visitaId, puntoNombre);
   }
 
-  selectChat(kind: 'visit' | 'conversation', id: number, title?: string): void {
-    if (this.activeKind() === kind && this.activeId() === id) return;
-
-    this.activeKind.set(kind);
-    this.activeId.set(id);
-    this.activeTitle.set(title || (kind === 'visit' ? `Visita #${id}` : `Chat #${id}`));
-
-    // Limpiar búsqueda si estaba activa
+  private resetActiveChat(): void {
+    this.wsSubscription?.unsubscribe();
+    this.ws.disconnectAll();
+    this.messages.set([]);
+    this.connected.set(false);
     if (this.searchControl.value) {
       this.searchControl.setValue('', { emitEvent: false });
       this.searchResults.set([]);
       this.loadInbox();
     }
+  }
 
-    this.wsSubscription?.unsubscribe();
-    this.ws.disconnectAll();
-    this.messages.set([]);
+  selectChat(kind: 'visit' | 'conversation', id: number, title?: string): void {
+    if (this.activeKind() === kind && this.activeId() === id) return;
 
-    // Cargar historial
+    this.activeKind.set(kind);
+    this.activeId.set(id);
+    this.activeGrupoVisita.set(null);
+    this.activeTitle.set(title || (kind === 'visit' ? `Visita #${id}` : `Chat #${id}`));
+    this.resetActiveChat();
+
     const history$ = kind === 'visit'
       ? this.api.getMessagesByVisit(id)
       : this.api.getConversationMessages(id);
@@ -234,7 +315,6 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Conectar WebSocket
     const room = kind === 'visit' ? id.toString() : `conv_${id}`;
     this.wsSubscription = this.ws.connectToChat(room).subscribe({
       next: (msg) => {
@@ -246,6 +326,93 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.connected.set(true);
         setTimeout(() => this.scrollToBottom(), 50);
         if (!this.searchControl.value) this.loadInbox();
+      },
+      error: () => this.connected.set(false),
+    });
+  }
+
+  // ─── CHAT DE GRUPO (equipo operativo) ─────────────────────────────
+  private mapGrupoMensaje(m: any): ChatMensaje {
+    return {
+      id: m.id_mensaje,
+      sender_id: m.id_usuario,
+      sender_nombre: m.username,
+      sender_type: m.tipo_mensaje === 'sistema' ? 'sistema' : 'usuario',
+      mensaje: m.mensaje,
+      leido: true,
+      created_at: m.fecha_envio,
+      foto_adjunta: m.foto_adjunta,
+      leido_por: m.leido_por || [],
+    };
+  }
+
+  selectGrupo(g: Grupo): void {
+    if (this.activeKind() === 'grupo' && this.activeId() === g.id_grupo) return;
+
+    this.activeKind.set('grupo');
+    this.activeId.set(g.id_grupo);
+    this.activeGrupoVisita.set(null);
+    this.activeTitle.set(g.nombre || (g.tipo_grupo === 'operativo' ? 'Equipo operativo' : 'Equipo + Cliente'));
+    this.resetActiveChat();
+
+    this.api.getMensajesGrupo(g.id_grupo).subscribe({
+      next: history => {
+        this.messages.set(history.map(h => this.mapGrupoMensaje(h)));
+        setTimeout(() => this.scrollToBottom(), 50);
+      }
+    });
+    this.api.marcarLeidoGrupo(g.id_grupo).subscribe({ next: () => this.loadGrupos() });
+
+    this.wsSubscription = this.ws.connectToChatGrupos(`grupo_${g.id_grupo}`).subscribe({
+      next: (msg) => {
+        if (msg?.tipo === 'lectura') {
+          this.applyReadReceipt(msg);
+          return;
+        }
+        this.messages.update((ms) => [...ms, this.mapGrupoMensaje(msg)]);
+        this.connected.set(true);
+        setTimeout(() => this.scrollToBottom(), 50);
+        this.loadGrupos();
+      },
+      error: () => this.connected.set(false),
+    });
+  }
+
+  private selectGrupoVisitaByKey(key: GrupoVisitaKey, title?: string): void {
+    const g: Grupo = this.grupos().find(x => x.id_cliente === key.id_cliente && x.tipo_grupo === key.tipo_grupo)
+      || { id_grupo: 0, id_cliente: key.id_cliente, tipo_grupo: key.tipo_grupo, no_leidos: 0 };
+    const v: VisitaConChat = { id_visita: key.id_visita, punto: title };
+    this.selectGrupoVisita(g, v);
+  }
+
+  selectGrupoVisita(g: Grupo, v: VisitaConChat): void {
+    const key: GrupoVisitaKey = { id_cliente: g.id_cliente, tipo_grupo: g.tipo_grupo, id_visita: v.id_visita };
+    if (this.isGrupoVisitaActive(g, v)) return;
+
+    this.activeKind.set('grupo_visita');
+    this.activeId.set(null);
+    this.activeGrupoVisita.set(key);
+    this.activeTitle.set(v.punto || `Visita #${v.id_visita}`);
+    this.resetActiveChat();
+
+    this.api.getMensajesGrupoVisita(key.id_cliente, key.tipo_grupo, key.id_visita).subscribe({
+      next: history => {
+        this.messages.set(history.map(h => this.mapGrupoMensaje(h)));
+        setTimeout(() => this.scrollToBottom(), 50);
+      }
+    });
+    this.api.marcarLeidoGrupoVisita(key.id_cliente, key.tipo_grupo, key.id_visita).subscribe();
+
+    const room = `grupo_visita_${key.id_cliente}_${key.tipo_grupo}_${key.id_visita}`;
+    this.wsSubscription = this.ws.connectToChatGrupos(room).subscribe({
+      next: (msg) => {
+        if (msg?.tipo === 'lectura') {
+          this.applyReadReceipt(msg);
+          return;
+        }
+        this.messages.update((ms) => [...ms, this.mapGrupoMensaje(msg)]);
+        this.connected.set(true);
+        setTimeout(() => this.scrollToBottom(), 50);
       },
       error: () => this.connected.set(false),
     });
@@ -286,33 +453,46 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   sendMessage(): void {
     const text = this.messageControl.value?.trim();
-    if (!text || this.activeId() === null) return;
+    if (!text) return;
 
-    const user = this.auth.currentUser();
     const kind = this.activeKind();
-    const id = this.activeId()!;
+    const user = this.auth.currentUser();
 
-    if (kind === 'visit') {
-      this.ws.sendToChat(id.toString(), {
-        visita_id: id,
-        mensaje: text,
-        sender_type: user?.is_client ? 'cliente' : 'usuario',
-        sender_id: user?.id,
-        sender_nombre: user?.username,
-      });
-    } else if (kind === 'conversation') {
-      this.ws.sendToChat(`conv_${id}`, {
-        conversacion_id: id,
-        mensaje: text,
-        sender_type: user?.is_client ? 'cliente' : 'usuario',
-        sender_id: user?.id,
-        sender_nombre: user?.username,
-      });
+    if (kind === 'visit' || kind === 'conversation') {
+      const id = this.activeId();
+      if (id === null) return;
+      if (kind === 'visit') {
+        this.ws.sendToChat(id.toString(), {
+          visita_id: id,
+          mensaje: text,
+          sender_type: user?.is_client ? 'cliente' : 'usuario',
+          sender_id: user?.id,
+          sender_nombre: user?.username,
+        });
+      } else {
+        this.ws.sendToChat(`conv_${id}`, {
+          conversacion_id: id,
+          mensaje: text,
+          sender_type: user?.is_client ? 'cliente' : 'usuario',
+          sender_id: user?.id,
+          sender_nombre: user?.username,
+        });
+      }
+    } else if (kind === 'grupo') {
+      const id = this.activeId();
+      if (id === null) return;
+      this.api.enviarMensajeGrupo(id, text).subscribe();
+    } else if (kind === 'grupo_visita') {
+      const gv = this.activeGrupoVisita();
+      if (!gv) return;
+      this.api.enviarMensajeGrupoVisita(gv.id_cliente, gv.tipo_grupo, gv.id_visita, text).subscribe();
+    } else {
+      return;
     }
     this.messageControl.reset();
   }
 
-  // ─── NUEVO CHAT ───────────────────────────────────────────────────
+  // ─── NUEVO CHAT (grupos ad-hoc de mercaderistas: region/pdv) ──────
   openNewChatDialog(): void {
     const clienteId = this.selectedExclusiveClient()?.id_cliente;
     const ref = this.dialog.open(NewChatDialogComponent, {
@@ -322,6 +502,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     });
     ref.afterClosed().subscribe(conv => {
       if (conv?.id) {
+        this.activeChatTab.set('equipo');
         this.loadInbox();
         this.selectChat('conversation', conv.id, conv.titulo);
       }
@@ -340,17 +521,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     } catch {}
   }
 
-  // Helpers de UI
-  isVisitThread(item: InboxItem): boolean {
-    return item.tipo === 'visit_team' || item.tipo === 'visit_team_client';
-  }
-
+  // Helpers de UI (conversaciones ad-hoc region/pdv del tab Equipo)
   iconForItem(item: InboxItem): string {
     if (item.kind === 'visit') return 'store';
-    if (this.isVisitThread(item)) return item.tipo === 'visit_team_client' ? 'diversity_3' : 'groups';
     switch (item.tipo) {
-      case 'direct': return 'person';
-      case 'group_team': return 'groups';
       case 'group_region': return 'map';
       case 'group_pdv': return 'storefront';
       default: return 'forum';
@@ -364,13 +538,32 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   sublabelForItem(item: InboxItem): string {
     if (item.kind === 'visit') return `V-${item.visita_id}`;
-    if (this.isVisitThread(item)) {
-      const suf = item.tipo === 'visit_team_client' ? 'Equipo+Cliente' : 'Solo equipo';
-      return item.visita_id ? `V-${item.visita_id} · ${suf}` : suf;
-    }
-    const map: Record<string, string> = {
-      direct: 'Directo', group_team: 'Equipo', group_region: 'Región', group_pdv: 'PDV',
-    };
+    const map: Record<string, string> = { group_region: 'Región', group_pdv: 'PDV' };
     return map[item.tipo || ''] || 'Chat';
+  }
+
+  nombreGrupo(g: Grupo): string {
+    return g.nombre || (g.tipo_grupo === 'operativo' ? 'Equipo operativo' : 'Equipo + Cliente');
+  }
+
+  // Helpers del header del chat activo (varían según activeKind)
+  activeIcon(): string {
+    switch (this.activeKind()) {
+      case 'visit': return 'store';
+      case 'grupo': return 'groups';
+      case 'grupo_visita': return 'store';
+      default: return 'forum';
+    }
+  }
+
+  activeSubtitle(): string {
+    const kind = this.activeKind();
+    if (kind === 'visit') return `Visita #${this.activeId()}`;
+    if (kind === 'grupo_visita') {
+      const gv = this.activeGrupoVisita();
+      return gv ? `Visita #${gv.id_visita} · ${gv.tipo_grupo === 'operativo_cliente' ? 'Equipo+Cliente' : 'Solo equipo'}` : '';
+    }
+    if (kind === 'grupo') return 'Chat general';
+    return `Chat #${this.activeId()}`;
   }
 }

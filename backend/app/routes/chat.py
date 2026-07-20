@@ -10,8 +10,8 @@ from app.models.user import Usuario
 from app.models.chat import ChatMensaje, ChatConversacion, ChatParticipante, ChatMensajeLectura
 from app.schemas.chat import (
     ChatMensajeCreate, ChatMensajeResponse, LectorInfo,
-    CrearConversacionRequest, ConversacionResponse, VisitThreadRequest,
-    RecipientsResponse, RecipientUser, RegionRecipient, PdvRecipient,
+    CrearConversacionRequest, ConversacionResponse,
+    RecipientsResponse, RegionRecipient, PdvRecipient,
     InboxItem,
 )
 from app.websockets.manager import manager
@@ -136,37 +136,10 @@ def get_recipients(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Devuelve los destinatarios disponibles para crear chats nuevos."""
+    """Devuelve los destinatarios disponibles para crear grupos ad-hoc de
+    mercaderistas (region/pdv) — el chat de equipo/visita ya no se crea
+    desde acá, se auto-provisiona vía app/routes/chat_grupos.py."""
     cid = _resolve_cliente_id(current_user, cliente_id)
-
-    # Analistas asignados al cliente → usuario asociado
-    # USUARIOS.id_perfil = id_analista cuando id_rol = 2 (Analista).
-    # Fuente de verdad: analistas_rutas -> RUTA_PROGRAMACION, no
-    # ANALISTAS_CLIENTE (desactualizada) — mismo criterio que centro_mando.py.
-    analistas = db.execute(text("""
-        SELECT DISTINCT u.id_usuario, COALESCE(a.nombre_analista, u.username) AS nombre, u.username
-        FROM analistas_rutas ar
-        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
-        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
-        JOIN USUARIOS  u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE rp.id_cliente = :cid AND rp.activa = 1
-          AND ISNULL(u.activo, 1) = 1
-        ORDER BY nombre
-    """), {"cid": cid}).fetchall()
-
-    # Mercaderistas asignados al cliente (vía rutas) → usuario asociado
-    # USUARIOS.id_perfil = id_mercaderista cuando id_rol = 5 (Mercaderista)
-    mercs = db.execute(text("""
-        SELECT DISTINCT u.id_usuario, m.nombre, m.cedula
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
-        JOIN USUARIOS u ON u.id_perfil = m.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid
-          AND ISNULL(m.activo, 1) = 1
-          AND ISNULL(u.activo, 1) = 1
-        ORDER BY m.nombre
-    """), {"cid": cid}).fetchall()
 
     # Regiones con mercaderistas activos
     regiones = db.execute(text("""
@@ -196,15 +169,6 @@ def get_recipients(
     """), {"cid": cid}).fetchall()
 
     return RecipientsResponse(
-        analistas=[
-            RecipientUser(id_usuario=r[0], nombre=r[1] or "Analista", subtitulo="Analista")
-            for r in analistas
-        ],
-        mercaderistas=[
-            RecipientUser(id_usuario=r[0], nombre=r[1] or "Mercaderista",
-                          subtitulo=f"Mercaderista · CI {r[2]}")
-            for r in mercs
-        ],
         regiones=[RegionRecipient(region=r[0], mercaderistas_count=r[1]) for r in regiones],
         pdvs=[
             PdvRecipient(identificador=r[0], punto_de_interes=r[1],
@@ -215,82 +179,9 @@ def get_recipients(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# CREAR / LISTAR CONVERSACIONES
+# CREAR / LISTAR CONVERSACIONES (grupos region/pdv — equipo/visita están en
+# chat_grupos.py)
 # ════════════════════════════════════════════════════════════════════════════
-def _get_team_user_ids(db: Session, cid: int) -> set[int]:
-    """Usuarios del equipo: analistas + mercaderistas (vía rutas) + supervisores +
-    coordinadores exclusivos + usuarios cliente vinculados al id_cliente.
-
-    Nota: USUARIOS solo tiene id_perfil + id_rol (no columnas separadas).
-    Mapeo:
-      - id_rol = 2 (analyst):       id_perfil = id_analista
-      - id_rol = 5 (mercaderista):  id_perfil = id_mercaderista
-      - id_rol = 6 (supervisor):    id_perfil = id_supervisor
-      - id_rol IN (1,3,4,9,11,12):  id_perfil = id_cliente
-    """
-    rows = db.execute(text("""
-        -- Analistas asignados (analistas_rutas -> RUTA_PROGRAMACION, no
-        -- ANALISTAS_CLIENTE — desactualizada, ver centro_mando.py)
-        SELECT u.id_usuario
-        FROM analistas_rutas ar
-        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
-        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
-        JOIN USUARIOS u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE rp.id_cliente = :cid AND rp.activa = 1 AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        -- Mercaderistas asignados vía rutas
-        SELECT u.id_usuario
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        -- Coordinadores Exclusivos (id_rol = 3): siempre activos (ven todos los clientes)
-        SELECT u.id_usuario
-        FROM USUARIOS u
-        WHERE u.id_rol = 3 AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        -- Usuarios cliente (todos los roles cliente con id_perfil = cliente)
-        SELECT u.id_usuario
-        FROM USUARIOS u
-        WHERE u.id_perfil = :cid
-          AND u.id_rol IN (1, 4, 9, 11, 12)
-          AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid}).fetchall()
-    return {r[0] for r in rows}
-
-
-def _get_team_user_ids_solo_equipo(db: Session, cid: int) -> set[int]:
-    """Igual que _get_team_user_ids() pero SIN la rama de usuarios cliente —
-    para el sub-hilo de visita 'visit_team' (solo equipo, sin el cliente).
-    Coordinadores Exclusivos se mantienen (no son la rama "usuarios cliente";
-    tienen visibilidad cross-cliente y actúan como staff en este contexto)."""
-    rows = db.execute(text("""
-        SELECT u.id_usuario
-        FROM analistas_rutas ar
-        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
-        JOIN ANALISTAS a ON ar.id_analista = a.id_analista
-        JOIN USUARIOS u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE rp.id_cliente = :cid AND rp.activa = 1 AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        SELECT u.id_usuario
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        SELECT u.id_usuario
-        FROM USUARIOS u
-        WHERE u.id_rol = 3 AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid}).fetchall()
-    return {r[0] for r in rows}
-
-
 def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
     """Mercaderistas de cierta región del cliente."""
     rows = db.execute(text("""
@@ -329,20 +220,7 @@ def create_conversation(
     # Construir el set de participantes según tipo
     participantes: set[int] = {current_user.id}
 
-    if body.tipo == "direct":
-        if not body.destinatario_id:
-            raise HTTPException(status_code=400, detail="destinatario_id requerido para chat directo")
-        if body.destinatario_id == current_user.id:
-            raise HTTPException(status_code=400, detail="No puedes iniciar un chat contigo mismo")
-        participantes.add(body.destinatario_id)
-        # Título auto
-        titulo = body.titulo or _build_direct_title(db, current_user.id, body.destinatario_id)
-
-    elif body.tipo == "group_team":
-        participantes |= _get_team_user_ids(db, cid)
-        titulo = body.titulo or "Equipo completo"
-
-    elif body.tipo == "group_region":
+    if body.tipo == "group_region":
         if not body.region:
             raise HTTPException(status_code=400, detail="region requerida")
         participantes |= _get_region_user_ids(db, cid, body.region)
@@ -407,99 +285,6 @@ def create_conversation(
         creado_por=conv.creado_por,
         fecha_creacion=conv.fecha_creacion,
         participantes_count=len(participantes),
-    )
-
-
-def _build_direct_title(db: Session, user_a: int, user_b: int) -> str:
-    rows = db.execute(text("""
-        SELECT id_usuario, username FROM USUARIOS WHERE id_usuario IN (:a, :b)
-    """), {"a": user_a, "b": user_b}).fetchall()
-    names = {r[0]: r[1] for r in rows}
-    return f"{names.get(user_a, '?')} ↔ {names.get(user_b, '?')}"
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# SUB-HILO DE CHAT POR VISITA (solo equipo / equipo+cliente)
-# ════════════════════════════════════════════════════════════════════════════
-def _find_or_create_visit_thread(db: Session, visita_id: int, tipo: str, actor_user_id: int) -> ChatConversacion:
-    """Find-or-create sobre (id_cliente, id_visita, tipo): si ya existe la
-    conversación la reutiliza (agregando a actor_user_id como participante
-    si no lo era — auto-provisión de membresía, igual que en v1), si no la
-    crea con los participantes resueltos según el tipo.
-
-    Compartida por POST /visit-thread (botón de chat en Centro de Mando /
-    revision-visitas) y por el aviso automático de foto rechazada
-    (visits.py::reject_photo)."""
-    visita_row = db.execute(text("""
-        SELECT id_cliente FROM VISITAS_MERCADERISTA WHERE id_visita = :vid
-    """), {"vid": visita_id}).fetchone()
-    if not visita_row:
-        raise HTTPException(status_code=404, detail="Visita no encontrada")
-    cid = visita_row[0]
-
-    existing = db.execute(text("""
-        SELECT id_conversacion FROM CHAT_CONVERSACIONES
-        WHERE id_cliente = :cid AND id_visita = :vid AND tipo = :tipo
-    """), {"cid": cid, "vid": visita_id, "tipo": tipo}).fetchone()
-
-    if existing:
-        conv = db.query(ChatConversacion).filter(ChatConversacion.id == existing[0]).first()
-        if not _is_participant(db, conv.id, actor_user_id):
-            db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=actor_user_id,
-                                     fecha_union=datetime.now()))
-            db.commit()
-        return conv
-
-    participantes = (
-        _get_team_user_ids_solo_equipo(db, cid) if tipo == "visit_team"
-        else _get_team_user_ids(db, cid)
-    )
-    participantes.add(actor_user_id)
-
-    info = db.execute(text("""
-        SELECT p.punto_de_interes
-        FROM VISITAS_MERCADERISTA v
-        LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-        WHERE v.id_visita = :vid
-    """), {"vid": visita_id}).fetchone()
-    punto_nombre = (info[0] if info and info[0] else None) or f"Visita #{visita_id}"
-    sufijo = " (equipo + cliente)" if tipo == "visit_team_client" else " (solo equipo)"
-    titulo = f"{punto_nombre}{sufijo}"[:200]
-
-    conv = ChatConversacion(
-        cliente_id=cid, tipo=tipo, titulo=titulo, visita_id=visita_id,
-        creado_por=actor_user_id, fecha_creacion=datetime.now(),
-    )
-    db.add(conv)
-    db.flush()
-
-    for uid in participantes:
-        db.add(ChatParticipante(conversacion_id=conv.id, usuario_id=uid, fecha_union=datetime.now()))
-
-    db.commit()
-    db.refresh(conv)
-    return conv
-
-
-@router.post("/visit-thread", response_model=ConversacionResponse, status_code=201)
-def get_or_create_visit_thread(
-    body: VisitThreadRequest,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    """Punto de entrada del botón de chat de una visita en Centro de Mando /
-    revision-visitas: reemplaza el chat plano legacy por visita_id para el
-    STAFF (el chat legacy del cliente, tab "Cliente" del inbox, no se toca).
-    """
-    conv = _find_or_create_visit_thread(db, body.visita_id, body.tipo, current_user.id)
-    cnt = db.execute(text("""
-        SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
-    """), {"c": conv.id}).scalar()
-    return ConversacionResponse(
-        id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
-        region=conv.region, punto_interes_id=conv.punto_interes_id, visita_id=conv.visita_id,
-        creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
-        participantes_count=int(cnt or 0),
     )
 
 

@@ -437,20 +437,22 @@ export class CentroMandoComponent implements OnInit {
       : v.estado_presencia === 'activo' ? 'bg-amber-950 text-amber-400' : 'bg-red-950 text-red-400';
   }
 
-  // ─── Chat por visita (sub-hilo: solo equipo / equipo+cliente) ────────────
-  // El chat plano legacy por visita_id (1-a-1) se reemplazó por el selector
-  // de sub-hilo — el botón de chat ahora navega al ChatComponent con la
-  // conversación ya creada/encontrada. El chat legacy del cliente (tab
-  // "Cliente" del inbox de ChatComponent) no se toca.
+  // ─── Chat por visita (sub-hilo de CHAT_GRUPOS: solo equipo / equipo+cliente) ─
+  // Mismas tablas que AppWeb v1 y la APK del mercaderista — el botón de chat
+  // navega al ChatComponent con el sub-hilo ya auto-provisionado. El chat
+  // legacy del cliente (tab "Cliente" del inbox de ChatComponent) no se toca.
   openChat(v: any): void {
     if (!v?.id_visita) return;
     const ref = this.dialog.open(VisitThreadDialogComponent, {
       data: { visitaId: v.id_visita, puntoNombre: v.punto_de_interes },
       autoFocus: false,
     });
-    ref.afterClosed().subscribe(conv => {
-      if (conv?.id) {
-        this.router.navigate(['/chat'], { queryParams: { conversacion: conv.id, titulo: conv.titulo } });
+    ref.afterClosed().subscribe(thread => {
+      if (thread?.id_grupo) {
+        this.router.navigate(['/chat'], { queryParams: {
+          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+          grupo_visita: thread.id_visita, titulo: thread.titulo,
+        } });
       }
     });
   }

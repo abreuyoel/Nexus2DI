@@ -363,47 +363,60 @@ def approve_photos(
 
 async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: Foto, motivo: str,
                                    current_user: Usuario) -> None:
-    """Postea un mensaje de sistema con la foto rechazada en el sub-hilo
-    'solo equipo' de la visita (se crea si todavía no existía) — mismo
-    espíritu que el aviso de rechazo al chat de v1, pero sobre el modelo de
-    conversaciones de v2. Best-effort: si falla, no debe tumbar el rechazo
-    de la foto (que ya se persistió antes de llamar esto)."""
-    if not visita:
+    """Postea un mensaje de sistema con la foto rechazada en DOS lugares —
+    mismo patrón que v1 (AppWeb/backend/app/routes/visits.py::
+    enviar_mensaje_sistema_rechazo): el chat general del grupo 'operativo'
+    del cliente (CHAT_GRUPO_MENSAJES, se auto-provisiona si falta) Y el
+    sub-hilo de esa visita (CHAT_MENSAJES_GRUPO_VISITA, tipo_grupo='operativo').
+    Cada inserción en su propio try/except para que una no tumbe a la otra.
+    Best-effort: no debe tumbar el rechazo de la foto (ya persistido antes
+    de llamar esto)."""
+    if not visita or not visita.id_cliente:
         return
+    texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
+    ahora = datetime.now()
+
     try:
-        from app.routes.chat import _find_or_create_visit_thread
-        from app.models.chat import ChatMensaje
+        from app.services.chat_grupos_membresia import asegurar_grupos_cliente
         from app.websockets.manager import manager
 
-        conv = _find_or_create_visit_thread(db, visita.id, "visit_team", current_user.id)
-        texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
-        mensaje = ChatMensaje(
-            conversacion_id=conv.id,
-            cliente_id=conv.cliente_id,
-            sender_id=None,
-            sender_nombre="Sistema",
-            sender_type="sistema",
-            mensaje=texto,
-            foto_adjunta=foto.blob_path,
-            created_at=datetime.now(),
-        )
-        db.add(mensaje)
-        db.commit()
-        db.refresh(mensaje)
+        asegurar_grupos_cliente(db, visita.id_cliente)
+        row = db.execute(text("""
+            SELECT id_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND tipo_grupo = 'operativo'
+        """), {"cid": visita.id_cliente}).fetchone()
+        if row:
+            id_grupo = row[0]
+            ins = db.execute(text("""
+                INSERT INTO CHAT_GRUPO_MENSAJES (id_grupo, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
+                OUTPUT INSERTED.id_mensaje
+                VALUES (:id_grupo, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
+            """), {"id_grupo": id_grupo, "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
+            db.commit()
+            await manager.broadcast_to_room(f"grupo_{id_grupo}", {
+                "id_mensaje": ins[0], "id_grupo": id_grupo, "id_usuario": None,
+                "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
+                "fecha_envio": str(ahora), "foto_adjunta": foto.url, "leido_por": [],
+            })
+    except Exception:
+        db.rollback()
 
-        await manager.broadcast_to_room(f"chat_conv_{conv.id}", {
-            "id": mensaje.id,
-            "conversacion_id": conv.id,
-            "sender_id": None,
-            "sender_nombre": "Sistema",
-            "sender_type": "sistema",
-            "mensaje": texto,
-            "foto_adjunta": foto.url,
-            "created_at": str(mensaje.created_at),
-            "leido_por": [],
+    try:
+        from app.websockets.manager import manager
+
+        ins = db.execute(text("""
+            INSERT INTO CHAT_MENSAJES_GRUPO_VISITA
+                (id_cliente, tipo_grupo, id_visita, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
+            OUTPUT INSERTED.id_mensaje
+            VALUES (:cid, 'operativo', :vid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
+        """), {"cid": visita.id_cliente, "vid": visita.id, "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
+        db.commit()
+        await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_operativo_{visita.id}", {
+            "id_mensaje": ins[0], "id_cliente": visita.id_cliente, "tipo_grupo": "operativo", "id_visita": visita.id,
+            "id_usuario": None, "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
+            "fecha_envio": str(ahora), "foto_adjunta": foto.url, "leido_por": [],
         })
     except Exception:
-        pass
+        db.rollback()
 
 
 @router.post("/reject-photo")

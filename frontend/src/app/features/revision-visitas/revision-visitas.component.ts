@@ -307,9 +307,9 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
-  // ── Chat por visita (sub-hilo: solo equipo / equipo+cliente) ─────────────
-  // Reemplaza el chat plano legacy 1-a-1: el botón navega al ChatComponent
-  // con la conversación de la visita ya creada/encontrada. El chat legacy
+  // ── Chat por visita (sub-hilo de CHAT_GRUPOS: solo equipo / equipo+cliente) ─
+  // Mismas tablas que AppWeb v1 y la APK del mercaderista — el botón navega
+  // al ChatComponent con el sub-hilo ya auto-provisionado. El chat legacy
   // del cliente (tab "Cliente" del inbox) no se toca.
   openChat(): void {
     const v = this.selectedVisita();
@@ -318,9 +318,12 @@ export class RevisionVisitasComponent implements OnInit {
       data: { visitaId: v.id_visita, puntoNombre: v.punto_de_interes },
       autoFocus: false,
     });
-    ref.afterClosed().subscribe(conv => {
-      if (conv?.id) {
-        this.router.navigate(['/chat'], { queryParams: { conversacion: conv.id, titulo: conv.titulo } });
+    ref.afterClosed().subscribe(thread => {
+      if (thread?.id_grupo) {
+        this.router.navigate(['/chat'], { queryParams: {
+          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+          grupo_visita: thread.id_visita, titulo: thread.titulo,
+        } });
       }
     });
   }

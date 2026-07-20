@@ -32,14 +32,14 @@ export interface VisitThreadDialogData {
         <p>Abriendo chat...</p>
       </div>
     } @else {
-      <button class="vt-option" (click)="open('visit_team')">
+      <button class="vt-option" (click)="open('operativo')">
         <mat-icon>groups</mat-icon>
         <div>
           <span class="vt-option-title">Solo equipo</span>
-          <span class="vt-option-desc">Analistas, mercaderistas y supervisores — sin el cliente</span>
+          <span class="vt-option-desc">Analistas, mercaderistas y coordinadores — sin el cliente</span>
         </div>
       </button>
-      <button class="vt-option" (click)="open('visit_team_client')">
+      <button class="vt-option" (click)="open('operativo_cliente')">
         <mat-icon>diversity_3</mat-icon>
         <div>
           <span class="vt-option-title">Equipo + Cliente</span>
@@ -75,10 +75,10 @@ export class VisitThreadDialogComponent {
     @Inject(MAT_DIALOG_DATA) public data: VisitThreadDialogData,
   ) {}
 
-  open(tipo: 'visit_team' | 'visit_team_client'): void {
+  open(tipoGrupo: 'operativo' | 'operativo_cliente'): void {
     this.loading.set(true);
-    this.api.getOrCreateVisitThread(this.data.visitaId, tipo).subscribe({
-      next: (conv) => { this.loading.set(false); this.dialogRef.close(conv); },
+    this.api.getOrCreateVisitaThread(this.data.visitaId, tipoGrupo).subscribe({
+      next: (thread) => { this.loading.set(false); this.dialogRef.close(thread); },
       error: () => { this.loading.set(false); this.dialogRef.close(); },
     });
   }

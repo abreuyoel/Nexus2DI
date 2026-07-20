@@ -24,17 +24,17 @@ class ChatMensaje(Base):
 
 
 class ChatConversacion(Base):
-    """Conversación independiente de visitas (chats directos y grupos).
+    """Grupos de mercaderistas ad-hoc, sin equivalente en AppWeb v1 — el
+    chat de "equipo operativo" / "equipo + cliente" y el sub-hilo por visita
+    viven en las tablas de v1/APK (ver app/models/chat_grupos.py), no acá.
 
     tipo:
-      - 'direct'             → 1:1 entre cliente y un staff (analista/mercaderista)
-      - 'group_team'         → todo el equipo del cliente (analistas, mercs, supervisores, coords + usuarios del cliente)
-      - 'group_region'       → grupo de mercaderistas de una región específica (+ creador)
-      - 'group_pdv'          → grupo de mercaderistas de un PDV específico (+ creador)
-      - 'visit_team'         → sub-hilo de una visita puntual, SOLO equipo (sin usuarios cliente)
-      - 'visit_team_client'  → sub-hilo de una visita puntual, equipo + usuarios cliente
+      - 'group_region'  → grupo de mercaderistas de una región específica (+ creador)
+      - 'group_pdv'     → grupo de mercaderistas de un PDV específico (+ creador)
 
-    `visita_id` solo aplica a los dos tipos 'visit_*' — el resto lo deja NULL.
+    `visita_id` quedó de un diseño anterior ('visit_team'/'visit_team_client',
+    ya eliminados) — se deja en el schema sin uso, no vale la pena una
+    migración solo para borrar la columna.
     """
     __tablename__ = "CHAT_CONVERSACIONES"
 

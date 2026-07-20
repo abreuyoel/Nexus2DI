@@ -38,16 +38,14 @@ class ChatMensajeResponse(BaseModel):
         from_attributes = True
 
 
-# ── CONVERSACIONES ─────────────────────────────────────────────────────────
-ConversacionTipo = Literal["direct", "group_team", "group_region", "group_pdv"]
+# ── CONVERSACIONES (grupos de mercaderistas ad-hoc, sin equivalente en v1) ──
+ConversacionTipo = Literal["group_region", "group_pdv"]
 
 
 class CrearConversacionRequest(BaseModel):
     tipo: ConversacionTipo
     cliente_id: Optional[int] = None  # Coordinador exclusivo lo pasa; cliente normal usa su id_perfil
-    # 'direct': destinatario (un solo id_usuario)
-    destinatario_id: Optional[int] = None
-    # 'group_region': region; 'group_pdv': punto_interes_id; 'group_team': nada extra
+    # 'group_region': region; 'group_pdv': punto_interes_id
     region: Optional[str] = None
     punto_interes_id: Optional[str] = None
     titulo: Optional[str] = None  # opcional, si no se autogenera
@@ -74,22 +72,9 @@ class ConversacionResponse(BaseModel):
         from_attributes = True
 
 
-# ── SUB-HILO DE CHAT POR VISITA (solo equipo / equipo+cliente) ───────────
-VisitThreadTipo = Literal["visit_team", "visit_team_client"]
-
-
-class VisitThreadRequest(BaseModel):
-    visita_id: int
-    tipo: VisitThreadTipo
-
-
-# ── DESTINATARIOS DISPONIBLES (para construir la UI del modal) ───────────
-class RecipientUser(BaseModel):
-    id_usuario: int
-    nombre: str
-    subtitulo: Optional[str] = None  # rol, cédula, etc.
-
-
+# ── DESTINATARIOS DISPONIBLES (para construir la UI del modal de grupos
+# region/pdv — el chat de equipo/visita ya no se "crea", se auto-provisiona
+# vía app/routes/chat_grupos.py) ──────────────────────────────────────────
 class RegionRecipient(BaseModel):
     region: str
     mercaderistas_count: int
@@ -103,8 +88,6 @@ class PdvRecipient(BaseModel):
 
 
 class RecipientsResponse(BaseModel):
-    analistas: List[RecipientUser]
-    mercaderistas: List[RecipientUser]
     regiones: List[RegionRecipient]
     pdvs: List[PdvRecipient]
 
@@ -112,8 +95,8 @@ class RecipientsResponse(BaseModel):
 # ── INBOX (lista de conversaciones + chats por visita unificados) ────────
 class InboxItem(BaseModel):
     kind: Literal["visit", "conversation"]
-    # Visit chat (kind='visit') y también sub-hilos de visita
-    # (kind='conversation' con tipo IN visit_team/visit_team_client)
+    # Visit chat legacy (kind='visit', tab "Cliente") — el chat de equipo y
+    # su sub-hilo por visita viven en chat_grupos, no en este inbox.
     visita_id: Optional[int] = None
     punto_nombre: Optional[str] = None
     punto_id: Optional[str] = None
