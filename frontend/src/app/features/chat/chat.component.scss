@@ -108,6 +108,9 @@
 :host {
   display: block;
   width: 100%;
+  /* Altura = viewport menos header (64px) menos padding del contenedor (2rem*2 = 64px en md) */
+  height: calc(100vh - 128px);
+  min-height: 0;
 }
 
 .custom-scrollbar {

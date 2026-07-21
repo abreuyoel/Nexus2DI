@@ -123,6 +123,14 @@ def mis_grupos(db: Session = Depends(get_db), current_user: Usuario = Depends(ge
                    ROW_NUMBER() OVER (PARTITION BY m.id_grupo ORDER BY m.id_mensaje DESC) AS rn
             FROM CHAT_GRUPO_MENSAJES m
             WHERE m.id_grupo IN ({ph})
+              AND NOT (
+                  m.tipo_mensaje = 'sistema'
+                  AND (
+                      m.mensaje LIKE N'%Foto Rechazada%'
+                      OR m.mensaje LIKE N'%Foto rechazada%'
+                      OR m.mensaje LIKE N'%🚫%'
+                  )
+              )
         ) x
         WHERE x.rn = 1
     """)).fetchall()
@@ -165,6 +173,14 @@ def mensajes_grupo(
                              m.mensaje, m.tipo_mensaje, m.fecha_envio, m.foto_adjunta
         FROM CHAT_GRUPO_MENSAJES m
         WHERE m.id_grupo = :id_grupo{cond}
+          AND NOT (
+              m.tipo_mensaje = 'sistema'
+              AND (
+                  m.mensaje LIKE N'%Foto Rechazada%'
+                  OR m.mensaje LIKE N'%Foto rechazada%'
+                  OR m.mensaje LIKE N'%🚫%'
+              )
+          )
         ORDER BY m.id_mensaje DESC
     """), params).fetchall()
 
