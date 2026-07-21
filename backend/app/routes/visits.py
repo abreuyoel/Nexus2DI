@@ -385,10 +385,12 @@ async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: F
             VALUES (:cid, 'operativo', :vid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
         """), {"cid": visita.id_cliente, "vid": visita.id, "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
         db.commit()
+        import urllib.parse as _urlparse
+        _foto_proxy = f"/api/media/foto?path={_urlparse.quote(foto.blob_path or '', safe='')}" if foto.blob_path else None
         await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_operativo_{visita.id}", {
             "id_mensaje": ins[0], "id_cliente": visita.id_cliente, "tipo_grupo": "operativo", "id_visita": visita.id,
             "id_usuario": None, "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
-            "fecha_envio": str(ahora), "foto_adjunta": foto.url, "leido_por": [],
+            "fecha_envio": str(ahora), "foto_adjunta": _foto_proxy, "leido_por": [],
         })
     except Exception:
         db.rollback()

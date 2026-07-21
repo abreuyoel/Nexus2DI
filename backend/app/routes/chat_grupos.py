@@ -42,10 +42,14 @@ def _validar_tipo(tipo_grupo: str) -> None:
 
 
 def _foto_url(blob_path: Optional[str]) -> Optional[str]:
+    """Devuelve la URL del proxy interno en lugar de una SAS URL directa.
+    El endpoint /api/media/foto hace el fetch al blob storage server-side,
+    eliminando los problemas de CSP/ngsw-worker en el browser."""
     if not blob_path:
         return None
-    from app.services.azure_service import azure_service
-    return azure_service.get_sas_url(blob_path)
+    import urllib.parse
+    return f"/api/media/foto?path={urllib.parse.quote(blob_path, safe='')}"
+
 
 
 def _grupo_info(db: Session, id_grupo: int):
