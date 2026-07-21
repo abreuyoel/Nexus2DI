@@ -102,11 +102,16 @@ export class ChatComponent implements OnInit, OnDestroy {
   activeGrupoVisita = signal<GrupoVisitaKey | null>(null);
   activeTitle = signal<string>('');
 
-  // Pestañas: Cliente (chats de visita) vs Equipo Operativo (grupos + ad-hoc)
+  // Pestañas: Cliente (chats de visita + grupos "Equipo + Cliente") vs
+  // Equipo Operativo (SOLO grupos 'operativo' puros, sin cliente + ad-hoc).
+  // Los grupos 'operativo_cliente' incluyen usuarios del cliente -- por eso
+  // viven en la pestaña Cliente, no en Equipo Operativo.
   activeChatTab = signal<'cliente' | 'equipo'>('cliente');
-  clienteCount = computed(() => this.inbox().filter(i => i.kind === 'visit').length);
+  gruposOperativo = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo'));
+  gruposCliente = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo_cliente'));
+  clienteCount = computed(() => this.inbox().filter(i => i.kind === 'visit').length + this.gruposCliente().length);
   adHocConversations = computed(() => this.inbox().filter(i => i.kind === 'conversation'));
-  equipoCount = computed(() => this.grupos().length + this.adHocConversations().length);
+  equipoCount = computed(() => this.gruposOperativo().length + this.adHocConversations().length);
   visibleInbox = computed(() => this.inbox().filter(i => i.kind === 'visit'));
 
   // Grupos de equipo operativo (mis-grupos) + sus visitas con sub-hilo
