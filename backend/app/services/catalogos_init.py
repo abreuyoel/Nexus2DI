@@ -8,7 +8,12 @@ from app.modules.catalogues.entities import (
     Cuadrante, Servicio,
 )
 from app.modules.routes.entities import PuntoInteres, Ruta, RutaProgramacion
-from app.modules.visits.entities import FotoRazonRechazo  # noqa: F401  (para que esté en Base.metadata)
+from app.modules.visits.entities import FotoRazonRechazo
+from app.modules.chat.entities import (
+    ChatGrupo, ChatGrupoMensaje, ChatGrupoLectura, ChatGrupoMensajeLectura,
+    ChatMensajeGrupoVisita, ChatGrupoVisitaLectura, ChatMensajeLectura,
+    ChatConversacion, ChatParticipante
+)
 
 logger = logging.getLogger("app")
 
@@ -23,10 +28,45 @@ CATALOG_TABLES = [
     "SERVICIOS",
     "SUPERVISORES_CLIENTES",
     "FOTOS_RAZONES_RECHAZOS",
+    "CHAT_GRUPOS",
+    "CHAT_GRUPO_MENSAJES",
+    "CHAT_GRUPO_LECTURAS",
+    "CHAT_GRUPO_MENSAJE_LECTURAS",
+    "CHAT_MENSAJES_GRUPO_VISITA",
+    "CHAT_GRUPO_VISITA_LECTURAS",
+    "CHAT_MENSAJE_LECTURAS",
+    "CHAT_CONVERSACIONES",
+    "CHAT_PARTICIPANTES",
 ]
 
 
+
+def ensure_chat_columns() -> None:
+    try:
+        cols_info = inspect(engine).get_columns("CHAT_MENSAJES_CLIENTE")
+        visita_col = next((c for c in cols_info if c["name"] == "id_visita"), None)
+        if visita_col and not visita_col.get("nullable", True):
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE CHAT_MENSAJES_CLIENTE ALTER COLUMN id_visita INT NULL"))
+            logger.info("Columna CHAT_MENSAJES_CLIENTE.id_visita actualizada a NULLABLE")
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar CHAT_MENSAJES_CLIENTE: {e}")
+
+
+def ensure_solicitudes_columns() -> None:
+
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("SOLICITUDES")]
+        if "respuesta" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE SOLICITUDES ADD respuesta NVARCHAR(MAX) NULL"))
+            logger.info("Columna SOLICITUDES.respuesta creada")
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar SOLICITUDES: {e}")
+
+
 def ensure_route_columns() -> None:
+
     """Agrega columnas faltantes en RUTAS_NUEVAS (idempotente).
     `id_cliente_exclusivo` existe en la BD de v1 pero no necesariamente en QA."""
     try:
@@ -80,6 +120,10 @@ def ensure_catalog_tables() -> None:
     """Crea las tablas de catálogo si no existen, y siembra con valores distintos
     de PUNTOS_INTERES1 la primera vez."""
     ensure_route_columns()
+    ensure_solicitudes_columns()
+    ensure_chat_columns()
+
+
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
     missing = [t for t in CATALOG_TABLES if t not in existing]

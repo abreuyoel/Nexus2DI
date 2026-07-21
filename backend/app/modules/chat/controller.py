@@ -28,18 +28,14 @@ router = APIRouter(prefix="/api/chat", tags=["Chat"])
 # ════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════════════════════════════════════════
-def _resolve_cliente_id(user: Usuario, requested: Optional[int]) -> int:
+def _resolve_cliente_id(user: Usuario, requested: Optional[int]) -> Optional[int]:
     if user.is_coordinador_exclusivo:
-        if not requested:
-            raise HTTPException(status_code=400, detail="cliente_id requerido para coordinador exclusivo")
-        return int(requested)
+        return int(requested) if requested else None
     if user.is_client:
-        if not user.id_perfil:
-            raise HTTPException(status_code=400, detail="No tienes cliente asociado")
         return user.id_perfil
     if requested:
         return int(requested)
-    raise HTTPException(status_code=400, detail="cliente_id requerido")
+    return None
 
 
 def _is_participant(db: Session, conversacion_id: int, user_id: int) -> bool:
@@ -67,7 +63,7 @@ def get_recipients(
 ):
     cid = _resolve_cliente_id(current_user, cliente_id)
 
-    analistas = (
+    analistas_q = (
         db.query(
             Usuario.id,
             func.coalesce(Analista.nombre, Usuario.username).label("nombre"),
@@ -77,15 +73,15 @@ def get_recipients(
         .join(Analista, Usuario.id_perfil == Analista.id)
         .join(AnalistaCliente, AnalistaCliente.id_analista == Analista.id)
         .filter(
-            AnalistaCliente.id_cliente == cid,
             Usuario.id_rol == 2,
             func.coalesce(Usuario.activo, True) == True
         )
-        .order_by(func.coalesce(Analista.nombre, Usuario.username))
-        .all()
     )
+    if cid is not None:
+        analistas_q = analistas_q.filter(AnalistaCliente.id_cliente == cid)
+    analistas = analistas_q.order_by(func.coalesce(Analista.nombre, Usuario.username)).all()
 
-    mercs = (
+    mercs_q = (
         db.query(
             Usuario.id,
             Mercaderista.nombre,
@@ -96,16 +92,16 @@ def get_recipients(
         .join(MercaderistaRuta, MercaderistaRuta.mercaderista_id == Mercaderista.id)
         .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
         .filter(
-            RutaProgramacion.id_cliente == cid,
             Usuario.id_rol == 5,
             func.coalesce(Mercaderista.activo, True) == True,
             func.coalesce(Usuario.activo, True) == True
         )
-        .order_by(Mercaderista.nombre)
-        .all()
     )
+    if cid is not None:
+        mercs_q = mercs_q.filter(RutaProgramacion.id_cliente == cid)
+    mercs = mercs_q.order_by(Mercaderista.nombre).all()
 
-    regiones = (
+    regiones_q = (
         db.query(
             Ruta.cuadrante.label("region"),
             func.count(func.distinct(MercaderistaRuta.mercaderista_id)).label("cnt")
@@ -113,16 +109,15 @@ def get_recipients(
         .join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id)
         .join(MercaderistaRuta, MercaderistaRuta.ruta_id == Ruta.id)
         .filter(
-            RutaProgramacion.id_cliente == cid,
             Ruta.cuadrante.isnot(None),
             Ruta.cuadrante != ""
         )
-        .group_by(Ruta.cuadrante)
-        .order_by(Ruta.cuadrante)
-        .all()
     )
+    if cid is not None:
+        regiones_q = regiones_q.filter(RutaProgramacion.id_cliente == cid)
+    regiones = regiones_q.group_by(Ruta.cuadrante).order_by(Ruta.cuadrante).all()
 
-    pdvs = (
+    pdvs_q = (
         db.query(
             PuntoInteres.id.label("identificador"),
             PuntoInteres.nombre.label("punto_de_interes"),
@@ -132,11 +127,11 @@ def get_recipients(
         .join(RutaProgramacion, RutaProgramacion.punto_id == PuntoInteres.id)
         .join(Ruta, RutaProgramacion.ruta_id == Ruta.id)
         .join(MercaderistaRuta, MercaderistaRuta.ruta_id == Ruta.id)
-        .filter(RutaProgramacion.id_cliente == cid)
-        .group_by(PuntoInteres.id, PuntoInteres.nombre, Ruta.cuadrante)
-        .order_by(PuntoInteres.nombre)
-        .all()
     )
+    if cid is not None:
+        pdvs_q = pdvs_q.filter(RutaProgramacion.id_cliente == cid)
+    pdvs = pdvs_q.group_by(PuntoInteres.id, PuntoInteres.nombre, Ruta.cuadrante).order_by(PuntoInteres.nombre).all()
+
 
     return RecipientsResponse(
         analistas=[
@@ -160,27 +155,33 @@ def get_recipients(
 # ════════════════════════════════════════════════════════════════════════════
 # CREAR / LISTAR CONVERSACIONES
 # ════════════════════════════════════════════════════════════════════════════
-def _get_team_user_ids(db: Session, cid: int) -> set[int]:
-    analista_uids = (
+def _get_team_user_ids(db: Session, cid: Optional[int]) -> set[int]:
+    analistas_q = (
         db.query(Usuario.id)
         .join(Analista, Usuario.id_perfil == Analista.id)
         .join(AnalistaCliente, AnalistaCliente.id_analista == Analista.id)
         .filter(
-            AnalistaCliente.id_cliente == cid,
             Usuario.id_rol == 2,
             func.coalesce(Usuario.activo, True) == True
-        ).all()
+        )
     )
-    merc_uids = (
+    if cid is not None:
+        analistas_q = analistas_q.filter(AnalistaCliente.id_cliente == cid)
+    analista_uids = analistas_q.all()
+
+    merc_q = (
         db.query(Usuario.id)
         .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
         .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
         .filter(
-            RutaProgramacion.id_cliente == cid,
             Usuario.id_rol == 5,
             func.coalesce(Usuario.activo, True) == True
-        ).all()
+        )
     )
+    if cid is not None:
+        merc_q = merc_q.filter(RutaProgramacion.id_cliente == cid)
+    merc_uids = merc_q.all()
+
     super_uids = (
         db.query(Usuario.id)
         .filter(
@@ -188,49 +189,54 @@ def _get_team_user_ids(db: Session, cid: int) -> set[int]:
             func.coalesce(Usuario.activo, True) == True
         ).all()
     )
-    client_uids = (
+
+    client_q = (
         db.query(Usuario.id)
         .filter(
-            Usuario.id_perfil == cid,
             Usuario.id_rol.in_([1, 4, 9, 11, 12]),
             func.coalesce(Usuario.activo, True) == True
-        ).all()
+        )
     )
+    if cid is not None:
+        client_q = client_q.filter(Usuario.id_perfil == cid)
+    client_uids = client_q.all()
+
     return {u[0] for u in analista_uids} | {u[0] for u in merc_uids} | {u[0] for u in super_uids} | {u[0] for u in client_uids}
 
 
-def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
-    rows = (
+def _get_region_user_ids(db: Session, cid: Optional[int], region: str) -> set[int]:
+    query = (
         db.query(Usuario.id)
         .distinct()
         .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
         .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
-        .join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id)
         .filter(
-            RutaProgramacion.id_cliente == cid,
             Ruta.cuadrante == region,
             Usuario.id_rol == 5,
             func.coalesce(Usuario.activo, True) == True
         )
-        .all()
     )
+    if cid is not None:
+        query = query.join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id).filter(RutaProgramacion.id_cliente == cid)
+    rows = query.all()
     return {r[0] for r in rows}
 
 
-def _get_pdv_user_ids(db: Session, cid: int, pdv_id: str) -> set[int]:
-    rows = (
+def _get_pdv_user_ids(db: Session, cid: Optional[int], pdv_id: str) -> set[int]:
+    query = (
         db.query(Usuario.id)
         .distinct()
         .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
         .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
         .filter(
-            RutaProgramacion.id_cliente == cid,
             RutaProgramacion.punto_id == pdv_id,
             Usuario.id_rol == 5,
             func.coalesce(Usuario.activo, True) == True
         )
-        .all()
     )
+    if cid is not None:
+        query = query.filter(RutaProgramacion.id_cliente == cid)
+    rows = query.all()
     return {r[0] for r in rows}
 
 
@@ -267,6 +273,15 @@ def create_conversation(
             raise HTTPException(status_code=400, detail="region requerida")
         participantes |= _get_region_user_ids(db, cid, body.region)
         titulo = body.titulo or f"Mercaderistas · {body.region}"
+        if not cid:
+            row_reg = (
+                db.query(RutaProgramacion.id_cliente)
+                .join(Ruta, RutaProgramacion.ruta_id == Ruta.id)
+                .filter(Ruta.cuadrante == body.region, RutaProgramacion.id_cliente.isnot(None))
+                .first()
+            )
+            if row_reg:
+                cid = row_reg[0]
 
     elif body.tipo == "group_pdv":
         if not body.punto_interes_id:
@@ -275,6 +290,14 @@ def create_conversation(
         row = db.query(PuntoInteres.nombre).filter(PuntoInteres.id == body.punto_interes_id).first()
         pdv_name = row[0] if row and row[0] else body.punto_interes_id
         titulo = body.titulo or f"Mercaderistas · {pdv_name}"
+        if not cid:
+            row_pdv = (
+                db.query(RutaProgramacion.id_cliente)
+                .filter(RutaProgramacion.punto_id == body.punto_interes_id, RutaProgramacion.id_cliente.isnot(None))
+                .first()
+            )
+            if row_pdv:
+                cid = row_pdv[0]
 
     else:
         raise HTTPException(status_code=400, detail=f"Tipo de conversación inválido: {body.tipo}")
@@ -283,7 +306,7 @@ def create_conversation(
         raise HTTPException(status_code=400, detail="No hay destinatarios para esta conversación")
 
     conv = ChatConversacion(
-        cliente_id=cid,
+        cliente_id=cid or 0,
         tipo=body.tipo,
         titulo=titulo[:200] if titulo else None,
         region=body.region,
@@ -291,6 +314,7 @@ def create_conversation(
         creado_por=current_user.id,
         fecha_creacion=datetime.now(),
     )
+
     db.add(conv)
     db.flush()
 

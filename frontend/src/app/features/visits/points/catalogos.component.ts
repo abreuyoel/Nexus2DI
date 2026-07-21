@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, AfterViewInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -35,71 +35,80 @@ interface TabDef {
   template: `
 <div class="space-y-5">
 
-  <!-- Sub-tabs -->
-  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-2 overflow-x-auto">
-    <div class="flex gap-1 min-w-max">
-      @for (t of tabs; track t.key) {
-        <button (click)="switchTab(t.key)"
-          [ngClass]="activeTab() === t.key
-            ? 'bg-primary-600 text-white shadow-md'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
-          class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">
-          <mat-icon class="!text-base">{{ t.icon }}</mat-icon>
-          {{ t.label }}
-        </button>
-      }
-    </div>
-  </div>
+  <!-- Header & Tabs Dinámicos en Scroll -->
+  <div class="sticky top-0 z-20 space-y-4 bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md pt-2 pb-1 transition-all duration-300 ease-in-out"
+    [class.translate-y-0]="showFilters()"
+    [class.opacity-100]="showFilters()"
+    [class.-translate-y-[150%]]="!showFilters()"
+    [class.opacity-0]="!showFilters()"
+    [class.pointer-events-none]="!showFilters()">
 
-  <!-- Header / Add -->
-  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5">
-    <div class="flex flex-col md:flex-row md:items-end gap-4 md:gap-6">
-      <div class="flex-1">
-        <h2 class="text-xl font-black text-slate-900 dark:text-white">{{ currentTab().label }}</h2>
-        <p class="text-xs text-slate-500 mt-1">{{ currentTab().hint }}</p>
-      </div>
-
-      <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
-        @if (activeTab() === 'ciudades') {
-          <div class="space-y-1 min-w-[200px]">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-            <app-searchable-select
-              [options]="departamentoOptions()"
-              [(value)]="newCiudadDepId"
-              placeholder="— Selecciona —">
-            </app-searchable-select>
-          </div>
+    <!-- Sub-tabs -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-2 overflow-x-auto">
+      <div class="flex gap-1 min-w-max">
+        @for (t of tabs; track t.key) {
+          <button (click)="switchTab(t.key)"
+            [ngClass]="activeTab() === t.key
+              ? 'bg-primary-600 text-white shadow-md'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+            class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">
+            <mat-icon class="!text-base">{{ t.icon }}</mat-icon>
+            {{ t.label }}
+          </button>
         }
-        <div class="space-y-1">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
-          <input [(ngModel)]="newName" (keyup.enter)="add()" [placeholder]="'Nombre de ' + currentTab().label.toLowerCase()"
-            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
-        </div>
-        <button (click)="add()" [disabled]="!canAdd() || saving()"
-          class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
-          @if (saving()) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon class="!text-base">add</mat-icon> }
-          Agregar
-        </button>
       </div>
     </div>
-  </div>
 
-  <!-- Filtro de departamento (sólo ciudades) -->
-  @if (activeTab() === 'ciudades') {
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex items-center gap-3">
-      <mat-icon class="text-primary-500 !text-base">filter_list</mat-icon>
-      <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtrar por departamento</span>
-      <div class="w-64">
-        <app-searchable-select
-          [options]="departamentoOptions()"
-          [value]="filterDepId"
-          (valueChange)="filterDepId = $event; loadList()"
-          placeholder="Todos"
-          [clearable]="true">
-        </app-searchable-select>
+    <!-- Header / Add -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5">
+      <div class="flex flex-col md:flex-row md:items-end gap-4 md:gap-6">
+        <div class="flex-1">
+          <h2 class="text-xl font-black text-slate-900 dark:text-white">{{ currentTab().label }}</h2>
+          <p class="text-xs text-slate-500 mt-1">{{ currentTab().hint }}</p>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
+          @if (activeTab() === 'ciudades') {
+            <div class="space-y-1 min-w-[200px]">
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
+              <app-searchable-select
+                [options]="departamentoOptions()"
+                [(value)]="newCiudadDepId"
+                placeholder="— Selecciona —">
+              </app-searchable-select>
+            </div>
+          }
+          <div class="space-y-1">
+            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
+            <input [(ngModel)]="newName" (keyup.enter)="add()" [placeholder]="'Nombre de ' + currentTab().label.toLowerCase()"
+              class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
+          </div>
+          <button (click)="add()" [disabled]="!canAdd() || saving()"
+            class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+            @if (saving()) { <mat-spinner diameter="14"></mat-spinner> } @else { <mat-icon class="!text-base">add</mat-icon> }
+            Agregar
+          </button>
+        </div>
       </div>
     </div>
-  }
+
+    <!-- Filtro de departamento (sólo ciudades) -->
+    @if (activeTab() === 'ciudades') {
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex items-center gap-3">
+        <mat-icon class="text-primary-500 !text-base">filter_list</mat-icon>
+        <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtrar por departamento</span>
+        <div class="w-64">
+          <app-searchable-select
+            [options]="departamentoOptions()"
+            [value]="filterDepId"
+            (valueChange)="filterDepId = $event; loadList()"
+            placeholder="Todos"
+            [clearable]="true">
+          </app-searchable-select>
+        </div>
+      </div>
+    }
+  </div>
 
   <!-- Lista -->
   @if (loading()) {
@@ -121,7 +130,7 @@ interface TabDef {
           </tr>
         </thead>
         <tbody>
-          @for (item of items(); track item.id) {
+          @for (item of paginatedItems(); track item.id) {
             <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5">
               <td class="px-4 py-3">
                 @if (editingId() === item.id) {
@@ -194,11 +203,40 @@ interface TabDef {
         </tbody>
       </table>
     </div>
+
+    <!-- PAGINACIÓN -->
+    @if (items().length > 0) {
+      <div class="flex items-center justify-between flex-wrap gap-3 mt-4">
+        <div class="flex items-center gap-3">
+          <p class="text-sm text-slate-500">
+            Mostrando <span class="font-bold text-slate-800 dark:text-white">{{ displayStart() }}–{{ displayEnd() }}</span>
+            de <span class="font-bold text-slate-800 dark:text-white">{{ items().length }}</span>
+          </p>
+          <div class="w-36">
+            <app-searchable-select
+              [options]="pageSizeOptions"
+              [value]="pageSize()"
+              (valueChange)="onPageSizeChange($event)">
+            </app-searchable-select>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button (click)="prevPage()" [disabled]="currentPage() === 1"
+            class="flex items-center gap-1 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 hover:border-primary-500 disabled:opacity-40 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition-all">
+            <mat-icon class="!text-base">chevron_left</mat-icon> Anterior
+          </button>
+          <button (click)="nextPage()" [disabled]="currentPage() >= totalPages()"
+            class="flex items-center gap-1 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 hover:border-primary-500 disabled:opacity-40 text-slate-700 dark:text-white rounded-xl text-sm font-bold transition-all">
+            Siguiente <mat-icon class="!text-base">chevron_right</mat-icon>
+          </button>
+        </div>
+      </div>
+    }
   }
 </div>
   `
 })
-export class CatalogosComponent implements OnInit {
+export class CatalogosComponent implements OnInit, AfterViewInit, OnDestroy {
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
 
@@ -227,6 +265,31 @@ export class CatalogosComponent implements OnInit {
   newCiudadDepId: number | null = null;
   filterDepId: number | null = null;
 
+  // UX & Scroll state
+  showFilters = signal(true);
+  private mainElement: HTMLElement | null = null;
+  private lastScrollTop = 0;
+  private scrollListener?: () => void;
+
+  // Paginación
+  pageSize = signal(20);
+  currentPage = signal(1);
+
+  pageSizeOptions = [
+    { value: 20, label: '20 / pág' },
+    { value: 50, label: '50 / pág' },
+    { value: 100, label: '100 / pág' },
+    { value: 200, label: '200 / pág' },
+  ];
+
+  totalPages = computed(() => Math.ceil(this.items().length / this.pageSize()) || 1);
+  paginatedItems = computed(() => {
+    const start = (this.currentPage() - 1) * this.pageSize();
+    return this.items().slice(start, start + this.pageSize());
+  });
+  displayStart = computed(() => this.items().length === 0 ? 0 : (this.currentPage() - 1) * this.pageSize() + 1);
+  displayEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.items().length));
+
   currentTab = computed(() => this.tabs.find(t => t.key === this.activeTab())!);
   canAdd = computed(() => {
     if (!this.newName.trim()) return false;
@@ -239,6 +302,37 @@ export class CatalogosComponent implements OnInit {
     this.loadList();
   }
 
+  ngAfterViewInit(): void {
+    this.mainElement = document.querySelector('main');
+
+    this.scrollListener = () => {
+      const currentScrollTop = this.mainElement ? this.mainElement.scrollTop : window.scrollY;
+      const delta = currentScrollTop - this.lastScrollTop;
+
+      if (delta > 5 && currentScrollTop > 60) {
+        this.showFilters.set(false);
+      } else if (delta < -5) {
+        this.showFilters.set(true);
+      }
+
+      this.lastScrollTop = Math.max(0, currentScrollTop);
+    };
+
+    if (this.mainElement) {
+      this.mainElement.addEventListener('scroll', this.scrollListener, { passive: true });
+    }
+    window.addEventListener('scroll', this.scrollListener, { passive: true });
+  }
+
+  ngOnDestroy(): void {
+    if (this.scrollListener) {
+      if (this.mainElement) {
+        this.mainElement.removeEventListener('scroll', this.scrollListener);
+      }
+      window.removeEventListener('scroll', this.scrollListener);
+    }
+  }
+
   asCiudad(it: CatalogItem | CiudadItem): CiudadItem {
     return it as CiudadItem;
   }
@@ -248,7 +342,21 @@ export class CatalogosComponent implements OnInit {
     this.editingId.set(null);
     this.newName = '';
     this.filterDepId = null;
+    this.currentPage.set(1);
     this.loadList();
+  }
+
+  prevPage(): void {
+    if (this.currentPage() > 1) this.currentPage.update(p => p - 1);
+  }
+
+  nextPage(): void {
+    if (this.currentPage() < this.totalPages()) this.currentPage.update(p => p + 1);
+  }
+
+  onPageSizeChange(size: number): void {
+    this.pageSize.set(+size);
+    this.currentPage.set(1);
   }
 
   loadDepartamentos(): void {
@@ -262,12 +370,12 @@ export class CatalogosComponent implements OnInit {
     this.loading.set(true);
     if (this.activeTab() === 'ciudades') {
       this.api.listCiudades(this.filterDepId ? { departamento_id: this.filterDepId } : {}).subscribe({
-        next: d => { this.items.set(d); this.loading.set(false); },
+        next: d => { this.items.set(d); this.currentPage.set(1); this.loading.set(false); },
         error: () => this.loading.set(false)
       });
     } else {
       this.api.listCatalog(this.activeTab()).subscribe({
-        next: d => { this.items.set(d); this.loading.set(false); },
+        next: d => { this.items.set(d); this.currentPage.set(1); this.loading.set(false); },
         error: () => this.loading.set(false)
       });
     }
@@ -284,7 +392,6 @@ export class CatalogosComponent implements OnInit {
       next: () => {
         this.saving.set(false);
         this.newName = '';
-        // refrescar departamentos si se creó uno
         if (this.activeTab() === 'departamentos') this.loadDepartamentos();
         this.loadList();
         this.snack.open('Agregado', 'OK', { duration: 2000 });
@@ -350,7 +457,6 @@ export class CatalogosComponent implements OnInit {
       error: (err) => {
         const detail = err?.error?.detail;
         if (typeof detail === 'object' && detail?.usage_count) {
-          // Conflicto por uso: ofrecer forzar
           const msg = `${detail.message}\n\nEjemplos de PDV: ${(detail.sample_pdv_ids || []).join(', ')}\n\n¿Forzar eliminación de todos modos?`;
           if (confirm(msg)) this.forceRemove(item);
         } else {
@@ -374,3 +480,4 @@ export class CatalogosComponent implements OnInit {
     });
   }
 }
+

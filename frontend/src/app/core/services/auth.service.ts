@@ -12,7 +12,11 @@ export class AuthService {
 
   currentUser = signal<User | null>(this.loadUser());
 
-  constructor(private http: HttpClient, private router: Router) { }
+  constructor(private http: HttpClient, private router: Router) {
+    if (this.getToken()) {
+      this.getMe().subscribe({ error: () => {} });
+    }
+  }
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials).pipe(
@@ -37,7 +41,7 @@ export class AuthService {
     return this.http.get<User>(`${environment.apiUrl}/auth/me`).pipe(
       tap((user: User) => {
         this.currentUser.set(user);
-        sessionStorage.setItem(this.USER_KEY, JSON.stringify(user));
+        localStorage.setItem(this.USER_KEY, JSON.stringify(user));
       })
     );
   }
@@ -125,6 +129,7 @@ export class AuthService {
 
   private clearSession(): void {
     localStorage.removeItem(this.TOKEN_KEY);
+    localStorage.removeItem(this.USER_KEY);
     sessionStorage.removeItem(this.USER_KEY);
     this.currentUser.set(null);
     this.router.navigateByUrl('/login');
@@ -132,10 +137,11 @@ export class AuthService {
 
   private loadUser(): User | null {
     try {
-      const raw = sessionStorage.getItem(this.USER_KEY);
+      const raw = localStorage.getItem(this.USER_KEY) || sessionStorage.getItem(this.USER_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
     }
   }
+
 }

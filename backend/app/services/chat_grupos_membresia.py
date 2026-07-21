@@ -32,7 +32,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> List[Di
             .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
             .filter(
                 RutaProgramacion.id_cliente == id_cliente,
-                func.coalesce(RutaProgramacion.activa, True) == True
+                func.coalesce(RutaProgramacion.activo, True) == True
             )
             .all()
         )
@@ -52,7 +52,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> List[Di
             .filter(
                 Usuario.id_rol == 2,
                 RutaProgramacion.id_cliente == id_cliente,
-                func.coalesce(RutaProgramacion.activa, True) == True
+                func.coalesce(RutaProgramacion.activo, True) == True
             )
             .all()
         )
@@ -161,7 +161,7 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> List[Dict]:
             .join(MercaderistaRuta, MercaderistaRuta.ruta_id == RutaProgramacion.ruta_id)
             .filter(
                 MercaderistaRuta.mercaderista_id == id_merc,
-                func.coalesce(RutaProgramacion.activa, True) == True
+                func.coalesce(RutaProgramacion.activo, True) == True
             )
             .all()
         )
@@ -174,7 +174,7 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> List[Dict]:
             .join(AnalistaRuta, AnalistaRuta.id_ruta == RutaProgramacion.ruta_id)
             .filter(
                 AnalistaRuta.id_analista == id_analista,
-                func.coalesce(RutaProgramacion.activa, True) == True
+                func.coalesce(RutaProgramacion.activo, True) == True
             )
             .all()
         )
@@ -184,7 +184,7 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> List[Dict]:
         rows = (
             db.query(RutaProgramacion.id_cliente)
             .distinct()
-            .filter(func.coalesce(RutaProgramacion.activa, True) == True)
+            .filter(func.coalesce(RutaProgramacion.activo, True) == True)
             .all()
         )
         clientes_operativo |= {int(r[0]) for r in rows if r[0] is not None}

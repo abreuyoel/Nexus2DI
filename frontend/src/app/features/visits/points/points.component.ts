@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -70,8 +70,15 @@ import { SearchableSelectComponent } from '../../../shared/components/searchable
     <app-catalogos></app-catalogos>
   } @else {
 
-  <!-- FILTROS -->
-  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5">
+  <!-- FILTROS DINÁMICOS EN SCROLL -->
+  <div class="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/5 p-5 shadow-sm transition-all duration-300 ease-in-out"
+    [class.translate-y-0]="showFilters()"
+    [class.opacity-100]="showFilters()"
+    [class.-translate-y-[150%]]="!showFilters()"
+    [class.opacity-0]="!showFilters()"
+    [class.pointer-events-none]="!showFilters()">
+
+
     <div class="flex items-center gap-2 mb-3">
       <mat-icon class="!text-base text-primary-500">filter_list</mat-icon>
       <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtros</span>
@@ -124,6 +131,7 @@ import { SearchableSelectComponent } from '../../../shared/components/searchable
       </div>
     </div>
   </div>
+
 
   <!-- TABLE -->
   @if (loading()) {
@@ -407,7 +415,9 @@ export class PointsComponent implements OnInit, OnDestroy {
   points = signal<PuntoInteres[]>([]);
   total = signal(0);
   skip = signal(0);
-  pageSize = signal(100);
+  pageSize = signal(20);
+
+
 
   regions = signal<string[]>([]);
   cities = signal<string[]>([]);
@@ -426,10 +436,12 @@ export class PointsComponent implements OnInit, OnDestroy {
   cityOptions = computed(() => this.cities().map(c => ({ value: c, label: c })));
   jerarquiaOptions = computed(() => this.jerarquias().map(j => ({ value: j, label: j })));
   pageSizeOptions = [
+    { value: 20, label: '20 / pág' },
+    { value: 50, label: '50 / pág' },
     { value: 100, label: '100 / pág' },
     { value: 200, label: '200 / pág' },
-    { value: 500, label: '500 / pág' },
   ];
+
 
   private search$ = new Subject<string>();
   private mapInstance: maplibregl.Map | null = null;
@@ -451,6 +463,12 @@ export class PointsComponent implements OnInit, OnDestroy {
     radio: ['']
   });
 
+  // UX & Scroll state
+  showFilters = signal(true);
+  private mainElement: HTMLElement | null = null;
+  private lastScrollTop = 0;
+  private scrollListener?: () => void;
+
   ngOnInit(): void {
     this.loadAll();
     this.loadDropdowns();
@@ -466,9 +484,38 @@ export class PointsComponent implements OnInit, OnDestroy {
     });
   }
 
+  ngAfterViewInit(): void {
+    this.mainElement = document.querySelector('main');
+
+    this.scrollListener = () => {
+      const currentScrollTop = this.mainElement ? this.mainElement.scrollTop : window.scrollY;
+      const delta = currentScrollTop - this.lastScrollTop;
+
+      if (delta > 5 && currentScrollTop > 60) {
+        this.showFilters.set(false);
+      } else if (delta < -5) {
+        this.showFilters.set(true);
+      }
+
+      this.lastScrollTop = Math.max(0, currentScrollTop);
+    };
+
+    if (this.mainElement) {
+      this.mainElement.addEventListener('scroll', this.scrollListener, { passive: true });
+    }
+    window.addEventListener('scroll', this.scrollListener, { passive: true });
+  }
+
   ngOnDestroy(): void {
+    if (this.scrollListener) {
+      if (this.mainElement) {
+        this.mainElement.removeEventListener('scroll', this.scrollListener);
+      }
+      window.removeEventListener('scroll', this.scrollListener);
+    }
     this.destroyMap();
   }
+
 
   private filterParams() {
     return {
