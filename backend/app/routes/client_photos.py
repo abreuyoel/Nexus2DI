@@ -449,42 +449,8 @@ def get_client_mis_visitas(
     seen_fotos: dict[int, set[int]] = {}  # vid -> set de id_foto ya agregadas
     from app.services.azure_service import azure_service
 
-    # Pre-compute a fast SAS URL builder to avoid per-blob crypto overhead
-    _fast_sas_url = azure_service.get_proxy_url  # fallback
-    try:
-        from app.core.config import settings
-        import urllib.parse
-        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-        from datetime import timedelta, timezone as tz
-        _account_key = None
-        cs = settings.AZURE_STORAGE_CONNECTION_STRING
-        if cs:
-            for part in cs.split(';'):
-                if part.startswith('AccountKey='):
-                    _account_key = part[len('AccountKey='):]
-                    break
-        if _account_key:
-            _now = datetime.now(tz.utc)
-            _expiry = (_now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-            _base_url = f"https://{settings.AZURE_ACCOUNT_NAME}.blob.core.windows.net/{settings.AZURE_CONTAINER_NAME}"
-            _sas_cache: dict[str, str] = {}
-            def _fast_sas_url(blob_name: str, hours: int = 2) -> str:
-                if blob_name in _sas_cache:
-                    return _sas_cache[blob_name]
-                encoded = urllib.parse.quote(blob_name, safe='/')
-                sas = generate_blob_sas(
-                    account_name=settings.AZURE_ACCOUNT_NAME,
-                    container_name=settings.AZURE_CONTAINER_NAME,
-                    blob_name=blob_name,
-                    account_key=_account_key,
-                    permission=BlobSasPermissions(read=True),
-                    expiry=_expiry,
-                )
-                url = f"{_base_url}/{encoded}?{sas}"
-                _sas_cache[blob_name] = url
-                return url
-    except Exception:
-        pass  # fallback to azure_service.get_proxy_url
+    # Se utiliza siempre el proxy interno para evitar bloqueos por CSP y NGSW.
+    _fast_sas_url = azure_service.get_proxy_url
 
     for row in rows:
         vid = row[0]

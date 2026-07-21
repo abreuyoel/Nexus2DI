@@ -42,8 +42,11 @@ def get_report_summary(
     completadas = sum(1 for v in visitas if v.estado == "completada")
     pendientes = sum(1 for v in visitas if v.estado == "pendiente")
 
-    visita_ids = [v.id for v in visitas]
-    fotos = db.query(Foto).filter(Foto.visita_id.in_(visita_ids)).all() if visita_ids else []
+    # Subquery en vez de una lista de ids en Python: con miles de visitas en
+    # el rango, un IN(...) con un id por parámetro superaba el límite de
+    # ~2100 parámetros de SQL Server (error "COUNT field incorrect").
+    visita_ids_subq = query.with_entities(Visita.id)
+    fotos = db.query(Foto).filter(Foto.visita_id.in_(visita_ids_subq)).all() if total else []
     fotos_aprobadas = sum(1 for f in fotos if f.estado == "aprobada")
     fotos_rechazadas = sum(1 for f in fotos if f.estado == "rechazada")
     fotos_pendientes = sum(1 for f in fotos if f.estado == "pendiente")
