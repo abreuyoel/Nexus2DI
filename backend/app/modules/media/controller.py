@@ -1,9 +1,11 @@
 import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from app.core.auth import get_current_user
+from app.core.dependencies import get_current_user
+
 from app.modules.auth.entities import Usuario
-from app.services.azure_service import azure_service
+from app.shared.azure_service import azure_service
+
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 

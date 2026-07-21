@@ -13,8 +13,8 @@ from app.modules.chat.entities import (
 )
 from app.modules.visits.entities import Visita
 from app.modules.merchandisers.entities import Mercaderista
-from app.modules.catalogues.entities import PuntoInteres
-from app.modules.routes.entities import RutaProgramacion
+from app.modules.routes.entities import PuntoInteres, RutaProgramacion
+
 from app.modules.chat.dto import (
     GrupoResponse, MiembroGrupoResponse, MensajeGrupoResponse,
     EnviarMensajeGrupoRequest, VisitaConChatResponse, MensajeGrupoVisitaResponse,
@@ -24,7 +24,8 @@ from app.services.chat_grupos_membresia import (
     get_grupos_de_usuario, get_miembros_grupo, usuario_es_miembro,
     asegurar_grupos_cliente, TIPOS_VALIDOS,
 )
-from app.services.visibility import client_route_ids
+from app.shared.visibility import client_route_ids
+
 from app.websockets.manager import manager
 
 router = APIRouter(prefix="/api/chat/grupos", tags=["Chat Grupos"])
@@ -38,7 +39,8 @@ def _validar_tipo(tipo_grupo: str) -> None:
 def _foto_url(blob_path: Optional[str]) -> Optional[str]:
     if not blob_path:
         return None
-    from app.services.azure_service import azure_service
+    from app.shared.azure_service import azure_service
+
     return azure_service.get_proxy_url(blob_path)
 
 
