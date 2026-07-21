@@ -1,6 +1,13 @@
 {
   "$schema": "./node_modules/@angular/service-worker/config/schema.json",
   "index": "/index.html",
+  "navigationUrls": [
+    "/**",
+    "!/**/*.*",
+    "!/**/*__*",
+    "!/**/*__*/**",
+    "!https://saeprandat001.blob.core.windows.net/**"
+  ],
   "assetGroups": [
     {
       "name": "app",
