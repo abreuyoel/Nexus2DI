@@ -196,31 +196,44 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
     if id_cliente_user:
         clientes_solo_cliente.add(int(id_cliente_user))
 
-    if not clientes_operativo and not clientes_solo_cliente:
+    todos_los_clientes = clientes_operativo | clientes_solo_cliente
+    if not todos_los_clientes:
         return []
 
-    # Auto-provisión: un cliente recién asignado puede no tener sus filas de
-    # CHAT_GRUPOS creadas todavía.
-    for cli in (clientes_operativo | clientes_solo_cliente):
-        try:
-            asegurar_grupos_cliente(db, cli)
-        except Exception:
-            pass
+    def _existentes() -> dict[tuple[int, str], tuple]:
+        rows = db.execute(text("""
+            SELECT id_grupo, id_cliente, tipo_grupo, nombre FROM CHAT_GRUPOS WHERE activa = 1
+        """)).fetchall()
+        return {(int(cli), tipo): (int(id_grupo), nombre) for id_grupo, cli, tipo, nombre in rows}
 
-    rows = db.execute(text("""
-        SELECT id_grupo, id_cliente, tipo_grupo, nombre FROM CHAT_GRUPOS WHERE activa = 1
-    """)).fetchall()
+    existentes = _existentes()
+
+    # Auto-provisión: SOLO para clientes que de verdad les falte alguno de
+    # los 2 grupos (la gran mayoría ya los tiene, sobre todo coordinadores/
+    # admin que ven TODOS los clientes — llamar asegurar_grupos_cliente() a
+    # ciegas por cada uno multiplicaba las queries innecesariamente, ej. 110
+    # grupos ⇒ ~220 SELECTs de más en cada carga de "mis grupos").
+    faltantes = [
+        cli for cli in todos_los_clientes
+        if any((cli, tipo) not in existentes for tipo in TIPOS_VALIDOS)
+    ]
+    if faltantes:
+        for cli in faltantes:
+            try:
+                asegurar_grupos_cliente(db, cli)
+            except Exception:
+                pass
+        existentes = _existentes()
 
     grupos = []
-    for id_grupo, cli, tipo, nombre in rows:
-        cli = int(cli)
+    for (cli, tipo), (id_grupo, nombre) in existentes.items():
         es_miembro = (
             cli in clientes_operativo
             or (tipo == "operativo_cliente" and cli in clientes_solo_cliente)
         )
         if es_miembro:
             grupos.append({
-                "id_grupo": int(id_grupo), "id_cliente": cli,
+                "id_grupo": id_grupo, "id_cliente": cli,
                 "tipo_grupo": tipo, "nombre": nombre,
             })
     return grupos
