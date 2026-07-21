@@ -41,13 +41,18 @@ def get_client_data_filters(
             .filter(RutaProgramacion.activo == True, AnalistaRuta.id_analista == analista_id)
             .subquery()
         )
-        sub_ac = (
-            db.query(AnalistaCliente.id_cliente)
-            .filter(AnalistaCliente.id_analista == analista_id)
-            .subquery()
-        )
         base_filter.append(Balance.identificador_pdv.in_(sub_rp))
-        base_filter.append(Balance.id_cliente.in_(sub_ac))
+
+    if current_user.rol == "client":
+        from app.shared.visibility import client_route_ids
+        route_ids = client_route_ids(db, current_user)
+        if route_ids is not None:
+            sub_cr = (
+                db.query(RutaProgramacion.punto_id)
+                .filter(RutaProgramacion.activo == True, RutaProgramacion.ruta_id.in_(route_ids))
+                .subquery()
+            )
+            base_filter.append(Balance.identificador_pdv.in_(sub_cr))
 
     # Productos
     productos = [
@@ -229,15 +234,18 @@ def get_client_balances(
             .filter(RutaProgramacion.activo == True, AnalistaRuta.id_analista == analista_id)
             .subquery()
         )
-        sub_ac = (
-            db.query(AnalistaCliente.id_cliente)
-            .filter(AnalistaCliente.id_analista == analista_id)
-            .subquery()
-        )
-        query = query.filter(
-            Balance.identificador_pdv.in_(sub_rp),
-            Balance.id_cliente.in_(sub_ac)
-        )
+        query = query.filter(Balance.identificador_pdv.in_(sub_rp))
+
+    if current_user.rol == "client":
+        from app.shared.visibility import client_route_ids
+        route_ids = client_route_ids(db, current_user)
+        if route_ids is not None:
+            sub_cr = (
+                db.query(RutaProgramacion.punto_id)
+                .filter(RutaProgramacion.activo == True, RutaProgramacion.ruta_id.in_(route_ids))
+                .subquery()
+            )
+            query = query.filter(Balance.identificador_pdv.in_(sub_cr))
 
     if fecha_inicio:
         query = query.filter(Balance.fecha_balance >= datetime.combine(fecha_inicio, datetime.min.time()))
@@ -262,8 +270,11 @@ def get_client_balances(
         query = query.filter(PuntoInteres.departamento == departamento)
     if cuadrante:
         query = query.filter(sub_cuad.c.cuadrante == cuadrante)
+
     if estado:
         query = query.filter(Visita.estado == estado)
+    elif current_user.is_client:
+        query = query.filter(Visita.estado == 'Revisado')
 
     rows = query.order_by(Balance.fecha_balance.desc()).all()
 
