@@ -18,6 +18,7 @@ import { WebSocketService } from '../../core/services/websocket.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ChatMensaje, ChatMensajeLector } from '../../core/models/visita.model';
 import { NewChatDialogComponent } from './new-chat-dialog.component';
+import { PhotoLightboxComponent, LightboxPhoto } from '../../shared/photo-lightbox/photo-lightbox.component';
 
 type TipoGrupo = 'operativo' | 'operativo_cliente';
 
@@ -77,6 +78,7 @@ interface GrupoVisitaKey { id_cliente: number; tipo_grupo: TipoGrupo; id_visita:
     CommonModule, ReactiveFormsModule, FormsModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
     MatListModule, MatProgressSpinnerModule, MatDialogModule, MatMenuModule,
+    PhotoLightboxComponent,
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']
@@ -465,8 +467,14 @@ export class ChatComponent implements OnInit, OnDestroy {
     return this.readersOf(msg).length > 0;
   }
 
-  openFotoAdjunta(url?: string): void {
-    if (url) window.open(url, '_blank');
+  // ─── LIGHTBOX de fotos adjuntas (antes abría en pestaña nueva) ────
+  lightboxOpen = signal(false);
+  lightboxPhotos = signal<LightboxPhoto[]>([]);
+
+  openFotoLightbox(url?: string): void {
+    if (!url) return;
+    this.lightboxPhotos.set([{ url }]);
+    this.lightboxOpen.set(true);
   }
 
   sendMessage(): void {

@@ -366,7 +366,7 @@
             >
               {{ msg.mensaje }}
               @if (msg.foto_adjunta) {
-                <img [src]="msg.foto_adjunta" (click)="openFotoAdjunta(msg.foto_adjunta)"
+                <img [src]="msg.foto_adjunta" (click)="openFotoLightbox(msg.foto_adjunta)"
                      class="block mt-2 max-h-60 rounded-xl border border-black/10 dark:border-white/10 cursor-pointer object-cover"
                      loading="lazy" alt="Foto adjunta">
               }
@@ -446,3 +446,9 @@
   </div>
 </div>
 }
+
+<app-photo-lightbox
+  [open]="lightboxOpen()"
+  [photos]="lightboxPhotos()"
+  (closed)="lightboxOpen.set(false)">
+</app-photo-lightbox>
