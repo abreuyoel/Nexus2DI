@@ -368,7 +368,7 @@ def _merc_foto_url(blob_path, foto_id):
         return f"/api/merc/foto/{foto_id}"
     try:
         from app.services.azure_service import azure_service
-        return azure_service.get_sas_url(blob_path)
+        return azure_service.get_proxy_url(blob_path)
     except Exception:
         return f"/api/merc/foto/{foto_id}"
 
@@ -508,7 +508,7 @@ def get_foto(
         return FileResponse(row.file_path)
     try:
         from app.services.azure_service import azure_service
-        return RedirectResponse(azure_service.get_sas_url(row.file_path))
+        return RedirectResponse(azure_service.get_proxy_url(row.file_path))
     except Exception:
         raise HTTPException(status_code=404, detail="Archivo no disponible")
 

@@ -40,7 +40,7 @@ class Foto(Base):
         if not self.blob_path:
             return None
         from app.services.azure_service import azure_service
-        return azure_service.get_sas_url(self.blob_path)
+        return azure_service.get_proxy_url(self.blob_path)
 
 
 class NotificacionRechazoFoto(Base):

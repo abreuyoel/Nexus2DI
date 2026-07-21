@@ -42,7 +42,7 @@ def process_and_upload_photo(file_bytes: bytes, content_type: str = "image/jpeg"
     exif = extract_exif_data(file_bytes)
     compressed = compress_image(file_bytes)
     blob_path = azure_service.upload_photo(compressed, content_type, prefix)
-    url = azure_service.get_blob_url(blob_path)
+    url = azure_service.get_proxy_url(blob_path)
     return {
         "blob_path": blob_path,
         "url": url,

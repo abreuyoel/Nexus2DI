@@ -733,7 +733,7 @@ def get_activaciones(
         from app.services.azure_service import azure_service
         def _foto_url(path):
             try:
-                return azure_service.get_sas_url(path) if path else None
+                return azure_service.get_proxy_url(path) if path else None
             except Exception:
                 return None
 

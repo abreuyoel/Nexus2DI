@@ -121,7 +121,7 @@ def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMens
             sender_id=m.sender_id, sender_nombre=m.sender_nombre, mensaje=m.mensaje,
             leido=m.leido, created_at=m.created_at,
             leido_por=lecturas_map.get(m.id, []),
-            foto_adjunta=azure_service.get_sas_url(m.foto_adjunta) if m.foto_adjunta else None,
+            foto_adjunta=azure_service.get_proxy_url(m.foto_adjunta) if m.foto_adjunta else None,
         )
         for m in mensajes
     ]

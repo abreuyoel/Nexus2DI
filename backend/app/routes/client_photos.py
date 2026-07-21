@@ -296,7 +296,7 @@ def get_client_point_visits(
         vid = p[1]
         if vid not in photos_by_visit:
             photos_by_visit[vid] = []
-        url = azure_service.get_sas_url(p[3]) if p[3] else None
+        url = azure_service.get_proxy_url(p[3]) if p[3] else None
         photos_by_visit[vid].append({
             "id_foto": p[0],
             "id_tipo_foto": p[2],
@@ -450,7 +450,7 @@ def get_client_mis_visitas(
     from app.services.azure_service import azure_service
 
     # Pre-compute a fast SAS URL builder to avoid per-blob crypto overhead
-    _fast_sas_url = azure_service.get_sas_url  # fallback
+    _fast_sas_url = azure_service.get_proxy_url  # fallback
     try:
         from app.core.config import settings
         import urllib.parse
@@ -484,7 +484,7 @@ def get_client_mis_visitas(
                 _sas_cache[blob_name] = url
                 return url
     except Exception:
-        pass  # fallback to azure_service.get_sas_url
+        pass  # fallback to azure_service.get_proxy_url
 
     for row in rows:
         vid = row[0]
