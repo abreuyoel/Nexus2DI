@@ -17,12 +17,16 @@ Fuentes de verdad del vínculo persona ↔ cliente:
                     ANALISTAS_CLIENTE, desactualizada — mismo criterio que
                     el resto de Nexus2DI esta sesión), resolviendo el
                     usuario por USUARIOS.id_perfil (id_rol=2).
-  • Coordinadores → USUARIOS.id_rol IN (3, 4, 11). A diferencia de
+  • Coordinadores + administrador → USUARIOS.id_rol IN (3, 4, 8, 11)
+                    (8 = admin, igual que Usuario.is_admin en
+                    app/models/user.py). A diferencia de
                     mercaderistas/analistas, ven y son miembros de TODOS
                     los clientes con grupo activo, sin filtrar — mismo
-                    criterio que v1 (esta regla es exclusiva de la
-                    membresía del chat, no reemplaza
-                    app/services/visibility.py::coordinator_client_ids()).
+                    criterio que v1 para coordinadores, extendido acá a
+                    admin porque
+                    app/services/visibility.py::coordinator_client_ids()
+                    ya le da acceso sin filtro a todo lo demás (ver rol 8
+                    ahi) y el chat se habia quedado corto.
   • Usuarios cliente → USUARIOS.id_perfil (id_rol=1) — solo en
                     tipo_grupo='operativo_cliente'.
 
@@ -39,7 +43,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 TIPOS_VALIDOS = ("operativo", "operativo_cliente")
-ROLES_COORDINADOR = (3, 4, 11)
+ROLES_COORDINADOR = (3, 4, 8, 11)  # 8 = admin (Usuario.is_admin)
 
 
 def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[dict]:
@@ -66,7 +70,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[di
         ("""
             SELECT DISTINCT u.id_usuario, u.username, 'coordinador' AS origen
             FROM USUARIOS u
-            WHERE u.id_rol IN (3, 4, 11)
+            WHERE u.id_rol IN (3, 4, 8, 11)
         """, {}),
     ]
 
