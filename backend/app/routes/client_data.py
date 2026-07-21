@@ -32,6 +32,36 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
     return frag, {"analista_id": int(user.id_perfil)}
 
 
+def _client_route_filter(user: Usuario, db: Session, alias: str = "b"):
+    """Restringe a un cliente (id_rol=1, rol == 'client') con filas en
+    CLIENTES_RUTAS a solo los balances de SUS rutas asignadas -- mismo
+    criterio que client_photos.py::get_client_visits (route_filter_sql).
+
+    Sin esto, coordinator_client_ids() ya limitaba los datos al id_cliente
+    correcto, pero un cliente con rutas restringidas veía la data COMPLETA
+    de su cliente en vez de solo la de sus rutas/regiones asignadas.
+
+    Devuelve ("", {}) si no aplica: coordinador_exclusivo/tradex/general y
+    admin (is_client agrupa a todos, pero acá se filtra por rol=='client'
+    puro) no se restringen acá -- tienen su propio mecanismo de alcance de
+    CLIENTES en coordinator_client_ids(). Un cliente sin filas en
+    CLIENTES_RUTAS tampoco se restringe (ve todas las rutas de su cliente).
+    """
+    if user.rol != "client":
+        return "", {}
+    from app.services.visibility import client_route_ids
+    route_ids = client_route_ids(db, user)
+    if route_ids is None:
+        return "", {}
+    ids_csv = ",".join(str(int(i)) for i in route_ids) if route_ids else "-1"
+    frag = f"""
+        AND EXISTS (SELECT 1 FROM RUTA_PROGRAMACION rp_c
+            WHERE rp_c.id_punto_interes = {alias}.identificador_pdv
+              AND rp_c.id_ruta IN ({ids_csv}))
+    """
+    return frag, {}
+
+
 @router.get("/filters")
 def get_client_data_filters(
     db: Session = Depends(get_db),
@@ -54,6 +84,10 @@ def get_client_data_filters(
     af, ap = _analyst_filter(current_user)
     where_clause += af
     query_params.update(ap)
+
+    cf, cp = _client_route_filter(current_user, db)
+    where_clause += cf
+    query_params.update(cp)
 
     if current_user.is_client:
         # Mismo criterio que /balances: el cliente solo debe ver (y filtrar
@@ -208,6 +242,10 @@ def get_client_balances(
     af, ap = _analyst_filter(current_user)
     query_str += af
     params.update(ap)
+
+    cf, cp = _client_route_filter(current_user, db)
+    query_str += cf
+    params.update(cp)
 
     if fecha_inicio:
         query_str += " AND b.fecha_balance >= :fecha_inicio"
