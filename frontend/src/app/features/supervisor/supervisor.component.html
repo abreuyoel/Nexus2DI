@@ -37,7 +37,7 @@
         <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col border-b-4 border-b-rose-500/20">
           <div class="relative h-56 bg-slate-100 dark:bg-slate-800">
             @if (foto.url) {
-              <img [src]="foto.url" alt="Foto rechazada" class="w-full h-full object-cover">
+              <img [appAuthSrc]="foto.url" alt="Foto rechazada" class="w-full h-full object-cover">
             } @else {
               <div class="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
                 <mat-icon class="!text-5xl">image_not_supported</mat-icon>

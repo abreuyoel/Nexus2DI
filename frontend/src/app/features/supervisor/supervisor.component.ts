@@ -7,13 +7,14 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { Foto } from '../../core/models/visita.model';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 @Component({
   selector: 'app-supervisor',
   standalone: true,
   imports: [
-    CommonModule, MatCardModule, MatButtonModule, MatIconModule, 
-    MatProgressSpinnerModule, MatSnackBarModule
+    CommonModule, MatCardModule, MatButtonModule, MatIconModule,
+    MatProgressSpinnerModule, MatSnackBarModule, AuthImgDirective
   ],
   templateUrl: './supervisor.component.html',
   styleUrls: ['./supervisor.component.scss']

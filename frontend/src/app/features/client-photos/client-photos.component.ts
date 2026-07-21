@@ -15,6 +15,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { PhotoLightboxComponent } from '../../shared/photo-lightbox/photo-lightbox.component';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 import { Router } from '@angular/router';
 
@@ -327,7 +328,7 @@ export class PhotoRejectionFormComponent {
     CommonModule, FormsModule, MatCardModule, MatButtonModule, MatIconModule,
     MatProgressSpinnerModule, MatExpansionModule, MatFormFieldModule,
     MatInputModule, MatChipsModule, MatTooltipModule, MatDialogModule,
-    PhotoLightboxComponent, PhotoRejectionFormComponent
+    PhotoLightboxComponent, PhotoRejectionFormComponent, AuthImgDirective
   ],
   templateUrl: './client-photos.component.html',
   styleUrls: ['./client-photos.component.scss'],

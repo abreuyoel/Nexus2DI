@@ -20,6 +20,7 @@ import { ChatMensaje, ChatMensajeLector } from '../../core/models/visita.model';
 import { NewChatDialogComponent } from './new-chat-dialog.component';
 import { GroupMembersDialogComponent } from './group-members-dialog.component';
 import { PhotoLightboxComponent, LightboxPhoto } from '../../shared/photo-lightbox/photo-lightbox.component';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 type TipoGrupo = 'operativo' | 'operativo_cliente';
 
@@ -79,7 +80,7 @@ interface GrupoVisitaKey { id_cliente: number; tipo_grupo: TipoGrupo; id_visita:
     CommonModule, ReactiveFormsModule, FormsModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatButtonModule, MatIconModule,
     MatListModule, MatProgressSpinnerModule, MatDialogModule, MatMenuModule,
-    PhotoLightboxComponent,
+    PhotoLightboxComponent, AuthImgDirective,
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.scss']

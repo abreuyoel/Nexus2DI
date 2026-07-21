@@ -286,7 +286,7 @@
           <div class="rounded-2xl overflow-hidden border-2 transition-all"
             [ngClass]="isAprobada(f) ? 'border-emerald-500' : isRechazada(f) ? 'border-rose-500' : 'border-slate-200 dark:border-white/10'">
             <div class="relative">
-              <img [src]="f.url" (click)="openLightbox(f.url)" class="w-full h-52 object-cover cursor-pointer bg-slate-100 dark:bg-slate-800" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.opacity=0.3">
+              <img [appAuthSrc]="f.url" (click)="openLightbox(f.url)" class="w-full h-52 object-cover cursor-pointer bg-slate-100 dark:bg-slate-800" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.opacity=0.3">
               <span class="absolute top-2 left-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-black/60 text-white">{{ tipoLabel(f.id_tipo_foto) }}</span>
               @if (isAprobada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-500 text-white">APROBADA</span> }
               @else if (isRechazada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-500 text-white">RECHAZADA</span> }
@@ -395,7 +395,7 @@
 @if (lightboxUrl()) {
   <div class="fixed inset-0 z-[70] flex items-center justify-center p-4" (click)="closeLightbox()">
     <div class="absolute inset-0 bg-black/85"></div>
-    <img [src]="lightboxUrl()" class="relative max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
+    <img [appAuthSrc]="lightboxUrl()" class="relative max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl" (click)="$event.stopPropagation()">
     <button (click)="closeLightbox()" class="absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
   </div>
 }

@@ -11,6 +11,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 type Periodo = 'hoy' | 'semana' | 'mes';
 type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
@@ -18,7 +19,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 @Component({
   selector: 'app-revision-visitas',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule, AuthImgDirective],
   templateUrl: './revision-visitas.component.html',
 })
 export class RevisionVisitasComponent implements OnInit {

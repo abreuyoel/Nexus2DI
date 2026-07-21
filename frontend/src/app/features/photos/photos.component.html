@@ -44,8 +44,8 @@
           <!-- Image Container -->
           <div class="relative h-60 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
             @if (foto.url) {
-              <img 
-                [src]="foto.url" 
+              <img
+                [appAuthSrc]="foto.url"
                 [alt]="'Foto ' + foto.id" 
                 class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                 (error)="onImgError($event)"

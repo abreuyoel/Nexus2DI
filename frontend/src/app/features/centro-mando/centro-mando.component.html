@@ -757,7 +757,7 @@
               <div class="flex-1">
                 @if (v.url_activacion) {
                   @defer (on viewport) {
-                    <img [src]="v.url_activacion" (click)="openLightbox(v.url_activacion, 'Entrada · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
+                    <img [appAuthSrc]="v.url_activacion" (click)="openLightbox(v.url_activacion, 'Entrada · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
                   } @placeholder {
                     <div class="h-16 w-full rounded-lg bg-white/5 animate-pulse flex items-center justify-center border border-white/5 text-[10px] text-[#8b949e]">
                       <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-white/30 mr-1 animate-spin">sync</mat-icon> Foto
@@ -772,7 +772,7 @@
               <div class="flex-1">
                 @if (v.url_desactivacion) {
                   @defer (on viewport) {
-                    <img [src]="v.url_desactivacion" (click)="openLightbox(v.url_desactivacion, 'Salida · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
+                    <img [appAuthSrc]="v.url_desactivacion" (click)="openLightbox(v.url_desactivacion, 'Salida · ' + v.cliente)" class="h-16 w-full object-cover rounded-lg border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" fetchpriority="low" onerror="this.outerHTML='<div class=\'h-16 rounded-lg border border-dashed border-white/10 flex items-center justify-center text-[10px] text-[#8b949e]\'>No disp.</div>'">
                   } @placeholder {
                     <div class="h-16 w-full rounded-lg bg-white/5 animate-pulse flex items-center justify-center border border-white/5 text-[10px] text-[#8b949e]">
                       <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-white/30 mr-1 animate-spin">sync</mat-icon> Foto
@@ -820,11 +820,11 @@
       <div class="flex items-center justify-between mb-2">
         <span class="text-white font-black text-lg">{{ lightboxTitle }}</span>
         <div class="flex items-center gap-2">
-          <a [href]="lightboxUrl()" target="_blank" download class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center" matTooltip="Descargar"><mat-icon>download</mat-icon></a>
+          <button type="button" (click)="downloadLightboxImage()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center" matTooltip="Descargar"><mat-icon>download</mat-icon></button>
           <button (click)="closeLightbox()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><mat-icon>close</mat-icon></button>
         </div>
       </div>
-      <img [src]="lightboxUrl()" class="w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl">
+      <img [appAuthSrc]="lightboxUrl()" class="w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl">
     </div>
   </div>
 }
@@ -867,14 +867,14 @@
           <div>
             <p class="text-sm font-bold text-white mb-1">Entrada</p>
             @if (selectedVisit()?.url_activacion) {
-              <img [src]="selectedVisit()?.url_activacion" (click)="openLightbox(selectedVisit()?.url_activacion, 'Entrada · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
+              <img [appAuthSrc]="selectedVisit()?.url_activacion" (click)="openLightbox(selectedVisit()?.url_activacion, 'Entrada · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
             } @else { <div class="w-full h-56 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-[#8b949e] text-sm">Sin entrada</div> }
             <p class="text-[10px] text-[#8b949e] mt-1">{{ selectedVisit()?.fecha_activacion ? (selectedVisit()?.fecha_activacion | date:'dd/MM/yyyy HH:mm') : '—' }}</p>
           </div>
           <div>
             <p class="text-sm font-bold text-white mb-1">Salida</p>
             @if (selectedVisit()?.url_desactivacion) {
-              <img [src]="selectedVisit()?.url_desactivacion" (click)="openLightbox(selectedVisit()?.url_desactivacion, 'Salida · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
+              <img [appAuthSrc]="selectedVisit()?.url_desactivacion" (click)="openLightbox(selectedVisit()?.url_desactivacion, 'Salida · ' + selectedVisit()?.cliente)" class="w-full h-56 object-cover rounded-xl border border-white/5 cursor-pointer hover:opacity-80 transition-opacity" loading="lazy" decoding="async" onerror="this.style.display='none'">
             } @else { <div class="w-full h-56 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-[#8b949e] text-sm">Sin salida</div> }
             <p class="text-[10px] text-[#8b949e] mt-1">{{ selectedVisit()?.fecha_desactivacion ? (selectedVisit()?.fecha_desactivacion | date:'dd/MM/yyyy HH:mm') : '—' }}</p>
           </div>

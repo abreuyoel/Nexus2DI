@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, HostListener } from '@angular/core';
+import { Component, OnInit, signal, HostListener, inject } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -12,6 +12,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.component';
 import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
+import { AuthImageCacheService } from '../../core/services/auth-image-cache.service';
 
 @Component({
   selector: 'app-centro-mando',
@@ -20,7 +22,7 @@ import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.componen
     CommonModule, FormsModule,
     MatIconModule, MatButtonModule,
     MatProgressSpinnerModule, MatTooltipModule, MatDialogModule,
-    RevisionVisitasComponent
+    RevisionVisitasComponent, AuthImgDirective
   ],
   templateUrl: './centro-mando.component.html',
   styleUrls: ['./centro-mando.component.scss']
@@ -311,6 +313,26 @@ export class CentroMandoComponent implements OnInit {
     this.lightboxOpen.set(true);
   }
   closeLightbox(): void { this.lightboxOpen.set(false); this.lightboxUrl.set(null); }
+
+  private authImageCache = inject(AuthImageCacheService);
+  /** El botón de descarga usaba <a href download>, pero /api/media/foto exige
+   * JWT y una navegación de <a> no lo envía (igual que un <img src>). Se
+   * descarga el blob vía HttpClient (con el token) y se dispara la descarga
+   * desde el Object URL resultante. */
+  downloadLightboxImage(): void {
+    const url = this.lightboxUrl();
+    if (!url) return;
+    if (!url.startsWith('/api/media/')) {
+      window.open(url, '_blank');
+      return;
+    }
+    this.authImageCache.get(url).subscribe(objectUrl => {
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = '';
+      a.click();
+    });
+  }
 
   /** Duración legible: minutos, pero en horas cuando es >= 60 min. */
   formatDuracion(min: number | null | undefined): string {

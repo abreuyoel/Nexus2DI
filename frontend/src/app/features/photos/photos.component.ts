@@ -11,6 +11,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { Foto } from '../../core/models/visita.model';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 @Component({
   selector: 'app-photos',
@@ -18,7 +19,7 @@ import { Foto } from '../../core/models/visita.model';
   imports: [
     CommonModule, MatCardModule, MatButtonModule, MatIconModule,
     MatProgressSpinnerModule, MatFormFieldModule, MatSelectModule,
-    FormsModule, MatSnackBarModule, MatTooltipModule
+    FormsModule, MatSnackBarModule, MatTooltipModule, AuthImgDirective
   ],
   templateUrl: './photos.component.html',
   styleUrls: ['./photos.component.scss']

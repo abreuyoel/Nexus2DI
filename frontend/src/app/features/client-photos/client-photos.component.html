@@ -296,7 +296,7 @@
                   <div class="cp-gallery-grid">
                     @for (foto of grupo.fotos; track foto.id_foto; let i = $index) {
                       <div class="cp-photo-thumb" (click)="openLightbox(grupo.fotos, i, grupo.nombre)">
-                        <img [src]="foto.url" [alt]="foto.tipo_nombre" loading="lazy">
+                        <img [appAuthSrc]="foto.url" [alt]="foto.tipo_nombre" loading="lazy">
                         <div class="cp-photo-overlay">
                           <mat-icon>zoom_in</mat-icon>
                         </div>

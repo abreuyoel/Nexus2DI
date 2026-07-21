@@ -202,7 +202,7 @@
                           <div class="mv-card-inner">
                             <div class="mv-card-thumb">
                               @if (visita.preview_foto) {
-                                <img [src]="visita.preview_foto" alt="Preview" loading="lazy">
+                                <img [appAuthSrc]="visita.preview_foto" alt="Preview" loading="lazy">
                               } @else {
                                 <div class="mv-card-thumb-placeholder">📷</div>
                               }
@@ -261,7 +261,7 @@
                                     
                                     <div class="mv-cat-preview">
                                       @if (fotos.length > 0 && fotos[0].file_path) {
-                                        <img [src]="fotos[0].file_path" [alt]="cfg.nombre" loading="lazy" (error)="onImageError($event)">
+                                        <img [appAuthSrc]="fotos[0].file_path" [alt]="cfg.nombre" loading="lazy" (error)="onImageError($event)">
                                         <div class="mv-cat-overlay">
                                           <span class="mv-cat-overlay-count">{{ fotos.length }}</span>
                                         </div>

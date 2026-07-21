@@ -11,6 +11,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { SearchableSelectComponent } from './searchable-select.component';
 import { PhotoLightboxComponent } from '../../shared/photo-lightbox/photo-lightbox.component';
+import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 
 interface ExclusiveClient { id_cliente: number; cliente: string; id_tipo_cliente: number; }
 
@@ -64,7 +65,7 @@ interface Filtros {
     MatIconModule,
     MatProgressSpinnerModule,
     SearchableSelectComponent,
-    PhotoLightboxComponent
+    PhotoLightboxComponent, AuthImgDirective
   ],
   templateUrl: './client-visits.component.html',
   styleUrls: ['./client-visits.component.scss']
