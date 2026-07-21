@@ -354,12 +354,24 @@
             </p>
           </div>
         </div>
-        <div [class]="connected() ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/30'" class="px-3 py-1 rounded-2xl border flex items-center gap-2 font-bold text-[10px] shadow-sm">
-          <span class="relative flex h-2 w-2">
-            <span [class]="connected() ? 'bg-emerald-400' : 'bg-rose-400'" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"></span>
-            <span [class]="connected() ? 'bg-emerald-500' : 'bg-rose-500'" class="relative inline-flex rounded-full h-2 w-2"></span>
-          </span>
-          {{ connected() ? 'ONLINE' : 'OFFLINE' }}
+        <div class="flex items-center gap-3">
+          @if (activeKind() === 'grupo') {
+            <button
+              mat-icon-button
+              (click)="openMembersDialog()"
+              matTooltip="Ver miembros del grupo"
+              class="text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-400 transition-colors"
+            >
+              <mat-icon>group</mat-icon>
+            </button>
+          }
+          <div [class]="connected() ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/30' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/30'" class="px-3 py-1 rounded-2xl border flex items-center gap-2 font-bold text-[10px] shadow-sm">
+            <span class="relative flex h-2 w-2">
+              <span [class]="connected() ? 'bg-emerald-400' : 'bg-rose-400'" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+              <span [class]="connected() ? 'bg-emerald-500' : 'bg-rose-500'" class="relative inline-flex rounded-full h-2 w-2"></span>
+            </span>
+            {{ connected() ? 'ONLINE' : 'OFFLINE' }}
+          </div>
         </div>
       </div>
 

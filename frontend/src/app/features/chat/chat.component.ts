@@ -18,6 +18,7 @@ import { WebSocketService } from '../../core/services/websocket.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ChatMensaje, ChatMensajeLector } from '../../core/models/visita.model';
 import { NewChatDialogComponent } from './new-chat-dialog.component';
+import { GroupMembersDialogComponent } from './group-members-dialog.component';
 import { PhotoLightboxComponent, LightboxPhoto } from '../../shared/photo-lightbox/photo-lightbox.component';
 
 type TipoGrupo = 'operativo' | 'operativo_cliente';
@@ -537,6 +538,17 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.loadInbox();
         this.selectChat('conversation', conv.id, conv.titulo);
       }
+    });
+  }
+
+  // ─── MIEMBROS DEL GRUPO ──────────────────────────────────────────
+  openMembersDialog(): void {
+    const idGrupo = this.activeId();
+    if (this.activeKind() !== 'grupo' || idGrupo === null) return;
+    this.dialog.open(GroupMembersDialogComponent, {
+      data: { idGrupo },
+      width: '400px',
+      autoFocus: false,
     });
   }
 
