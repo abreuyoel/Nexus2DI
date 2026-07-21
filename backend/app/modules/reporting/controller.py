@@ -229,3 +229,47 @@ def export_visitas_excel(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export-visitas/filtros")
+def get_export_visitas_filtros(
+    id_cliente: int = Query(...),
+    fecha_inicio: date = Query(...),
+    fecha_fin: date = Query(...),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Devuelve las opciones reales de cuadrantes, departamentos y categorías para el cliente."""
+    try:
+        q = (
+            db.query(
+                Ruta.cuadrante,
+                PuntoInteres.departamento,
+                PuntoInteres.jerarquia_n2,
+                PuntoInteres.cadena
+            )
+            .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
+            .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
+            .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+            .filter(
+                Visita.id_cliente == id_cliente,
+                Visita.fecha >= fecha_inicio,
+                Visita.fecha <= fecha_fin
+            )
+            .distinct()
+            .all()
+        )
+
+        cuadrantes = sorted({r[0] for r in q if r[0]})
+        departamentos = sorted({r[1] for r in q if r[1]})
+        cats_raw = {r[2] for r in q if r[2]} | {r[3] for r in q if r[3]}
+        categorias = sorted({c for c in cats_raw if c})
+
+        return {
+            "cuadrantes": cuadrantes,
+            "departamentos": departamentos,
+            "categorias": categorias,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

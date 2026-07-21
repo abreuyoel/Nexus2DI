@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/@angular/service-worker/config/schema.json",
   "index": "/index.html",
+  "navigationUrls": [
+    "/**",
+    "!/**/*.*",
+    "!/**/*__*",
+    "!/**/*__*/**"
+  ],
   "assetGroups": [
     {
       "name": "app",
@@ -26,5 +32,20 @@
         ]
       }
     }
+  ],
+  "dataGroups": [
+    {
+      "name": "azure-blob-images",
+      "urls": [
+        "https://saeprandat001.blob.core.windows.net/**"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 50,
+        "maxAge": "1d",
+        "timeout": "30s"
+      }
+    }
   ]
 }
+

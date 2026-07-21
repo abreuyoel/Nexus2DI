@@ -7,14 +7,15 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiService } from '../../core/services/api.service';
 
-type ChatType = 'direct' | 'group_team' | 'group_region' | 'group_pdv';
+// Solo grupos ad-hoc de mercaderistas (region/pdv) — el chat de equipo
+// operativo / equipo+cliente y su sub-hilo por visita ya no se "crean" acá,
+// viven en CHAT_GRUPOS y se auto-provisionan (ver chat.component.ts,
+// tab "Equipo Operativo").
+type ChatType = 'group_region' | 'group_pdv';
 
-interface RecipientUser { id_usuario: number; nombre: string; subtitulo?: string; }
 interface RegionRecipient { region: string; mercaderistas_count: number; }
 interface PdvRecipient { identificador: string; punto_de_interes: string; region?: string; mercaderistas_count: number; }
 interface RecipientsResponse {
-  analistas: RecipientUser[];
-  mercaderistas: RecipientUser[];
   regiones: RegionRecipient[];
   pdvs: PdvRecipient[];
 }
@@ -33,7 +34,7 @@ export interface NewChatDialogData {
   <div class="nc-header">
     <div class="nc-header-icon"><mat-icon>chat_bubble</mat-icon></div>
     <div>
-      <h2 class="nc-title">Nuevo Chat</h2>
+      <h2 class="nc-title">Nuevo grupo de mercaderistas</h2>
       <p class="nc-subtitle">
         Paso {{ step() }} de 3 — {{ stepLabel() }}
       </p>
@@ -60,18 +61,8 @@ export interface NewChatDialogData {
     @if (!loading()) {
       <!-- STEP 1: TIPO -->
       @if (step() === 1) {
-        <p class="nc-help">Elige el tipo de chat que quieres crear.</p>
+        <p class="nc-help">Elige el tipo de grupo que quieres crear.</p>
         <div class="nc-type-grid">
-          <button class="nc-type-card" [class.selected]="tipo() === 'direct'" (click)="selectTipo('direct')">
-            <mat-icon>person</mat-icon>
-            <span class="nc-type-name">Chat directo</span>
-            <small>Con un analista o mercaderista</small>
-          </button>
-          <button class="nc-type-card" [class.selected]="tipo() === 'group_team'" (click)="selectTipo('group_team')">
-            <mat-icon>groups</mat-icon>
-            <span class="nc-type-name">Equipo completo</span>
-            <small>Todos los analistas, mercs, supervisores</small>
-          </button>
           <button class="nc-type-card" [class.selected]="tipo() === 'group_region'" (click)="selectTipo('group_region')">
             <mat-icon>map</mat-icon>
             <span class="nc-type-name">Por región</span>
@@ -92,51 +83,6 @@ export interface NewChatDialogData {
           <input type="text" placeholder="Buscar..."
                  [(ngModel)]="searchTerm">
         </div>
-
-        @if (tipo() === 'direct') {
-          <p class="nc-section-label">Analistas asignados</p>
-          @for (u of filteredAnalistas(); track u.id_usuario) {
-            <button class="nc-recipient" [class.selected]="destinatarioId() === u.id_usuario"
-                    (click)="destinatarioId.set(u.id_usuario)">
-              <mat-icon class="nc-recipient-icon nc-rec-analista">analytics</mat-icon>
-              <div class="nc-recipient-info">
-                <span class="nc-recipient-name">{{ u.nombre }}</span>
-                <small>{{ u.subtitulo }}</small>
-              </div>
-              <mat-icon class="nc-check">{{ destinatarioId() === u.id_usuario ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
-            </button>
-          }
-          <p class="nc-section-label">Mercaderistas asignados</p>
-          @for (u of filteredMercaderistas(); track u.id_usuario) {
-            <button class="nc-recipient" [class.selected]="destinatarioId() === u.id_usuario"
-                    (click)="destinatarioId.set(u.id_usuario)">
-              <mat-icon class="nc-recipient-icon nc-rec-merc">person</mat-icon>
-              <div class="nc-recipient-info">
-                <span class="nc-recipient-name">{{ u.nombre }}</span>
-                <small>{{ u.subtitulo }}</small>
-              </div>
-              <mat-icon class="nc-check">{{ destinatarioId() === u.id_usuario ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
-            </button>
-          }
-          @if (filteredAnalistas().length === 0 && filteredMercaderistas().length === 0) {
-            <p class="nc-empty">No hay destinatarios disponibles.</p>
-          }
-        }
-
-        @if (tipo() === 'group_team') {
-          <div class="nc-info-box">
-            <mat-icon>info</mat-icon>
-            <div>
-              <strong>Se incluirá:</strong>
-              <ul>
-                <li>{{ recipients()?.analistas?.length || 0 }} analista(s)</li>
-                <li>{{ recipients()?.mercaderistas?.length || 0 }} mercaderista(s)</li>
-                <li>Supervisores y coordinadores activos</li>
-                <li>Todos los usuarios del cliente</li>
-              </ul>
-            </div>
-          </div>
-        }
 
         @if (tipo() === 'group_region') {
           @for (r of filteredRegiones(); track r.region) {
@@ -259,8 +205,6 @@ export interface NewChatDialogData {
     .nc-recipient:hover { border-color:#a5b4fc; background:#f8fafc; }
     .nc-recipient.selected { border-color:#6366f1; background: #eef2ff; }
     .nc-recipient-icon { padding: .35rem; border-radius:8px; color:#fff; }
-    .nc-rec-analista { background:#3b82f6; }
-    .nc-rec-merc { background:#10b981; }
     .nc-rec-region { background:#f59e0b; }
     .nc-rec-pdv { background:#8b5cf6; }
     .nc-recipient-info { flex:1; display:flex; flex-direction:column; min-width:0; }
@@ -268,13 +212,6 @@ export interface NewChatDialogData {
     .nc-recipient-info small { color:#64748b; font-size:.7rem; }
     .nc-check { color:#cbd5e1; }
     .nc-recipient.selected .nc-check { color:#6366f1; }
-
-    .nc-info-box {
-      display:flex; gap:.75rem; padding: 1rem; background:#eef2ff; border-left:4px solid #6366f1;
-      border-radius:8px; color:#312e81;
-    }
-    .nc-info-box mat-icon { color:#6366f1; }
-    .nc-info-box ul { margin: .25rem 0 0 0; padding-left: 1.25rem; font-size:.85rem; }
 
     .nc-textarea {
       width:100%; padding: .85rem; border:1px solid #e2e8f0; border-radius:10px; resize:vertical;
@@ -314,7 +251,6 @@ export class NewChatDialogComponent implements OnInit {
 
   // Form
   tipo = signal<ChatType | null>(null);
-  destinatarioId = signal<number | null>(null);
   region = signal<string | null>(null);
   puntoInteresId = signal<string | null>(null);
   primerMensaje = '';
@@ -324,16 +260,6 @@ export class NewChatDialogComponent implements OnInit {
   recipients = signal<RecipientsResponse | null>(null);
 
   // Filtered lists
-  filteredAnalistas = computed(() => {
-    const term = this.searchTerm.toLowerCase().trim();
-    const list = this.recipients()?.analistas || [];
-    return term ? list.filter(a => a.nombre.toLowerCase().includes(term)) : list;
-  });
-  filteredMercaderistas = computed(() => {
-    const term = this.searchTerm.toLowerCase().trim();
-    const list = this.recipients()?.mercaderistas || [];
-    return term ? list.filter(m => m.nombre.toLowerCase().includes(term)) : list;
-  });
   filteredRegiones = computed(() => {
     const term = this.searchTerm.toLowerCase().trim();
     const list = this.recipients()?.regiones || [];
@@ -371,7 +297,6 @@ export class NewChatDialogComponent implements OnInit {
   selectTipo(t: ChatType): void {
     this.tipo.set(t);
     // Limpiar selecciones de otros tipos
-    this.destinatarioId.set(null);
     this.region.set(null);
     this.puntoInteresId.set(null);
   }
@@ -380,8 +305,6 @@ export class NewChatDialogComponent implements OnInit {
     if (this.step() === 1) return !!this.tipo();
     if (this.step() === 2) {
       const t = this.tipo();
-      if (t === 'direct') return !!this.destinatarioId();
-      if (t === 'group_team') return true;
       if (t === 'group_region') return !!this.region();
       if (t === 'group_pdv') return !!this.puntoInteresId();
     }
@@ -408,7 +331,6 @@ export class NewChatDialogComponent implements OnInit {
     this.creating.set(true);
     const body: any = { tipo };
     if (this.data.clienteId) body.cliente_id = this.data.clienteId;
-    if (tipo === 'direct') body.destinatario_id = this.destinatarioId();
     if (tipo === 'group_region') body.region = this.region();
     if (tipo === 'group_pdv') body.punto_interes_id = this.puntoInteresId();
     if (this.primerMensaje.trim()) body.primer_mensaje = this.primerMensaje.trim();

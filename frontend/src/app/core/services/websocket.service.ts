@@ -12,6 +12,12 @@ export class WebSocketService {
     return this.getOrCreate(`${environment.wsUrl}/api/chat/ws/${room}`);
   }
 
+  // Grupos de "equipo operativo" (chat_grupos.py) — sockets de solo-lectura,
+  // el envío siempre es por REST (ver ApiService.enviarMensajeGrupo/...).
+  connectToChatGrupos(room: string): Observable<any> {
+    return this.getOrCreate(`${environment.wsUrl}/api/chat/grupos/ws/${room}`);
+  }
+
   connectToNotifications(userId: number): Observable<any> {
     return this.getOrCreate(`${environment.wsUrl}/api/notifications/ws/${userId}`);
   }

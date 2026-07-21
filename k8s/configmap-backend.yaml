@@ -5,7 +5,7 @@ metadata:
 data:
   DB_DRIVER: "ODBC Driver 17 for SQL Server"
   DB_SERVER: "172.174.41.110"
-  DB_NAME: "epran-qa"
+  DB_NAME: "epran"
   # Conservador para 1 réplica x 1 worker — subir solo si kubectl top pods
   # muestra margen y hace falta más throughput de BD.
   DB_POOL_SIZE: "5"

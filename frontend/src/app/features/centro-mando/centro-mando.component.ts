@@ -1,15 +1,18 @@
 import { Component, OnInit, signal, computed, HostListener } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.component';
 import { SearchableSelectComponent, SearchableOption } from '../../shared/components/searchable-select';
+import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
 
 @Component({
   selector: 'app-centro-mando',
@@ -17,7 +20,7 @@ import { SearchableSelectComponent, SearchableOption } from '../../shared/compon
   imports: [
     CommonModule, FormsModule,
     MatIconModule, MatButtonModule,
-    MatProgressSpinnerModule, MatTooltipModule,
+    MatProgressSpinnerModule, MatTooltipModule, MatDialogModule,
     RevisionVisitasComponent,
     SearchableSelectComponent
   ],
@@ -25,6 +28,7 @@ import { SearchableSelectComponent, SearchableOption } from '../../shared/compon
   styleUrls: ['./centro-mando.component.scss']
 })
 export class CentroMandoComponent implements OnInit {
+
 
   // ─── Vista (toggle Activaciones / Visitas) ─────────────────────────────────
   vista = signal<'activaciones' | 'visitas'>('activaciones');
@@ -117,7 +121,11 @@ export class CentroMandoComponent implements OnInit {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
-  constructor(private api: ApiService, private auth: AuthService, private realtime: RealtimeService) { }
+  constructor(
+    private api: ApiService, private auth: AuthService, private realtime: RealtimeService,
+    private dialog: MatDialog, private router: Router,
+  ) {}
+
 
   private rtDebounce?: any;
 
@@ -446,40 +454,23 @@ export class CentroMandoComponent implements OnInit {
       : v.estado_presencia === 'activo' ? 'bg-amber-950 text-amber-400' : 'bg-red-950 text-red-400';
   }
 
-  // ─── Chat por visita (modal) ──────────────────────────────────────────────
-  chatOpen = signal(false);
-  chatVisita = signal<any>(null);
-  chatMessages = signal<any[]>([]);
-  chatInput = '';
-  chatSending = signal(false);
-
+  // ─── Chat por visita (sub-hilo de CHAT_GRUPOS: solo equipo / equipo+cliente) ─
+  // Mismas tablas que AppWeb v1 y la APK del mercaderista — el botón de chat
+  // navega al ChatComponent con el sub-hilo ya auto-provisionado. El chat
+  // legacy del cliente (tab "Cliente" del inbox de ChatComponent) no se toca.
   openChat(v: any): void {
-    this.chatVisita.set(v);
-    this.chatOpen.set(true);
-    this.chatInput = '';
-    this.loadChat();
-  }
-  loadChat(): void {
-    const v = this.chatVisita();
-    if (!v) return;
-    this.api.getMessagesByVisit(v.id_visita).subscribe({
-      next: (msgs) => this.chatMessages.set((msgs as any[]) || []),
-      error: () => this.chatMessages.set([]),
+    if (!v?.id_visita) return;
+    const ref = this.dialog.open(VisitThreadDialogComponent, {
+      data: { visitaId: v.id_visita, puntoNombre: v.punto_de_interes },
+      autoFocus: false,
     });
-  }
-  closeChat(): void {
-    this.chatOpen.set(false);
-    this.chatVisita.set(null);
-    this.chatMessages.set([]);
-  }
-  sendChat(): void {
-    const v = this.chatVisita();
-    const txt = this.chatInput.trim();
-    if (!v || !txt) return;
-    this.chatSending.set(true);
-    this.api.sendMessage({ visita_id: v.id_visita, mensaje: txt }).subscribe({
-      next: () => { this.chatInput = ''; this.chatSending.set(false); this.loadChat(); },
-      error: () => this.chatSending.set(false),
+    ref.afterClosed().subscribe(thread => {
+      if (thread?.id_grupo) {
+        this.router.navigate(['/chat'], { queryParams: {
+          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+          grupo_visita: thread.id_visita, titulo: thread.titulo,
+        } });
+      }
     });
   }
 
@@ -493,6 +484,9 @@ export class CentroMandoComponent implements OnInit {
   showExportModal = false;
   exportLoading = false;
   exportFilters = { cuadrante: '', departamento: '', categoria: '' };
+  exportFiltrosOpts: { cuadrantes: string[]; departamentos: string[]; categorias: string[] } =
+    { cuadrantes: [], departamentos: [], categorias: [] };
+  exportFiltrosLoading = false;
 
   openExportModal(): void {
     if (!this.filtroCliente) {
@@ -500,7 +494,15 @@ export class CentroMandoComponent implements OnInit {
       return;
     }
     this.exportFilters = { cuadrante: '', departamento: '', categoria: '' };
+    this.exportFiltrosOpts = { cuadrantes: [], departamentos: [], categorias: [] };
     this.showExportModal = true;
+    this.exportFiltrosLoading = true;
+    this.api.getExportVisitasFiltros({
+      id_cliente: this.filtroCliente, fecha_inicio: this.filtroDesde, fecha_fin: this.filtroHasta,
+    }).subscribe({
+      next: (opts) => { this.exportFiltrosOpts = opts; this.exportFiltrosLoading = false; },
+      error: () => { this.exportFiltrosLoading = false; },
+    });
   }
   closeExportModal(): void {
     this.showExportModal = false;

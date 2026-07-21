@@ -445,7 +445,8 @@ def approve_photos(
 
 
 @router.post("/reject-photo")
-def reject_photo(
+async def reject_photo(
+
     data: RejectPhotoRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -506,8 +507,61 @@ def reject_photo(
         except Exception:
             pass
 
+    try:
+        await _post_rejection_to_chat(db, visita, foto, motivo, current_user)
+    except Exception:
+        pass
+
     notify_event("photo.decided", {"foto_id": foto.id, "estado": "Rechazada", "visita_id": foto.visita_id})
     return {"message": "Foto rechazada", "foto_id": foto.id, "razones": razones_nombres}
+
+
+async def _post_rejection_to_chat(
+    db: Session,
+    visita: Optional[Visita],
+    foto: Foto,
+    motivo: str,
+    current_user: Usuario
+) -> None:
+    """Postea un mensaje de sistema con la foto rechazada SOLO en el sub-hilo de esa visita."""
+    if not visita or not visita.id_cliente:
+        return
+    texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
+    try:
+        from app.modules.chat.entities import ChatMensajeGrupoVisita
+        from app.websockets.manager import manager
+        msg = ChatMensajeGrupoVisita(
+            cliente_id=visita.id_cliente,
+            tipo_grupo="operativo",
+            visita_id=visita.id,
+            sender_id=current_user.id,
+            sender_nombre=current_user.username,
+            mensaje=texto,
+            tipo_mensaje="sistema",
+            created_at=datetime.now(),
+            foto_adjunta=foto.blob_path
+        )
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+
+        payload = {
+            "id_mensaje": msg.id,
+            "id_cliente": visita.id_cliente,
+            "tipo_grupo": "operativo",
+            "id_visita": visita.id,
+            "id_usuario": current_user.id,
+            "username": current_user.username,
+            "mensaje": texto,
+            "tipo_mensaje": "sistema",
+            "fecha_envio": str(msg.created_at),
+            "foto_adjunta": foto.blob_path,
+            "leido_por": [],
+        }
+        await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_operativo_{visita.id}", payload)
+    except Exception:
+        pass
+
 
 
 @router.post("/save-decisions")

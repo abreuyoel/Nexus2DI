@@ -190,10 +190,18 @@ app.include_router(vendedor_router)
 app.include_router(frequencies_router)
 app.include_router(sessions_router)
 
+from app.modules.chat.chat_grupos_controller import router as chat_grupos_router
+from app.modules.media.controller import router as media_router
+
+app.include_router(chat_grupos_router)
+app.include_router(media_router)
+
+
 
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse(url="/docs")
+
 
 
 @app.get("/health")

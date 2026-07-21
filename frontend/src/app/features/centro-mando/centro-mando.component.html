@@ -1139,48 +1139,59 @@
 }
 
 @if (showExportModal) {
-<div class="cm-modal-overlay" (click)="closeExportModal()">
-  <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">
-    <div class="cm-modal-header">
-      <div class="title">Exportar Visitas a Excel</div>
-      <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Cliente seleccionado' }}
+  <div class="cm-modal-overlay" (click)="closeExportModal()">
+    <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">
+      <div class="cm-modal-header">
+        <div class="title">Exportar Visitas a Excel</div>
+        <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Cliente seleccionado' }}</div>
       </div>
-    </div>
-    <div class="cm-modal-body" style="padding:20px">
-      <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para
-        exportar todo.</p>
-      <div class="flex flex-col gap-3">
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
-          <input type="text" [(ngModel)]="exportFilters.cuadrante" placeholder="Ej: Norte, Sur..."
-            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
-          <input type="text" [(ngModel)]="exportFilters.departamento" placeholder="Ej: Caracas, Miranda..."
-            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
-        </div>
-        <div class="flex flex-col gap-1">
-          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
-          <input type="text" [(ngModel)]="exportFilters.categoria" placeholder="Ej: Canal, Categoría..."
-            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
-        </div>
-      </div>
-    </div>
-    <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
-      <button
-        class="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50"
-        (click)="exportVisitas()" [disabled]="exportLoading">
-        @if (exportLoading) {
-        <mat-spinner diameter="16" strokeWidth="2"></mat-spinner>
-        Generando...
+      <div class="cm-modal-body" style="padding:20px">
+        <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para exportar todo.</p>
+        @if (exportFiltrosLoading) {
+          <div class="flex items-center gap-2 text-sm text-slate-400 py-2">
+            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner> Cargando opciones del cliente...
+          </div>
         } @else {
-        <mat-icon class="!text-base">download</mat-icon>
-        Descargar Excel
+          <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
+              <select [(ngModel)]="exportFilters.cuadrante" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todos</option>
+                @for (c of exportFiltrosOpts.cuadrantes; track c) { <option [value]="c">{{ c }}</option> }
+              </select>
+              @if (exportFiltrosOpts.cuadrantes.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene cuadrantes registrados.</span> }
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
+              <select [(ngModel)]="exportFilters.departamento" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todos</option>
+                @for (d of exportFiltrosOpts.departamentos; track d) { <option [value]="d">{{ d }}</option> }
+              </select>
+              @if (exportFiltrosOpts.departamentos.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene departamentos registrados.</span> }
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
+              <select [(ngModel)]="exportFilters.categoria" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todas</option>
+                @for (c of exportFiltrosOpts.categorias; track c) { <option [value]="c">{{ c }}</option> }
+              </select>
+              @if (exportFiltrosOpts.categorias.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene categorías registradas.</span> }
+            </div>
+          </div>
         }
-      </button>
+      </div>
+      <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
+        <button class="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50" (click)="exportVisitas()" [disabled]="exportLoading">
+          @if (exportLoading) {
+            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner>
+            Generando...
+          } @else {
+            <mat-icon class="!text-base">download</mat-icon>
+            Descargar Excel
+          }
+        </button>
+      </div>
     </div>
   </div>
-</div>
-}
+}

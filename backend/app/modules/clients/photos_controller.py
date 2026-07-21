@@ -253,7 +253,8 @@ def get_client_point_visits(
         vid = p[1]
         if vid not in photos_by_visit:
             photos_by_visit[vid] = []
-        url = azure_service.get_sas_url(p[3]) if p[3] else None
+        url = azure_service.get_proxy_url(p[3]) if p[3] else None
+
         photos_by_visit[vid].append({
             "id_foto": p[0],
             "id_tipo_foto": p[2],
@@ -448,7 +449,7 @@ def get_client_mis_visitas(
     visitas_dict = {}
     seen_fotos: dict[int, set[int]] = {}
     from app.shared.azure_service import azure_service
-    _fast_sas_url = azure_service.get_sas_url
+    _fast_proxy_url = azure_service.get_proxy_url
 
     for row in rows:
         vid = row[0]
@@ -494,9 +495,10 @@ def get_client_mis_visitas(
             }
 
             try:
-                url = _fast_sas_url(row[10]) if row[10] else None
+                url = _fast_proxy_url(row[10]) if row[10] else None
             except Exception:
                 url = None
+
 
             foto = {
                 'id_foto': row[9],

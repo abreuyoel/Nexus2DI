@@ -62,6 +62,13 @@ class AzureStorageService:
         encoded = urllib.parse.quote(blob_name, safe="/")
         return f"https://{settings.AZURE_ACCOUNT_NAME}.blob.core.windows.net/{settings.AZURE_CONTAINER_NAME}/{encoded}"
 
+    def get_proxy_url(self, blob_name: str) -> Optional[str]:
+        """Devuelve la URL del proxy interno para bypassear CSP/ngsw en el frontend."""
+        if not blob_name:
+            return None
+        encoded = urllib.parse.quote(blob_name, safe="")
+        return f"/api/media/foto?path={encoded}"
+
     def download_blob(self, blob_name: str) -> bytes:
         container = self.client.get_container_client(settings.AZURE_CONTAINER_NAME)
         blob = container.get_blob_client(blob_name)
