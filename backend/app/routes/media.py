@@ -26,7 +26,7 @@ Seguridad:
 import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from app.core.auth import get_current_user
+from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.services.azure_service import azure_service
 
