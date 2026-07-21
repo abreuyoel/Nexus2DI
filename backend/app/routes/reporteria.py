@@ -133,7 +133,7 @@ def export_visitas_excel(
     try:
         # Base query to get visit info along with PDV and routes
         query = """
-            SELECT 
+            SELECT
                 v.id_visita AS [ID Visita],
                 v.fecha_visita AS [Fecha],
                 v.estado AS [Estado Visita],
@@ -141,11 +141,17 @@ def export_visitas_excel(
                 p.departamento AS [Departamento / Estado],
                 p.clasificacion_de_canal AS [Canal],
                 p.jerarquia_nivel_2 AS [Categoría PDV],
-                rn.cuadrante AS [Cuadrante],
+                rc.cuadrante AS [Cuadrante],
                 m.nombre AS [Mercaderista]
             FROM VISITAS_MERCADERISTA v
             JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-            LEFT JOIN RUTAS_NUEVAS rn ON p.identificador = rn.id_punto_interes
+            LEFT JOIN (
+                SELECT rp.id_punto_interes, MIN(rn.cuadrante) AS cuadrante
+                FROM RUTA_PROGRAMACION rp
+                JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
+                WHERE rp.activa = 1 AND rn.cuadrante IS NOT NULL
+                GROUP BY rp.id_punto_interes
+            ) rc ON rc.id_punto_interes = p.identificador
             LEFT JOIN MERCADERISTAS m ON v.id_mercaderista = m.id_mercaderista
             WHERE v.id_cliente = :id_cliente
               AND v.fecha_visita >= :fecha_inicio
@@ -158,7 +164,7 @@ def export_visitas_excel(
         }
 
         if cuadrante:
-            query += " AND rn.cuadrante = :cuadrante"
+            query += " AND rc.cuadrante = :cuadrante"
             params["cuadrante"] = cuadrante
             
         if departamento:

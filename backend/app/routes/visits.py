@@ -363,42 +363,17 @@ def approve_photos(
 
 async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: Foto, motivo: str,
                                    current_user: Usuario) -> None:
-    """Postea un mensaje de sistema con la foto rechazada en DOS lugares —
-    mismo patrón que v1 (AppWeb/backend/app/routes/visits.py::
-    enviar_mensaje_sistema_rechazo): el chat general del grupo 'operativo'
-    del cliente (CHAT_GRUPO_MENSAJES, se auto-provisiona si falta) Y el
-    sub-hilo de esa visita (CHAT_MENSAJES_GRUPO_VISITA, tipo_grupo='operativo').
-    Cada inserción en su propio try/except para que una no tumbe a la otra.
+    """Postea un mensaje de sistema con la foto rechazada SOLO en el
+    sub-hilo de esa visita (CHAT_MENSAJES_GRUPO_VISITA, tipo_grupo='operativo')
+    -- a diferencia de v1, que lo duplica también en el chat general del
+    grupo. Decisión explícita: el chat general es para cosas generales del
+    equipo, el aviso de una foto rechazada es sobre ESA visita puntual.
     Best-effort: no debe tumbar el rechazo de la foto (ya persistido antes
     de llamar esto)."""
     if not visita or not visita.id_cliente:
         return
     texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
     ahora = datetime.now()
-
-    try:
-        from app.services.chat_grupos_membresia import asegurar_grupos_cliente
-        from app.websockets.manager import manager
-
-        asegurar_grupos_cliente(db, visita.id_cliente)
-        row = db.execute(text("""
-            SELECT id_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND tipo_grupo = 'operativo'
-        """), {"cid": visita.id_cliente}).fetchone()
-        if row:
-            id_grupo = row[0]
-            ins = db.execute(text("""
-                INSERT INTO CHAT_GRUPO_MENSAJES (id_grupo, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
-                OUTPUT INSERTED.id_mensaje
-                VALUES (:id_grupo, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
-            """), {"id_grupo": id_grupo, "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
-            db.commit()
-            await manager.broadcast_to_room(f"grupo_{id_grupo}", {
-                "id_mensaje": ins[0], "id_grupo": id_grupo, "id_usuario": None,
-                "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
-                "fecha_envio": str(ahora), "foto_adjunta": foto.url, "leido_por": [],
-            })
-    except Exception:
-        db.rollback()
 
     try:
         from app.websockets.manager import manager
