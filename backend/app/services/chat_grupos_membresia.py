@@ -225,11 +225,22 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
                 pass
         existentes = _existentes()
 
+    # Coordinadores, analistas y mercaderistas pertenecen a AMBOS tipos
+    # de grupo (operativo y operativo_cliente) para sus clientes —
+    # consistente con get_miembros_grupo() que los lista en ambos.
+    # Solo los usuarios rol cliente (id_rol=1) son exclusivos de
+    # operativo_cliente y no aparecen en operativo.
+    is_coordinador = id_rol in ROLES_COORDINADOR
+    es_personal_epran = id_rol in ROLES_COORDINADOR or id_rol in (2, 5)  # admin/coord + analista + mercaderista
+
     grupos = []
     for (cli, tipo), (id_grupo, nombre) in existentes.items():
         es_miembro = (
-            cli in clientes_operativo
-            or (tipo == "operativo_cliente" and cli in clientes_solo_cliente)
+            (tipo == "operativo" and cli in clientes_operativo)
+            or (tipo == "operativo_cliente" and (
+                cli in clientes_solo_cliente
+                or (es_personal_epran and cli in clientes_operativo)
+            ))
         )
         if es_miembro:
             grupos.append({
