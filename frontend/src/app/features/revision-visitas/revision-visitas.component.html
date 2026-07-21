@@ -60,26 +60,66 @@
       <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">{{ filtered.length }} resultados</span>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      <select [(ngModel)]="filtroRuta" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
-        <option value="">Todas las rutas</option>
-        @for (r of rutasOpts; track r) { <option [value]="r">{{ r }}</option> }
+      <!-- Cliente primero: escopa rutas/puntos/mercaderistas de abajo -->
+      <select [(ngModel)]="filtroCliente" (ngModelChange)="onClienteFiltroChange()" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los clientes</option>
+        @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
       </select>
+
+      <!-- Rutas: multi-select -->
+      <div class="relative flex-1 min-w-[140px]">
+        <button type="button" (click)="rutasDropdownOpen.set(!rutasDropdownOpen())"
+          class="w-full flex items-center justify-between gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+          <span class="truncate">{{ filtroRutas.length ? filtroRutas.length + ' ruta(s)' : 'Todas las rutas' }}</span>
+          <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
+        </button>
+        @if (rutasDropdownOpen()) {
+          <div class="fixed inset-0 z-10" (click)="rutasDropdownOpen.set(false)"></div>
+          <div class="absolute z-20 mt-1 w-64 max-h-64 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
+            @for (r of rutasOpts; track r) {
+              <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200">
+                <input type="checkbox" [checked]="filtroRutas.includes(r)" (change)="toggleRutaFiltro(r)" class="w-4 h-4 accent-primary-600">
+                <span class="truncate">{{ r }}</span>
+              </label>
+            } @empty {
+              <p class="text-xs text-slate-400 px-2 py-1">Sin rutas para este filtro.</p>
+            }
+          </div>
+        }
+      </div>
+
       <select [(ngModel)]="filtroPunto" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
         <option value="">Todos los puntos</option>
         @for (p of puntosOpts; track p) { <option [value]="p">{{ p }}</option> }
       </select>
-      <select [(ngModel)]="filtroCliente" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
-        <option value="">Todos los clientes</option>
-        @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
-      </select>
-      <select [(ngModel)]="filtroMercaderista" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
-        <option value="">Todos los mercaderistas</option>
-        @for (m of mercaderistasOpts; track m) { <option [value]="m">{{ m }}</option> }
-      </select>
+
+      <!-- Mercaderistas: multi-select -->
+      <div class="relative flex-1 min-w-[140px]">
+        <button type="button" (click)="mercaderistasDropdownOpen.set(!mercaderistasDropdownOpen())"
+          class="w-full flex items-center justify-between gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+          <span class="truncate">{{ filtroMercaderistas.length ? filtroMercaderistas.length + ' mercaderista(s)' : 'Todos los mercaderistas' }}</span>
+          <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
+        </button>
+        @if (mercaderistasDropdownOpen()) {
+          <div class="fixed inset-0 z-10" (click)="mercaderistasDropdownOpen.set(false)"></div>
+          <div class="absolute z-20 mt-1 w-64 max-h-64 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
+            @for (m of mercaderistasOpts; track m) {
+              <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200">
+                <input type="checkbox" [checked]="filtroMercaderistas.includes(m)" (change)="toggleMercaderistaFiltro(m)" class="w-4 h-4 accent-primary-600">
+                <span class="truncate">{{ m }}</span>
+              </label>
+            } @empty {
+              <p class="text-xs text-slate-400 px-2 py-1">Sin mercaderistas para este filtro.</p>
+            }
+          </div>
+        }
+      </div>
+
       <select [(ngModel)]="filtroEstado" class="flex-1 min-w-[130px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
         <option value="">Todos los estados</option>
         <option value="Pendiente">Pendientes</option>
         <option value="Revisado">Revisadas</option>
+        <option value="Aprobada">Aprobadas (100%)</option>
       </select>
       <select [(ngModel)]="filtroChat" class="flex-1 min-w-[120px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
         <option value="">Todos los chats</option>

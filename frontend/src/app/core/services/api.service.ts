@@ -202,6 +202,10 @@ export class ApiService {
     const params = this.params(opts);
     return this.http.get(`${this.base}/api/reports/export-visitas`, { params, responseType: 'blob' });
   }
+  getExportVisitasFiltros(opts: { id_cliente: number; fecha_inicio?: string; fecha_fin?: string }): Observable<{ cuadrantes: string[]; departamentos: string[]; categorias: string[] }> {
+    return this.http.get<{ cuadrantes: string[]; departamentos: string[]; categorias: string[] }>(
+      `${this.base}/api/reports/export-visitas-filtros`, { params: this.params(opts) });
+  }
 
   // --- REPORTERÍA ---
   getReportSummary(opts: { fecha_inicio?: string; fecha_fin?: string; ruta_id?: number } = {}): Observable<object> {

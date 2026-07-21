@@ -467,6 +467,9 @@ export class CentroMandoComponent implements OnInit {
   showExportModal = false;
   exportLoading = false;
   exportFilters = { cuadrante: '', departamento: '', categoria: '' };
+  exportFiltrosOpts: { cuadrantes: string[]; departamentos: string[]; categorias: string[] } =
+    { cuadrantes: [], departamentos: [], categorias: [] };
+  exportFiltrosLoading = false;
 
   openExportModal(): void {
     if (!this.filtroCliente) {
@@ -474,7 +477,15 @@ export class CentroMandoComponent implements OnInit {
       return;
     }
     this.exportFilters = { cuadrante: '', departamento: '', categoria: '' };
+    this.exportFiltrosOpts = { cuadrantes: [], departamentos: [], categorias: [] };
     this.showExportModal = true;
+    this.exportFiltrosLoading = true;
+    this.api.getExportVisitasFiltros({
+      id_cliente: this.filtroCliente, fecha_inicio: this.filtroDesde, fecha_fin: this.filtroHasta,
+    }).subscribe({
+      next: (opts) => { this.exportFiltrosOpts = opts; this.exportFiltrosLoading = false; },
+      error: () => { this.exportFiltrosLoading = false; },
+    });
   }
   closeExportModal(): void {
     this.showExportModal = false;

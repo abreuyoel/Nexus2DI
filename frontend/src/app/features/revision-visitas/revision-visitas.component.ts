@@ -29,12 +29,14 @@ export class RevisionVisitasComponent implements OnInit {
   hasta = '';
   search = '';
   // Filtros (dropdowns)
-  filtroRuta = '';
+  filtroRutas: string[] = [];          // multi-select
   filtroPunto = '';
   filtroCliente = '';
-  filtroMercaderista = '';
+  filtroMercaderistas: string[] = [];  // multi-select
   filtroChat = ''; // '', 'con', 'sin'
-  filtroEstado = ''; // '', 'Pendiente', 'Revisado'
+  filtroEstado = ''; // '', 'Pendiente', 'Revisado', 'Aprobada'
+  rutasDropdownOpen = signal(false);
+  mercaderistasDropdownOpen = signal(false);
 
   // Modal de revisión
   reviewOpen = signal(false);
@@ -108,29 +110,61 @@ export class RevisionVisitasComponent implements OnInit {
   }
 
   // ── Opciones de filtros (valores distintos del set cargado) ──
-  private distinct(key: string): string[] {
-    return Array.from(new Set(this.visitas().map(v => v[key]).filter(x => x != null && x !== ''))).sort();
+  private distinct(key: string, source: any[] = this.visitas()): string[] {
+    return Array.from(new Set(source.map(v => v[key]).filter(x => x != null && x !== ''))).sort();
   }
-  get rutasOpts(): string[] { return this.distinct('ruta'); }
-  get puntosOpts(): string[] { return this.distinct('punto_de_interes'); }
+  // Rutas/puntos/mercaderistas se escopan al cliente ya elegido: si filtras
+  // por "Laboratorios Fisa" primero, estos 3 dropdowns solo muestran lo que
+  // pertenece a ese cliente, no la lista global de todos los clientes.
+  private get visitasDelClienteFiltrado(): any[] {
+    return this.filtroCliente
+      ? this.visitas().filter(v => v.cliente === this.filtroCliente)
+      : this.visitas();
+  }
+  get rutasOpts(): string[] { return this.distinct('ruta', this.visitasDelClienteFiltrado); }
+  get puntosOpts(): string[] { return this.distinct('punto_de_interes', this.visitasDelClienteFiltrado); }
   get clientesOpts(): string[] { return this.distinct('cliente'); }
-  get mercaderistasOpts(): string[] { return this.distinct('mercaderista'); }
+  get mercaderistasOpts(): string[] { return this.distinct('mercaderista', this.visitasDelClienteFiltrado); }
+
+  /** Al cambiar de cliente, las selecciones de ruta/punto/mercaderista
+   * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
+   * dejar un filtro "fantasma" que no matchea nada. */
+  onClienteFiltroChange(): void {
+    this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
+  }
+
+  toggleRutaFiltro(r: string): void {
+    const i = this.filtroRutas.indexOf(r);
+    if (i >= 0) this.filtroRutas.splice(i, 1); else this.filtroRutas.push(r);
+  }
+  toggleMercaderistaFiltro(m: string): void {
+    const i = this.filtroMercaderistas.indexOf(m);
+    if (i >= 0) this.filtroMercaderistas.splice(i, 1); else this.filtroMercaderistas.push(m);
+  }
 
   clearFilters(): void {
-    this.search = ''; this.filtroRuta = ''; this.filtroPunto = '';
-    this.filtroCliente = ''; this.filtroMercaderista = ''; this.filtroChat = ''; this.filtroEstado = '';
+    this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
+    this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
+    this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
+  }
+
+  /** Visita 100% aprobada: tiene fotos revisables y todas quedaron Aprobada
+   * (nada pendiente ni rechazado). */
+  private esAprobada(v: any): boolean {
+    return (v.fotos_revisar || 0) > 0 && v.aprobadas === v.fotos_revisar;
   }
 
   get filtered(): any[] {
     const s = this.search.trim().toLowerCase();
     return this.visitas().filter(v => {
-      if (this.filtroRuta && v.ruta !== this.filtroRuta) return false;
+      if (this.filtroRutas.length && !this.filtroRutas.includes(v.ruta)) return false;
       if (this.filtroPunto && v.punto_de_interes !== this.filtroPunto) return false;
       if (this.filtroCliente && v.cliente !== this.filtroCliente) return false;
-      if (this.filtroMercaderista && v.mercaderista !== this.filtroMercaderista) return false;
+      if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(v.mercaderista)) return false;
       if (this.filtroChat === 'con' && !v.tiene_chat) return false;
       if (this.filtroChat === 'sin' && v.tiene_chat) return false;
-      if (this.filtroEstado && v.estado !== this.filtroEstado) return false;
+      if (this.filtroEstado === 'Aprobada') { if (!this.esAprobada(v)) return false; }
+      else if (this.filtroEstado && v.estado !== this.filtroEstado) return false;
       if (s && !(
         (v.cliente || '').toLowerCase().includes(s) ||
         (v.mercaderista || '').toLowerCase().includes(s) ||

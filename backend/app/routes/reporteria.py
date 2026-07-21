@@ -119,6 +119,70 @@ def get_activated_routes(
     activadas = db.query(RutaActivada).filter(RutaActivada.fecha == today).all()
     return [{"ruta_id": a.ruta_id, "cedula": a.mercaderista_cedula, "hora": str(a.activada_at)} for a in activadas]
 
+@router.get("/export-visitas-filtros")
+def get_export_visitas_filtros(
+    id_cliente: int = Query(...),
+    fecha_inicio: Optional[date] = Query(None),
+    fecha_fin: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_analyst_or_admin),
+):
+    """Valores reales (SELECT DISTINCT) de cuadrante/departamento/categoría
+    para ESTE cliente -- alimenta los dropdowns del modal de exportar Excel
+    en vez de que el usuario tipee texto libre a ciegas. Mismos JOINs que
+    export_visitas_excel, para que lo que aparece acá SIEMPRE tenga
+    resultados si se usa como filtro ahí."""
+    params: dict = {"id_cliente": id_cliente}
+    fecha_filter = ""
+    if fecha_inicio:
+        fecha_filter += " AND v.fecha_visita >= :fecha_inicio"
+        params["fecha_inicio"] = fecha_inicio
+    if fecha_fin:
+        fecha_filter += " AND v.fecha_visita <= :fecha_fin"
+        params["fecha_fin"] = fecha_fin
+
+    cuadrantes = db.execute(text(f"""
+        SELECT DISTINCT rc.cuadrante
+        FROM VISITAS_MERCADERISTA v
+        JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
+        LEFT JOIN (
+            SELECT rp.id_punto_interes, MIN(rn.cuadrante) AS cuadrante
+            FROM RUTA_PROGRAMACION rp
+            JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
+            WHERE rp.activa = 1 AND rn.cuadrante IS NOT NULL
+            GROUP BY rp.id_punto_interes
+        ) rc ON rc.id_punto_interes = p.identificador
+        WHERE v.id_cliente = :id_cliente AND rc.cuadrante IS NOT NULL {fecha_filter}
+    """), params).scalars().all()
+
+    departamentos = db.execute(text(f"""
+        SELECT DISTINCT p.departamento
+        FROM VISITAS_MERCADERISTA v
+        JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
+        WHERE v.id_cliente = :id_cliente AND p.departamento IS NOT NULL {fecha_filter}
+    """), params).scalars().all()
+
+    categorias = db.execute(text(f"""
+        SELECT DISTINCT valor FROM (
+            SELECT p.jerarquia_nivel_2 AS valor
+            FROM VISITAS_MERCADERISTA v
+            JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
+            WHERE v.id_cliente = :id_cliente {fecha_filter}
+            UNION
+            SELECT p.clasificacion_de_canal AS valor
+            FROM VISITAS_MERCADERISTA v
+            JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
+            WHERE v.id_cliente = :id_cliente {fecha_filter}
+        ) x WHERE valor IS NOT NULL
+    """), params).scalars().all()
+
+    return {
+        "cuadrantes": sorted(cuadrantes),
+        "departamentos": sorted(departamentos),
+        "categorias": sorted(categorias),
+    }
+
+
 @router.get("/export-visitas")
 def export_visitas_excel(
     id_cliente: int = Query(...),

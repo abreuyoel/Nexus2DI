@@ -899,20 +899,38 @@
       </div>
       <div class="cm-modal-body" style="padding:20px">
         <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para exportar todo.</p>
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
-            <input type="text" [(ngModel)]="exportFilters.cuadrante" placeholder="Ej: Norte, Sur..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+        @if (exportFiltrosLoading) {
+          <div class="flex items-center gap-2 text-sm text-slate-400 py-2">
+            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner> Cargando opciones del cliente...
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
-            <input type="text" [(ngModel)]="exportFilters.departamento" placeholder="Ej: Caracas, Miranda..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
+        } @else {
+          <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
+              <select [(ngModel)]="exportFilters.cuadrante" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todos</option>
+                @for (c of exportFiltrosOpts.cuadrantes; track c) { <option [value]="c">{{ c }}</option> }
+              </select>
+              @if (exportFiltrosOpts.cuadrantes.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene cuadrantes registrados.</span> }
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
+              <select [(ngModel)]="exportFilters.departamento" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todos</option>
+                @for (d of exportFiltrosOpts.departamentos; track d) { <option [value]="d">{{ d }}</option> }
+              </select>
+              @if (exportFiltrosOpts.departamentos.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene departamentos registrados.</span> }
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
+              <select [(ngModel)]="exportFilters.categoria" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+                <option value="">Todas</option>
+                @for (c of exportFiltrosOpts.categorias; track c) { <option [value]="c">{{ c }}</option> }
+              </select>
+              @if (exportFiltrosOpts.categorias.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene categorías registradas.</span> }
+            </div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
-            <input type="text" [(ngModel)]="exportFilters.categoria" placeholder="Ej: Canal, Categoría..." class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-[#8b949e] outline-none focus:border-[#1f6feb]">
-          </div>
-        </div>
+        }
       </div>
       <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
