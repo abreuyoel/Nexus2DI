@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Text, Date
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -91,7 +92,21 @@ class FotoRazonRechazo(Base):
     id_foto = Column(Integer, nullable=False, index=True)
     id_razones_rechazos = Column(Integer, nullable=False)
     rechazado_por = Column(Integer, nullable=True)
-    fecha = Column(DateTime, default=datetime.now if 'datetime' in globals() else None)
+    fecha = Column(DateTime, default=datetime.now)
+
+
+class RazonRechazo(Base):
+    __tablename__ = "RAZONES_RECHAZOS"
+
+    id = Column("id_razones_rechazos", Integer, primary_key=True, index=True)
+    razon = Column(String(300), nullable=False)
+
+
+class TipoFoto(Base):
+    __tablename__ = "TIPOS_FOTOS"
+
+    id = Column("id_tipo_foto", Integer, primary_key=True, index=True)
+    nombre = Column("tipo_foto", String(200), nullable=True)
 
 
 class Activacion(Base):
@@ -149,4 +164,3 @@ class Balance(Base):
     fecha_modificacion = Column("fecha_modificacion", DateTime, nullable=True)
 
     visita = relationship("Visita", backref="balances")
-

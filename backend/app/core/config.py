@@ -1,12 +1,9 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
-    # Sin default a propósito: si falta la env var, pydantic-settings debe
-    # fallar fuerte al arrancar en vez de caer en un secreto débil conocido
-    # (los valores viejos de este archivo quedaron expuestos en git).
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
@@ -14,12 +11,10 @@ class Settings(BaseSettings):
     DB_DRIVER: str = "ODBC Driver 18 for SQL Server"
     DB_SERVER: str = "172.174.41.110"
     DB_NAME: str = "epran-qa"
-    # Opcionales cuando se usa Trusted_Connection (Windows Auth)
     DB_USER: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
-    # True → usa Windows Authentication (Trusted_Connection=yes) sin user/pass
     DB_TRUSTED_CONNECTION: bool = False
 
     ENVIRONMENT: str = "development"
@@ -39,19 +34,25 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "America/Caracas"
 
     FRONTEND_URL: str = "http://localhost:4200"
+    CORS_ORIGINS: str = "http://localhost:4200,http://127.0.0.1:4200,http://localhost,http://127.0.0.1"
+
+    @property
+    def ALLOWED_ORIGINS(self) -> List[str]:
+        origins = [self.FRONTEND_URL.rstrip("/")]
+        if self.CORS_ORIGINS:
+            origins.extend([o.strip().rstrip("/") for o in self.CORS_ORIGINS.split(",") if o.strip()])
+        return list(dict.fromkeys(origins))
 
     @property
     def DATABASE_URL(self) -> str:
         driver = self.DB_DRIVER.replace(" ", "+")
         if self.DB_TRUSTED_CONNECTION:
-            # Windows Authentication — no user/password en la URL
             return (
                 f"mssql+pyodbc://@{self.DB_SERVER}/{self.DB_NAME}"
                 f"?driver={driver}"
                 f"&Trusted_Connection=yes"
                 f"&TrustServerCertificate=yes"
             )
-        # SQL Server Authentication (producción / Azure)
         return (
             f"mssql+pyodbc://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_SERVER}/{self.DB_NAME}"

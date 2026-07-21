@@ -1,13 +1,22 @@
 import json
 from datetime import datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.entities import Usuario as User
 from app.modules.customer_service.entities import Solicitud
+from app.modules.routes.entities import PuntoInteres
+from app.modules.clients.entities import Cliente
+from app.modules.sellers.entities import VendedorJornada, VendedorVisita
+from app.modules.sellers.dto import (
+    JornadaActivaResponse, ActivarJornadaResponse, FinalizarJornadaResponse,
+    PdvSellerResponse, ClienteSellerResponse, RegistrarVisitaSellerRequest,
+    RegistrarVisitaSellerResponse, VisitasHoySellerResponse, VisitaSellerItem,
+    SolicitarPdvSellerRequest, SolicitarPdvSellerResponse
+)
 
 router = APIRouter(prefix="/api/vendedor", tags=["Vendedor"])
 
@@ -17,100 +26,124 @@ def check_rol_vendedor(current_user: User):
         raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Vendedores.")
 
 
-def _jornada_activa(db: Session, id_usuario: int):
-    return db.execute(text("""
-        SELECT TOP 1 id_jornada, fecha_inicio FROM VENDEDOR_JORNADAS
-        WHERE id_usuario = :u AND estado = 'En Progreso'
-        ORDER BY id_jornada DESC
-    """), {"u": id_usuario}).fetchone()
+def _jornada_activa(db: Session, id_usuario: int) -> Optional[VendedorJornada]:
+    return (
+        db.query(VendedorJornada)
+        .filter(VendedorJornada.id_usuario == id_usuario, VendedorJornada.estado == 'En Progreso')
+        .order_by(VendedorJornada.id.desc())
+        .first()
+    )
 
 
 def _contar_visitas(db: Session, id_jornada: int) -> int:
-    return db.execute(text(
-        "SELECT COUNT(*) FROM VENDEDOR_VISITAS WHERE id_jornada = :j"
-    ), {"j": id_jornada}).scalar() or 0
+    return db.query(VendedorVisita).filter(VendedorVisita.id_jornada == id_jornada).count()
 
 
-@router.get("/jornada-activa")
+@router.get("/jornada-activa", response_model=JornadaActivaResponse)
 def jornada_activa(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
     j = _jornada_activa(db, current_user.id)
     if not j:
-        return {"success": True, "activa": False}
-    return {
-        "success": True, "activa": True, "id_jornada": j.id_jornada,
-        "fecha_inicio": j.fecha_inicio.isoformat() if j.fecha_inicio else None,
-        "visitas": _contar_visitas(db, j.id_jornada),
-    }
+        return JornadaActivaResponse(success=True, activa=False, visitas=0)
+    return JornadaActivaResponse(
+        success=True,
+        activa=True,
+        id_jornada=j.id,
+        fecha_inicio=j.fecha_inicio.isoformat() if j.fecha_inicio else None,
+        visitas=_contar_visitas(db, j.id),
+    )
 
 
-@router.post("/activar-jornada")
+@router.post("/activar-jornada", response_model=ActivarJornadaResponse)
 def activar_jornada(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
     j = _jornada_activa(db, current_user.id)
     if j:
-        return {"success": True, "id_jornada": j.id_jornada,
-                "fecha_inicio": j.fecha_inicio.isoformat() if j.fecha_inicio else None, "ya_activa": True}
-    db.execute(text(
-        "INSERT INTO VENDEDOR_JORNADAS (id_usuario, fecha_inicio, estado) VALUES (:u, GETDATE(), 'En Progreso')"
-    ), {"u": current_user.id})
+        return ActivarJornadaResponse(
+            success=True,
+            id_jornada=j.id,
+            fecha_inicio=j.fecha_inicio.isoformat() if j.fecha_inicio else None,
+            ya_activa=True
+        )
+    nueva_jornada = VendedorJornada(
+        id_usuario=current_user.id,
+        fecha_inicio=datetime.now(),
+        estado='En Progreso'
+    )
+    db.add(nueva_jornada)
     db.commit()
-    j = _jornada_activa(db, current_user.id)
-    if not j:
-        raise HTTPException(status_code=500, detail="No se pudo crear la jornada")
-    return {"success": True, "id_jornada": j.id_jornada, "fecha_inicio": j.fecha_inicio.isoformat() if j.fecha_inicio else None}
+    db.refresh(nueva_jornada)
+    return ActivarJornadaResponse(
+        success=True,
+        id_jornada=nueva_jornada.id,
+        fecha_inicio=nueva_jornada.fecha_inicio.isoformat() if nueva_jornada.fecha_inicio else None
+    )
 
 
-@router.post("/finalizar-jornada")
+@router.post("/finalizar-jornada", response_model=FinalizarJornadaResponse)
 def finalizar_jornada(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
-    db.execute(text("""
-        UPDATE VENDEDOR_JORNADAS SET estado = 'Finalizada', fecha_fin = GETDATE()
-        WHERE id_usuario = :u AND estado = 'En Progreso'
-    """), {"u": current_user.id})
+    jornadas = (
+        db.query(VendedorJornada)
+        .filter(VendedorJornada.id_usuario == current_user.id, VendedorJornada.estado == 'En Progreso')
+        .all()
+    )
+    now = datetime.now()
+    for j in jornadas:
+        j.estado = 'Finalizada'
+        j.fecha_fin = now
     db.commit()
-    return {"success": True, "message": "Jornada finalizada"}
+    return FinalizarJornadaResponse(success=True, message="Jornada finalizada")
 
 
-@router.get("/pdvs")
+@router.get("/pdvs", response_model=List[PdvSellerResponse])
 def get_pdvs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
-    rows = db.execute(text("""
-        SELECT identificador, punto_de_interes, Direccion, ciudad, localidad
-        FROM PUNTOS_INTERES1 ORDER BY punto_de_interes
-    """)).fetchall()
-    return [{"identificador": r.identificador, "nombre": r.punto_de_interes,
-             "direccion": r.Direccion, "ciudad": r.ciudad, "localidad": r.localidad} for r in rows]
+    rows = (
+        db.query(PuntoInteres.id, PuntoInteres.nombre, PuntoInteres.direccion, PuntoInteres.ciudad)
+        .order_by(PuntoInteres.nombre)
+        .all()
+    )
+    return [
+        PdvSellerResponse(
+            identificador=r[0],
+            nombre=r[1],
+            direccion=r[2],
+            ciudad=r[3],
+            localidad=None
+        )
+        for r in rows
+    ]
 
 
-@router.get("/clientes")
+@router.get("/clientes", response_model=List[ClienteSellerResponse])
 def get_clientes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
-    rows = db.execute(text("SELECT id_cliente, cliente FROM CLIENTES ORDER BY cliente")).fetchall()
-    return [{"id_cliente": r.id_cliente, "nombre": r.cliente} for r in rows]
+    rows = db.query(Cliente.id, Cliente.nombre).order_by(Cliente.nombre).all()
+    return [ClienteSellerResponse(id_cliente=r[0], nombre=r[1]) for r in rows]
 
 
-@router.post("/registrar-visita")
-def registrar_visita(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post("/registrar-visita", response_model=RegistrarVisitaSellerResponse)
+def registrar_visita(payload: RegistrarVisitaSellerRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
-    id_punto_interes = payload.get("id_punto_interes")
-    id_cliente = payload.get("id_cliente")
-    vendio = payload.get("vendio")
+    id_punto_interes = payload.id_punto_interes
+    id_cliente = payload.id_cliente
+    vendio = payload.vendio
     if not id_punto_interes or not id_cliente or vendio is None:
         raise HTTPException(status_code=400, detail="Datos incompletos")
 
-    vendio_bit = 1 if vendio in (True, 1, "1", "true", "True") else 0
+    vendio_bool = bool(vendio) if isinstance(vendio, bool) else str(vendio).lower() in ("true", "1")
     monto = None
     razon = None
-    if vendio_bit == 1:
+    if vendio_bool:
         try:
-            monto = float(payload.get("monto"))
+            monto = float(payload.monto) if payload.monto is not None else 0.0
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="El monto es requerido y debe ser numérico")
         if monto <= 0:
             raise HTTPException(status_code=400, detail="El monto debe ser mayor que cero")
     else:
-        razon = (payload.get("razon_no_venta") or "").strip()
+        razon = (payload.razon_no_venta or "").strip()
         if not razon:
             raise HTTPException(status_code=400, detail="La razón de no venta es requerida")
 
@@ -118,57 +151,82 @@ def registrar_visita(payload: dict, db: Session = Depends(get_db), current_user:
     if not j:
         raise HTTPException(status_code=400, detail="No tienes una jornada activa. Activa tu ruta primero.")
 
-    lat = payload.get("latitud")
-    lon = payload.get("longitud")
+    lat = payload.latitud
+    lon = payload.longitud
     try:
         lat = float(lat) if lat not in (None, "") else None
         lon = float(lon) if lon not in (None, "") else None
     except (TypeError, ValueError):
         lat, lon = None, None
 
-    db.execute(text("""
-        INSERT INTO VENDEDOR_VISITAS
-            (id_jornada, id_usuario, id_punto_interes, id_cliente, fecha_hora,
-             vendio, monto, razon_no_venta, latitud, longitud)
-        VALUES (:j, :u, :p, :c, GETDATE(), :v, :m, :r, :lat, :lon)
-    """), {
-        "j": j.id_jornada, "u": current_user.id, "p": str(id_punto_interes), "c": id_cliente,
-        "v": vendio_bit, "m": monto, "r": razon, "lat": lat, "lon": lon,
-    })
+    nueva_visita = VendedorVisita(
+        id_jornada=j.id,
+        id_usuario=current_user.id,
+        id_punto_interes=str(id_punto_interes),
+        id_cliente=id_cliente,
+        fecha_hora=datetime.now(),
+        vendio=vendio_bool,
+        monto=monto,
+        razon_no_venta=razon,
+        latitud=lat,
+        longitud=lon
+    )
+    db.add(nueva_visita)
     db.commit()
-    return {"success": True, "message": "Visita registrada", "visitas": _contar_visitas(db, j.id_jornada)}
+    return RegistrarVisitaSellerResponse(
+        success=True,
+        message="Visita registrada",
+        visitas=_contar_visitas(db, j.id)
+    )
 
 
-@router.get("/visitas-hoy")
+@router.get("/visitas-hoy", response_model=VisitasHoySellerResponse)
 def visitas_hoy(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
     j = _jornada_activa(db, current_user.id)
     if not j:
-        return {"success": True, "visitas": []}
-    rows = db.execute(text("""
-        SELECT vv.fecha_hora, vv.vendio, vv.monto, vv.razon_no_venta,
-               pin.punto_de_interes, c.cliente
-        FROM VENDEDOR_VISITAS vv
-        LEFT JOIN PUNTOS_INTERES1 pin ON pin.identificador = vv.id_punto_interes
-        LEFT JOIN CLIENTES c ON c.id_cliente = vv.id_cliente
-        WHERE vv.id_jornada = :j
-        ORDER BY vv.id_visita_vendedor DESC
-    """), {"j": j.id_jornada}).fetchall()
-    return {"success": True, "visitas": [{
-        "fecha_hora": r.fecha_hora.isoformat() if r.fecha_hora else None,
-        "vendio": bool(r.vendio), "monto": float(r.monto) if r.monto is not None else None,
-        "razon_no_venta": r.razon_no_venta, "pdv": r.punto_de_interes, "cliente": r.cliente,
-    } for r in rows]}
+        return VisitasHoySellerResponse(success=True, visitas=[])
+
+    rows = (
+        db.query(
+            VendedorVisita.fecha_hora,
+            VendedorVisita.vendio,
+            VendedorVisita.monto,
+            VendedorVisita.razon_no_venta,
+            PuntoInteres.nombre,
+            Cliente.nombre
+        )
+        .outerjoin(PuntoInteres, PuntoInteres.id == VendedorVisita.id_punto_interes)
+        .outerjoin(Cliente, Cliente.id == VendedorVisita.id_cliente)
+        .filter(VendedorVisita.id_jornada == j.id)
+        .order_by(VendedorVisita.id.desc())
+        .all()
+    )
+
+    return VisitasHoySellerResponse(
+        success=True,
+        visitas=[
+            VisitaSellerItem(
+                fecha_hora=r[0].isoformat() if r[0] else None,
+                vendio=bool(r[1]),
+                monto=float(r[2]) if r[2] is not None else None,
+                razon_no_venta=r[3],
+                pdv=r[4],
+                cliente=r[5]
+            )
+            for r in rows
+        ]
+    )
 
 
-@router.post("/solicitar-pdv")
-def solicitar_pdv(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.post("/solicitar-pdv", response_model=SolicitarPdvSellerResponse)
+def solicitar_pdv(payload: SolicitarPdvSellerRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
-    nombre = (payload.get("punto_de_interes") or "").strip()
-    rif = (payload.get("rif") or "").strip()
-    direccion = (payload.get("direccion") or "").strip()
-    foto_tienda = payload.get("foto_tienda")
-    foto_rif = payload.get("foto_rif")
+    nombre = payload.punto_de_interes.strip()
+    rif = payload.rif.strip()
+    direccion = payload.direccion.strip()
+    foto_tienda = payload.foto_tienda
+    foto_rif = payload.foto_rif
 
     faltan = []
     if not nombre: faltan.append("nombre del PDV")
@@ -179,8 +237,8 @@ def solicitar_pdv(payload: dict, db: Session = Depends(get_db), current_user: Us
     if faltan:
         raise HTTPException(status_code=400, detail="Faltan datos: " + ", ".join(faltan))
 
-    lat = payload.get("latitud")
-    lon = payload.get("longitud")
+    lat = payload.latitud
+    lon = payload.longitud
     try:
         lat = float(lat) if lat not in (None, "") else None
         lon = float(lon) if lon not in (None, "") else None
@@ -197,4 +255,7 @@ def solicitar_pdv(payload: dict, db: Session = Depends(get_db), current_user: Us
     )
     db.add(solicitud)
     db.commit()
-    return {"success": True, "message": "Solicitud de creación de PDV enviada. Espera la aprobación de Atención al Cliente."}
+    return SolicitarPdvSellerResponse(
+        success=True,
+        message="Solicitud de creación de PDV enviada. Espera la aprobación de Atención al Cliente."
+    )

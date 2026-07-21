@@ -1,19 +1,19 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import text
-from sqlalchemy.orm import Session, aliased
 from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session, aliased
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.modules.auth.entities import Usuario
 from app.modules.clients.entities import Cliente
 from app.modules.catalogues.entities import TipoNegocio
-from app.modules.routes.entities import PuntoInteres
+from app.modules.routes.entities import PuntoInteres, RutaProgramacion
 from app.modules.frequencies.entities import FrecuenciaPdvCliente, HorasPromedioEjecucion
 from app.modules.frequencies.dto import (
     FrecuenciaPdvClienteCreate, FrecuenciaPdvClienteUpdate, FrecuenciaPdvClienteResponse,
-    FrecuenciaBulkCreate, HorasPromedioEjecucionCreate, HorasPromedioEjecucionUpdate, HorasPromedioEjecucionResponse
+    FrecuenciaBulkCreate, PdvDisponibleClienteResponse,
+    HorasPromedioEjecucionCreate, HorasPromedioEjecucionUpdate, HorasPromedioEjecucionResponse
 )
 from app.shared.audit_service import log_action
 from app.core.request_ip import get_client_ip
@@ -61,7 +61,7 @@ def list_frecuencias(
     return [_to_resp_frecuencia(f, cn, pn, un) for f, cn, pn, un in q.order_by(FrecuenciaPdvCliente.id.desc()).all()]
 
 
-@router.get("/api/frecuencias-pdvs-cliente/pdvs-disponibles/{id_cliente}")
+@router.get("/api/frecuencias-pdvs-cliente/pdvs-disponibles/{id_cliente}", response_model=List[PdvDisponibleClienteResponse])
 def pdvs_disponibles_cliente(
     id_cliente: int,
     db: Session = Depends(get_db),
@@ -69,12 +69,22 @@ def pdvs_disponibles_cliente(
 ):
     if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
-    rows = db.execute(text("""
-        SELECT DISTINCT rp.id_punto_interes, rp.punto_interes
-        FROM RUTA_PROGRAMACION rp
-        WHERE rp.id_cliente = :cid AND rp.activa = 1 AND rp.id_punto_interes IS NOT NULL
-        ORDER BY rp.punto_interes
-    """), {"cid": id_cliente}).fetchall()
+    
+    rows = (
+        db.query(
+            RutaProgramacion.punto_id,
+            RutaProgramacion.punto_interes_nombre
+        )
+        .distinct()
+        .filter(
+            RutaProgramacion.id_cliente == id_cliente,
+            RutaProgramacion.activo == True,
+            RutaProgramacion.punto_id.isnot(None)
+        )
+        .order_by(RutaProgramacion.punto_interes_nombre)
+        .all()
+    )
+
     existentes = {
         f.id_punto_interes: f
         for f in db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id_cliente == id_cliente).all()
@@ -82,13 +92,13 @@ def pdvs_disponibles_cliente(
     resultado = []
     for pdv_id, pdv_nombre in rows:
         ex = existentes.get(pdv_id)
-        resultado.append({
-            "id_punto_interes": pdv_id,
-            "pdv_nombre": pdv_nombre,
-            "id_frecuencia": ex.id if ex else None,
-            "frecuencia_semanal": float(ex.frecuencia_semanal) if ex else None,
-            "observaciones": ex.observaciones if ex else None,
-        })
+        resultado.append(PdvDisponibleClienteResponse(
+            id_punto_interes=pdv_id,
+            pdv_nombre=pdv_nombre or "",
+            id_frecuencia=ex.id if ex else None,
+            frecuencia_semanal=float(ex.frecuencia_semanal) if ex else None,
+            observaciones=ex.observaciones if ex else None,
+        ))
     return resultado
 
 

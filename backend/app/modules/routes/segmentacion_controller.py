@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.modules.auth.entities import Usuario
 from app.modules.clients.entities import Cliente, CategoriaCliente, ClienteRuta
 from app.modules.catalogues.entities import Categoria
-from app.modules.routes.entities import Ruta
+from app.modules.routes.entities import Ruta, RutaProgramacion
 from app.modules.routes.dto import (
     CategoriaClienteCreate, CategoriaClienteResponse,
-    ClienteRutaCreate, ClienteRutaUpdate, ClienteRutaResponse
+    ClienteRutaCreate, ClienteRutaUpdate, ClienteRutaResponse,
+    UsuarioClienteRutaItem, RutaDisponibleItem, RutasDisponiblesClienteResponse
 )
 
 router = APIRouter(prefix="/api", tags=["Segmentación Cliente"])
@@ -193,39 +194,82 @@ def delete_cliente_ruta(
 
 
 # ── Apoyo para la UI: usuarios cliente + rutas disponibles del cliente ──
-@router.get("/clientes-rutas-usuarios")
+@router.get("/clientes-rutas-usuarios", response_model=List[UsuarioClienteRutaItem])
 def list_usuarios_cliente(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.execute(text("""
-        SELECT u.id_usuario, u.username, u.id_perfil AS id_cliente, c.cliente,
-               (SELECT COUNT(*) FROM CLIENTES_RUTAS cr WHERE cr.id_usuario = u.id_usuario) AS n_rutas
-        FROM USUARIOS u
-        LEFT JOIN CLIENTES c ON c.id_cliente = u.id_perfil
-        WHERE u.id_rol = 1 AND u.activo = 1
-        ORDER BY c.cliente, u.username
-    """)).fetchall()
-    return [{"id_usuario": r[0], "username": r[1], "id_cliente": r[2],
-             "cliente": r[3], "n_rutas": r[4] or 0} for r in rows]
+    sub_count = (
+        db.query(
+            ClienteRuta.id_usuario.label("id_usuario"),
+            func.count(ClienteRuta.id).label("n_rutas")
+        )
+        .group_by(ClienteRuta.id_usuario)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Usuario.id,
+            Usuario.username,
+            Usuario.id_perfil,
+            Cliente.nombre,
+            func.coalesce(sub_count.c.n_rutas, 0)
+        )
+        .outerjoin(Cliente, Cliente.id == Usuario.id_perfil)
+        .outerjoin(sub_count, sub_count.c.id_usuario == Usuario.id)
+        .filter(Usuario.id_rol == 1, Usuario.activo == True)
+        .order_by(Cliente.nombre, Usuario.username)
+        .all()
+    )
+
+    return [
+        UsuarioClienteRutaItem(
+            id_usuario=r[0],
+            username=r[1],
+            id_cliente=r[2],
+            cliente=r[3],
+            n_rutas=r[4]
+        )
+        for r in rows
+    ]
 
 
-@router.get("/clientes-rutas-disponibles/{id_usuario}")
+@router.get("/clientes-rutas-disponibles/{id_usuario}", response_model=RutasDisponiblesClienteResponse)
 def rutas_disponibles_cliente(id_usuario: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    u = db.execute(text("SELECT id_perfil FROM USUARIOS WHERE id_usuario = :u"), {"u": id_usuario}).fetchone()
-    if not u or not u[0]:
+    user = db.query(Usuario).filter(Usuario.id == id_usuario).first()
+    if not user or not user.id_perfil:
         raise HTTPException(404, "Usuario cliente no encontrado o sin cliente asociado")
-    id_cliente = u[0]
-    rows = db.execute(text("""
-        SELECT rn.id_ruta, rn.ruta,
-               COUNT(DISTINCT rp.id_punto_interes) AS pdvs,
-               (SELECT TOP 1 cr.id_cliente_ruta FROM CLIENTES_RUTAS cr
-                WHERE cr.id_usuario = :u AND cr.id_ruta = rn.id_ruta) AS id_cliente_ruta
-        FROM RUTA_PROGRAMACION rp
-        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
-        WHERE rp.id_cliente = :cid AND rp.activa = 1
-        GROUP BY rn.id_ruta, rn.ruta
-        ORDER BY rn.ruta
-    """), {"u": id_usuario, "cid": id_cliente}).fetchall()
-    return {
-        "id_cliente": id_cliente,
-        "rutas": [{"id_ruta": r[0], "ruta": r[1], "pdvs": r[2] or 0,
-                   "asignada": r[3] is not None, "id_cliente_ruta": r[3]} for r in rows],
-    }
+    id_cliente = user.id_perfil
+
+    sub_cr = (
+        db.query(ClienteRuta.id.label("id_cliente_ruta"), ClienteRuta.id_ruta)
+        .filter(ClienteRuta.id_usuario == id_usuario)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Ruta.id,
+            Ruta.nombre,
+            func.count(RutaProgramacion.punto_id.distinct()).label("pdvs"),
+            sub_cr.c.id_cliente_ruta
+        )
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id)
+        .outerjoin(sub_cr, sub_cr.c.id_ruta == Ruta.id)
+        .filter(RutaProgramacion.id_cliente == id_cliente, RutaProgramacion.activo == True)
+        .group_by(Ruta.id, Ruta.nombre, sub_cr.c.id_cliente_ruta)
+        .order_by(Ruta.nombre)
+        .all()
+    )
+
+    return RutasDisponiblesClienteResponse(
+        id_cliente=id_cliente,
+        rutas=[
+            RutaDisponibleItem(
+                id_ruta=r[0],
+                ruta=r[1],
+                pdvs=r[2] or 0,
+                asignada=r[3] is not None,
+                id_cliente_ruta=r[3]
+            )
+            for r in rows
+        ]
+    )

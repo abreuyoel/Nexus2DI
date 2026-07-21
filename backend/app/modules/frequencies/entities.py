@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, func
+from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
@@ -17,6 +18,10 @@ class FrecuenciaPdvCliente(Base):
     fecha_modificacion = Column(DateTime, nullable=True)
     id_usuario = Column(Integer, ForeignKey("USUARIOS.id_usuario"), nullable=True)
 
+    cliente = relationship("Cliente")
+    punto = relationship("PuntoInteres")
+    usuario = relationship("Usuario")
+
 
 class HorasPromedioEjecucion(Base):
     """Minutos promedio de ejecución esperados para un cliente según la
@@ -32,3 +37,8 @@ class HorasPromedioEjecucion(Base):
     fecha_modificado = Column(DateTime, nullable=True)
     id_usuario_creador = Column(Integer, ForeignKey("USUARIOS.id_usuario"), nullable=True)
     id_usuario_modificador = Column(Integer, ForeignKey("USUARIOS.id_usuario"), nullable=True)
+
+    cliente = relationship("Cliente")
+    tipo_negocio = relationship("TipoNegocio")
+    usuario_creador = relationship("Usuario", foreign_keys=[id_usuario_creador])
+    usuario_modificador = relationship("Usuario", foreign_keys=[id_usuario_modificador])

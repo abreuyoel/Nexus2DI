@@ -47,6 +47,14 @@ class FrecuenciaBulkCreate(BaseModel):
     items: List[FrecuenciaBulkItem]
 
 
+class PdvDisponibleClienteResponse(BaseModel):
+    id_punto_interes: str
+    pdv_nombre: str
+    id_frecuencia: Optional[int] = None
+    frecuencia_semanal: Optional[float] = None
+    observaciones: Optional[str] = None
+
+
 class HorasPromedioEjecucionBase(BaseModel):
     id_cliente: int
     id_tipo_negocio: int

@@ -1,9 +1,10 @@
 import json
+from datetime import datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Body, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
-from typing import List, Optional
-from datetime import datetime
+from sqlalchemy import func
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_roles, require_analyst_or_admin
 from app.core.security import get_password_hash
@@ -14,7 +15,7 @@ from app.modules.customer_service.entities import Solicitud
 from app.modules.surveyors.entities import CentroSalud
 from app.modules.clients.dto import PuntoInteresCreate, PuntoInteresUpdate, PuntoInteresResponse
 from app.modules.catalogues.dto import ProductoCreate, ProductoUpdate, ProductoResponse, ProductoListResponse, CategoriaResponse
-from app.modules.customer_service.dto import SolicitudCreate, SolicitudResponse
+from app.modules.customer_service.dto import SolicitudCreate, SolicitudResponse, AprobarSolicitudRequest
 from app.shared.audit_service import log_action
 from app.shared.realtime import notify_event
 from app.core.request_ip import get_client_ip
@@ -118,7 +119,6 @@ def list_productos(
     items = query.order_by(Producto.id_producto).offset(skip).limit(limit).all()
     pagina = (skip // limit) + 1 if limit > 0 else 1
     
-    # Mapeo a ProductoResponse compatible
     output_items = []
     for p in items:
         output_items.append(ProductoResponse(
@@ -267,7 +267,7 @@ def delete_producto(
     return {"success": True, "message": "Producto eliminado correctamente"}
 
 
-@router.get("/productos/listado/categorias", response_model=list[str])
+@router.get("/productos/listado/categorias", response_model=List[str])
 def list_categorias_productos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("admin")),
@@ -276,12 +276,11 @@ def list_categorias_productos(
     return [c[0] for c in categorias]
 
 
-@router.get("/productos/listado/fabricantes", response_model=list[str])
+@router.get("/productos/listado/fabricantes", response_model=List[str])
 def list_fabricantes_productos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("admin")),
 ):
-    # En la estructura nueva del BI, el fabricante es la productora
     from app.modules.catalogues.entities import Productora
     fabricantes = db.query(Productora.nombre).distinct().filter(Productora.nombre.isnot(None)).all()
     return [f[0] for f in fabricantes]
@@ -297,7 +296,7 @@ def list_categorias(db: Session = Depends(get_db), _: Usuario = Depends(get_curr
 
 # ==================== SOLICITUDES ====================
 
-@router.get("/solicitudes")
+@router.get("/solicitudes", response_model=List[SolicitudResponse])
 def get_solicitudes(
     estado: Optional[str] = None,
     type_filter: Optional[str] = Query(None, alias="tipo"),
@@ -406,16 +405,22 @@ def _crear_pdv_desde_solicitud(db: Session, data: dict) -> str:
         raise HTTPException(status_code=400, detail="Coordenadas inválidas")
 
     tolerancia = 0.001
-    cercano = db.execute(text("""
-        SELECT TOP 1 identificador, punto_de_interes, latitud, longitud
-        FROM PUNTOS_INTERES1
-        WHERE TRY_CAST(latitud AS FLOAT) IS NOT NULL
-          AND TRY_CAST(longitud AS FLOAT) IS NOT NULL
-          AND ABS(TRY_CAST(latitud AS FLOAT) - :lat) <= :tol
-          AND ABS(TRY_CAST(longitud AS FLOAT) - :lng) <= :tol
-    """), {"lat": lat, "lng": lng, "tol": tolerancia}).fetchone()
-    if cercano:
-        raise HTTPException(status_code=400, detail=f"Ya existe un punto de interés cercano: {cercano[1]} (ID: {cercano[0]})")
+    pts = (
+        db.query(PuntoInteres.id, PuntoInteres.nombre, PuntoInteres.latitud, PuntoInteres.longitud)
+        .filter(PuntoInteres.latitud.isnot(None), PuntoInteres.longitud.isnot(None))
+        .all()
+    )
+    for p_id, p_name, p_lat, p_lng in pts:
+        try:
+            plat = float(str(p_lat).replace(',', '.').strip())
+            plng = float(str(p_lng).replace(',', '.').strip())
+            if abs(plat - lat) <= tolerancia and abs(plng - lng) <= tolerancia:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Ya existe un punto de interés cercano: {p_name} (ID: {p_id})"
+                )
+        except (ValueError, TypeError):
+            continue
 
     identificador = _generar_identificador_pdv(db, jerarquia)
 
@@ -444,7 +449,7 @@ def _crear_pdv_desde_solicitud(db: Session, data: dict) -> str:
 @router.post("/solicitudes/{sol_id}/aprobar")
 def aprobar_solicitud(
     sol_id: int,
-    completar: dict = Body(default={}),
+    payload: Optional[AprobarSolicitudRequest] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("admin", "atc")),
 ):
@@ -459,6 +464,8 @@ def aprobar_solicitud(
         datos_originales = json.loads(sol.descripcion) if sol.descripcion else {}
     except (json.JSONDecodeError, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Los datos de la solicitud tienen un formato JSON inválido")
+
+    completar = payload.completar if payload and payload.completar else {}
 
     datos = dict(datos_originales)
     datos.update({k: v for k, v in (completar or {}).items() if v not in (None, '')})

@@ -100,3 +100,16 @@ class InboxItem(BaseModel):
     last_message: Optional[str] = None
     last_message_date: Optional[str] = None
     unread_count: int = 0
+
+
+class VisitSearchResult(BaseModel):
+    visita_id: int
+    punto_nombre: str
+    punto_id: Optional[str] = None
+    cadena: Optional[str] = None
+    region: Optional[str] = None
+    mercaderista_nombre: Optional[str] = None
+    fecha_visita: Optional[str] = None
+    last_message: Optional[str] = None
+    last_message_date: Optional[str] = None
+    unread_count: int = 0

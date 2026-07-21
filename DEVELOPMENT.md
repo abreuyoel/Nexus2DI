@@ -6,13 +6,16 @@ Este documento contiene las instrucciones detalladas para levantar el entorno de
 
 ## 📋 Contexto y Arquitectura Local
 
-El entorno local consta de un frontend en **Angular**, un backend en **FastAPI** y servicios auxiliares levantados localmente y a través de **Docker**.
+El entorno local consta de un frontend en **Angular**, un backend en **FastAPI** estructurado de forma modular y servicios auxiliares levantados localmente y a través de **Docker**.
 
 ```
 Frontend Angular (localhost:4200)
     │  npm start (ng serve + proxy)
     ▼
 Backend FastAPI (localhost:8000)   ← Corre localmente (fuera de Docker)
+    │  ├── Arquitectura Modular (app/modules/<domain>/)
+    │  ├── Query Builder ORM (SQLAlchemy) & DTOs (Pydantic v2)
+    │  └── WebSocketGuard (Auth, CORS & Token Bucket Rate Limiter)
     │
     ├── SQL Server (localhost:1433) ← Instalación local en Windows con Windows Auth
     ├── Redis (localhost:6379)      ← Contenedor Docker
@@ -103,6 +106,7 @@ SCHEDULER_INTERVAL_MINUTES=60
 SCHEDULER_TIMEZONE=America/Caracas
 ENVIRONMENT=development
 FRONTEND_URL=http://localhost:4200
+CORS_ORIGINS=http://localhost:4200,http://127.0.0.1:4200,http://localhost,http://127.0.0.1
 ```
 > [!NOTE]
 > Puedes generar una nueva `SECRET_KEY` desde la terminal con:
@@ -191,6 +195,25 @@ npm install
 # Iniciar el servidor local de desarrollo
 npm start
 ```
+
+---
+
+## 🏗️ Arquitectura y Seguridad del Backend
+
+### 1. Estructura Modular por Dominio (`app/modules/`)
+El backend organiza sus funcionalidades por módulos independientes dentro de `app/modules/<domain>/`:
+- `controller.py`: Manejadores de endpoints HTTP/WebSocket tipados.
+- `dto.py`: Modelos Pydantic v2 para validación de entrada y esquemas de respuesta.
+- `entities.py`: Modelos ORM de SQLAlchemy para mapeo de tablas.
+
+### 2. Estándar de Consultas de Base de Datos
+- Se utiliza exclusivamente **SQLAlchemy ORM Query Builder**.
+- Todas las sentencias SQL nativas (`db.execute(text(...))`) en controladores han sido eliminadas.
+
+### 3. Seguridad en WebSockets y CORS
+- **WebSocketGuard (`app/websockets/guard.py`)**: Valida la cabecera `Origin` en conexiones WebSocket y autentica mediante tokens JWT (`?token=...`, `Authorization: Bearer` o `Sec-WebSocket-Protocol`).
+- **Token Bucket Rate Limiter**: Controla la frecuencia de mensajes por conexión WebSocket (`capacity=20.0`, `refill_rate=5.0 tokens/seg`).
+- **Control de CORS**: Se gestiona mediante `FRONTEND_URL` y `CORS_ORIGINS` en el archivo `.env`, aplicándose tanto a endpoints REST como a WebSockets a través de `settings.ALLOWED_ORIGINS`.
 
 ---
 

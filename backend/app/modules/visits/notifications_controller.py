@@ -7,6 +7,7 @@ from app.modules.auth.entities import Usuario
 from app.modules.visits.entities import NotificacionRechazoFoto
 from app.modules.visits.dto import NotificacionRechazoResponse
 from app.websockets.manager import manager
+from app.websockets.guard import ws_guard
 
 router = APIRouter(prefix="/api/notifications", tags=["Notificaciones"])
 
@@ -55,9 +56,13 @@ def mark_all_read(
 
 @router.websocket("/ws/{user_id}")
 async def notifications_websocket(websocket: WebSocket, user_id: str):
-    await manager.connect(websocket, f"notif_{user_id}")
+    await manager.connect_guarded(websocket, f"notif_{user_id}", require_auth=False)
     try:
         while True:
             await websocket.receive_text()
+            if not ws_guard.check_rate_limit(websocket):
+                await websocket.send_json({"error": "Rate limit exceeded. Please slow down."})
     except WebSocketDisconnect:
+        manager.disconnect(websocket, f"notif_{user_id}")
+    except Exception:
         manager.disconnect(websocket, f"notif_{user_id}")

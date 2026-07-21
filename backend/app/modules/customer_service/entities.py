@@ -10,6 +10,7 @@ class Solicitud(Base):
     user_id = Column("id_solicitante", Integer, ForeignKey("USUARIOS.id_usuario"), nullable=True)
     tipo = Column("tipo_solicitud", String(100), nullable=False)
     descripcion = Column("datos", Text, nullable=True)
+    respuesta = Column("respuesta", Text, nullable=True)
     estado = Column(String(50), default="pendiente")
     created_at = Column("fecha_solicitud", DateTime, nullable=True)
 

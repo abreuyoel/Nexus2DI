@@ -1,14 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text, bindparam
-from typing import List, Optional
 from datetime import date, timedelta, datetime
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.modules.auth.entities import Usuario
-from app.modules.visits.entities import Visita, Foto, NotificacionRechazoFoto, FotoRazonRechazo
-from app.modules.visits.entities import Balance
+from app.modules.visits.entities import (
+    Visita, Foto, NotificacionRechazoFoto, FotoRazonRechazo, Balance, RazonRechazo, TipoFoto
+)
 from app.modules.analysts.entities import AnalistaCliente
+from app.modules.routes.entities import PuntoInteres, Ruta, RutaProgramacion
+from app.modules.clients.entities import Cliente
+from app.modules.merchandisers.entities import Mercaderista
+from app.modules.chat.entities import ChatMensaje
 from app.modules.visits.dto import (
     VisitaCreate, VisitaUpdate, VisitaResponse, UpdateBalancesRequest, BalanceResponse,
     FotoResponse, ApprovePhotosRequest, RejectPhotoRequest, SavePhotoDecisionsRequest, RejectReason
@@ -115,91 +121,153 @@ def review_list(
         hasta = hoy.isoformat()
         desde = (hoy - timedelta(days=7)).isoformat()
 
-    params = {"d": desde, "h": hasta}
-    where = "WHERE CAST(v.fecha_visita AS DATE) BETWEEN :d AND :h"
+    f_desde = datetime.strptime(desde, '%Y-%m-%d').date() if isinstance(desde, str) else desde
+    f_hasta = datetime.strptime(hasta, '%Y-%m-%d').date() if isinstance(hasta, str) else hasta
+
+    sub_ruta = (
+        db.query(
+            RutaProgramacion.punto_id.label("id_punto_interes"),
+            func.min(Ruta.nombre).label("ruta_nombre")
+        )
+        .join(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+        .filter(RutaProgramacion.activo == True)
+        .group_by(RutaProgramacion.punto_id)
+        .subquery()
+    )
+
+    sub_chat = (
+        db.query(
+            ChatMensaje.visita_id,
+            func.count(ChatMensaje.id).label("chat_msgs")
+        )
+        .group_by(ChatMensaje.visita_id)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Visita.id,
+            Cliente.nombre.label("cliente_nombre"),
+            Cliente.id,
+            PuntoInteres.nombre.label("punto_nombre"),
+            PuntoInteres.id.label("punto_id"),
+            PuntoInteres.ciudad,
+            sub_ruta.c.ruta_nombre,
+            Mercaderista.nombre.label("mercaderista_nombre"),
+            Visita.fecha,
+            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)).label("revisar"),
+            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Aprobada"), 1), else_=0)).label("aprobadas"),
+            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Rechazada"), 1), else_=0)).label("rechazadas"),
+            func.sum(func.case((Foto.id_tipo_foto.in_([5, 6]), 1), else_=0)).label("activaciones"),
+            func.max(func.coalesce(sub_chat.c.chat_msgs, 0)).label("chat_msgs"),
+            func.max(func.case((Visita.revisada_por.isnot(None) | (Visita.estado == "Revisado"), 1), else_=0)).label("revisada_flag"),
+            func.max(func.coalesce(Visita.estado, "Pendiente")).label("estado_visita")
+        )
+        .join(Cliente, Visita.id_cliente == Cliente.id)
+        .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
+        .join(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+        .outerjoin(Foto, Foto.visita_id == Visita.id)
+        .outerjoin(sub_ruta, sub_ruta.c.id_punto_interes == PuntoInteres.id)
+        .outerjoin(sub_chat, sub_chat.c.visita_id == Visita.id)
+        .filter(Visita.fecha >= f_desde, Visita.fecha <= f_hasta)
+    )
+
     if cliente_id:
-        where += " AND v.id_cliente = :cid"
-        params["cid"] = cliente_id
+        query = query.filter(Visita.id_cliente == cliente_id)
     if visible_ids is not None:
         if not visible_ids:
             return []
-        where += f" AND v.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
-    analyst_join = ""
+        query = query.filter(Visita.id_cliente.in_(visible_ids))
+
     if current_user.is_analyst and current_user.id_perfil:
-        analyst_join = "JOIN ANALISTAS_CLIENTE ac ON ac.id_cliente = v.id_cliente AND ac.id_analista = :aid"
-        params["aid"] = current_user.id_perfil
+        analista_id = int(current_user.id_perfil)
+        sub_ac = (
+            db.query(AnalistaCliente.id_cliente)
+            .filter(AnalistaCliente.id_analista == analista_id)
+            .subquery()
+        )
+        query = query.filter(Visita.id_cliente.in_(sub_ac))
 
-    q = text(f"""
-        SELECT v.id_visita, c.cliente, c.id_cliente,
-               p.punto_de_interes, p.identificador AS id_punto, ISNULL(p.ciudad,'') AS ciudad,
-               ISNULL(rinfo.ruta,'Sin ruta') AS ruta, m.nombre AS mercaderista, v.fecha_visita,
-               SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.id_foto IS NOT NULL THEN 1 ELSE 0 END) AS revisar,
-               SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.Estado='Aprobada' THEN 1 ELSE 0 END) AS aprobadas,
-               SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.Estado='Rechazada' THEN 1 ELSE 0 END) AS rechazadas,
-               SUM(CASE WHEN f.id_tipo_foto IN (5,6) THEN 1 ELSE 0 END) AS activaciones,
-               MAX(ISNULL(chat.n, 0)) AS chat_msgs,
-               MAX(CASE WHEN v.revisada_por IS NOT NULL OR v.estado = 'Revisado' THEN 1 ELSE 0 END) AS revisada_flag,
-               MAX(ISNULL(v.estado, 'Pendiente')) AS estado_visita
-        FROM VISITAS_MERCADERISTA v
-        JOIN CLIENTES c ON v.id_cliente = c.id_cliente
-        JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-        JOIN MERCADERISTAS m ON v.id_mercaderista = m.id_mercaderista
-        {analyst_join}
-        LEFT JOIN FOTOS_TOTALES f ON f.id_visita = v.id_visita
-        LEFT JOIN (
-            SELECT rp.id_punto_interes, MIN(rn.ruta) AS ruta
-            FROM RUTA_PROGRAMACION rp JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
-            WHERE rp.activa = 1 GROUP BY rp.id_punto_interes
-        ) rinfo ON rinfo.id_punto_interes = p.identificador
-        LEFT JOIN (
-            SELECT id_visita, COUNT(*) AS n FROM CHAT_MENSAJES_CLIENTE GROUP BY id_visita
-        ) chat ON chat.id_visita = v.id_visita
-        {where}
-        GROUP BY v.id_visita, c.cliente, c.id_cliente, p.punto_de_interes, p.identificador,
-                 p.ciudad, rinfo.ruta, m.nombre, v.fecha_visita
-        HAVING SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.id_foto IS NOT NULL THEN 1 ELSE 0 END) > 0
-        ORDER BY v.fecha_visita DESC
-    """)
-    rows = db.execute(q, params).fetchall()
+    rows = (
+        query.group_by(
+            Visita.id, Cliente.nombre, Cliente.id, PuntoInteres.nombre, PuntoInteres.id,
+            PuntoInteres.ciudad, sub_ruta.c.ruta_nombre, Mercaderista.nombre, Visita.fecha
+        )
+        .having(func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)) > 0)
+        .order_by(Visita.fecha.desc())
+        .all()
+    )
 
-    qb = text(f"""
-        SELECT v.id_visita, f.id_tipo_foto,
-               ISNULL(tf.tipo_foto, CONCAT('Tipo ', f.id_tipo_foto)) AS label,
-               COUNT(*) AS total,
-               SUM(CASE WHEN f.Estado='Aprobada' THEN 1 ELSE 0 END) AS aprobadas,
-               SUM(CASE WHEN f.Estado='Rechazada' THEN 1 ELSE 0 END) AS rechazadas
-         FROM VISITAS_MERCADERISTA v
-         JOIN FOTOS_TOTALES f ON f.id_visita = v.id_visita
-         LEFT JOIN TIPOS_FOTOS tf ON tf.id_tipo_foto = f.id_tipo_foto
-         {analyst_join}
-         {where}
-         AND f.id_tipo_foto IS NOT NULL
-         GROUP BY v.id_visita, f.id_tipo_foto, tf.tipo_foto
-     """)
+    query_tipos = (
+        db.query(
+            Visita.id.label("visita_id"),
+            Foto.id_tipo_foto,
+            func.coalesce(TipoFoto.nombre, func.concat("Tipo ", Foto.id_tipo_foto)).label("label"),
+            func.count(Foto.id).label("total"),
+            func.sum(func.case((Foto.estado == "Aprobada", 1), else_=0)).label("aprobadas"),
+            func.sum(func.case((Foto.estado == "Rechazada", 1), else_=0)).label("rechazadas")
+        )
+        .join(Foto, Foto.visita_id == Visita.id)
+        .outerjoin(TipoFoto, TipoFoto.id == Foto.id_tipo_foto)
+        .filter(Visita.fecha >= f_desde, Visita.fecha <= f_hasta, Foto.id_tipo_foto.isnot(None))
+    )
+
+    if cliente_id:
+        query_tipos = query_tipos.filter(Visita.id_cliente == cliente_id)
+    if visible_ids is not None:
+        query_tipos = query_tipos.filter(Visita.id_cliente.in_(visible_ids))
+    if current_user.is_analyst and current_user.id_perfil:
+        analista_id = int(current_user.id_perfil)
+        sub_ac = (
+            db.query(AnalistaCliente.id_cliente)
+            .filter(AnalistaCliente.id_analista == analista_id)
+            .subquery()
+        )
+        query_tipos = query_tipos.filter(Visita.id_cliente.in_(sub_ac))
+
+    rows_tipos = (
+        query_tipos.group_by(Visita.id, Foto.id_tipo_foto, TipoFoto.nombre)
+        .all()
+    )
+
     tipos_map: dict = {}
-    for r in db.execute(qb, params).fetchall():
-        tid = int(r.id_tipo_foto)
-        tipos_map.setdefault(r.id_visita, []).append({
-            "id_tipo_foto": tid, "label": r.label,
-            "total": int(r.total or 0), "aprobadas": int(r.aprobadas or 0),
-            "rechazadas": int(r.rechazadas or 0), "revisable": tid not in (5, 6),
+    for r in rows_tipos:
+        tid = int(r[1])
+        tipos_map.setdefault(r[0], []).append({
+            "id_tipo_foto": tid,
+            "label": r[2],
+            "total": int(r[3] or 0),
+            "aprobadas": int(r[4] or 0),
+            "rechazadas": int(r[5] or 0),
+            "revisable": tid not in (5, 6),
         })
 
     out = []
     for r in rows:
-        rev = int(r.revisar or 0); apr = int(r.aprobadas or 0); rec = int(r.rechazadas or 0)
+        rev = int(r[9] or 0)
+        apr = int(r[10] or 0)
+        rec = int(r[11] or 0)
         out.append({
-            "id_visita": r.id_visita, "cliente": r.cliente, "id_cliente": r.id_cliente,
-            "punto_de_interes": r.punto_de_interes, "id_punto": r.id_punto, "ciudad": r.ciudad,
-            "ruta": r.ruta, "mercaderista": r.mercaderista,
-            "fecha": r.fecha_visita.isoformat() if r.fecha_visita else None,
-            "fotos_revisar": rev, "aprobadas": apr, "rechazadas": rec,
-            "sin_revisar": max(rev - apr - rec, 0), "activaciones": int(r.activaciones or 0),
-            "revisada": bool(r.revisada_flag),
-            "estado": "Revisado" if r.revisada_flag else (r.estado_visita or "Pendiente"),
+            "id_visita": r[0],
+            "cliente": r[1],
+            "id_cliente": r[2],
+            "punto_de_interes": r[3],
+            "id_punto": r[4],
+            "ciudad": r[5] or "",
+            "ruta": r[6] or "Sin ruta",
+            "mercaderista": r[7],
+            "fecha": r[8].isoformat() if r[8] else None,
+            "fotos_revisar": rev,
+            "aprobadas": apr,
+            "rechazadas": rec,
+            "sin_revisar": max(rev - apr - rec, 0),
+            "activaciones": int(r[12] or 0),
+            "revisada": bool(r[14]),
+            "estado": "Revisado" if r[14] else (r[15] or "Pendiente"),
             "completada": rev > 0 and (apr + rec) >= rev,
-            "tiene_chat": int(r.chat_msgs or 0) > 0, "chat_msgs": int(r.chat_msgs or 0),
-            "tipos": sorted(tipos_map.get(r.id_visita, []), key=lambda x: x["id_tipo_foto"]),
+            "tiene_chat": int(r[13] or 0) > 0,
+            "chat_msgs": int(r[13] or 0),
+            "tipos": sorted(tipos_map.get(r[0], []), key=lambda x: x["id_tipo_foto"]),
         })
     return out
 
@@ -230,8 +298,8 @@ def get_reject_reasons(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    rows = db.execute(text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS ORDER BY razon")).fetchall()
-    return [{"id": r.id_razones_rechazos, "razon": r.razon} for r in rows]
+    rows = db.query(RazonRechazo).order_by(RazonRechazo.razon).all()
+    return [RejectReason(id=r.id, razon=r.razon) for r in rows]
 
 
 @router.get("/{visit_id}", response_model=VisitaResponse)
@@ -278,20 +346,27 @@ def get_visit_photos(
     foto_ids = [f.id for f in fotos]
     razones_map: dict = {}
     if foto_ids:
-        q = text("""
-            SELECT fr.id_foto, fr.id_razones_rechazos, r.razon, fr.rechazado_por, u.username
-            FROM FOTOS_RAZONES_RECHAZOS fr
-            JOIN RAZONES_RECHAZOS r ON r.id_razones_rechazos = fr.id_razones_rechazos
-            LEFT JOIN USUARIOS u ON u.id_usuario = fr.rechazado_por
-            WHERE fr.id_foto IN :ids
-        """).bindparams(bindparam("ids", expanding=True))
-        for row in db.execute(q, {"ids": foto_ids}).fetchall():
-            d = razones_map.setdefault(row.id_foto, {"razones": [], "razones_ids": [], "rechazado_por": None, "rechazado_por_nombre": None})
-            d["razones"].append(row.razon)
-            d["razones_ids"].append(row.id_razones_rechazos)
-            if row.rechazado_por and not d["rechazado_por"]:
-                d["rechazado_por"] = row.rechazado_por
-                d["rechazado_por_nombre"] = row.username
+        rows = (
+            db.query(
+                FotoRazonRechazo.id_foto,
+                RazonRechazo.id,
+                RazonRechazo.razon,
+                FotoRazonRechazo.rechazado_por,
+                Usuario.username
+            )
+            .join(RazonRechazo, RazonRechazo.id == FotoRazonRechazo.id_razones_rechazos)
+            .outerjoin(Usuario, Usuario.id == FotoRazonRechazo.rechazado_por)
+            .filter(FotoRazonRechazo.id_foto.in_(foto_ids))
+            .all()
+        )
+        for r_fid, r_id, r_razon, r_por, r_uname in rows:
+            d = razones_map.setdefault(r_fid, {"razones": [], "razones_ids": [], "rechazado_por": None, "rechazado_por_nombre": None})
+            d["razones"].append(r_razon)
+            d["razones_ids"].append(r_id)
+            if r_por and not d["rechazado_por"]:
+                d["rechazado_por"] = r_por
+                d["rechazado_por_nombre"] = r_uname
+
     for f in fotos:
         info = razones_map.get(f.id)
         f.razones = info["razones"] if info else None
@@ -357,8 +432,9 @@ def reject_photo(
     razones_nombres = []
     if data.razones_ids:
         db.query(FotoRazonRechazo).filter(FotoRazonRechazo.id_foto == foto.id).delete()
-        q = text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS WHERE id_razones_rechazos IN :ids").bindparams(bindparam("ids", expanding=True))
-        name_by_id = {r.id_razones_rechazos: r.razon for r in db.execute(q, {"ids": data.razones_ids}).fetchall()}
+        name_by_id = {
+            r.id: r.razon for r in db.query(RazonRechazo).filter(RazonRechazo.id.in_(data.razones_ids)).all()
+        }
         for rid in data.razones_ids:
             db.add(FotoRazonRechazo(id_foto=foto.id, id_razones_rechazos=rid, rechazado_por=current_user.id))
             if rid in name_by_id:

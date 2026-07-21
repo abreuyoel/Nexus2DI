@@ -11,7 +11,7 @@ logger = logging.getLogger("app")
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from contextlib import asynccontextmanager
 from app.core.config import settings
 import app.db.all_models  # noqa: F401 — registers all SQLAlchemy models
@@ -108,16 +108,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors(), "body": exc.body},
     )
 
-_cors_origins = [settings.FRONTEND_URL]
-if settings.ENVIRONMENT != "production":
-    _cors_origins += [
-        "http://localhost:4200",
-        "http://127.0.0.1:4200",
-        "http://localhost:4200/",
-        "http://127.0.0.1:4200/",
-        "http://localhost",
-        "http://127.0.0.1",
-    ]
+_cors_origins = settings.ALLOWED_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
@@ -184,6 +175,11 @@ app.include_router(frequencies_router)
 app.include_router(sessions_router)
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
@@ -194,4 +190,4 @@ async def favicon():
     favicon_path = "app/static/favicon.ico"
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)
-    return JSONResponse(status_code=204, content=None)
+    return Response(status_code=204)

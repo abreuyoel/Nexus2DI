@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 
 
@@ -22,6 +22,10 @@ class ClienteResponse(ClienteBase):
 
     class Config:
         from_attributes = True
+
+
+class AsignacionCategoria(BaseModel):
+    id_categoria: int
 
 
 class PuntoInteresBase(BaseModel):
@@ -108,3 +112,97 @@ class ClienteRutaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ExclusiveClientResponse(BaseModel):
+    id_cliente: int
+    cliente: str
+    id_tipo_cliente: Optional[int] = None
+
+
+class ClientDashboardResponse(BaseModel):
+    has_dashboard: bool
+    url_html: Optional[str] = None
+    tipo: Optional[str] = None
+
+
+class ClientSummaryResponse(BaseModel):
+    recent_visits: int
+    recent_photos: int
+    recent_messages: int
+    period: str = "Últimos 30 días"
+
+
+class RegionItemResponse(BaseModel):
+    region: str
+
+
+class ChainItemResponse(BaseModel):
+    cadena: str
+
+
+class PointItemResponse(BaseModel):
+    identificador: str
+    punto_de_interes: str
+    cadena: str
+    direccion: str
+    ciudad: str
+
+
+class UsuarioClienteRutaItem(BaseModel):
+    id_usuario: int
+    username: str
+    id_cliente: Optional[int] = None
+    cliente: Optional[str] = None
+    n_rutas: int = 0
+
+
+class RutaDisponibleItem(BaseModel):
+    id_ruta: int
+    ruta: str
+    pdvs: int = 0
+    asignada: bool = False
+    id_cliente_ruta: Optional[int] = None
+
+
+class RutasDisponiblesClienteResponse(BaseModel):
+    id_cliente: int
+    rutas: List[RutaDisponibleItem]
+
+
+class PdvItem(BaseModel):
+    id: str
+    nombre: str
+
+
+class ClientDataFiltersResponse(BaseModel):
+    productos: List[str]
+    mercaderistas: List[str]
+    pdvs: List[PdvItem]
+    cadenas: List[str]
+    regiones: List[str]
+    categorias: List[str]
+    departamentos: List[str]
+    cuadrantes: List[str]
+    estados: List[str]
+
+
+class BalanceItemResponse(BaseModel):
+    id_balance: int
+    fecha_balance: Optional[str] = None
+    visita_id: Optional[int] = None
+    region: Optional[str] = None
+    cadena: Optional[str] = None
+    pdv_nombre: Optional[str] = None
+    departamento: Optional[str] = None
+    cuadrante: Optional[str] = None
+    estado: Optional[str] = None
+    mercaderista: Optional[str] = None
+    producto: Optional[str] = None
+    categoria: Optional[str] = None
+    inv_inicial: Optional[float] = None
+    inv_final: Optional[float] = None
+    inv_deposito: Optional[float] = None
+    caras: Optional[int] = None
+    precio_bs: Optional[float] = None
+    precio_ds: Optional[float] = None

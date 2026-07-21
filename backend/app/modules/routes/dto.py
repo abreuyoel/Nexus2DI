@@ -188,3 +188,23 @@ class ClienteRutaResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class UsuarioClienteRutaItem(BaseModel):
+    id_usuario: int
+    username: str
+    id_cliente: Optional[int] = None
+    cliente: Optional[str] = None
+    n_rutas: int = 0
+
+
+class RutaDisponibleItem(BaseModel):
+    id_ruta: int
+    ruta: Optional[str] = None
+    pdvs: int = 0
+    asignada: bool = False
+    id_cliente_ruta: Optional[int] = None
+
+
+class RutasDisponiblesClienteResponse(BaseModel):
+    id_cliente: int
+    rutas: List[RutaDisponibleItem] = []

@@ -13,16 +13,11 @@ Roles:
 - Cliente normal → su propio id_perfil.
 """
 from typing import Optional, List
-from sqlalchemy import text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.modules.auth.entities import Usuario
-
-# Rutas que tienen más de un cliente (compartidas / tradex)
-_RUTAS_COMPARTIDAS = """
-    SELECT id_ruta FROM RUTA_PROGRAMACION
-    WHERE activa = 1 AND id_cliente IS NOT NULL
-    GROUP BY id_ruta HAVING COUNT(DISTINCT id_cliente) > 1
-"""
+from app.modules.routes.entities import RutaProgramacion
+from app.modules.clients.entities import ClienteRuta
 
 
 def coordinator_client_ids(db: Session, user: Usuario) -> Optional[List[int]]:
@@ -30,41 +25,56 @@ def coordinator_client_ids(db: Session, user: Usuario) -> Optional[List[int]]:
     if user.is_admin or user.is_coordinador_general:
         return None
 
+    rutas_compartidas_sub = (
+        db.query(RutaProgramacion.ruta_id)
+        .filter(RutaProgramacion.activo == True, RutaProgramacion.id_cliente.isnot(None))
+        .group_by(RutaProgramacion.ruta_id)
+        .having(func.count(RutaProgramacion.id_cliente.distinct()) > 1)
+        .subquery()
+    )
+
     if user.is_coordinador_exclusivo:
-        # Clientes que NO están en ninguna ruta compartida = exclusivos.
-        rows = db.execute(text(f"""
-            SELECT DISTINCT rp.id_cliente
-            FROM RUTA_PROGRAMACION rp
-            WHERE rp.activa = 1 AND rp.id_cliente IS NOT NULL
-              AND rp.id_cliente NOT IN (
-                    SELECT rp2.id_cliente FROM RUTA_PROGRAMACION rp2
-                    WHERE rp2.activa = 1 AND rp2.id_cliente IS NOT NULL
-                      AND rp2.id_ruta IN ({_RUTAS_COMPARTIDAS})
-              )
-        """)).fetchall()
+        clientes_compartidos_sub = (
+            db.query(RutaProgramacion.id_cliente)
+            .filter(
+                RutaProgramacion.activo == True,
+                RutaProgramacion.id_cliente.isnot(None),
+                RutaProgramacion.ruta_id.in_(rutas_compartidas_sub)
+            )
+            .subquery()
+        )
+
+        rows = (
+            db.query(RutaProgramacion.id_cliente.distinct())
+            .filter(
+                RutaProgramacion.activo == True,
+                RutaProgramacion.id_cliente.isnot(None),
+                RutaProgramacion.id_cliente.notin_(clientes_compartidos_sub)
+            )
+            .all()
+        )
         return [r[0] for r in rows]
 
     if user.is_coordinador_tradex:
-        # Clientes en rutas compartidas = tradex.
-        rows = db.execute(text(f"""
-            SELECT DISTINCT rp.id_cliente
-            FROM RUTA_PROGRAMACION rp
-            WHERE rp.activa = 1 AND rp.id_cliente IS NOT NULL
-              AND rp.id_ruta IN ({_RUTAS_COMPARTIDAS})
-        """)).fetchall()
+        rows = (
+            db.query(RutaProgramacion.id_cliente.distinct())
+            .filter(
+                RutaProgramacion.activo == True,
+                RutaProgramacion.id_cliente.isnot(None),
+                RutaProgramacion.ruta_id.in_(rutas_compartidas_sub)
+            )
+            .all()
+        )
         return [r[0] for r in rows]
 
-    # cliente normal (rol 1/9/12): solo su perfil
     return [user.id_perfil] if user.id_perfil else []
 
 
 def client_route_ids(db: Session, user: Usuario) -> Optional[List[int]]:
-    """Rutas asignadas a un usuario cliente en CLIENTES_RUTAS.
-
-    None = sin restricción (el usuario no tiene ninguna fila en
-    CLIENTES_RUTAS → ve TODAS las rutas de su cliente). Si tiene al menos
-    una fila activa, solo ve esas rutas."""
-    rows = db.execute(text("""
-        SELECT id_ruta FROM CLIENTES_RUTAS WHERE id_usuario = :uid AND activo = 1
-    """), {"uid": user.id}).fetchall()
+    """Rutas asignadas a un usuario cliente en CLIENTES_RUTAS."""
+    rows = (
+        db.query(ClienteRuta.id_ruta)
+        .filter(ClienteRuta.id_usuario == user.id, ClienteRuta.activo == True)
+        .all()
+    )
     return [r[0] for r in rows] if rows else None

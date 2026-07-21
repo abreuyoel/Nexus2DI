@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, func
-from app.db.base import Base
 from sqlalchemy.orm import relationship
+from app.db.base import Base
 
 
 class Cliente(Base):
@@ -8,6 +8,9 @@ class Cliente(Base):
 
     id = Column("id_cliente", Integer, primary_key=True, index=True)
     nombre = Column("cliente", String(200), nullable=False)
+    id_tipo_cliente = Column(Integer, nullable=True)
+
+    categorias = relationship("CategoriaCliente", backref="cliente")
 
 
 class CategoriaCliente(Base):
@@ -29,3 +32,17 @@ class ClienteRuta(Base):
     id_ruta = Column(Integer, ForeignKey("RUTAS_NUEVAS.id_ruta"), nullable=False)
     activo = Column(Boolean, nullable=False, default=True)
     fecha_creacion = Column(DateTime, server_default=func.now())
+
+    ruta = relationship("Ruta")
+    usuario = relationship("Usuario")
+
+
+class DashboardClient(Base):
+    __tablename__ = "dashboard_client"
+
+    id = Column("id", Integer, primary_key=True, index=True)
+    id_cliente = Column(Integer, ForeignKey("CLIENTES.id_cliente"), nullable=False)
+    url_html = Column(String(1000), nullable=True)
+    tipo = Column(String(100), nullable=True)
+
+    cliente = relationship("Cliente")

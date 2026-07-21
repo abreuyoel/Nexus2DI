@@ -1,20 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
+from sqlalchemy import func, or_, String
+from sqlalchemy.orm import Session
 
 from app.db.session import get_db, SessionLocal
 from app.core.dependencies import get_current_user
 from app.modules.auth.entities import Usuario
 from app.modules.chat.entities import ChatMensaje, ChatConversacion, ChatParticipante
+from app.modules.analysts.entities import Analista, AnalistaCliente
+from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
+from app.modules.routes.entities import Ruta, RutaProgramacion, PuntoInteres
+from app.modules.visits.entities import Visita
 from app.modules.chat.dto import (
     ChatMensajeCreate, ChatMensajeResponse,
     CrearConversacionRequest, ConversacionResponse,
     RecipientsResponse, RecipientUser, RegionRecipient, PdvRecipient,
-    InboxItem,
+    InboxItem, VisitSearchResult
 )
-from app.modules.realtime.ws_manager import manager
+from app.websockets.manager import manager
+from app.websockets.guard import ws_guard
 from app.shared.realtime import notify_event
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
@@ -38,11 +43,11 @@ def _resolve_cliente_id(user: Usuario, requested: Optional[int]) -> int:
 
 
 def _is_participant(db: Session, conversacion_id: int, user_id: int) -> bool:
-    row = db.execute(
-        text("SELECT 1 FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c AND id_usuario = :u"),
-        {"c": conversacion_id, "u": user_id},
-    ).fetchone()
-    return row is not None
+    res = db.query(ChatParticipante.conversacion_id).filter(
+        ChatParticipante.conversacion_id == conversacion_id,
+        ChatParticipante.usuario_id == user_id
+    ).first()
+    return res is not None
 
 
 def _can_access_conversation(db: Session, conv: ChatConversacion, user: Usuario) -> bool:
@@ -62,52 +67,76 @@ def get_recipients(
 ):
     cid = _resolve_cliente_id(current_user, cliente_id)
 
-    analistas = db.execute(text("""
-        SELECT DISTINCT u.id_usuario, COALESCE(a.nombre_analista, u.username) AS nombre, u.username
-        FROM ANALISTAS_CLIENTE ac
-        JOIN ANALISTAS a ON ac.id_analista = a.id_analista
-        JOIN USUARIOS  u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE ac.id_cliente = :cid
-          AND ISNULL(u.activo, 1) = 1
-        ORDER BY nombre
-    """), {"cid": cid}).fetchall()
+    analistas = (
+        db.query(
+            Usuario.id,
+            func.coalesce(Analista.nombre, Usuario.username).label("nombre"),
+            Usuario.username
+        )
+        .distinct()
+        .join(Analista, Usuario.id_perfil == Analista.id)
+        .join(AnalistaCliente, AnalistaCliente.id_analista == Analista.id)
+        .filter(
+            AnalistaCliente.id_cliente == cid,
+            Usuario.id_rol == 2,
+            func.coalesce(Usuario.activo, True) == True
+        )
+        .order_by(func.coalesce(Analista.nombre, Usuario.username))
+        .all()
+    )
 
-    mercs = db.execute(text("""
-        SELECT DISTINCT u.id_usuario, m.nombre, m.cedula
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
-        JOIN USUARIOS u ON u.id_perfil = m.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid
-          AND ISNULL(m.activo, 1) = 1
-          AND ISNULL(u.activo, 1) = 1
-        ORDER BY m.nombre
-    """), {"cid": cid}).fetchall()
+    mercs = (
+        db.query(
+            Usuario.id,
+            Mercaderista.nombre,
+            Mercaderista.cedula
+        )
+        .distinct()
+        .join(Mercaderista, Usuario.id_perfil == Mercaderista.id)
+        .join(MercaderistaRuta, MercaderistaRuta.mercaderista_id == Mercaderista.id)
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
+        .filter(
+            RutaProgramacion.id_cliente == cid,
+            Usuario.id_rol == 5,
+            func.coalesce(Mercaderista.activo, True) == True,
+            func.coalesce(Usuario.activo, True) == True
+        )
+        .order_by(Mercaderista.nombre)
+        .all()
+    )
 
-    regiones = db.execute(text("""
-        SELECT rn.cuadrante AS region, COUNT(DISTINCT mr.id_mercaderista) AS cnt
-        FROM RUTAS_NUEVAS rn
-        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = rn.id_ruta
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rn.id_ruta
-        WHERE rp.id_cliente = :cid
-          AND rn.cuadrante IS NOT NULL AND rn.cuadrante <> ''
-        GROUP BY rn.cuadrante
-        ORDER BY rn.cuadrante
-    """), {"cid": cid}).fetchall()
+    regiones = (
+        db.query(
+            Ruta.cuadrante.label("region"),
+            func.count(func.distinct(MercaderistaRuta.mercaderista_id)).label("cnt")
+        )
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id)
+        .join(MercaderistaRuta, MercaderistaRuta.ruta_id == Ruta.id)
+        .filter(
+            RutaProgramacion.id_cliente == cid,
+            Ruta.cuadrante.isnot(None),
+            Ruta.cuadrante != ""
+        )
+        .group_by(Ruta.cuadrante)
+        .order_by(Ruta.cuadrante)
+        .all()
+    )
 
-    pdvs = db.execute(text("""
-        SELECT pin.identificador,
-               pin.punto_de_interes,
-               rn.cuadrante AS region,
-               COUNT(DISTINCT mr.id_mercaderista) AS cnt
-        FROM PUNTOS_INTERES1 pin
-        JOIN RUTA_PROGRAMACION rp ON rp.id_punto_interes = pin.identificador
-        JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rn.id_ruta
-        WHERE rp.id_cliente = :cid
-        GROUP BY pin.identificador, pin.punto_de_interes, rn.cuadrante
-        ORDER BY pin.punto_de_interes
-    """), {"cid": cid}).fetchall()
+    pdvs = (
+        db.query(
+            PuntoInteres.id.label("identificador"),
+            PuntoInteres.nombre.label("punto_de_interes"),
+            Ruta.cuadrante.label("region"),
+            func.count(func.distinct(MercaderistaRuta.mercaderista_id)).label("cnt")
+        )
+        .join(RutaProgramacion, RutaProgramacion.punto_id == PuntoInteres.id)
+        .join(Ruta, RutaProgramacion.ruta_id == Ruta.id)
+        .join(MercaderistaRuta, MercaderistaRuta.ruta_id == Ruta.id)
+        .filter(RutaProgramacion.id_cliente == cid)
+        .group_by(PuntoInteres.id, PuntoInteres.nombre, Ruta.cuadrante)
+        .order_by(PuntoInteres.nombre)
+        .all()
+    )
 
     return RecipientsResponse(
         analistas=[
@@ -121,7 +150,7 @@ def get_recipients(
         ],
         regiones=[RegionRecipient(region=r[0], mercaderistas_count=r[1]) for r in regiones],
         pdvs=[
-            PdvRecipient(identificador=r[0], punto_de_interes=r[1],
+            PdvRecipient(identificador=r[0], punto_de_interes=r[1] or "",
                           region=r[2], mercaderistas_count=r[3])
             for r in pdvs
         ],
@@ -132,58 +161,83 @@ def get_recipients(
 # CREAR / LISTAR CONVERSACIONES
 # ════════════════════════════════════════════════════════════════════════════
 def _get_team_user_ids(db: Session, cid: int) -> set[int]:
-    rows = db.execute(text("""
-        SELECT u.id_usuario
-        FROM ANALISTAS_CLIENTE ac
-        JOIN ANALISTAS a ON ac.id_analista = a.id_analista
-        JOIN USUARIOS u ON u.id_perfil = a.id_analista AND u.id_rol = 2
-        WHERE ac.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        SELECT u.id_usuario
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        SELECT u.id_usuario
-        FROM USUARIOS u
-        WHERE u.id_rol = 3 AND ISNULL(u.activo, 1) = 1
-
-        UNION
-        SELECT u.id_usuario
-        FROM USUARIOS u
-        WHERE u.id_perfil = :cid
-          AND u.id_rol IN (1, 4, 9, 11, 12)
-          AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid}).fetchall()
-    return {r[0] for r in rows}
+    analista_uids = (
+        db.query(Usuario.id)
+        .join(Analista, Usuario.id_perfil == Analista.id)
+        .join(AnalistaCliente, AnalistaCliente.id_analista == Analista.id)
+        .filter(
+            AnalistaCliente.id_cliente == cid,
+            Usuario.id_rol == 2,
+            func.coalesce(Usuario.activo, True) == True
+        ).all()
+    )
+    merc_uids = (
+        db.query(Usuario.id)
+        .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
+        .filter(
+            RutaProgramacion.id_cliente == cid,
+            Usuario.id_rol == 5,
+            func.coalesce(Usuario.activo, True) == True
+        ).all()
+    )
+    super_uids = (
+        db.query(Usuario.id)
+        .filter(
+            Usuario.id_rol == 3,
+            func.coalesce(Usuario.activo, True) == True
+        ).all()
+    )
+    client_uids = (
+        db.query(Usuario.id)
+        .filter(
+            Usuario.id_perfil == cid,
+            Usuario.id_rol.in_([1, 4, 9, 11, 12]),
+            func.coalesce(Usuario.activo, True) == True
+        ).all()
+    )
+    return {u[0] for u in analista_uids} | {u[0] for u in merc_uids} | {u[0] for u in super_uids} | {u[0] for u in client_uids}
 
 
 def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
-    rows = db.execute(text("""
-        SELECT DISTINCT u.id_usuario
-        FROM RUTA_PROGRAMACION rp
-        JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rn.id_ruta
-        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid AND rn.cuadrante = :region
-          AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid, "region": region}).fetchall()
+    rows = (
+        db.query(Usuario.id)
+        .distinct()
+        .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
+        .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == Ruta.id)
+        .filter(
+            RutaProgramacion.id_cliente == cid,
+            Ruta.cuadrante == region,
+            Usuario.id_rol == 5,
+            func.coalesce(Usuario.activo, True) == True
+        )
+        .all()
+    )
     return {r[0] for r in rows}
 
 
 def _get_pdv_user_ids(db: Session, cid: int, pdv_id: str) -> set[int]:
-    rows = db.execute(text("""
-        SELECT DISTINCT u.id_usuario
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
-        WHERE rp.id_cliente = :cid AND rp.id_punto_interes = :pdv
-          AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid, "pdv": pdv_id}).fetchall()
+    rows = (
+        db.query(Usuario.id)
+        .distinct()
+        .join(MercaderistaRuta, Usuario.id_perfil == MercaderistaRuta.mercaderista_id)
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
+        .filter(
+            RutaProgramacion.id_cliente == cid,
+            RutaProgramacion.punto_id == pdv_id,
+            Usuario.id_rol == 5,
+            func.coalesce(Usuario.activo, True) == True
+        )
+        .all()
+    )
     return {r[0] for r in rows}
+
+
+def _build_direct_title(db: Session, user_a: int, user_b: int) -> str:
+    rows = db.query(Usuario.id, Usuario.username).filter(Usuario.id.in_([user_a, user_b])).all()
+    names = {r[0]: r[1] for r in rows}
+    return f"{names.get(user_a, '?')} ↔ {names.get(user_b, '?')}"
 
 
 @router.post("/conversations", response_model=ConversacionResponse, status_code=201)
@@ -218,10 +272,8 @@ def create_conversation(
         if not body.punto_interes_id:
             raise HTTPException(status_code=400, detail="punto_interes_id requerido")
         participantes |= _get_pdv_user_ids(db, cid, body.punto_interes_id)
-        row = db.execute(text("""
-            SELECT punto_de_interes FROM PUNTOS_INTERES1 WHERE identificador = :p
-        """), {"p": body.punto_interes_id}).fetchone()
-        pdv_name = row[0] if row else body.punto_interes_id
+        row = db.query(PuntoInteres.nombre).filter(PuntoInteres.id == body.punto_interes_id).first()
+        pdv_name = row[0] if row and row[0] else body.punto_interes_id
         titulo = body.titulo or f"Mercaderistas · {pdv_name}"
 
     else:
@@ -273,14 +325,6 @@ def create_conversation(
     )
 
 
-def _build_direct_title(db: Session, user_a: int, user_b: int) -> str:
-    rows = db.execute(text("""
-        SELECT id_usuario, username FROM USUARIOS WHERE id_usuario IN (:a, :b)
-    """), {"a": user_a, "b": user_b}).fetchall()
-    names = {r[0]: r[1] for r in rows}
-    return f"{names.get(user_a, '?')} ↔ {names.get(user_b, '?')}"
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # LISTAR / VER CONVERSACIONES
 # ════════════════════════════════════════════════════════════════════════════
@@ -290,60 +334,45 @@ def list_conversations(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
+    query = db.query(ChatConversacion)
     if current_user.is_coordinador_exclusivo:
         if not cliente_id:
             raise HTTPException(status_code=400, detail="cliente_id requerido")
-        query = """
-            SELECT c.id_conversacion, c.id_cliente, c.tipo, c.titulo, c.region,
-                   c.id_punto_interes, c.creado_por, c.fecha_creacion,
-                   (SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = c.id_conversacion) AS cnt,
-                   (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
-                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
-                   (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg_date,
-                   0 AS no_leidos
-            FROM CHAT_CONVERSACIONES c
-            WHERE c.id_cliente = :cid
-            ORDER BY ISNULL(
-                (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                    WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
-                c.fecha_creacion
-            ) DESC
-        """
-        rows = db.execute(text(query), {"cid": cliente_id}).fetchall()
+        query = query.filter(ChatConversacion.cliente_id == cliente_id)
     else:
-        query = """
-            SELECT c.id_conversacion, c.id_cliente, c.tipo, c.titulo, c.region,
-                   c.id_punto_interes, c.creado_por, c.fecha_creacion,
-                   (SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = c.id_conversacion) AS cnt,
-                   (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
-                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
-                   (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg_date,
-                   (SELECT COUNT(*) FROM CHAT_MENSAJES_CLIENTE m
-                       WHERE m.id_conversacion = c.id_conversacion
-                         AND m.id_usuario <> :uid
-                         AND ISNULL(m.visto, 0) = 0) AS no_leidos
-            FROM CHAT_CONVERSACIONES c
-            JOIN CHAT_PARTICIPANTES p ON p.id_conversacion = c.id_conversacion
-            WHERE p.id_usuario = :uid
-            ORDER BY ISNULL(
-                (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                    WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
-                c.fecha_creacion
-            ) DESC
-        """
-        rows = db.execute(text(query), {"uid": current_user.id}).fetchall()
+        query = query.join(ChatParticipante, ChatConversacion.id == ChatParticipante.conversacion_id)\
+                     .filter(ChatParticipante.usuario_id == current_user.id)
 
-    return [
-        ConversacionResponse(
-            id=r[0], cliente_id=r[1], tipo=r[2], titulo=r[3], region=r[4],
-            punto_interes_id=r[5], creado_por=r[6], fecha_creacion=r[7],
-            participantes_count=r[8], ultimo_mensaje=r[9], ultimo_mensaje_fecha=r[10],
-            no_leidos=int(r[11] or 0),
-        )
-        for r in rows
-    ]
+    convs = query.all()
+    res = []
+    for conv in convs:
+        cnt = db.query(func.count(ChatParticipante.usuario_id)).filter(ChatParticipante.conversacion_id == conv.id).scalar() or 0
+        last_msg_obj = db.query(ChatMensaje).filter(ChatMensaje.conversacion_id == conv.id).order_by(ChatMensaje.created_at.desc()).first()
+        no_leidos = 0
+        if not current_user.is_coordinador_exclusivo:
+            no_leidos = db.query(func.count(ChatMensaje.id)).filter(
+                ChatMensaje.conversacion_id == conv.id,
+                ChatMensaje.sender_id != current_user.id,
+                func.coalesce(ChatMensaje.leido, False) == False
+            ).scalar() or 0
+
+        res.append(ConversacionResponse(
+            id=conv.id,
+            cliente_id=conv.cliente_id,
+            tipo=conv.tipo,
+            titulo=conv.titulo,
+            region=conv.region,
+            punto_interes_id=conv.punto_interes_id,
+            creado_por=conv.creado_por,
+            fecha_creacion=conv.fecha_creacion,
+            participantes_count=int(cnt),
+            ultimo_mensaje=last_msg_obj.mensaje if last_msg_obj else None,
+            ultimo_mensaje_fecha=last_msg_obj.created_at if last_msg_obj else None,
+            no_leidos=int(no_leidos),
+        ))
+
+    res.sort(key=lambda c: c.ultimo_mensaje_fecha or c.fecha_creacion or datetime.min, reverse=True)
+    return res
 
 
 @router.get("/conversations/{conv_id}", response_model=ConversacionResponse)
@@ -358,15 +387,13 @@ def get_conversation(
     if not _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso a esta conversación")
 
-    cnt = db.execute(text("""
-        SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
-    """), {"c": conv_id}).scalar()
+    cnt = db.query(func.count(ChatParticipante.usuario_id)).filter(ChatParticipante.conversacion_id == conv_id).scalar() or 0
 
     return ConversacionResponse(
         id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
         region=conv.region, punto_interes_id=conv.punto_interes_id,
         creado_por=conv.creado_por, fecha_creacion=conv.fecha_creacion,
-        participantes_count=int(cnt or 0),
+        participantes_count=int(cnt),
     )
 
 
@@ -382,12 +409,15 @@ def get_conversation_messages(
     if not _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso")
 
-    db.execute(text("""
-        UPDATE CHAT_MENSAJES_CLIENTE
-        SET visto = 1
-        WHERE id_conversacion = :c AND id_usuario <> :u AND ISNULL(visto, 0) = 0
-    """), {"c": conv_id, "u": current_user.id})
-    db.commit()
+    unread = db.query(ChatMensaje).filter(
+        ChatMensaje.conversacion_id == conv_id,
+        ChatMensaje.sender_id != current_user.id,
+        func.coalesce(ChatMensaje.leido, False) == False
+    ).all()
+    for m in unread:
+        m.leido = True
+    if unread:
+        db.commit()
 
     mensajes = db.query(ChatMensaje).filter(
         ChatMensaje.conversacion_id == conv_id
@@ -457,95 +487,87 @@ def get_chat_inbox(
     inbox: list[InboxItem] = []
 
     if cid is not None:
-        visit_query = """
-            SELECT cm.id_visita,
-                   MAX(cm.fecha_envio) AS last_date,
-                   (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
-                      WHERE id_visita = cm.id_visita AND id_conversacion IS NULL
-                      ORDER BY fecha_envio DESC) AS last_msg,
-                   p.punto_de_interes AS punto_nombre,
-                   p.identificador AS punto_id,
-                   v.fecha_visita,
-                   (SELECT COUNT(*) FROM CHAT_MENSAJES_CLIENTE m
-                      WHERE m.id_visita = cm.id_visita AND m.id_conversacion IS NULL
-                        AND m.id_usuario <> :uid AND ISNULL(m.visto, 0) = 0) AS no_leidos
-            FROM CHAT_MENSAJES_CLIENTE cm
-            JOIN VISITAS_MERCADERISTA v ON cm.id_visita = v.id_visita
-            LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-            WHERE cm.id_cliente = :cid AND cm.id_conversacion IS NULL
-            GROUP BY cm.id_visita, p.punto_de_interes, p.identificador, v.fecha_visita
-            ORDER BY last_date DESC
-        """
-        rows = db.execute(text(visit_query), {"cid": cid, "uid": current_user.id}).fetchall()
-        for r in rows:
+        visita_ids = (
+            db.query(ChatMensaje.visita_id)
+            .distinct()
+            .filter(
+                ChatMensaje.cliente_id == cid,
+                ChatMensaje.conversacion_id.is_(None),
+                ChatMensaje.visita_id.isnot(None)
+            )
+            .all()
+        )
+        v_ids = [v[0] for v in visita_ids if v[0] is not None]
+
+        for vid in v_ids:
+            last_msg = (
+                db.query(ChatMensaje)
+                .filter(ChatMensaje.visita_id == vid, ChatMensaje.conversacion_id.is_(None))
+                .order_by(ChatMensaje.created_at.desc())
+                .first()
+            )
+            visita = db.query(Visita).get(vid)
+            punto = db.query(PuntoInteres).get(visita.punto_id) if visita and visita.punto_id else None
+            no_leidos = db.query(func.count(ChatMensaje.id)).filter(
+                ChatMensaje.visita_id == vid,
+                ChatMensaje.conversacion_id.is_(None),
+                ChatMensaje.sender_id != current_user.id,
+                func.coalesce(ChatMensaje.leido, False) == False
+            ).scalar() or 0
+
             inbox.append(InboxItem(
                 kind="visit",
-                visita_id=r[0],
-                punto_nombre=r[3] or "Punto Desconocido",
-                punto_id=r[4],
-                fecha_visita=str(r[5]) if r[5] else None,
-                last_message=r[2],
-                last_message_date=str(r[1]) if r[1] else None,
-                unread_count=int(r[6] or 0),
+                visita_id=vid,
+                punto_nombre=punto.nombre if punto else "Punto Desconocido",
+                punto_id=punto.id if punto else None,
+                fecha_visita=str(visita.fecha) if (visita and visita.fecha) else None,
+                last_message=last_msg.mensaje if last_msg else None,
+                last_message_date=str(last_msg.created_at) if (last_msg and last_msg.created_at) else None,
+                unread_count=int(no_leidos)
             ))
 
+    conv_query = db.query(ChatConversacion)
     if current_user.is_coordinador_exclusivo:
-        conv_rows = db.execute(text("""
-            SELECT c.id_conversacion, c.tipo, c.titulo,
-                   (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
-                      WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
-                   (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                      WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_date,
-                   0 AS no_leidos
-            FROM CHAT_CONVERSACIONES c
-            WHERE c.id_cliente = :cid
-            ORDER BY ISNULL(
-                (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                    WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
-                c.fecha_creacion
-            ) DESC
-        """), {"cid": cid}).fetchall()
+        conv_query = conv_query.filter(ChatConversacion.cliente_id == cid)
     else:
-        conv_rows = db.execute(text("""
-            SELECT c.id_conversacion, c.tipo, c.titulo,
-                   (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
-                      WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
-                   (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                      WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_date,
-                   (SELECT COUNT(*) FROM CHAT_MENSAJES_CLIENTE m
-                      WHERE m.id_conversacion = c.id_conversacion
-                        AND m.id_usuario <> :uid AND ISNULL(m.visto, 0) = 0) AS no_leidos
-            FROM CHAT_CONVERSACIONES c
-            JOIN CHAT_PARTICIPANTES p ON p.id_conversacion = c.id_conversacion
-            WHERE p.id_usuario = :uid
-            ORDER BY ISNULL(
-                (SELECT TOP 1 fecha_envio FROM CHAT_MENSAJES_CLIENTE
-                    WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
-                c.fecha_creacion
-            ) DESC
-        """), {"uid": current_user.id}).fetchall()
+        conv_query = conv_query.join(ChatParticipante, ChatConversacion.id == ChatParticipante.conversacion_id)\
+                               .filter(ChatParticipante.usuario_id == current_user.id)
 
-    for r in conv_rows:
+    conv_list = conv_query.all()
+
+    for c in conv_list:
+        last_msg = (
+            db.query(ChatMensaje)
+            .filter(ChatMensaje.conversacion_id == c.id)
+            .order_by(ChatMensaje.created_at.desc())
+            .first()
+        )
+        no_leidos = 0
+        if not current_user.is_coordinador_exclusivo:
+            no_leidos = db.query(func.count(ChatMensaje.id)).filter(
+                ChatMensaje.conversacion_id == c.id,
+                ChatMensaje.sender_id != current_user.id,
+                func.coalesce(ChatMensaje.leido, False) == False
+            ).scalar() or 0
+
         inbox.append(InboxItem(
             kind="conversation",
-            conversacion_id=r[0],
-            tipo=r[1],
-            titulo=r[2] or "(Sin título)",
-            last_message=r[3],
-            last_message_date=str(r[4]) if r[4] else None,
-            unread_count=int(r[5] or 0),
+            conversacion_id=c.id,
+            tipo=c.tipo,
+            titulo=c.titulo or "(Sin título)",
+            last_message=last_msg.mensaje if last_msg else None,
+            last_message_date=str(last_msg.created_at) if (last_msg and last_msg.created_at) else None,
+            unread_count=int(no_leidos)
         ))
 
-    def _sort_key(item: InboxItem):
-        return item.last_message_date or "0000-00-00"
-    inbox.sort(key=_sort_key, reverse=True)
+    inbox.sort(key=lambda i: i.last_message_date or "0000-00-00", reverse=True)
     return inbox
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # CHAT POR VISITA — endpoints originales (compatibilidad)
 # ════════════════════════════════════════════════════════════════════════════
-@router.get("/search-visits")
+@router.get("/search-visits", response_model=List[VisitSearchResult])
 def search_chat_visits(
     q: str,
     db: Session = Depends(get_db),
@@ -553,52 +575,51 @@ def search_chat_visits(
 ):
     cliente_id = current_user.id_perfil if current_user.is_client else None
 
-    query_str = """
-        SELECT TOP 50
-            v.id_visita,
-            p.punto_de_interes as punto_nombre,
-            p.identificador as punto_id,
-            p.jerarquia_nivel_2 as cadena,
-            p.jerarquia_nivel_2_2 as region,
-            v.fecha_visita,
-            m.nombre as mercaderista_nombre
-        FROM VISITAS_MERCADERISTA v
-        LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-        LEFT JOIN MERCADERISTAS m ON v.id_mercaderista = m.id_mercaderista
-        WHERE 1=1
-    """
-    params = {}
+    query = (
+        db.query(
+            Visita.id.label("visita_id"),
+            PuntoInteres.nombre.label("punto_nombre"),
+            PuntoInteres.id.label("punto_id"),
+            PuntoInteres.cadena.label("cadena"),
+            PuntoInteres.departamento.label("region"),
+            Visita.fecha.label("fecha_visita"),
+            Mercaderista.nombre.label("mercaderista_nombre")
+        )
+        .outerjoin(PuntoInteres, Visita.punto_id == PuntoInteres.id)
+        .outerjoin(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+    )
+
     if cliente_id:
-        query_str += " AND v.id_cliente = :cliente_id"
-        params["cliente_id"] = cliente_id
+        query = query.filter(Visita.id_cliente == cliente_id)
 
     if q:
-        query_str += """ AND (
-            CAST(v.id_visita AS VARCHAR) LIKE :q OR
-            p.punto_de_interes LIKE :q OR
-            p.jerarquia_nivel_2 LIKE :q OR
-            p.jerarquia_nivel_2_2 LIKE :q OR
-            m.nombre LIKE :q
-        )"""
-        params["q"] = f"%{q}%"
+        search_pattern = f"%{q}%"
+        query = query.filter(
+            or_(
+                func.cast(Visita.id, String).like(search_pattern),
+                PuntoInteres.nombre.like(search_pattern),
+                PuntoInteres.cadena.like(search_pattern),
+                PuntoInteres.departamento.like(search_pattern),
+                Mercaderista.nombre.like(search_pattern)
+            )
+        )
 
-    query_str += " ORDER BY v.fecha_visita DESC"
-    rows = db.execute(text(query_str), params).fetchall()
+    rows = query.order_by(Visita.fecha.desc()).limit(50).all()
 
     results = []
     for row in rows:
-        results.append({
-            "visita_id": row.id_visita,
-            "punto_nombre": row.punto_nombre or "Punto Desconocido",
-            "punto_id": row.punto_id,
-            "cadena": row.cadena,
-            "region": row.region,
-            "mercaderista_nombre": row.mercaderista_nombre,
-            "fecha_visita": str(row.fecha_visita) if row.fecha_visita else None,
-            "last_message": "Nueva Conversación",
-            "last_message_date": str(row.fecha_visita) if row.fecha_visita else None,
-            "unread_count": 0
-        })
+        results.append(VisitSearchResult(
+            visita_id=row[0],
+            punto_nombre=row[1] or "Punto Desconocido",
+            punto_id=row[2],
+            cadena=row[3],
+            region=row[4],
+            mercaderista_nombre=row[6],
+            fecha_visita=str(row[5]) if row[5] else None,
+            last_message="Nueva Conversación",
+            last_message_date=str(row[5]) if row[5] else None,
+            unread_count=0
+        ))
     return results
 
 
@@ -614,7 +635,6 @@ def get_messages_by_visit(
 
     for msg in mensajes:
         if msg.sender_nombre and msg.sender_nombre.isdigit():
-            from app.modules.merchandisers.entities import Mercaderista
             merc = db.query(Mercaderista).filter(Mercaderista.cedula == msg.sender_nombre).first()
             if merc and merc.nombre:
                 msg.sender_nombre = merc.nombre
@@ -653,10 +673,16 @@ def send_message(
 # ════════════════════════════════════════════════════════════════════════════
 @router.websocket("/ws/{room}")
 async def websocket_chat(websocket: WebSocket, room: str):
-    await manager.connect(websocket, f"chat_{room}")
+    user = await manager.connect_guarded(websocket, f"chat_{room}", require_auth=True)
+    if not user:
+        return
     try:
         while True:
             data = await websocket.receive_json()
+            if not ws_guard.check_rate_limit(websocket):
+                await websocket.send_json({"error": "Rate limit exceeded. Please slow down."})
+                continue
+
             db = SessionLocal()
             try:
                 conversacion_id = data.get("conversacion_id")
@@ -665,8 +691,8 @@ async def websocket_chat(websocket: WebSocket, room: str):
                     cliente_id=data.get("cliente_id"),
                     conversacion_id=conversacion_id,
                     sender_type=data.get("sender_type", "usuario"),
-                    sender_id=data.get("sender_id"),
-                    sender_nombre=data.get("sender_nombre"),
+                    sender_id=user.id,
+                    sender_nombre=user.username,
                     mensaje=data["mensaje"],
                     created_at=datetime.now()
                 )

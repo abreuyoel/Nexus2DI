@@ -1,25 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_admin, require_analyst_or_admin
 from app.modules.auth.entities import Usuario
 from app.modules.clients.entities import Cliente, CategoriaCliente, ClienteRuta
 from app.modules.catalogues.entities import Categoria
-from app.modules.routes.entities import Ruta
+from app.modules.routes.entities import Ruta, RutaProgramacion
 from app.modules.clients.dto import (
-    ClienteCreate, ClienteUpdate, ClienteResponse,
+    ClienteCreate, ClienteUpdate, ClienteResponse, AsignacionCategoria,
     CategoriaClienteCreate, CategoriaClienteResponse,
-    ClienteRutaCreate, ClienteRutaUpdate, ClienteRutaResponse
+    ClienteRutaCreate, ClienteRutaUpdate, ClienteRutaResponse,
+    UsuarioClienteRutaItem, RutaDisponibleItem, RutasDisponiblesClienteResponse
 )
 
 router = APIRouter(tags=["Clientes"])
-
-
-class AsignacionCategoria(BaseModel):
-    id_categoria: int
 
 
 @router.get("/api/clients", response_model=List[ClienteResponse])
@@ -58,7 +55,7 @@ def update_client(
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_admin),
 ):
-    cliente = db.query(Cliente).filter(cliente.id == client_id).first() if hasattr(db.query(Cliente), 'id') else db.query(Cliente).filter(Cliente.id == client_id).first()
+    cliente = db.query(Cliente).filter(Cliente.id == client_id).first()
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
@@ -305,43 +302,95 @@ def delete_cliente_ruta(
     return {"detail": "Asignación de ruta eliminada"}
 
 
-@router.get("/api/clientes-rutas-usuarios")
+@router.get("/api/clientes-rutas-usuarios", response_model=List[UsuarioClienteRutaItem])
 def list_usuarios_cliente(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    """Usuarios con rol Cliente (id_rol=1) a los que se les puede asignar rutas.
-    id_perfil = id_cliente (relación con CLIENTES)."""
-    rows = db.execute(text("""
-        SELECT u.id_usuario, u.username, u.id_perfil AS id_cliente, c.cliente,
-               (SELECT COUNT(*) FROM CLIENTES_RUTAS cr WHERE cr.id_usuario = u.id_usuario) AS n_rutas
-        FROM USUARIOS u
-        LEFT JOIN CLIENTES c ON c.id_cliente = u.id_perfil
-        WHERE u.id_rol = 1 AND u.activo = 1
-        ORDER BY c.cliente, u.username
-    """)).fetchall()
-    return [{"id_usuario": r[0], "username": r[1], "id_cliente": r[2],
-             "cliente": r[3], "n_rutas": r[4] or 0} for r in rows]
+    """Usuarios con rol Cliente (id_rol=1) a los que se les puede asignar rutas."""
+    sub_count = (
+        db.query(
+            ClienteRuta.id_usuario,
+            func.count(ClienteRuta.id).label("n_rutas")
+        )
+        .group_by(ClienteRuta.id_usuario)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Usuario.id,
+            Usuario.username,
+            Usuario.id_perfil,
+            Cliente.nombre,
+            func.coalesce(sub_count.c.n_rutas, 0).label("n_rutas")
+        )
+        .outerjoin(Cliente, Cliente.id == Usuario.id_perfil)
+        .outerjoin(sub_count, sub_count.c.id_usuario == Usuario.id)
+        .filter(
+            Usuario.id_rol == 1,
+            Usuario.activo == True
+        )
+        .order_by(Cliente.nombre, Usuario.username)
+        .all()
+    )
+
+    return [
+        UsuarioClienteRutaItem(
+            id_usuario=r[0],
+            username=r[1],
+            id_cliente=r[2],
+            cliente=r[3],
+            n_rutas=r[4] or 0
+        )
+        for r in query
+    ]
 
 
-@router.get("/api/clientes-rutas-disponibles/{id_usuario}")
+@router.get("/api/clientes-rutas-disponibles/{id_usuario}", response_model=RutasDisponiblesClienteResponse)
 def rutas_disponibles_cliente(id_usuario: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     """Rutas donde aparece el cliente del usuario (según RUTA_PROGRAMACION),
     marcando cuáles ya están asignadas en CLIENTES_RUTAS."""
-    u = db.execute(text("SELECT id_perfil FROM USUARIOS WHERE id_usuario = :u"), {"u": id_usuario}).fetchone()
+    u = db.query(Usuario.id_perfil).filter(Usuario.id == id_usuario).first()
     if not u or not u[0]:
         raise HTTPException(404, "Usuario cliente no encontrado o sin cliente asociado")
     id_cliente = u[0]
-    rows = db.execute(text("""
-        SELECT rn.id_ruta, rn.ruta,
-               COUNT(DISTINCT rp.id_punto_interes) AS pdvs,
-               (SELECT TOP 1 cr.id_cliente_ruta FROM CLIENTES_RUTAS cr
-                WHERE cr.id_usuario = :u AND cr.id_ruta = rn.id_ruta) AS id_cliente_ruta
-        FROM RUTA_PROGRAMACION rp
-        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
-        WHERE rp.id_cliente = :cid AND rp.activa = 1
-        GROUP BY rn.id_ruta, rn.ruta
-        ORDER BY rn.ruta
-    """), {"u": id_usuario, "cid": id_cliente}).fetchall()
-    return {
-        "id_cliente": id_cliente,
-        "rutas": [{"id_ruta": r[0], "ruta": r[1], "pdvs": r[2] or 0,
-                   "asignada": r[3] is not None, "id_cliente_ruta": r[3]} for r in rows],
-    }
+
+    sub_cr = (
+        db.query(
+            ClienteRuta.id_ruta,
+            func.max(ClienteRuta.id).label("id_cliente_ruta")
+        )
+        .filter(ClienteRuta.id_usuario == id_usuario)
+        .group_by(ClienteRuta.id_ruta)
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Ruta.id,
+            Ruta.nombre,
+            func.count(func.distinct(RutaProgramacion.punto_id)).label("pdvs"),
+            sub_cr.c.id_cliente_ruta
+        )
+        .join(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+        .outerjoin(sub_cr, sub_cr.c.id_ruta == Ruta.id)
+        .filter(
+            RutaProgramacion.id_cliente == id_cliente,
+            RutaProgramacion.activo == True
+        )
+        .group_by(Ruta.id, Ruta.nombre, sub_cr.c.id_cliente_ruta)
+        .order_by(Ruta.nombre)
+        .all()
+    )
+
+    return RutasDisponiblesClienteResponse(
+        id_cliente=id_cliente,
+        rutas=[
+            RutaDisponibleItem(
+                id_ruta=r[0],
+                ruta=r[1] or "",
+                pdvs=r[2] or 0,
+                asignada=r[3] is not None,
+                id_cliente_ruta=r[3]
+            )
+            for r in query
+        ]
+    )

@@ -1,21 +1,27 @@
+import io
+import pandas as pd
+from datetime import date, timedelta
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from typing import Optional
-from datetime import date, timedelta
-import pandas as pd
-import io
+from sqlalchemy import func
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.modules.auth.entities import Usuario
 from app.modules.visits.entities import Visita, Foto
-from app.modules.routes.entities import RutaActivada
+from app.modules.routes.entities import RutaActivada, PuntoInteres, Ruta, RutaProgramacion
+from app.modules.merchandisers.entities import Mercaderista
+from app.modules.reporting.dto import (
+    ReportSummaryResponse, PeriodoDto, SummaryVisitasDto, SummaryFotosDto,
+    ChartDataResponse, ActivatedRouteItemResponse
+)
 
 router = APIRouter(prefix="/api/reports", tags=["Reportería"])
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=ReportSummaryResponse)
 def get_report_summary(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
@@ -46,24 +52,24 @@ def get_report_summary(
     fotos_rechazadas = sum(1 for f in fotos if f.estado == "rechazada")
     fotos_pendientes = sum(1 for f in fotos if f.estado == "pendiente")
 
-    return {
-        "periodo": {"inicio": str(fecha_inicio), "fin": str(fecha_fin)},
-        "visitas": {
-            "total": total,
-            "completadas": completadas,
-            "pendientes": pendientes,
-            "porcentaje_completadas": round(completadas / total * 100, 1) if total > 0 else 0,
-        },
-        "fotos": {
-            "total": len(fotos),
-            "aprobadas": fotos_aprobadas,
-            "rechazadas": fotos_rechazadas,
-            "pendientes": fotos_pendientes,
-        },
-    }
+    return ReportSummaryResponse(
+        periodo=PeriodoDto(inicio=str(fecha_inicio), fin=str(fecha_fin)),
+        visitas=SummaryVisitasDto(
+            total=total,
+            completadas=completadas,
+            pendientes=pendientes,
+            porcentaje_completadas=round(completadas / total * 100, 1) if total > 0 else 0.0,
+        ),
+        fotos=SummaryFotosDto(
+            total=len(fotos),
+            aprobadas=fotos_aprobadas,
+            rechazadas=fotos_rechazadas,
+            pendientes=fotos_pendientes,
+        ),
+    )
 
 
-@router.get("/chart-data")
+@router.get("/chart-data", response_model=ChartDataResponse)
 def get_chart_data(
     tipo: str = "visitas_por_dia",
     fecha_inicio: Optional[date] = None,
@@ -77,7 +83,6 @@ def get_chart_data(
         fecha_fin = date.today()
 
     if tipo == "visitas_por_dia":
-        from sqlalchemy import func
         results = db.query(
             Visita.fecha,
             func.count(Visita.id).label("total"),
@@ -86,36 +91,42 @@ def get_chart_data(
             Visita.fecha <= fecha_fin,
         ).group_by(Visita.fecha).order_by(Visita.fecha).all()
 
-        return {
-            "labels": [str(r.fecha) for r in results],
-            "data": [r.total for r in results],
-            "title": "Visitas por Día",
-        }
+        return ChartDataResponse(
+            labels=[str(r.fecha) for r in results],
+            data=[r.total for r in results],
+            title="Visitas por Día",
+        )
 
     elif tipo == "fotos_por_estado":
-        from sqlalchemy import func
         results = db.query(
             Foto.estado,
             func.count(Foto.id).label("total"),
         ).group_by(Foto.estado).all()
 
-        return {
-            "labels": [r.estado for r in results],
-            "data": [r.total for r in results],
-            "title": "Fotos por Estado",
-        }
+        return ChartDataResponse(
+            labels=[r.estado or "Sin Estado" for r in results],
+            data=[r.total for r in results],
+            title="Fotos por Estado",
+        )
 
-    return {"labels": [], "data": [], "title": tipo}
+    return ChartDataResponse(labels=[], data=[], title=tipo)
 
 
-@router.get("/activated-routes")
+@router.get("/activated-routes", response_model=List[ActivatedRouteItemResponse])
 def get_activated_routes(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
     today = date.today()
     activadas = db.query(RutaActivada).filter(RutaActivada.fecha == today).all()
-    return [{"ruta_id": a.ruta_id, "cedula": a.mercaderista_cedula, "hora": str(a.activada_at)} for a in activadas]
+    return [
+        ActivatedRouteItemResponse(
+            ruta_id=a.ruta_id,
+            cedula=a.mercaderista_cedula,
+            hora=str(a.activada_at) if a.activada_at else None
+        )
+        for a in activadas
+    ]
 
 
 @router.get("/export-visitas")
@@ -130,52 +141,57 @@ def export_visitas_excel(
     _: Usuario = Depends(require_analyst_or_admin),
 ):
     try:
-        query = """
-            SELECT 
-                v.id_visita AS [ID Visita],
-                v.fecha_visita AS [Fecha],
-                v.estado AS [Estado Visita],
-                p.punto_de_interes AS [Nombre del PDV],
-                p.departamento AS [Departamento / Estado],
-                p.clasificacion_de_canal AS [Canal],
-                p.jerarquia_nivel_2 AS [Categoría PDV],
-                rn.cuadrante AS [Cuadrante],
-                m.nombre AS [Mercaderista]
-            FROM VISITAS_MERCADERISTA v
-            JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
-            LEFT JOIN RUTAS_NUEVAS rn ON p.identificador = rn.id_punto_interes
-            LEFT JOIN MERCADERISTAS m ON v.id_mercaderista = m.id_mercaderista
-            WHERE v.id_cliente = :id_cliente
-              AND v.fecha_visita >= :fecha_inicio
-              AND v.fecha_visita <= :fecha_fin
-        """
-        params = {
-            "id_cliente": id_cliente,
-            "fecha_inicio": fecha_inicio,
-            "fecha_fin": fecha_fin
-        }
-
+        q = (
+            db.query(
+                Visita.id.label("ID Visita"),
+                Visita.fecha.label("Fecha"),
+                Visita.estado.label("Estado Visita"),
+                PuntoInteres.nombre.label("Nombre del PDV"),
+                PuntoInteres.departamento.label("Departamento / Estado"),
+                PuntoInteres.cadena.label("Canal"),
+                PuntoInteres.jerarquia_n2.label("Categoría PDV"),
+                Ruta.cuadrante.label("Cuadrante"),
+                Mercaderista.nombre.label("Mercaderista")
+            )
+            .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
+            .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
+            .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+            .outerjoin(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+            .filter(
+                Visita.id_cliente == id_cliente,
+                Visita.fecha >= fecha_inicio,
+                Visita.fecha <= fecha_fin
+            )
+        )
         if cuadrante:
-            query += " AND rn.cuadrante = :cuadrante"
-            params["cuadrante"] = cuadrante
-            
+            q = q.filter(Ruta.cuadrante == cuadrante)
         if departamento:
-            query += " AND p.departamento = :departamento"
-            params["departamento"] = departamento
-            
+            q = q.filter(PuntoInteres.departamento == departamento)
         if categoria:
-            query += " AND (p.jerarquia_nivel_2 = :categoria OR p.clasificacion_de_canal = :categoria)"
-            params["categoria"] = categoria
+            q = q.filter((PuntoInteres.jerarquia_n2 == categoria) | (PuntoInteres.cadena == categoria))
 
-        result = db.execute(text(query), params).fetchall()
-        
-        if not result:
+        rows = q.all()
+
+        if not rows:
             df = pd.DataFrame(columns=[
                 "ID Visita", "Fecha", "Estado Visita", "Nombre del PDV", 
                 "Departamento / Estado", "Canal", "Categoría PDV", "Cuadrante", "Mercaderista"
             ])
         else:
-            data = [dict(row._mapping) for row in result]
+            data = [
+                {
+                    "ID Visita": r[0],
+                    "Fecha": str(r[1]) if r[1] else "",
+                    "Estado Visita": r[2] or "",
+                    "Nombre del PDV": r[3] or "",
+                    "Departamento / Estado": r[4] or "",
+                    "Canal": r[5] or "",
+                    "Categoría PDV": r[6] or "",
+                    "Cuadrante": r[7] or "",
+                    "Mercaderista": r[8] or ""
+                }
+                for r in rows
+            ]
             df = pd.DataFrame(data)
 
         output = io.BytesIO()

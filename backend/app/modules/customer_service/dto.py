@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 
@@ -26,3 +26,7 @@ class SolicitudResponse(SolicitudBase):
 
     class Config:
         from_attributes = True
+
+
+class AprobarSolicitudRequest(BaseModel):
+    completar: Optional[Dict[str, Any]] = None

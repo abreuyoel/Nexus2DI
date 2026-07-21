@@ -1,17 +1,29 @@
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, date
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import func
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.entities import Usuario
-from app.modules.merchandisers.entities import Mercaderista
+from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
+from app.modules.routes.entities import Ruta, RutaProgramacion, PuntoInteres
+from app.modules.clients.entities import Cliente
+from app.modules.visits.entities import Visita, Foto, Balance
+from app.modules.catalogues.entities import Producto
+from app.modules.chat.entities import ChatMensaje
+from app.modules.merchandisers.dto import (
+    MiPerfilResponse, MiPerfilRutaItem, MiRutaResponse, RutaItemResponse, PdvPuntoItem,
+    MiVisitaResponse, IniciarVisitaRequest, IniciarVisitaResponse,
+    FotosVisitaResponse, FotoTipoGroupResponse, FotoItemResponse,
+    ProductoClienteResponse, GuardarBalancesRequest, ChatInboxItemResponse
+)
 from app.shared.realtime import notify_event
 
 router = APIRouter(prefix="/api/merc", tags=["Mercaderista Portal"])
@@ -34,6 +46,7 @@ FOTO_TIPOS = {
 }
 FOTO_TIPO_TO_ID = {k: v["id"] for k, v in FOTO_TIPOS.items()}
 ID_TO_CODIGO = {v["id"]: k for k, v in FOTO_TIPOS.items()}
+FOTOS_DIR = "app/static/fotos_mercaderista"
 
 
 def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
@@ -50,275 +63,7 @@ def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
     return merc
 
 
-@router.get("/mi-perfil")
-def get_mi_perfil(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    merc = _get_mercaderista(current_user, db)
-
-    rutas = db.execute(text("""
-        SELECT mr.id_mercaderista_ruta, mr.id_ruta, mr.tipo_ruta
-        FROM MERCADERISTAS_RUTAS mr
-        WHERE mr.id_mercaderista = :id_merc
-    """), {"id_merc": merc.id}).fetchall()
-
-    return {
-        "id": merc.id,
-        "nombre": merc.nombre,
-        "cedula": merc.cedula,
-        "email": merc.email,
-        "telefono": merc.telefono,
-        "rutas": [
-            {"id_ruta": r.id_ruta, "tipo": r.tipo_ruta}
-            for r in rutas
-        ],
-    }
-
-
-@router.get("/mi-ruta")
-def get_mi_ruta(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    merc = _get_mercaderista(current_user, db)
-    hoy = date.today()
-    dia_semana = DAY_MAP_ES[hoy.weekday()]
-
-    rutas_rows = db.execute(text("""
-        SELECT mr.id_ruta, mr.tipo_ruta, rn.ruta AS nombre_ruta
-        FROM MERCADERISTAS_RUTAS mr
-        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = mr.id_ruta
-        WHERE mr.id_mercaderista = :id_merc
-    """), {"id_merc": merc.id}).fetchall()
-
-    rutas = [
-        {"id_ruta": r.id_ruta, "tipo": r.tipo_ruta, "nombre": r.nombre_ruta}
-        for r in rutas_rows
-    ]
-
-    pdvs_rows = db.execute(text("""
-        SELECT DISTINCT
-            rp.id_programacion,
-            rp.id_punto_interes,
-            rp.punto_interes,
-            rp.id_cliente,
-            rp.id_ruta,
-            rp.prioridad,
-            mr.tipo_ruta,
-            pi.latitud,
-            pi.longitud,
-            pi.jerarquia_nivel_2   AS cadena,
-            pi.jerarquia_nivel_2_2 AS region,
-            pi.Direccion           AS direccion,
-            c.cliente               AS cliente_nombre
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        LEFT JOIN PUNTOS_INTERES1 pi ON pi.identificador = rp.id_punto_interes
-        LEFT JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
-        WHERE mr.id_mercaderista = :id_merc
-          AND rp.dia = :dia
-          AND rp.activa = 1
-    """), {"id_merc": merc.id, "dia": dia_semana}).fetchall()
-
-    visitas_hoy = db.execute(text("""
-        SELECT identificador_punto_interes, id_visita, estado, estado_data
-        FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista = :id_merc
-          AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"id_merc": merc.id, "hoy": str(hoy)}).fetchall()
-
-    visita_por_pdv = {v.identificador_punto_interes: v for v in visitas_hoy}
-
-    pdvs = []
-    for row in pdvs_rows:
-        visita = visita_por_pdv.get(row.id_punto_interes)
-        pdvs.append({
-            "id_punto":      row.id_punto_interes,
-            "nombre":        row.punto_interes,
-            "id_cliente":    row.id_cliente,
-            "cliente":       row.cliente_nombre,
-            "id_ruta":       row.id_ruta,
-            "cadena":        row.cadena,
-            "region":        row.region,
-            "direccion":     row.direccion,
-            "tipo_ruta":     row.tipo_ruta,
-            "prioridad":     row.prioridad,
-            "tiene_coords":  row.latitud is not None and row.longitud is not None,
-            "latitud":       float(str(row.latitud).replace(",", ".")) if row.latitud else None,
-            "longitud":      float(str(row.longitud).replace(",", ".")) if row.longitud else None,
-            "visita_id":     visita.id_visita if visita else None,
-            "visitado":      visita is not None,
-            "estado":        visita.estado if visita else None,
-            "estado_data":   visita.estado_data if visita else None,
-        })
-
-    return {
-        "dia": dia_semana,
-        "fecha": str(hoy),
-        "rutas": rutas,
-        "pdvs": pdvs
-    }
-
-
-@router.get("/mis-visitas")
-def get_mis_visitas(
-    fecha_inicio: Optional[str] = None,
-    fecha_fin: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    merc = _get_mercaderista(current_user, db)
-
-    if not fecha_inicio:
-        fecha_inicio = str(date.today())
-    if not fecha_fin:
-        fecha_fin = str(date.today())
-
-    rows = db.execute(text("""
-        SELECT
-            v.id_visita,
-            v.fecha_visita,
-            v.estado,
-            v.estado_data,
-            v.observaciones,
-            v.identificador_punto_interes,
-            pi.punto_de_interes  AS pdv_nombre,
-            pi.jerarquia_nivel_2 AS cadena,
-            pi.jerarquia_nivel_2_2 AS region,
-            c.cliente            AS cliente_nombre,
-            v.id_cliente
-        FROM VISITAS_MERCADERISTA v
-        LEFT JOIN PUNTOS_INTERES1 pi ON pi.identificador = v.identificador_punto_interes
-        LEFT JOIN CLIENTES c ON c.id_cliente = v.id_cliente
-        WHERE v.id_mercaderista = :id_merc
-          AND CAST(v.fecha_visita AS DATE) >= :fi
-          AND CAST(v.fecha_visita AS DATE) <= :ff
-        ORDER BY v.fecha_visita DESC
-    """), {"id_merc": merc.id, "fi": fecha_inicio, "ff": fecha_fin}).fetchall()
-
-    result = []
-    for r in rows:
-        fotos_count = db.execute(text("""
-            SELECT COUNT(*) FROM FOTOS_TOTALES WHERE id_visita = :vid
-        """), {"vid": r.id_visita}).scalar() or 0
-
-        balances_count = db.execute(text("""
-            SELECT COUNT(*) FROM BALANCES_TOTALES WHERE id_visita = :vid
-        """), {"vid": r.id_visita}).scalar() or 0
-
-        result.append({
-            "id_visita":    r.id_visita,
-            "fecha":        str(r.fecha_visita),
-            "estado":       r.estado,
-            "estado_data":  r.estado_data,
-            "pdv_nombre":   r.pdv_nombre,
-            "cadena":       r.cadena,
-            "region":       r.region,
-            "cliente":      r.cliente_nombre,
-            "id_cliente":   r.id_cliente,
-            "observaciones": r.observaciones,
-            "fotos_count":  fotos_count,
-            "balances_count": balances_count,
-        })
-    return result
-
-
-@router.post("/iniciar-visita")
-def iniciar_visita(
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    merc = _get_mercaderista(current_user, db)
-    id_punto = payload.get("id_punto")
-    id_cliente = payload.get("id_cliente")
-
-    if not id_punto or not id_cliente:
-        raise HTTPException(status_code=400, detail="id_punto e id_cliente son requeridos")
-
-    existing = db.execute(text("""
-        SELECT id_visita FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista = :mid
-          AND identificador_punto_interes = :pid
-          AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"mid": merc.id, "pid": id_punto, "hoy": str(date.today())}).fetchone()
-
-    if existing:
-        return {"id_visita": existing.id_visita, "nueva": False}
-
-    db.execute(text("""
-        INSERT INTO VISITAS_MERCADERISTA
-            (id_mercaderista, fecha_visita, estado, estado_data, id_cliente, identificador_punto_interes)
-        VALUES
-            (:mid, :fecha, 'Pendiente', 'Pendiente', :cid, :pid)
-    """), {
-        "mid": merc.id,
-        "fecha": datetime.now(),
-        "cid": id_cliente,
-        "pid": id_punto,
-    })
-    db.commit()
-
-    new_id = db.execute(text("""
-        SELECT MAX(id_visita) FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista = :mid AND identificador_punto_interes = :pid
-    """), {"mid": merc.id, "pid": id_punto}).scalar()
-
-    notify_event("visit.created", {"id_visita": new_id, "id_cliente": id_cliente, "id_punto": id_punto})
-
-    return {"id_visita": new_id, "nueva": True}
-
-
-@router.get("/ruta/{id_ruta}/pdvs")
-def get_pdvs_de_ruta(
-    id_ruta: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
-):
-    merc = _get_mercaderista(current_user, db)
-    hoy = date.today()
-    pdvs_rows = db.execute(text("""
-        SELECT DISTINCT
-            rp.id_punto_interes, rp.punto_interes, rp.id_cliente, rp.id_ruta, rp.prioridad,
-            mr.tipo_ruta, pi.latitud, pi.longitud,
-            pi.jerarquia_nivel_2 AS cadena, pi.jerarquia_nivel_2_2 AS region,
-            pi.Direccion AS direccion, c.cliente AS cliente_nombre
-        FROM RUTA_PROGRAMACION rp
-        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-        LEFT JOIN PUNTOS_INTERES1 pi ON pi.identificador = rp.id_punto_interes
-        LEFT JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
-        WHERE mr.id_mercaderista = :id_merc AND rp.id_ruta = :id_ruta AND rp.activa = 1
-        ORDER BY rp.punto_interes
-    """), {"id_merc": merc.id, "id_ruta": id_ruta}).fetchall()
-
-    visitas_hoy = db.execute(text("""
-        SELECT identificador_punto_interes, id_visita, estado, estado_data
-        FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista = :id_merc AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"id_merc": merc.id, "hoy": str(hoy)}).fetchall()
-    visita_por_pdv = {v.identificador_punto_interes: v for v in visitas_hoy}
-
-    pdvs = []
-    for row in pdvs_rows:
-        visita = visita_por_pdv.get(row.id_punto_interes)
-        pdvs.append({
-            "id_punto": row.id_punto_interes, "nombre": row.punto_interes,
-            "id_cliente": row.id_cliente, "cliente": row.cliente_nombre,
-            "id_ruta": row.id_ruta, "cadena": row.cadena, "region": row.region,
-            "direccion": row.direccion, "tipo_ruta": row.tipo_ruta, "prioridad": row.prioridad,
-            "tiene_coords": row.latitud is not None and row.longitud is not None,
-            "latitud": float(str(row.latitud).replace(",", ".")) if row.latitud else None,
-            "longitud": float(str(row.longitud).replace(",", ".")) if row.longitud else None,
-            "visita_id": visita.id_visita if visita else None,
-            "visitado": visita is not None,
-            "estado": visita.estado if visita else None,
-            "estado_data": visita.estado_data if visita else None,
-        })
-    return {"id_ruta": id_ruta, "pdvs": pdvs}
-
-
-def _merc_foto_url(blob_path, foto_id):
+def _merc_foto_url(blob_path: Optional[str], foto_id: int) -> Optional[str]:
     if not blob_path:
         return None
     if "fotos_mercaderista" in blob_path or os.path.exists(blob_path):
@@ -330,44 +75,326 @@ def _merc_foto_url(blob_path, foto_id):
         return f"/api/merc/foto/{foto_id}"
 
 
-@router.get("/visita/{visita_id}/fotos")
+@router.get("/mi-perfil", response_model=MiPerfilResponse)
+def get_mi_perfil(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    merc = _get_mercaderista(current_user, db)
+    rutas = db.query(MercaderistaRuta).filter(MercaderistaRuta.mercaderista_id == merc.id).all()
+    return MiPerfilResponse(
+        id=merc.id,
+        nombre=merc.nombre,
+        cedula=merc.cedula,
+        email=merc.email,
+        telefono=merc.telefono,
+        rutas=[MiPerfilRutaItem(id_ruta=r.ruta_id, tipo=r.tipo_ruta) for r in rutas]
+    )
+
+
+@router.get("/mi-ruta", response_model=MiRutaResponse)
+def get_mi_ruta(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    merc = _get_mercaderista(current_user, db)
+    hoy = date.today()
+    dia_semana = DAY_MAP_ES[hoy.weekday()]
+
+    rutas_rows = (
+        db.query(MercaderistaRuta.ruta_id, MercaderistaRuta.tipo_ruta, Ruta.nombre)
+        .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
+        .filter(MercaderistaRuta.mercaderista_id == merc.id)
+        .all()
+    )
+    rutas = [RutaItemResponse(id_ruta=r[0], tipo=r[1], nombre=r[2]) for r in rutas_rows]
+
+    pdvs_rows = (
+        db.query(
+            RutaProgramacion.id,
+            RutaProgramacion.punto_id,
+            RutaProgramacion.punto_interes_nombre,
+            RutaProgramacion.id_cliente,
+            RutaProgramacion.ruta_id,
+            RutaProgramacion.prioridad,
+            MercaderistaRuta.tipo_ruta,
+            PuntoInteres.latitud,
+            PuntoInteres.longitud,
+            PuntoInteres.cadena,
+            PuntoInteres.departamento,
+            PuntoInteres.direccion,
+            Cliente.nombre
+        )
+        .distinct()
+        .join(MercaderistaRuta, MercaderistaRuta.ruta_id == RutaProgramacion.ruta_id)
+        .outerjoin(PuntoInteres, PuntoInteres.id == RutaProgramacion.punto_id)
+        .outerjoin(Cliente, Cliente.id == RutaProgramacion.id_cliente)
+        .filter(
+            MercaderistaRuta.mercaderista_id == merc.id,
+            RutaProgramacion.dia == dia_semana,
+            RutaProgramacion.activo == True
+        )
+        .all()
+    )
+
+    visitas_hoy = (
+        db.query(Visita)
+        .filter(
+            Visita.mercaderista_id == merc.id,
+            Visita.fecha == hoy
+        )
+        .all()
+    )
+    visita_por_pdv = {v.punto_id: v for v in visitas_hoy}
+
+    pdvs = []
+    for row in pdvs_rows:
+        pid = row[1]
+        visita = visita_por_pdv.get(pid)
+        pdvs.append(PdvPuntoItem(
+            id_punto=pid or "",
+            nombre=row[2],
+            id_cliente=row[3],
+            cliente=row[12],
+            id_ruta=row[4],
+            cadena=row[9],
+            region=row[10],
+            direccion=row[11],
+            tipo_ruta=row[6],
+            prioridad=row[5],
+            tiene_coords=row[7] is not None and row[8] is not None,
+            latitud=float(str(row[7]).replace(",", ".")) if row[7] else None,
+            longitud=float(str(row[8]).replace(",", ".")) if row[8] else None,
+            visita_id=visita.id if visita else None,
+            visitado=visita is not None,
+            estado=visita.estado if visita else None,
+            estado_data=visita.estado_data if (visita and hasattr(visita, 'estado_data')) else None,
+        ))
+
+    return MiRutaResponse(
+        dia=dia_semana,
+        fecha=str(hoy),
+        rutas=rutas,
+        pdvs=pdvs
+    )
+
+
+@router.get("/mis-visitas", response_model=List[MiVisitaResponse])
+def get_mis_visitas(
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    merc = _get_mercaderista(current_user, db)
+
+    fi = datetime.strptime(fecha_inicio, '%Y-%m-%d').date() if fecha_inicio else date.today()
+    ff = datetime.strptime(fecha_fin, '%Y-%m-%d').date() if fecha_fin else date.today()
+
+    sub_fotos = (
+        db.query(Foto.visita_id, func.count(Foto.id).label("fotos_count"))
+        .group_by(Foto.visita_id)
+        .subquery()
+    )
+    sub_balances = (
+        db.query(Balance.visita_id, func.count(Balance.id).label("balances_count"))
+        .group_by(Balance.visita_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Visita.id,
+            Visita.fecha,
+            Visita.estado,
+            Visita.estado_data,
+            Visita.observaciones,
+            Visita.punto_id,
+            PuntoInteres.nombre.label("pdv_nombre"),
+            PuntoInteres.cadena,
+            PuntoInteres.departamento.label("region"),
+            Cliente.nombre.label("cliente_nombre"),
+            Visita.id_cliente,
+            func.coalesce(sub_fotos.c.fotos_count, 0).label("fotos_count"),
+            func.coalesce(sub_balances.c.balances_count, 0).label("balances_count")
+        )
+        .outerjoin(PuntoInteres, PuntoInteres.id == Visita.punto_id)
+        .outerjoin(Cliente, Cliente.id == Visita.id_cliente)
+        .outerjoin(sub_fotos, sub_fotos.c.visita_id == Visita.id)
+        .outerjoin(sub_balances, sub_balances.c.visita_id == Visita.id)
+        .filter(
+            Visita.mercaderista_id == merc.id,
+            Visita.fecha >= fi,
+            Visita.fecha <= ff
+        )
+        .order_by(Visita.fecha.desc(), Visita.id.desc())
+        .all()
+    )
+
+    return [
+        MiVisitaResponse(
+            id_visita=r[0],
+            fecha=str(r[1]) if r[1] else None,
+            estado=r[2],
+            estado_data=r[3],
+            observaciones=r[4],
+            pdv_nombre=r[6],
+            cadena=r[7],
+            region=r[8],
+            cliente=r[9],
+            id_cliente=r[10],
+            fotos_count=r[11],
+            balances_count=r[12]
+        )
+        for r in rows
+    ]
+
+
+@router.post("/iniciar-visita", response_model=IniciarVisitaResponse)
+def iniciar_visita(
+    payload: IniciarVisitaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    merc = _get_mercaderista(current_user, db)
+    id_punto = payload.id_punto
+    id_cliente = payload.id_cliente
+
+    today = date.today()
+    existing = db.query(Visita).filter(
+        Visita.mercaderista_id == merc.id,
+        Visita.punto_id == id_punto,
+        Visita.fecha == today
+    ).first()
+
+    if existing:
+        return IniciarVisitaResponse(id_visita=existing.id, nueva=False)
+
+    visita = Visita(
+        mercaderista_id=merc.id,
+        fecha=today,
+        estado="Pendiente",
+        estado_data="Pendiente",
+        id_cliente=id_cliente,
+        punto_id=id_punto
+    )
+    db.add(visita)
+    db.commit()
+    db.refresh(visita)
+
+    notify_event("visit.created", {"id_visita": visita.id, "id_cliente": id_cliente, "id_punto": id_punto})
+
+    return IniciarVisitaResponse(id_visita=visita.id, nueva=True)
+
+
+@router.get("/ruta/{id_ruta}/pdvs")
+def get_pdvs_de_ruta(
+    id_ruta: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    merc = _get_mercaderista(current_user, db)
+    hoy = date.today()
+
+    pdvs_rows = (
+        db.query(
+            RutaProgramacion.punto_id,
+            RutaProgramacion.punto_interes_nombre,
+            RutaProgramacion.id_cliente,
+            RutaProgramacion.ruta_id,
+            RutaProgramacion.prioridad,
+            MercaderistaRuta.tipo_ruta,
+            PuntoInteres.latitud,
+            PuntoInteres.longitud,
+            PuntoInteres.cadena,
+            PuntoInteres.departamento,
+            PuntoInteres.direccion,
+            Cliente.nombre
+        )
+        .distinct()
+        .join(MercaderistaRuta, MercaderistaRuta.ruta_id == RutaProgramacion.ruta_id)
+        .outerjoin(PuntoInteres, PuntoInteres.id == RutaProgramacion.punto_id)
+        .outerjoin(Cliente, Cliente.id == RutaProgramacion.id_cliente)
+        .filter(
+            MercaderistaRuta.mercaderista_id == merc.id,
+            RutaProgramacion.ruta_id == id_ruta,
+            RutaProgramacion.activo == True
+        )
+        .order_by(RutaProgramacion.punto_interes_nombre)
+        .all()
+    )
+
+    visitas_hoy = (
+        db.query(Visita)
+        .filter(
+            Visita.mercaderista_id == merc.id,
+            Visita.fecha == hoy
+        )
+        .all()
+    )
+    visita_por_pdv = {v.punto_id: v for v in visitas_hoy}
+
+    pdvs = []
+    for row in pdvs_rows:
+        pid = row[0]
+        visita = visita_por_pdv.get(pid)
+        pdvs.append({
+            "id_punto": pid,
+            "nombre": row[1],
+            "id_cliente": row[2],
+            "cliente": row[11],
+            "id_ruta": row[3],
+            "cadena": row[8],
+            "region": row[9],
+            "direccion": row[10],
+            "tipo_ruta": row[5],
+            "prioridad": row[4],
+            "tiene_coords": row[6] is not None and row[7] is not None,
+            "latitud": float(str(row[6]).replace(",", ".")) if row[6] else None,
+            "longitud": float(str(row[7]).replace(",", ".")) if row[7] else None,
+            "visita_id": visita.id if visita else None,
+            "visitado": visita is not None,
+            "estado": visita.estado if visita else None,
+            "estado_data": visita.estado_data if (visita and hasattr(visita, 'estado_data')) else None,
+        })
+    return {"id_ruta": id_ruta, "pdvs": pdvs}
+
+
+@router.get("/visita/{visita_id}/fotos", response_model=FotosVisitaResponse)
 def get_fotos_visita(
     visita_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    rows = db.execute(text("""
-        SELECT id_foto, id_tipo_foto, file_path, Estado, fecha_registro
-        FROM FOTOS_TOTALES
-        WHERE id_visita = :vid
-        ORDER BY id_foto
-    """), {"vid": visita_id}).fetchall()
+    rows = (
+        db.query(Foto.id, Foto.id_tipo_foto, Foto.blob_path, Foto.estado, Foto.fecha_registro)
+        .filter(Foto.visita_id == visita_id)
+        .order_by(Foto.id)
+        .all()
+    )
 
     por_codigo: dict = {k: [] for k in FOTO_TIPOS.keys()}
     for r in rows:
-        cod = ID_TO_CODIGO.get(r.id_tipo_foto)
+        cod = ID_TO_CODIGO.get(r[1])
         if not cod:
             continue
-        por_codigo[cod].append({
-            "id_foto": r.id_foto,
-            "estado":  r.Estado,
-            "fecha":   str(r.fecha_registro) if r.fecha_registro else None,
-            "url":     _merc_foto_url(r.file_path, r.id_foto),
-        })
+        por_codigo[cod].append(FotoItemResponse(
+            id_foto=r[0],
+            estado=r[3],
+            fecha=str(r[4]) if r[4] else None,
+            url=_merc_foto_url(r[2], r[0]),
+        ))
 
     tipos_info = [
-        {
-            "codigo":      k,
-            "label":       v["label"],
-            "solo_camara": v["solo_camara"],
-            "fotos":       por_codigo.get(k, []),
-        }
+        FotoTipoGroupResponse(
+            codigo=k,
+            label=v["label"],
+            solo_camara=v["solo_camara"],
+            fotos=por_codigo.get(k, []),
+        )
         for k, v in FOTO_TIPOS.items()
     ]
-    return {"visita_id": visita_id, "tipos": tipos_info}
-
-
-FOTOS_DIR = "app/static/fotos_mercaderista"
+    return FotosVisitaResponse(visita_id=visita_id, tipos=tipos_info)
 
 
 @router.post("/fotos/upload")
@@ -396,7 +423,6 @@ async def upload_foto(
 
     if not blob_path:
         os.makedirs(FOTOS_DIR, exist_ok=True)
-        import uuid
         fname = f"{uuid.uuid4().hex}.{ext}"
         fpath = os.path.join(FOTOS_DIR, fname)
         with open(fpath, "wb") as f:
@@ -406,21 +432,22 @@ async def upload_foto(
     id_tipo = FOTO_TIPO_TO_ID.get(tipo_foto)
     if not id_tipo:
         raise HTTPException(status_code=400, detail=f"Tipo de foto inválido: {tipo_foto}")
+
     ahora = datetime.now()
-    db.execute(text("""
-        INSERT INTO FOTOS_TOTALES (id_visita, id_tipo_foto, file_path, fecha_registro, Estado)
-        VALUES (:vid, :tipo_id, :path, :fecha, 'pendiente')
-    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path, "fecha": ahora})
+    foto = Foto(
+        visita_id=visita_id,
+        id_tipo_foto=id_tipo,
+        blob_path=blob_path,
+        fecha_registro=ahora,
+        estado="pendiente"
+    )
+    db.add(foto)
     db.commit()
+    db.refresh(foto)
 
-    new_id = db.execute(text("""
-        SELECT MAX(id_foto) FROM FOTOS_TOTALES
-        WHERE id_visita = :vid AND id_tipo_foto = :tipo_id AND file_path = :path
-    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path}).scalar()
+    notify_event("photo.uploaded", {"id_foto": foto.id, "visita_id": visita_id, "tipo_foto": tipo_foto})
 
-    notify_event("photo.uploaded", {"id_foto": new_id, "visita_id": visita_id, "tipo_foto": tipo_foto})
-
-    return {"id_foto": new_id, "url": _merc_foto_url(blob_path, new_id), "estado": "pendiente"}
+    return {"id_foto": foto.id, "url": _merc_foto_url(blob_path, foto.id), "estado": "pendiente"}
 
 
 @router.delete("/foto/{foto_id}")
@@ -429,10 +456,11 @@ def delete_merc_foto(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    db.execute(text("DELETE FROM FOTOS_RAZONES_RECHAZOS WHERE id_foto = :fid"), {"fid": foto_id})
-    db.execute(text("DELETE FROM FOTOS_TOTALES WHERE id_foto = :fid"), {"fid": foto_id})
-    db.commit()
-    notify_event("photo.deleted", {"id_foto": foto_id})
+    foto = db.query(Foto).filter(Foto.id == foto_id).first()
+    if foto:
+        db.delete(foto)
+        db.commit()
+        notify_event("photo.deleted", {"id_foto": foto_id})
     return {"deleted": foto_id}
 
 
@@ -443,165 +471,151 @@ def get_foto(
     current_user: Usuario = Depends(get_current_user),
 ):
     from fastapi.responses import FileResponse, RedirectResponse
-    row = db.execute(text(
-        "SELECT file_path FROM FOTOS_TOTALES WHERE id_foto = :fid"
-    ), {"fid": foto_id}).fetchone()
-    if not row or not row.file_path:
+    foto = db.query(Foto.blob_path).filter(Foto.id == foto_id).first()
+    if not foto or not foto[0]:
         raise HTTPException(status_code=404, detail="Foto no encontrada")
-    if os.path.exists(row.file_path):
-        return FileResponse(row.file_path)
+    file_path = foto[0]
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
     try:
         from app.shared.azure_service import azure_service
-        return RedirectResponse(azure_service.get_sas_url(row.file_path))
+        return RedirectResponse(azure_service.get_sas_url(file_path))
     except Exception:
         raise HTTPException(status_code=404, detail="Archivo no disponible")
 
 
-@router.get("/productos")
+@router.get("/productos", response_model=List[ProductoClienteResponse])
 def get_productos_cliente(
     id_cliente: int = Query(...),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    rows = db.execute(text("""
-        SELECT p.id_product, p.producto_gutrade, cat.nombre AS categoria, pr.nombre AS fabricante
-        FROM PRODUCTS p
-        JOIN SUBCATEGORIAS sc ON sc.id_subcategoria = p.id_subcategoria
-        JOIN CATEGORIAS_CLIENTES cc ON cc.id_categoria = sc.id_categoria AND cc.id_cliente = :cid
-        LEFT JOIN CATEGORIAS cat ON cat.id_categoria = sc.id_categoria
-        LEFT JOIN MARCAS m ON m.id_marca = p.id_marca
-        LEFT JOIN PRODUCTORAS pr ON pr.id_productora = m.id_productora
-        ORDER BY cat.nombre, p.producto_gutrade
-    """), {"cid": id_cliente}).fetchall()
+    from app.modules.catalogues.entities import Subcategoria, CategoriaCliente, Marca, Productora, Categoria
+    rows = (
+        db.query(
+            Producto.id_producto,
+            Producto.producto_gu,
+            Categoria.nombre,
+            Productora.nombre
+        )
+        .join(Subcategoria, Subcategoria.id == Producto.id_subcategoria)
+        .join(CategoriaCliente, (CategoriaCliente.id_categoria == Subcategoria.id_categoria) & (CategoriaCliente.id_cliente == id_cliente))
+        .outerjoin(Categoria, Categoria.id == Subcategoria.id_categoria)
+        .outerjoin(Marca, Marca.id == Producto.id_marca)
+        .outerjoin(Productora, Productora.id == Marca.id_productora)
+        .order_by(Categoria.nombre, Producto.producto_gu)
+        .all()
+    )
 
     return [
-        {
-            "id": r.id_product,
-            "sku": r.producto_gutrade,
-            "fabricante": r.fabricante,
-            "categoria": r.categoria,
-        }
+        ProductoClienteResponse(
+            id=r[0],
+            sku=r[1],
+            categoria=r[2],
+            fabricante=r[3]
+        )
         for r in rows
     ]
 
 
 @router.post("/balances")
 def guardar_balances(
-    payload: dict,
+    payload: GuardarBalancesRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     merc = _get_mercaderista(current_user, db)
-    visita_id  = payload.get("visita_id")
-    productos  = payload.get("productos", [])
-    id_cliente = payload.get("id_cliente")
+    visita_id = payload.visita_id
+    productos = payload.productos
+    id_cliente = payload.id_cliente
 
     if not visita_id or not productos:
         raise HTTPException(status_code=400, detail="visita_id y productos son requeridos")
 
-    vis = db.execute(text("""
-        SELECT identificador_punto_interes FROM VISITAS_MERCADERISTA WHERE id_visita = :vid
-    """), {"vid": visita_id}).fetchone()
+    vis = db.query(Visita).filter(Visita.id == visita_id).first()
     if not vis:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
-    id_pdv = vis.identificador_punto_interes
+    id_pdv = vis.punto_id
 
     now = datetime.now()
     for p in productos:
-        sku       = p.get("sku", "")
-        fabricante = p.get("fabricante", "")
-        categoria  = p.get("categoria", "")
+        b = Balance(
+            id_cliente=id_cliente or merc.id,
+            fecha_balance=now,
+            identificador_pdv=id_pdv,
+            mercaderista=merc.nombre,
+            producto=p.sku or "",
+            fabricante=p.fabricante or "",
+            categoria=p.categoria or "",
+            inv_inicial=p.inv_inicial or 0,
+            inv_final=p.inv_final or 0,
+            inv_deposito=p.inv_deposito or 0,
+            caras=p.caras or 0,
+            precio_bs=p.precio_bs or 0.0,
+            precio_ds=p.precio_ds or 0.0,
+            visita_id=visita_id
+        )
+        db.add(b)
 
-        db.execute(text("""
-            INSERT INTO BALANCES_TOTALES (
-                id_cliente, fecha_balance, identificador_pdv, mercaderista,
-                producto, fabricante, categoria,
-                inv_inicial, inv_final, inv_deposito, caras,
-                precio_bs, precio_ds, FEFO, id_visita,
-                fecha_inicio_modificacion, fecha_modificacion
-            ) VALUES (
-                :cid, :fecha, :pdv, :merc,
-                :sku, :fab, :cat,
-                :ii, :if_, :id_, :caras,
-                :pbs, :pds, :fefo, :vid,
-                :fi, :fm
-            )
-        """), {
-            "cid":   id_cliente or merc.id,
-            "fecha": now,
-            "pdv":   id_pdv,
-            "merc":  merc.nombre,
-            "sku":   sku,
-            "fab":   fabricante,
-            "cat":   categoria,
-            "ii":    p.get("inv_inicial", 0),
-            "if_":   p.get("inv_final", 0),
-            "id_":   p.get("inv_deposito", 0),
-            "caras": p.get("caras", 0),
-            "pbs":   p.get("precio_bs") or 0,
-            "pds":   p.get("precio_ds") or 0,
-            "fefo":  p.get("fifo"),
-            "vid":   visita_id,
-            "fi":    now,
-            "fm":    now,
-        })
-
-    db.execute(text("""
-        UPDATE VISITAS_MERCADERISTA
-        SET estado_data = 'Cargado'
-        WHERE id_visita = :vid
-    """), {"vid": visita_id})
-
+    vis.estado_data = "Cargado"
     db.commit()
     return {"success": True, "productos_guardados": len(productos)}
 
 
-@router.get("/chat/inbox")
+@router.get("/chat/inbox", response_model=List[ChatInboxItemResponse])
 def get_chat_inbox(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     merc = _get_mercaderista(current_user, db)
 
-    rows = db.execute(text("""
-        SELECT
-            v.id_visita,
-            v.fecha_visita,
-            v.estado,
-            pi.punto_de_interes  AS pdv_nombre,
-            c.cliente            AS cliente_nombre,
-            (SELECT COUNT(*) FROM CHAT_MENSAJES cm WHERE cm.id_visita = v.id_visita) AS total_msgs,
-            (SELECT TOP 1 cm.mensaje FROM CHAT_MENSAJES cm
-             WHERE cm.id_visita = v.id_visita ORDER BY cm.fecha_envio DESC) AS ultimo_msg,
-            (SELECT TOP 1 cm.fecha_envio FROM CHAT_MENSAJES cm
-             WHERE cm.id_visita = v.id_visita ORDER BY cm.fecha_envio DESC) AS ultimo_at,
-            (SELECT COUNT(*) FROM CHAT_MENSAJES cm
-             LEFT JOIN CHAT_LECTURAS cl ON cl.id_mensaje = cm.id_mensaje
-                AND cl.id_usuario = :id_usuar
-             WHERE cm.id_visita = v.id_visita
-               AND cl.id_lectura IS NULL
-               AND cm.username != :cedula) AS no_leidos
-        FROM VISITAS_MERCADERISTA v
-        LEFT JOIN PUNTOS_INTERES1 pi ON pi.identificador = v.identificador_punto_interes
-        LEFT JOIN CLIENTES c ON c.id_cliente = v.id_cliente
-        WHERE v.id_mercaderista = :id_merc
-          AND EXISTS (
-            SELECT 1 FROM CHAT_MENSAJES cm WHERE cm.id_visita = v.id_visita
-          )
-        ORDER BY ultimo_at DESC
-    """), {"id_merc": merc.id, "cedula": str(merc.cedula), "id_usuar": merc.id}).fetchall()
+    sub_msgs_count = (
+        db.query(ChatMensaje.visita_id, func.count(ChatMensaje.id).label("total_msgs"))
+        .group_by(ChatMensaje.visita_id)
+        .subquery()
+    )
+
+    sub_last_msg = (
+        db.query(
+            ChatMensaje.visita_id,
+            ChatMensaje.mensaje.label("ultimo_msg"),
+            ChatMensaje.created_at.label("ultimo_at")
+        )
+        .order_by(ChatMensaje.created_at.desc())
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Visita.id,
+            Visita.fecha,
+            Visita.estado,
+            PuntoInteres.nombre.label("pdv_nombre"),
+            Cliente.nombre.label("cliente_nombre"),
+            func.coalesce(sub_msgs_count.c.total_msgs, 0).label("total_msgs"),
+            sub_last_msg.c.ultimo_msg,
+            sub_last_msg.c.ultimo_at
+        )
+        .join(sub_msgs_count, sub_msgs_count.c.visita_id == Visita.id)
+        .outerjoin(sub_last_msg, sub_last_msg.c.visita_id == Visita.id)
+        .outerjoin(PuntoInteres, PuntoInteres.id == Visita.punto_id)
+        .outerjoin(Cliente, Cliente.id == Visita.id_cliente)
+        .filter(Visita.mercaderista_id == merc.id)
+        .order_by(sub_last_msg.c.ultimo_at.desc())
+        .all()
+    )
 
     return [
-        {
-            "id_visita":    r.id_visita,
-            "fecha":        str(r.fecha_visita),
-            "estado":       r.estado,
-            "pdv_nombre":   r.pdv_nombre,
-            "cliente":      r.cliente_nombre,
-            "total_msgs":   r.total_msgs,
-            "ultimo_msg":   r.ultimo_msg,
-            "ultimo_at":    str(r.ultimo_at) if r.ultimo_at else None,
-            "no_leidos":    r.no_leidos or 0,
-        }
+        ChatInboxItemResponse(
+            id_visita=r[0],
+            fecha=str(r[1]) if r[1] else None,
+            estado=r[2],
+            pdv_nombre=r[3],
+            cliente=r[4],
+            total_msgs=r[5],
+            ultimo_msg=r[6],
+            ultimo_at=str(r[7]) if r[7] else None,
+            no_leidos=0
+        )
         for r in rows
     ]

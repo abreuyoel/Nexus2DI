@@ -34,7 +34,7 @@ def log_action(
         timestamp=datetime.now(timezone.utc),
     ))
     try:
-        from app.services.realtime import notify_event
+        from app.shared.realtime import notify_event
         notify_event("audit.created", {"action": action, "entity_type": entity_type, "username": username})
     except Exception:
         pass

@@ -1,23 +1,40 @@
 import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 from datetime import datetime, date
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import List, Optional, Any
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from sqlalchemy import func, case
+from sqlalchemy.orm import Session
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_admin
 from app.modules.auth.entities import Usuario
-from app.modules.auditors.entities import AuditLog
+from app.modules.auditors.entities import AuditLog, AuditoriaCategoria
 from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
-from app.modules.visits.entities import Visita, Foto, NotificacionRechazoFoto, Activacion
-from app.modules.routes.entities import Ruta, RutaActivada
-from app.modules.clients.entities import Cliente
-from app.modules.visits.dto import FotoResponse, NotificacionRechazoResponse
+from app.modules.visits.entities import Visita, Foto, Activacion
+from app.modules.routes.entities import Ruta, RutaActivada, RutaProgramacion, PuntoInteres
+from app.modules.clients.entities import Cliente, CategoriaCliente
+from app.modules.catalogues.entities import Categoria
 from app.shared.photo_service import process_and_upload_photo
-from app.shared.audit_service import log_action
-from app.core.request_ip import get_client_ip
+from app.modules.auditors.dto import (
+    AuditorStatsResponse,
+    AuditorRouteResponse,
+    ActivarRutaRequest,
+    DeactivarRutaRequest,
+    AuditorCampoRutaResponse,
+    RutaPuntoResponse,
+    ActivarRutaCampoRequest,
+    NoActivarRutaCampoRequest,
+    DesactivarRutaCampoRequest,
+    PdvClienteResponse,
+    ClienteCategoriaResponse,
+    IniciarAuditoriaClienteRequest,
+    IniciarAuditoriaClienteResponse,
+    GuardarAuditoriaCategoriaRequest,
+    FinalizarAuditoriaClienteRequest,
+    AuditLogItemResponse,
+    AuditLogsPaginatedResponse,
+)
 
 router = APIRouter(tags=["Auditores"])
 
@@ -26,30 +43,45 @@ TIPO = "Auditor de Campo"
 DIAS = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
 
 
-def _es_cedula(cedula) -> bool:
-    return str(cedula).strip().isdigit()
+def _es_cedula(cedula: Any) -> bool:
+    s = str(cedula).strip()
+    return s.isdigit()
 
 
 def _auditor_id(db: Session, cedula: str) -> Optional[int]:
     if not _es_cedula(cedula):
         return None
-    r = db.execute(text(
-        "SELECT id_mercaderista FROM MERCADERISTAS WHERE LTRIM(RTRIM(cedula))=LTRIM(RTRIM(:c)) AND tipo=:t"
-    ), {"c": cedula, "t": TIPO}).fetchone()
-    return r[0] if r else None
+    try:
+        ced_int = int(str(cedula).strip())
+    except ValueError:
+        return None
+    res = db.query(Mercaderista.id).filter(
+        Mercaderista.cedula == ced_int,
+        Mercaderista.tipo == TIPO
+    ).first()
+    return res[0] if res else None
+
+
+def _b(v: Any) -> Optional[int]:
+    if v is None:
+        return None
+    return 1 if v in (True, 1, "1", "si", "Si", "true") else 0
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # 1. Auditor Estadísticas y Rutas (antes routes/auditors.py)
 # ════════════════════════════════════════════════════════════════════════════
 
-@router.get("/api/auditor/stats/{cedula}")
+@router.get("/api/auditor/stats/{cedula}", response_model=AuditorStatsResponse)
 def get_auditor_stats(
     cedula: str,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula, Mercaderista.tipo == "Auditor").first()
+    if not _es_cedula(cedula):
+        raise HTTPException(status_code=400, detail="Cédula inválida")
+    ced_int = int(str(cedula).strip())
+    merc = db.query(Mercaderista).filter(Mercaderista.cedula == ced_int, Mercaderista.tipo == "Auditor").first()
     if not merc:
         raise HTTPException(status_code=404, detail="Auditor no encontrado")
     today = date.today()
@@ -61,47 +93,60 @@ def get_auditor_stats(
         Activacion.mercaderista_id == merc.id,
         Activacion.fecha == today,
     ).count()
-    return {
-        "cedula": cedula,
-        "nombre": merc.nombre_completo,
-        "visitas_hoy": visitas_hoy,
-        "activaciones_hoy": activaciones_hoy,
-    }
+    return AuditorStatsResponse(
+        cedula=cedula,
+        nombre=merc.nombre_completo,
+        visitas_hoy=visitas_hoy,
+        activaciones_hoy=activaciones_hoy,
+    )
 
 
-@router.get("/api/auditor/routes/{cedula}")
+@router.get("/api/auditor/routes/{cedula}", response_model=List[AuditorRouteResponse])
 def get_auditor_routes(
     cedula: str,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula).first()
+    if not _es_cedula(cedula):
+        raise HTTPException(status_code=400, detail="Cédula inválida")
+    ced_int = int(str(cedula).strip())
+    merc = db.query(Mercaderista).filter(Mercaderista.cedula == ced_int).first()
     if not merc:
         raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
-    mr_list = db.query(MercaderistaRuta).filter(
-        MercaderistaRuta.mercaderista_id == merc.id,
-        MercaderistaRuta.activo == True,
-    ).all()
-    rutas = [db.query(Ruta).get(mr.ruta_id) for mr in mr_list]
-    return [{"id": r.id, "nombre": r.nombre, "activa": r.activa} for r in rutas if r]
+    
+    routes = (
+        db.query(Ruta)
+        .join(MercaderistaRuta, Ruta.id == MercaderistaRuta.ruta_id)
+        .filter(MercaderistaRuta.mercaderista_id == merc.id)
+        .all()
+    )
+    return [AuditorRouteResponse(id=r.id, nombre=r.nombre or "", activa=r.activa) for r in routes if r]
 
 
 @router.post("/api/auditor/activate-route")
 def activate_route(
-    ruta_id: int,
-    cedula: str,
+    payload: ActivarRutaRequest,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
     today = date.today()
+    mid = _auditor_id(db, payload.cedula)
     existing = db.query(RutaActivada).filter(
-        RutaActivada.ruta_id == ruta_id,
-        RutaActivada.fecha == today,
-        RutaActivada.mercaderista_cedula == cedula,
-    ).first()
+        RutaActivada.ruta_id == payload.ruta_id,
+        func.cast(RutaActivada.fecha_hora_activacion, Date) == today,
+        RutaActivada.mercaderista_id == mid,
+    ).first() if mid else None
+
     if existing:
         return {"message": "Ruta ya activada"}
-    activacion = RutaActivada(ruta_id=ruta_id, fecha=today, mercaderista_cedula=cedula)
+    
+    activacion = RutaActivada(
+        ruta_id=payload.ruta_id,
+        fecha_hora_activacion=datetime.now(),
+        mercaderista_id=mid,
+        estado="En Progreso",
+        tipo_activacion="Auditor"
+    )
     db.add(activacion)
     db.commit()
     return {"message": "Ruta activada exitosamente"}
@@ -109,18 +154,19 @@ def activate_route(
 
 @router.post("/api/auditor/deactivate-route")
 def deactivate_route(
-    ruta_id: int,
-    cedula: str,
+    payload: DeactivarRutaRequest,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
     today = date.today()
-    db.query(RutaActivada).filter(
-        RutaActivada.ruta_id == ruta_id,
-        RutaActivada.fecha == today,
-        RutaActivada.mercaderista_cedula == cedula,
-    ).delete()
-    db.commit()
+    mid = _auditor_id(db, payload.cedula)
+    if mid:
+        db.query(RutaActivada).filter(
+            RutaActivada.ruta_id == payload.ruta_id,
+            func.cast(RutaActivada.fecha_hora_activacion, Date) == today,
+            RutaActivada.mercaderista_id == mid,
+        ).delete(synchronize_session=False)
+        db.commit()
     return {"message": "Ruta desactivada"}
 
 
@@ -150,101 +196,186 @@ def save_auditor_data(
 # 2. Auditor de Campo (antes routes/auditor_campo.py)
 # ════════════════════════════════════════════════════════════════════════════
 
-@router.get("/api/auditor-campo/rutas/{cedula}")
+@router.get("/api/auditor-campo/rutas/{cedula}", response_model=List[AuditorCampoRutaResponse])
 def get_auditor_campo_rutas(cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     if not _es_cedula(cedula):
         return []
-    rows = db.execute(text("""
-        SELECT rn.id_ruta, rn.ruta,
-            (SELECT COUNT(DISTINCT rp2.id_punto_interes) FROM RUTA_PROGRAMACION rp2
-             WHERE rp2.id_ruta = rn.id_ruta AND rp2.activa = 1) AS total_puntos,
-            CASE WHEN EXISTS (
-                SELECT 1 FROM RUTAS_ACTIVADAS ra JOIN MERCADERISTAS m2 ON ra.id_mercaderista = m2.id_mercaderista
-                WHERE ra.id_ruta = rn.id_ruta AND m2.cedula = :ced AND ra.estado = 'En Progreso'
-                AND CAST(ra.fecha_hora_activacion AS DATE) = CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END AS activa
-        FROM RUTAS_NUEVAS rn
-        JOIN MERCADERISTAS_RUTAS mr ON rn.id_ruta = mr.id_ruta
-        JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
-        WHERE m.cedula = :ced AND m.tipo = :tipo
-        ORDER BY rn.ruta
-    """), {"ced": cedula, "tipo": TIPO}).fetchall()
-    return [{"id": r[0], "nombre": r[1], "total_puntos": r[2] or 0, "esta_activa": bool(r[3])} for r in rows]
+    ced_int = int(str(cedula).strip())
+    today = date.today()
+
+    sub_count = (
+        db.query(
+            RutaProgramacion.ruta_id.label("id_ruta"),
+            func.count(func.distinct(RutaProgramacion.punto_id)).label("total_puntos")
+        )
+        .filter(RutaProgramacion.activo == True)
+        .group_by(RutaProgramacion.ruta_id)
+        .subquery()
+    )
+
+    sub_active = (
+        db.query(RutaActivada.ruta_id.label("id_ruta"))
+        .join(Mercaderista, RutaActivada.mercaderista_id == Mercaderista.id)
+        .filter(
+            Mercaderista.cedula == ced_int,
+            RutaActivada.estado == "En Progreso",
+            func.cast(RutaActivada.fecha_hora_activacion, Date) == today
+        )
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            Ruta.id,
+            Ruta.nombre,
+            func.coalesce(sub_count.c.total_puntos, 0).label("total_puntos"),
+            case((sub_active.c.id_ruta.isnot(None), 1), else_=0).label("activa")
+        )
+        .join(MercaderistaRuta, Ruta.id == MercaderistaRuta.ruta_id)
+        .join(Mercaderista, MercaderistaRuta.mercaderista_id == Mercaderista.id)
+        .outerjoin(sub_count, Ruta.id == sub_count.c.id_ruta)
+        .outerjoin(sub_active, Ruta.id == sub_active.c.id_ruta)
+        .filter(
+            Mercaderista.cedula == ced_int,
+            Mercaderista.tipo == TIPO
+        )
+        .order_by(Ruta.nombre)
+        .all()
+    )
+
+    return [
+        AuditorCampoRutaResponse(
+            id=r[0],
+            nombre=r[1] or "",
+            total_puntos=r[2] or 0,
+            esta_activa=bool(r[3])
+        )
+        for r in query
+    ]
 
 
-@router.get("/api/auditor-campo/ruta-puntos/{route_id}")
+@router.get("/api/auditor-campo/ruta-puntos/{route_id}", response_model=List[RutaPuntoResponse])
 def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
-    rows = db.execute(text("""
-        SELECT pin.identificador, pin.punto_de_interes, MAX(rp.prioridad) AS prioridad,
-            COUNT(DISTINCT rp.id_cliente) AS total_clientes,
-            CASE WHEN EXISTS (
-                SELECT 1 FROM FOTOS_TOTALES ft JOIN VISITAS_MERCADERISTA vm ON ft.id_visita = vm.id_visita
-                WHERE vm.identificador_punto_interes = pin.identificador AND ft.id_tipo_foto = 5
-                AND CAST(ft.fecha_registro AS DATE) = CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END AS activado
-        FROM RUTA_PROGRAMACION rp
-        JOIN PUNTOS_INTERES1 pin ON rp.id_punto_interes = pin.identificador
-        WHERE rp.id_ruta = :rid AND rp.activa = 1 AND rp.dia = :dia
-        GROUP BY pin.identificador, pin.punto_de_interes
-        ORDER BY pin.punto_de_interes
-    """), {"rid": route_id, "dia": dia}).fetchall()
-    return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media",
-             "total_clientes": r[3] or 0, "activado": bool(r[4])} for r in rows]
+    today = date.today()
+
+    sub_act = (
+        db.query(Visita.punto_id.label("identificador_punto"))
+        .join(Foto, Foto.visita_id == Visita.id)
+        .filter(
+            Foto.id_tipo_foto == 5,
+            func.cast(Foto.fecha_registro, Date) == today
+        )
+        .subquery()
+    )
+
+    query = (
+        db.query(
+            PuntoInteres.id,
+            PuntoInteres.nombre,
+            func.max(RutaProgramacion.prioridad).label("prioridad"),
+            func.count(func.distinct(RutaProgramacion.id_cliente)).label("total_clientes"),
+            case((sub_act.c.identificador_punto.isnot(None), 1), else_=0).label("activado")
+        )
+        .join(PuntoInteres, RutaProgramacion.punto_id == PuntoInteres.id)
+        .outerjoin(sub_act, PuntoInteres.id == sub_act.c.identificador_punto)
+        .filter(
+            RutaProgramacion.ruta_id == route_id,
+            RutaProgramacion.activo == True,
+            RutaProgramacion.dia == dia
+        )
+        .group_by(PuntoInteres.id, PuntoInteres.nombre, sub_act.c.identificador_punto)
+        .order_by(PuntoInteres.nombre)
+        .all()
+    )
+
+    return [
+        RutaPuntoResponse(
+            id=r[0],
+            nombre=r[1] or "",
+            prioridad=r[2] or "Media",
+            total_clientes=r[3] or 0,
+            activado=bool(r[4])
+        )
+        for r in query
+    ]
 
 
 @router.post("/api/auditor-campo/activar-ruta")
-def activar_ruta_campo(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
-    if not id_ruta or not cedula:
-        raise HTTPException(400, "Datos incompletos")
+def activar_ruta_campo(payload: ActivarRutaCampoRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    id_ruta, cedula = payload.id_ruta, payload.cedula
     mid = _auditor_id(db, cedula)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    existe = db.execute(text("""SELECT COUNT(*) FROM RUTAS_ACTIVADAS WHERE id_ruta=:r AND id_mercaderista=:m
-        AND estado='En Progreso' AND CAST(fecha_hora_activacion AS DATE)=CAST(GETDATE() AS DATE)"""),
-        {"r": id_ruta, "m": mid}).scalar()
-    if existe and existe > 0:
+    
+    today = date.today()
+    existing = db.query(RutaActivada).filter(
+        RutaActivada.ruta_id == id_ruta,
+        RutaActivada.mercaderista_id == mid,
+        RutaActivada.estado == "En Progreso",
+        func.cast(RutaActivada.fecha_hora_activacion, Date) == today
+    ).first()
+
+    if existing:
         return {"success": True, "message": "La ruta ya estaba activa hoy"}
-    db.execute(text("""INSERT INTO RUTAS_ACTIVADAS (id_ruta, id_mercaderista, fecha_hora_activacion, estado, tipo_activacion)
-        VALUES (:r, :m, GETDATE(), 'En Progreso', 'Auditor de Campo')"""), {"r": id_ruta, "m": mid})
+
+    activacion = RutaActivada(
+        ruta_id=id_ruta,
+        mercaderista_id=mid,
+        fecha_hora_activacion=datetime.now(),
+        estado="En Progreso",
+        tipo_activacion="Auditor de Campo"
+    )
+    db.add(activacion)
     db.commit()
     return {"success": True, "message": "Ruta activada"}
 
 
 @router.post("/api/auditor-campo/no-activar-ruta")
-def no_activar_ruta_campo(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
-    razon = (payload.get("razon") or "").strip()
-    if not id_ruta or not cedula:
-        raise HTTPException(400, "Datos incompletos")
+def no_activar_ruta_campo(payload: NoActivarRutaCampoRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    id_ruta, cedula = payload.id_ruta, payload.cedula
+    razon = payload.razon.strip()
     if not razon:
         raise HTTPException(400, "La razón es requerida")
     mid = _auditor_id(db, cedula)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    db.execute(text("""INSERT INTO RUTAS_ACTIVADAS
-        (id_ruta, id_mercaderista, fecha_hora_activacion, estado, tipo_activacion, motivo_no_activacion)
-        VALUES (:r, :m, GETDATE(), 'No Activada', 'Auditor de Campo', :razon)"""),
-        {"r": id_ruta, "m": mid, "razon": razon})
+
+    activacion = RutaActivada(
+        ruta_id=id_ruta,
+        mercaderista_id=mid,
+        fecha_hora_activacion=datetime.now(),
+        estado="No Activada",
+        tipo_activacion="Auditor de Campo",
+        motivo_no_activacion=razon
+    )
+    db.add(activacion)
     db.commit()
     return {"success": True, "message": "No activación registrada"}
 
 
 @router.post("/api/auditor-campo/desactivar-ruta")
-def desactivar_ruta_campo(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
-    if not id_ruta or not cedula:
-        raise HTTPException(400, "Datos incompletos")
+def desactivar_ruta_campo(payload: DesactivarRutaCampoRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    id_ruta, cedula = payload.id_ruta, payload.cedula
     mid = _auditor_id(db, cedula)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    db.execute(text("""UPDATE RUTAS_ACTIVADAS SET estado='Finalizado'
-        WHERE id_ruta=:r AND id_mercaderista=:m AND estado='En Progreso'
-        AND CAST(fecha_hora_activacion AS DATE)=CAST(GETDATE() AS DATE)"""), {"r": id_ruta, "m": mid})
+    
+    today = date.today()
+    activaciones = db.query(RutaActivada).filter(
+        RutaActivada.ruta_id == id_ruta,
+        RutaActivada.mercaderista_id == mid,
+        RutaActivada.estado == "En Progreso",
+        func.cast(RutaActivada.fecha_hora_activacion, Date) == today
+    ).all()
+
+    for act in activaciones:
+        act.estado = "Finalizado"
     db.commit()
     return {"success": True, "message": "Ruta desactivada"}
 
 
-async def _guardar_foto(db, file: UploadFile, point_id, id_tipo_foto, prefix,
+async def _guardar_foto(db: Session, file: UploadFile, point_id, id_tipo_foto, prefix,
                         id_visita=None, categoria=None, lat=None, lon=None):
     raw = await file.read()
     latv, lonv, url = lat, lon, None
@@ -256,7 +387,7 @@ async def _guardar_foto(db, file: UploadFile, point_id, id_tipo_foto, prefix,
             latv = res.get("latitud")
         if lonv is None:
             lonv = res.get("longitud")
-    except Exception as ex:
+    except Exception:
         base = "app/static/auditor_campo_local"
         os.makedirs(base, exist_ok=True)
         fname = prefix.replace("/", "_") + "_" + uuid.uuid4().hex + ".jpg"
@@ -264,14 +395,20 @@ async def _guardar_foto(db, file: UploadFile, point_id, id_tipo_foto, prefix,
             fh.write(raw)
         blob_path = "auditor_campo_local/" + fname
 
-    db.execute(text("""INSERT INTO FOTOS_TOTALES
-        (id_visita, categoria, file_path, fecha_registro, id_tipo_foto, Estado, latitud, longitud)
-        VALUES (:v, :cat, :fp, GETDATE(), :tf, 'Aprobada', :lat, :lon)"""),
-        {"v": id_visita, "cat": categoria, "fp": blob_path, "tf": id_tipo_foto, "lat": latv, "lon": lonv})
+    nueva_foto = Foto(
+        visita_id=id_visita,
+        categoria=categoria,
+        blob_path=blob_path,
+        fecha_registro=datetime.now(),
+        id_tipo_foto=id_tipo_foto,
+        estado="Aprobada",
+        latitud=latv,
+        longitud=lonv
+    )
+    db.add(nueva_foto)
     db.commit()
-    idf = db.execute(text("SELECT TOP 1 id_foto FROM FOTOS_TOTALES WHERE file_path=:fp ORDER BY id_foto DESC"),
-                     {"fp": blob_path}).scalar()
-    return {"id_foto": idf, "url": url, "blob_path": blob_path}
+    db.refresh(nueva_foto)
+    return {"id_foto": nueva_foto.id, "url": url, "blob_path": blob_path}
 
 
 @router.post("/api/auditor-campo/activar-pdv")
@@ -303,97 +440,137 @@ async def subir_foto_categoria(id_visita: int = Form(...), id_categoria: int = F
     return {"success": True, "message": "Foto subida", **r}
 
 
-@router.get("/api/auditor-campo/pdv-clientes/{point_id}/{route_id}")
+@router.get("/api/auditor-campo/pdv-clientes/{point_id}/{route_id}", response_model=List[PdvClienteResponse])
 def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
-    rows = db.execute(text("""
-        SELECT DISTINCT rp.id_cliente, c.cliente, rp.prioridad
-        FROM RUTA_PROGRAMACION rp JOIN CLIENTES c ON rp.id_cliente = c.id_cliente
-        WHERE rp.id_punto_interes = :pid AND rp.id_ruta = :rid AND rp.activa = 1 AND rp.dia = :dia
-        ORDER BY rp.prioridad DESC, c.cliente
-    """), {"pid": point_id, "rid": route_id, "dia": dia}).fetchall()
-    return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media"} for r in rows]
+    rows = (
+        db.query(
+            RutaProgramacion.id_cliente,
+            Cliente.nombre,
+            RutaProgramacion.prioridad
+        )
+        .distinct()
+        .join(Cliente, RutaProgramacion.id_cliente == Cliente.id)
+        .filter(
+            RutaProgramacion.punto_id == point_id,
+            RutaProgramacion.ruta_id == route_id,
+            RutaProgramacion.activo == True,
+            RutaProgramacion.dia == dia
+        )
+        .order_by(RutaProgramacion.prioridad.desc(), Cliente.nombre)
+        .all()
+    )
+    return [
+        PdvClienteResponse(
+            id=r[0],
+            nombre=r[1] or "",
+            prioridad=r[2] or "Media"
+        )
+        for r in rows
+    ]
 
 
-@router.get("/api/auditor-campo/cliente-categorias/{cliente_id}")
+@router.get("/api/auditor-campo/cliente-categorias/{cliente_id}", response_model=List[ClienteCategoriaResponse])
 def get_cliente_categorias(cliente_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.execute(text("""
-        SELECT c.id_categoria, c.nombre
-        FROM CATEGORIAS_CLIENTES cc JOIN CATEGORIAS c ON c.id_categoria = cc.id_categoria
-        WHERE cc.id_cliente = :cid ORDER BY c.nombre
-    """), {"cid": cliente_id}).fetchall()
-    return [{"id": r[0], "nombre": r[1]} for r in rows]
+    rows = (
+        db.query(
+            Categoria.id_categoria,
+            Categoria.nombre
+        )
+        .join(CategoriaCliente, Categoria.id_categoria == CategoriaCliente.id_categoria)
+        .filter(CategoriaCliente.id_cliente == cliente_id)
+        .order_by(Categoria.nombre)
+        .all()
+    )
+    return [
+        ClienteCategoriaResponse(
+            id=r[0],
+            nombre=r[1] or ""
+        )
+        for r in rows
+    ]
 
 
-@router.post("/api/auditor-campo/iniciar-auditoria-cliente")
-def iniciar_auditoria_cliente(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    cliente_id, point_id, cedula = payload.get("cliente_id"), payload.get("point_id"), payload.get("cedula")
-    if not cliente_id or not point_id or not cedula:
-        raise HTTPException(400, "Datos incompletos")
+@router.post("/api/auditor-campo/iniciar-auditoria-cliente", response_model=IniciarAuditoriaClienteResponse)
+def iniciar_auditoria_cliente(payload: IniciarAuditoriaClienteRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    cliente_id, point_id, cedula = payload.cliente_id, payload.point_id, payload.cedula
     mid = _auditor_id(db, cedula)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    existe = db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista=:m AND id_cliente=:c AND identificador_punto_interes=:p
-        AND CAST(fecha_visita AS DATE)=CAST(GETDATE() AS DATE) ORDER BY id_visita DESC"""),
-        {"m": mid, "c": cliente_id, "p": point_id}).scalar()
-    if existe:
-        vid = existe
+    
+    today = date.today()
+    visita_existente = (
+        db.query(Visita.id)
+        .filter(
+            Visita.mercaderista_id == mid,
+            Visita.id_cliente == cliente_id,
+            Visita.punto_id == point_id,
+            Visita.fecha == today
+        )
+        .order_by(Visita.id.desc())
+        .first()
+    )
+
+    if visita_existente:
+        vid = visita_existente[0]
     else:
-        db.execute(text("""INSERT INTO VISITAS_MERCADERISTA
-            (id_mercaderista, fecha_visita, estado, id_cliente, identificador_punto_interes, estado_data)
-            VALUES (:m, GETDATE(), 'Pendiente', :c, :p, 'Activo')"""),
-            {"m": mid, "c": cliente_id, "p": point_id})
+        nueva_visita = Visita(
+            mercaderista_id=mid,
+            fecha=today,
+            estado="Pendiente",
+            id_cliente=cliente_id,
+            punto_id=point_id,
+            estado_data="Activo"
+        )
+        db.add(nueva_visita)
         db.commit()
-        vid = db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
-            WHERE id_mercaderista=:m AND id_cliente=:c AND identificador_punto_interes=:p
-            ORDER BY id_visita DESC"""), {"m": mid, "c": cliente_id, "p": point_id}).scalar()
-    if not vid:
-        raise HTTPException(500, "No se pudo crear la visita")
-    return {"success": True, "id_visita": int(vid)}
+        db.refresh(nueva_visita)
+        vid = nueva_visita.id
 
-
-def _b(v):
-    return None if v is None else (1 if v in (True, 1, "1", "si", "Si", "true") else 0)
+    return IniciarAuditoriaClienteResponse(success=True, id_visita=int(vid))
 
 
 @router.post("/api/auditor-campo/guardar-auditoria-categoria")
-def guardar_auditoria_categoria(d: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    id_visita, id_categoria = d.get("id_visita"), d.get("id_categoria")
-    if not id_visita or not id_categoria:
-        raise HTTPException(400, "id_visita e id_categoria requeridos")
-    db.execute(text("""INSERT INTO AUDITORIA_CATEGORIAS
-        (id_visita, id_categoria, aplico_planograma, lineamiento_marca, precio_correcto, limpieza_correcta,
-         participacion_correcta, fifo_correcto, prox_vencer, prox_vencer_cantidad, prox_vencer_marca,
-         prox_vencer_fecha1, prox_vencer_fecha2,
-         competencia_actividad, competencia_material_pop, competencia_impulsadora,
-         pop_hablador, pop_rompetrafico, pop_otro, promo_nuestra, promo_nuestra_desc,
-         promo_competencia, promo_competencia_desc, exhibicion_adicional, exhibicion_tipos)
-        VALUES (:v, :cat, :ap, :lm, :pc, :lc, :part, :fifo, :pv, :pvc, :pvm,
-                :pvf1, :pvf2,
-                :ca, :cmp, :ci, :ph, :pr, :po, :pn, :pnd, :pcomp, :pcompd, :ea, :et)"""),
-        {"v": int(id_visita), "cat": int(id_categoria),
-         "ap": _b(d.get("aplico_planograma")), "lm": _b(d.get("lineamiento_marca")),
-         "pc": _b(d.get("precio_correcto")), "lc": _b(d.get("limpieza_correcta")),
-         "part": _b(d.get("participacion_correcta")), "fifo": _b(d.get("fifo_correcto")),
-         "pv": _b(d.get("prox_vencer")), "pvc": d.get("prox_vencer_cantidad"), "pvm": d.get("prox_vencer_marca"),
-         "pvf1": (d.get("prox_vencer_fecha1") or None), "pvf2": (d.get("prox_vencer_fecha2") or None),
-         "ca": _b(d.get("competencia_actividad")), "cmp": _b(d.get("competencia_material_pop")),
-         "ci": _b(d.get("competencia_impulsadora")), "ph": _b(d.get("pop_hablador")),
-         "pr": _b(d.get("pop_rompetrafico")), "po": d.get("pop_otro"),
-         "pn": _b(d.get("promo_nuestra")), "pnd": d.get("promo_nuestra_desc"),
-         "pcomp": _b(d.get("promo_competencia")), "pcompd": d.get("promo_competencia_desc"),
-         "ea": _b(d.get("exhibicion_adicional")), "et": d.get("exhibicion_tipos")})
+def guardar_auditoria_categoria(payload: GuardarAuditoriaCategoriaRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    d = payload.model_dump()
+    nueva_auditoria = AuditoriaCategoria(
+        id_visita=d["id_visita"],
+        id_categoria=d["id_categoria"],
+        aplico_planograma=_b(d.get("aplico_planograma")),
+        lineamiento_marca=_b(d.get("lineamiento_marca")),
+        precio_correcto=_b(d.get("precio_correcto")),
+        limpieza_correcta=_b(d.get("limpieza_correcta")),
+        participacion_correcta=_b(d.get("participacion_correcta")),
+        fifo_correcto=_b(d.get("fifo_correcto")),
+        prox_vencer=_b(d.get("prox_vencer")),
+        prox_vencer_cantidad=d.get("prox_vencer_cantidad"),
+        prox_vencer_marca=d.get("prox_vencer_marca"),
+        prox_vencer_fecha1=d.get("prox_vencer_fecha1") or None,
+        prox_vencer_fecha2=d.get("prox_vencer_fecha2") or None,
+        competencia_actividad=_b(d.get("competencia_actividad")),
+        competencia_material_pop=_b(d.get("competencia_material_pop")),
+        competencia_impulsadora=_b(d.get("competencia_impulsadora")),
+        pop_hablador=_b(d.get("pop_hablador")),
+        pop_rompetrafico=_b(d.get("pop_rompetrafico")),
+        pop_otro=d.get("pop_otro"),
+        promo_nuestra=_b(d.get("promo_nuestra")),
+        promo_nuestra_desc=d.get("promo_nuestra_desc"),
+        promo_competencia=_b(d.get("promo_competencia")),
+        promo_competencia_desc=d.get("promo_competencia_desc"),
+        exhibicion_adicional=_b(d.get("exhibicion_adicional")),
+        exhibicion_tipos=d.get("exhibicion_tipos")
+    )
+    db.add(nueva_auditoria)
     db.commit()
     return {"success": True, "message": "Auditoría de categoría guardada"}
 
 
 @router.post("/api/auditor-campo/finalizar-auditoria-cliente")
-def finalizar_auditoria_cliente(d: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    id_visita = d.get("id_visita")
-    if not id_visita:
-        raise HTTPException(400, "id_visita requerido")
-    db.execute(text("UPDATE VISITAS_MERCADERISTA SET estado='Finalizada' WHERE id_visita=:v"), {"v": int(id_visita)})
+def finalizar_auditoria_cliente(payload: FinalizarAuditoriaClienteRequest, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    visita = db.query(Visita).get(payload.id_visita)
+    if not visita:
+        raise HTTPException(404, "Visita no encontrada")
+    visita.estado = "Finalizada"
     db.commit()
     return {"success": True, "message": "Auditoría del cliente finalizada"}
 
@@ -402,7 +579,7 @@ def finalizar_auditoria_cliente(d: dict, db: Session = Depends(get_db), _: Usuar
 # 3. Log de Auditoría Operativo (antes routes/audit.py)
 # ════════════════════════════════════════════════════════════════════════════
 
-@router.get("/api/audit/logs")
+@router.get("/api/audit/logs", response_model=AuditLogsPaginatedResponse)
 def get_audit_logs(
     entity_type: Optional[str] = None,
     action: Optional[str] = None,
@@ -435,28 +612,28 @@ def get_audit_logs(
     total = q.count()
     logs = q.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
 
-    return {
-        "total": total,
-        "offset": offset,
-        "limit": limit,
-        "items": [
-            {
-                "id": log.id,
-                "timestamp": log.timestamp,
-                "user_id": log.user_id,
-                "username": log.username,
-                "rol": log.rol,
-                "ip_address": log.ip_address,
-                "action": log.action,
-                "entity_type": log.entity_type,
-                "entity_id": log.entity_id,
-                "entity_name": log.entity_name,
-                "changes": log.changes,
-                "status": log.status,
-            }
+    return AuditLogsPaginatedResponse(
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=[
+            AuditLogItemResponse(
+                id=log.id,
+                timestamp=log.timestamp,
+                user_id=log.user_id,
+                username=log.username,
+                rol=log.rol,
+                ip_address=log.ip_address,
+                action=log.action,
+                entity_type=log.entity_type,
+                entity_id=log.entity_id,
+                entity_name=log.entity_name,
+                changes=log.changes,
+                status=log.status,
+            )
             for log in logs
         ],
-    }
+    )
 
 
 @router.get("/api/audit/entity-types")

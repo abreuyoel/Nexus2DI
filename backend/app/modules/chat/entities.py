@@ -10,7 +10,7 @@ class ChatMensaje(Base):
     visita_id = Column("id_visita", Integer, ForeignKey("VISITAS_MERCADERISTA.id_visita"), nullable=True)
     cliente_id = Column("id_cliente", Integer, ForeignKey("CLIENTES.id_cliente"), nullable=True)
     conversacion_id = Column("id_conversacion", Integer, ForeignKey("CHAT_CONVERSACIONES.id_conversacion"), nullable=True)
-    sender_id = Column("id_usuario", Integer, nullable=True)
+    sender_id = Column("id_usuario", Integer, ForeignKey("USUARIOS.id_usuario"), nullable=True)
     sender_nombre = Column("username", String(255), nullable=True)
     mensaje = Column(Text, nullable=True)
     sender_type = Column("tipo_mensaje", String(50), nullable=True)
@@ -20,6 +20,8 @@ class ChatMensaje(Base):
 
     visita = relationship("Visita", back_populates="mensajes_chat")
     conversacion = relationship("ChatConversacion", back_populates="mensajes")
+    cliente = relationship("Cliente")
+    sender = relationship("Usuario", foreign_keys=[sender_id])
 
 
 class ChatConversacion(Base):
@@ -46,6 +48,8 @@ class ChatConversacion(Base):
                             cascade="all, delete-orphan", lazy="noload")
     participantes = relationship("ChatParticipante", back_populates="conversacion",
                                  cascade="all, delete-orphan", lazy="noload")
+    cliente = relationship("Cliente")
+    creador = relationship("Usuario", foreign_keys=[creado_por])
 
 
 class ChatParticipante(Base):
@@ -56,3 +60,4 @@ class ChatParticipante(Base):
     fecha_union = Column(DateTime, nullable=True)
 
     conversacion = relationship("ChatConversacion", back_populates="participantes")
+    usuario = relationship("Usuario", foreign_keys=[usuario_id])

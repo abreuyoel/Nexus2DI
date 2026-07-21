@@ -1,13 +1,23 @@
+import logging
+from datetime import datetime, date, timedelta
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.entities import Usuario
+from app.modules.clients.entities import Cliente, DashboardClient
+from app.modules.visits.entities import Visita, Foto
+from app.modules.chat.entities import ChatMensaje
+from app.modules.routes.entities import Ruta, RutaProgramacion, PuntoInteres
+from app.modules.merchandisers.entities import Mercaderista
+from app.modules.clients.dto import (
+    ExclusiveClientResponse, ClientDashboardResponse, ClientSummaryResponse,
+    RegionItemResponse, ChainItemResponse, PointItemResponse
+)
 from app.shared.visibility import client_route_ids
-from datetime import datetime
-from typing import Optional
-import logging
 
 router = APIRouter(prefix="/api/client", tags=["Client Photos"])
 logger = logging.getLogger("app.client_photos")
@@ -30,7 +40,7 @@ def _get_cliente_id(user: Usuario, requested_cliente_id: Optional[int] = None) -
     return user.id_perfil
 
 
-@router.get("/exclusive-clients")
+@router.get("/exclusive-clients", response_model=List[ExclusiveClientResponse])
 def get_exclusive_clients(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -38,58 +48,39 @@ def get_exclusive_clients(
     if not current_user.is_coordinador_exclusivo:
         raise HTTPException(status_code=403, detail="Solo Coordinador Exclusivo")
 
-    query = text("""
-        SELECT DISTINCT c.id_cliente, c.cliente, c.id_tipo_cliente
-        FROM CLIENTES c
-        WHERE c.id_tipo_cliente = 3
-
-        UNION
-
-        SELECT DISTINCT c.id_cliente, c.cliente, c.id_tipo_cliente
-        FROM CLIENTES c
-        INNER JOIN VISITAS_MERCADERISTA vm ON c.id_cliente = vm.id_cliente
-        INNER JOIN FOTOS_TOTALES ft ON vm.id_visita = ft.id_visita
-        WHERE c.id_tipo_cliente = 1
-          AND ft.Estado = 'Aprobada'
-
-        ORDER BY c.cliente
-    """)
-    rows = db.execute(query).fetchall()
+    c1 = db.query(Cliente.id, Cliente.nombre, Cliente.id_tipo_cliente).filter(Cliente.id_tipo_cliente == 3)
+    c2 = (
+        db.query(Cliente.id, Cliente.nombre, Cliente.id_tipo_cliente)
+        .join(Visita, Cliente.id == Visita.id_cliente)
+        .join(Foto, Visita.id == Foto.visita_id)
+        .filter(Cliente.id_tipo_cliente == 1, Foto.estado == "Aprobada")
+    )
+    union_query = c1.union(c2).order_by(Cliente.nombre).all()
     return [
-        {
-            "id_cliente": r[0],
-            "cliente": r[1],
-            "id_tipo_cliente": r[2],
-        }
-        for r in rows
+        ExclusiveClientResponse(id_cliente=r[0], cliente=r[1] or "", id_tipo_cliente=r[2])
+        for r in union_query
     ]
 
 
-@router.get("/dashboard")
+@router.get("/dashboard", response_model=ClientDashboardResponse)
 def get_client_dashboard(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
-    query = text("""
-        SELECT url_html, tipo
-        FROM dashboard_client
-        WHERE id_cliente = :cliente_id
-    """)
-    row = db.execute(query, {"cliente_id": resolved_cliente_id}).fetchone()
+    dash = db.query(DashboardClient).filter(DashboardClient.id_cliente == resolved_cliente_id).first()
+    if not dash:
+        return ClientDashboardResponse(has_dashboard=False, url_html=None, tipo=None)
 
-    if not row:
-        return {"has_dashboard": False, "url_html": None}
-
-    return {
-        "has_dashboard": True,
-        "url_html": row[0],
-        "tipo": row[1]
-    }
+    return ClientDashboardResponse(
+        has_dashboard=True,
+        url_html=dash.url_html,
+        tipo=dash.tipo
+    )
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=ClientSummaryResponse)
 def get_client_summary(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
@@ -97,61 +88,54 @@ def get_client_summary(
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
 
-    query_visits = text("""
-        SELECT COUNT(*)
-        FROM VISITAS_MERCADERISTA vm
-        WHERE vm.id_cliente = :cliente_id
-          AND vm.fecha_visita >= DATEADD(day, -30, GETDATE())
-    """)
-    recent_visits = db.execute(query_visits, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    since_30_days = date.today() - timedelta(days=30)
+    recent_visits = db.query(Visita).filter(
+        Visita.id_cliente == resolved_cliente_id,
+        Visita.fecha >= since_30_days
+    ).count()
 
-    query_photos = text("""
-        SELECT COUNT(ft.id_foto)
-        FROM FOTOS_TOTALES ft
-        INNER JOIN VISITAS_MERCADERISTA vm ON ft.id_visita = vm.id_visita
-        WHERE vm.id_cliente = :cliente_id
-          AND ft.Estado = 'Aprobada'
-    """)
-    recent_photos = db.execute(query_photos, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    recent_photos = db.query(Foto).join(Visita, Foto.visita_id == Visita.id).filter(
+        Visita.id_cliente == resolved_cliente_id,
+        Foto.estado == "Aprobada"
+    ).count()
 
-    query_messages = text("""
-        SELECT COUNT(cm.id_mensaje)
-        FROM CHAT_MENSAJES_CLIENTE cm
-        INNER JOIN VISITAS_MERCADERISTA vm ON cm.id_visita = vm.id_visita
-        WHERE vm.id_cliente = :cliente_id
-          AND cm.fecha_envio >= DATEADD(hour, -48, GETDATE())
-    """)
-    recent_messages = db.execute(query_messages, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    since_48_hours = datetime.now() - timedelta(hours=48)
+    recent_messages = db.query(ChatMensaje).join(Visita, ChatMensaje.visita_id == Visita.id).filter(
+        Visita.id_cliente == resolved_cliente_id,
+        ChatMensaje.created_at >= since_48_hours
+    ).count()
 
-    return {
-        "recent_visits": recent_visits,
-        "recent_photos": recent_photos,
-        "recent_messages": recent_messages,
-        "period": "Últimos 30 días"
-    }
+    return ClientSummaryResponse(
+        recent_visits=recent_visits,
+        recent_photos=recent_photos,
+        recent_messages=recent_messages,
+        period="Últimos 30 días"
+    )
 
 
-@router.get("/regions")
+@router.get("/regions", response_model=List[RegionItemResponse])
 def get_client_regions(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
-    query = text("""
-        SELECT DISTINCT rn.cuadrante AS region
-        FROM RUTAS_NUEVAS rn
-        INNER JOIN RUTA_PROGRAMACION rp ON rn.id_ruta = rp.id_ruta
-        WHERE rp.id_cliente = :cliente_id
-          AND rn.cuadrante IS NOT NULL
-          AND rn.cuadrante != ''
-        ORDER BY rn.cuadrante
-    """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id}).fetchall()
-    return [{"region": r[0]} for r in rows if r[0]]
+    rows = (
+        db.query(Ruta.cuadrante)
+        .distinct()
+        .join(RutaProgramacion, Ruta.id == RutaProgramacion.ruta_id)
+        .filter(
+            RutaProgramacion.id_cliente == resolved_cliente_id,
+            Ruta.cuadrante.isnot(None),
+            Ruta.cuadrante != ""
+        )
+        .order_by(Ruta.cuadrante)
+        .all()
+    )
+    return [RegionItemResponse(region=r[0]) for r in rows if r[0]]
 
 
-@router.get("/chains/{region}")
+@router.get("/chains/{region}", response_model=List[ChainItemResponse])
 def get_client_chains_by_region(
     region: str,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
@@ -159,22 +143,24 @@ def get_client_chains_by_region(
     db: Session = Depends(get_db),
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
-    query = text("""
-        SELECT DISTINCT pin.jerarquia_nivel_2_2 AS cadena
-        FROM PUNTOS_INTERES1 pin
-        INNER JOIN RUTA_PROGRAMACION rp ON pin.identificador = rp.id_punto_interes
-        INNER JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
-        WHERE rp.id_cliente = :cliente_id
-          AND rn.cuadrante = :region
-          AND pin.jerarquia_nivel_2_2 IS NOT NULL
-          AND pin.jerarquia_nivel_2_2 != ''
-        ORDER BY pin.jerarquia_nivel_2_2
-    """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id, "region": region}).fetchall()
-    return [{"cadena": r[0]} for r in rows if r[0]]
+    rows = (
+        db.query(PuntoInteres.cadena)
+        .distinct()
+        .join(RutaProgramacion, PuntoInteres.id == RutaProgramacion.punto_id)
+        .join(Ruta, RutaProgramacion.ruta_id == Ruta.id)
+        .filter(
+            RutaProgramacion.id_cliente == resolved_cliente_id,
+            Ruta.cuadrante == region,
+            PuntoInteres.cadena.isnot(None),
+            PuntoInteres.cadena != ""
+        )
+        .order_by(PuntoInteres.cadena)
+        .all()
+    )
+    return [ChainItemResponse(cadena=r[0]) for r in rows if r[0]]
 
 
-@router.get("/points/{region}")
+@router.get("/points/{region}", response_model=List[PointItemResponse])
 def get_client_points_by_region(
     region: str,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
@@ -182,29 +168,32 @@ def get_client_points_by_region(
     db: Session = Depends(get_db),
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
-    query = text("""
-        SELECT DISTINCT
-            pin.identificador,
-            pin.punto_de_interes,
-            pin.jerarquia_nivel_2_2 AS cadena,
-            pin.Direccion AS direccion,
-            pin.ciudad
-        FROM PUNTOS_INTERES1 pin
-        INNER JOIN RUTA_PROGRAMACION rp ON pin.identificador = rp.id_punto_interes
-        INNER JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
-        WHERE rp.id_cliente = :cliente_id
-          AND rn.cuadrante = :region
-        ORDER BY pin.punto_de_interes
-    """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id, "region": region}).fetchall()
+    rows = (
+        db.query(
+            PuntoInteres.id,
+            PuntoInteres.nombre,
+            PuntoInteres.cadena,
+            PuntoInteres.direccion,
+            PuntoInteres.ciudad
+        )
+        .distinct()
+        .join(RutaProgramacion, PuntoInteres.id == RutaProgramacion.punto_id)
+        .join(Ruta, RutaProgramacion.ruta_id == Ruta.id)
+        .filter(
+            RutaProgramacion.id_cliente == resolved_cliente_id,
+            Ruta.cuadrante == region
+        )
+        .order_by(PuntoInteres.nombre)
+        .all()
+    )
     return [
-        {
-            "identificador": r[0],
-            "punto_de_interes": r[1],
-            "cadena": r[2] or "Sin cadena",
-            "direccion": r[3] or "",
-            "ciudad": r[4] or "",
-        }
+        PointItemResponse(
+            identificador=r[0],
+            punto_de_interes=r[1] or "",
+            cadena=r[2] or "Sin cadena",
+            direccion=r[3] or "",
+            ciudad=r[4] or ""
+        )
         for r in rows
     ]
 
@@ -218,42 +207,44 @@ def get_client_point_visits(
 ):
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
 
-    visits_query = text("""
-        SELECT
-            vm.id_visita,
-            vm.fecha_visita,
-            vm.estado,
-            m.nombre AS mercaderista_nombre,
-            m.cedula AS mercaderista_cedula
-        FROM VISITAS_MERCADERISTA vm
-        LEFT JOIN MERCADERISTAS m ON vm.id_mercaderista = m.id_mercaderista
-        WHERE vm.identificador_punto_interes = :point_id
-          AND vm.id_cliente = :cliente_id
-        ORDER BY vm.fecha_visita DESC
-    """)
-    visit_rows = db.execute(visits_query, {"point_id": point_id, "cliente_id": resolved_cliente_id}).fetchall()
+    visit_rows = (
+        db.query(
+            Visita.id,
+            Visita.fecha,
+            Visita.estado,
+            Mercaderista.nombre,
+            Mercaderista.cedula
+        )
+        .outerjoin(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+        .filter(
+            Visita.punto_id == point_id,
+            Visita.id_cliente == resolved_cliente_id
+        )
+        .order_by(Visita.fecha.desc())
+        .all()
+    )
 
     if not visit_rows:
         return []
 
     visit_ids = [v[0] for v in visit_rows]
 
-    placeholders = ", ".join(f":vid_{i}" for i in range(len(visit_ids)))
-    photos_query = text(f"""
-        SELECT
-            ft.id_foto,
-            ft.id_visita,
-            ft.id_tipo_foto,
-            ft.file_path,
-            ft.Estado,
-            ft.fecha_registro
-        FROM FOTOS_TOTALES ft
-        WHERE ft.id_visita IN ({placeholders})
-          AND ft.Estado = 'Aprobada'
-        ORDER BY ft.id_tipo_foto, ft.fecha_registro DESC
-    """)
-    params = {f"vid_{i}": vid for i, vid in enumerate(visit_ids)}
-    photo_rows = db.execute(photos_query, params).fetchall()
+    photo_rows = (
+        db.query(
+            Foto.id,
+            Foto.visita_id,
+            Foto.id_tipo_foto,
+            Foto.blob_path,
+            Foto.estado,
+            Foto.fecha_registro
+        )
+        .filter(
+            Foto.visita_id.in_(visit_ids),
+            Foto.estado == "Aprobada"
+        )
+        .order_by(Foto.id_tipo_foto, Foto.fecha_registro.desc())
+        .all()
+    )
 
     from app.shared.azure_service import azure_service
     photos_by_visit: dict[int, list] = {}
@@ -315,83 +306,83 @@ def get_client_mis_visitas(
     route_ids = None
     if current_user.rol == "client":
         route_ids = client_route_ids(db, current_user)
-    route_filter_sql = ""
-    if route_ids is not None:
-        ids_csv = ",".join(str(int(i)) for i in route_ids) if route_ids else "-1"
-        route_filter_sql = f"""
-          AND EXISTS (
-              SELECT 1 FROM RUTA_PROGRAMACION rp_f
-              WHERE rp_f.id_punto_interes = vm.identificador_punto_interes
-                AND rp_f.id_cliente = vm.id_cliente
-                AND rp_f.id_ruta IN ({ids_csv})
-          )
-        """
 
     if not fecha_inicio:
-        fecha_inicio_sql = datetime.now().strftime('%Y%m%d')
-        fecha_inicio_res = datetime.now().strftime('%Y-%m-%d')
+        fecha_inicio_date = date.today()
     else:
         try:
-            parsed = datetime.strptime(fecha_inicio, '%Y-%m-%d')
-            fecha_inicio_sql = parsed.strftime('%Y%m%d')
-            fecha_inicio_res = fecha_inicio
+            fecha_inicio_date = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido (YYYY-MM-DD)")
 
     if not fecha_fin:
-        fecha_fin_sql = fecha_inicio_sql
-        fecha_fin_res = fecha_inicio_res
+        fecha_fin_date = fecha_inicio_date
     else:
         try:
-            parsed = datetime.strptime(fecha_fin, '%Y-%m-%d')
-            fecha_fin_sql = parsed.strftime('%Y%m%d')
-            fecha_fin_res = fecha_fin
+            fecha_fin_date = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido (YYYY-MM-DD)")
 
-    query_str = """
-        SELECT
-            vm.id_visita,
-            vm.fecha_visita,
-            m.nombre                        AS mercaderista,
-            pin.identificador               AS punto_id,
-            pin.punto_de_interes            AS punto_nombre,
-            pin.departamento,
-            pin.ciudad,
-            ISNULL(rn.ruta, 'Sin ruta')     AS ruta,
-            pin.jerarquia_nivel_2_2         AS cadena,
-            ft.id_foto,
-            ft.file_path,
-            ft.id_tipo_foto,
-            ft.estado                       AS foto_estado,
-            c.cliente                       AS cliente_nombre
-        FROM VISITAS_MERCADERISTA vm
-        JOIN MERCADERISTAS m         ON vm.id_mercaderista = m.id_mercaderista
-        JOIN PUNTOS_INTERES1 pin     ON vm.identificador_punto_interes = pin.identificador
-        JOIN CLIENTES c              ON vm.id_cliente = c.id_cliente
-        JOIN FOTOS_TOTALES ft        ON ft.id_visita = vm.id_visita AND ft.estado = 'Aprobada' AND ft.id_tipo_foto IN (1,2,3,4,8,9)
-        LEFT JOIN RUTA_PROGRAMACION rp ON rp.id_punto_interes = pin.identificador AND rp.id_cliente = vm.id_cliente
-        LEFT JOIN RUTAS_NUEVAS rn    ON rn.id_ruta = rp.id_ruta
-        WHERE vm.id_cliente = :cliente_id
-          AND CAST(vm.fecha_visita AS DATE) >= :fecha_inicio_sql
-          AND CAST(vm.fecha_visita AS DATE) <= :fecha_fin_sql
-    """
-    query_str += route_filter_sql
-    params = {"cliente_id": resolved_cliente_id, "fecha_inicio_sql": fecha_inicio_sql, "fecha_fin_sql": fecha_fin_sql}
+    query = (
+        db.query(
+            Visita.id.label("id_visita"),
+            Visita.fecha.label("fecha_visita"),
+            Mercaderista.nombre.label("mercaderista"),
+            PuntoInteres.id.label("punto_id"),
+            PuntoInteres.nombre.label("punto_nombre"),
+            PuntoInteres.departamento.label("departamento"),
+            PuntoInteres.ciudad.label("ciudad"),
+            func.coalesce(Ruta.nombre, "Sin ruta").label("ruta"),
+            PuntoInteres.cadena.label("cadena"),
+            Foto.id.label("id_foto"),
+            Foto.blob_path.label("file_path"),
+            Foto.id_tipo_foto.label("id_tipo_foto"),
+            Foto.estado.label("foto_estado"),
+            Cliente.nombre.label("cliente_nombre")
+        )
+        .join(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+        .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
+        .join(Cliente, Visita.id_cliente == Cliente.id)
+        .join(Foto, (Foto.visita_id == Visita.id) & (Foto.estado == 'Aprobada') & (Foto.id_tipo_foto.in_([1, 2, 3, 4, 8, 9])))
+        .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
+        .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+        .filter(
+            Visita.id_cliente == resolved_cliente_id,
+            Visita.fecha >= fecha_inicio_date,
+            Visita.fecha <= fecha_fin_date
+        )
+    )
+
+    if route_ids is not None:
+        if not route_ids:
+            return {
+                'success': True,
+                'fecha_inicio': str(fecha_inicio_date),
+                'fecha_fin': str(fecha_fin_date),
+                'es_hoy': fecha_inicio_date == date.today() and fecha_fin_date == date.today(),
+                'visitas': [],
+                'total': 0,
+                'filtros': {'rutas': [], 'cadenas': [], 'puntos': []}
+            }
+        sub_rp_filter = (
+            db.query(RutaProgramacion.punto_id)
+            .filter(
+                RutaProgramacion.punto_id == Visita.punto_id,
+                RutaProgramacion.id_cliente == Visita.id_cliente,
+                RutaProgramacion.ruta_id.in_(route_ids)
+            )
+            .subquery()
+        )
+        query = query.filter(Visita.punto_id.in_(sub_rp_filter))
 
     if ruta:
-        query_str += " AND ISNULL(rn.ruta, 'Sin ruta') = :ruta"
-        params["ruta"] = ruta
+        query = query.filter(func.coalesce(Ruta.nombre, "Sin ruta") == ruta)
     if cadena:
-        query_str += " AND pin.jerarquia_nivel_2_2 = :cadena"
-        params["cadena"] = cadena
+        query = query.filter(PuntoInteres.cadena == cadena)
     if punto_id:
-        query_str += " AND pin.identificador = :punto_id"
-        params["punto_id"] = punto_id
+        query = query.filter(PuntoInteres.id == punto_id)
 
-    query_str += " ORDER BY vm.id_visita DESC, ft.id_tipo_foto, ft.id_foto DESC"
-    
-    rows = db.execute(text(query_str), params).fetchall()
+    rows = query.order_by(Visita.id.desc(), Foto.id_tipo_foto, Foto.id.desc()).all()
 
     CATEGORIAS_CONFIG = {
         1: ('Gestión', 'Gestión'),
@@ -407,42 +398,7 @@ def get_client_mis_visitas(
     visitas_dict = {}
     seen_fotos: dict[int, set[int]] = {}
     from app.shared.azure_service import azure_service
-
     _fast_sas_url = azure_service.get_sas_url
-    try:
-        from app.core.config import settings
-        import urllib.parse
-        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
-        from datetime import timedelta, timezone as tz
-        _account_key = None
-        cs = settings.AZURE_STORAGE_CONNECTION_STRING
-        if cs:
-            for part in cs.split(';'):
-                if part.startswith('AccountKey='):
-                    _account_key = part[len('AccountKey='):]
-                    break
-        if _account_key:
-            _now = datetime.now(tz.utc)
-            _expiry = (_now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-            _base_url = f"https://{settings.AZURE_ACCOUNT_NAME}.blob.core.windows.net/{settings.AZURE_CONTAINER_NAME}"
-            _sas_cache: dict[str, str] = {}
-            def _fast_sas_url(blob_name: str, hours: int = 2) -> str:
-                if blob_name in _sas_cache:
-                    return _sas_cache[blob_name]
-                encoded = urllib.parse.quote(blob_name, safe='/')
-                sas = generate_blob_sas(
-                    account_name=settings.AZURE_ACCOUNT_NAME,
-                    container_name=settings.AZURE_CONTAINER_NAME,
-                    blob_name=blob_name,
-                    account_key=_account_key,
-                    permission=BlobSasPermissions(read=True),
-                    expiry=_expiry,
-                )
-                url = f"{_base_url}/{encoded}?{sas}"
-                _sas_cache[blob_name] = url
-                return url
-    except Exception:
-        pass
 
     for row in rows:
         vid = row[0]
@@ -510,66 +466,59 @@ def get_client_mis_visitas(
             if not visitas_dict[vid]['preview_foto']:
                 visitas_dict[vid]['preview_foto'] = url
 
-    base_where = """
-        FROM VISITAS_MERCADERISTA vm
-        JOIN PUNTOS_INTERES1 pin     ON vm.identificador_punto_interes = pin.identificador
-        LEFT JOIN RUTA_PROGRAMACION rp ON rp.id_punto_interes = pin.identificador AND rp.id_cliente = vm.id_cliente
-        LEFT JOIN RUTAS_NUEVAS rn    ON rn.id_ruta = rp.id_ruta
-        WHERE vm.id_cliente = :cliente_id
-          AND CAST(vm.fecha_visita AS DATE) >= :fecha_inicio_sql
-          AND CAST(vm.fecha_visita AS DATE) <= :fecha_fin_sql
-          AND vm.estado = 'Revisado'
-    """
-    base_where += route_filter_sql
-    base_params = {"cliente_id": resolved_cliente_id, "fecha_inicio_sql": fecha_inicio_sql, "fecha_fin_sql": fecha_fin_sql}
-
-    def _build(extra_clauses: str, extra_params: dict, select_cols: str, order_by: str):
-        sql = f"SELECT DISTINCT {select_cols} {base_where} {extra_clauses} ORDER BY {order_by}"
-        return db.execute(text(sql), {**base_params, **extra_params}).fetchall()
-
-    ruta_extra, ruta_params = "", {}
-    if cadena:
-        ruta_extra += " AND pin.jerarquia_nivel_2_2 = :cadena"; ruta_params["cadena"] = cadena
-    if punto_id:
-        ruta_extra += " AND pin.identificador = :punto_id"; ruta_params["punto_id"] = punto_id
-    rutas_rows = _build(ruta_extra, ruta_params, "ISNULL(rn.ruta, 'Sin ruta') AS ruta", "ISNULL(rn.ruta, 'Sin ruta')")
-    rutas = sorted({r[0] for r in rutas_rows if r[0]})
-
-    cadena_extra, cadena_params = "", {}
-    if ruta:
-        cadena_extra += " AND ISNULL(rn.ruta, 'Sin ruta') = :ruta"; cadena_params["ruta"] = ruta
-    if punto_id:
-        cadena_extra += " AND pin.identificador = :punto_id"; cadena_params["punto_id"] = punto_id
-    cadenas_rows = _build(cadena_extra, cadena_params, "pin.jerarquia_nivel_2_2 AS cadena", "pin.jerarquia_nivel_2_2")
-    cadenas = sorted({r[0] for r in cadenas_rows if r[0]})
-
-    punto_extra, punto_params = "", {}
-    if ruta:
-        punto_extra += " AND ISNULL(rn.ruta, 'Sin ruta') = :ruta"; punto_params["ruta"] = ruta
-    if cadena:
-        punto_extra += " AND pin.jerarquia_nivel_2_2 = :cadena"; punto_params["cadena"] = cadena
-    puntos_rows = _build(
-        punto_extra, punto_params,
-        "pin.identificador AS punto_id, pin.punto_de_interes AS punto_nombre",
-        "pin.punto_de_interes",
+    base_filter_q = (
+        db.query(
+            PuntoInteres.id.label("punto_id"),
+            PuntoInteres.nombre.label("punto_nombre"),
+            PuntoInteres.cadena.label("cadena"),
+            func.coalesce(Ruta.nombre, "Sin ruta").label("ruta")
+        )
+        .join(Visita, Visita.punto_id == PuntoInteres.id)
+        .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
+        .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+        .filter(
+            Visita.id_cliente == resolved_cliente_id,
+            Visita.fecha >= fecha_inicio_date,
+            Visita.fecha <= fecha_fin_date,
+            Visita.estado == "Revisado"
+        )
     )
-    seen = set()
-    puntos_uniq = []
-    for r in puntos_rows:
-        if r[0] and r[0] not in seen:
-            seen.add(r[0])
-            puntos_uniq.append({'id': r[0], 'nombre': r[1]})
+    if route_ids is not None:
+        sub_rp_filter = (
+            db.query(RutaProgramacion.punto_id)
+            .filter(
+                RutaProgramacion.punto_id == Visita.punto_id,
+                RutaProgramacion.id_cliente == Visita.id_cliente,
+                RutaProgramacion.ruta_id.in_(route_ids)
+            )
+            .subquery()
+        )
+        base_filter_q = base_filter_q.filter(Visita.punto_id.in_(sub_rp_filter))
+
+    filter_rows = base_filter_q.distinct().all()
+
+    rutas_list = sorted({r[3] for r in filter_rows if r[3]})
+    cadenas_list = sorted({r[2] for r in filter_rows if r[2]})
+
+    seen_p = set()
+    puntos_list = []
+    for r in filter_rows:
+        if r[0] and r[0] not in seen_p:
+            seen_p.add(r[0])
+            puntos_list.append({'id': r[0], 'nombre': r[1] or ""})
+
+    puntos_list.sort(key=lambda x: x['nombre'])
 
     return {
         'success': True,
-        'fecha_inicio': fecha_inicio_res,
-        'fecha_fin': fecha_fin_res,
-        'es_hoy': fecha_inicio_res == datetime.now().strftime('%Y-%m-%d') and fecha_fin_res == datetime.now().strftime('%Y-%m-%d'),
+        'fecha_inicio': str(fecha_inicio_date),
+        'fecha_fin': str(fecha_fin_date),
+        'es_hoy': fecha_inicio_date == date.today() and fecha_fin_date == date.today(),
         'visitas': list(visitas_dict.values()),
         'total': len(visitas_dict),
         'filtros': {
-            'rutas': rutas,
-            'cadenas': cadenas,
-            'puntos': puntos_uniq,
+            'rutas': rutas_list,
+            'cadenas': cadenas_list,
+            'puntos': puntos_list,
         }
     }

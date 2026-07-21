@@ -88,6 +88,7 @@ class RutaActivada(Base):
     fecha_hora_activacion = Column(DateTime, nullable=True)
     estado = Column(String(50), nullable=True)
     tipo_activacion = Column(String(50), nullable=True)
+    motivo_no_activacion = Column(String(500), nullable=True)
 
     ruta = relationship("Ruta", back_populates="activaciones_ruta")
 
