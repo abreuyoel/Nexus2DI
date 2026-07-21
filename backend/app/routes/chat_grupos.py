@@ -30,6 +30,7 @@ from app.services.chat_grupos_membresia import (
     get_grupos_de_usuario, get_miembros_grupo, usuario_es_miembro,
     asegurar_grupos_cliente, TIPOS_VALIDOS,
 )
+from app.services.visibility import client_route_ids
 from app.websockets.manager import manager
 
 router = APIRouter(prefix="/api/chat/grupos", tags=["Chat Grupos"])
@@ -56,6 +57,38 @@ def _grupo_info(db: Session, id_grupo: int):
 
 def _autorizado_grupo(db: Session, current_user: Usuario, id_grupo: int) -> bool:
     return any(g["id_grupo"] == id_grupo for g in get_grupos_de_usuario(db, current_user.id))
+
+
+def _rutas_permitidas_cliente(db: Session, current_user: Usuario) -> Optional[list]:
+    """None = sin restricción (ve todas las rutas de su cliente). Lista =
+    solo esas rutas. Mismo criterio que client_photos.py: exclusivo del rol
+    'client' puro (id_rol=1) — coordinadores/admin ya son miembros de TODOS
+    los grupos vía ROLES_COORDINADOR y no se restringen acá."""
+    if current_user.rol != "client":
+        return None
+    return client_route_ids(db, current_user)
+
+
+def _visita_permitida_para_cliente(db: Session, current_user: Usuario, id_cliente: int, id_visita: int) -> bool:
+    """Para un cliente con CLIENTES_RUTAS restringido: ¿esta visita cae en
+    una de sus rutas asignadas? Mismo patrón EXISTS que
+    client_photos.py::get_client_visits (id_punto_interes + id_cliente).
+    Coordinadores/admin y clientes sin restricción (None) siempre pasan."""
+    rutas = _rutas_permitidas_cliente(db, current_user)
+    if rutas is None:
+        return True
+    ids_csv = ",".join(str(int(i)) for i in rutas) if rutas else "-1"
+    row = db.execute(text(f"""
+        SELECT 1 FROM VISITAS_MERCADERISTA v
+        WHERE v.id_visita = :vid AND v.id_cliente = :cid
+          AND EXISTS (
+              SELECT 1 FROM RUTA_PROGRAMACION rp_f
+              WHERE rp_f.id_punto_interes = v.identificador_punto_interes
+                AND rp_f.id_cliente = v.id_cliente
+                AND rp_f.id_ruta IN ({ids_csv})
+          )
+    """), {"vid": id_visita, "cid": id_cliente}).fetchone()
+    return row is not None
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -274,7 +307,20 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
-    rows = db.execute(text("""
+    rutas = _rutas_permitidas_cliente(db, current_user)
+    ruta_filter_sql = ""
+    if rutas is not None:
+        ids_csv = ",".join(str(int(i)) for i in rutas) if rutas else "-1"
+        ruta_filter_sql = f"""
+          AND EXISTS (
+              SELECT 1 FROM RUTA_PROGRAMACION rp_f
+              WHERE rp_f.id_punto_interes = v.identificador_punto_interes
+                AND rp_f.id_cliente = v.id_cliente
+                AND rp_f.id_ruta IN ({ids_csv})
+          )
+        """
+
+    rows = db.execute(text(f"""
         SELECT v.id_visita, v.fecha_visita, m.nombre AS mercaderista, p.punto_de_interes,
                x.ultimo_mensaje, x.fecha_ultimo
         FROM (
@@ -290,6 +336,7 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
             WHERE id_visita = v.id_visita AND id_cliente = :cid AND tipo_grupo = :tipo
             ORDER BY fecha_envio DESC
         ) x
+        WHERE 1=1 {ruta_filter_sql}
         ORDER BY x.fecha_ultimo DESC
     """), {"cid": id_cliente, "tipo": tipo_grupo}).fetchall()
 
@@ -307,6 +354,8 @@ def mensajes_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: 
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
+    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+        raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
     rows = db.execute(text("""
         SELECT id_mensaje, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta
@@ -351,6 +400,8 @@ async def enviar_mensaje_grupo_visita(
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
+    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+        raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
     texto = (data.mensaje or "").strip()
     if not texto:
@@ -389,6 +440,8 @@ async def marcar_leido_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita:
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
+    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+        raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
     nuevos = db.execute(text("""
         INSERT INTO CHAT_GRUPO_VISITA_LECTURAS (id_mensaje, id_usuario, username, fecha_lectura)
