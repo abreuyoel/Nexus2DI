@@ -149,7 +149,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   constructor(
     private api: ApiService,
     private ws: WebSocketService,
-    private auth: AuthService,
+    public auth: AuthService,
     private route: ActivatedRoute,
     private dialog: MatDialog,
   ) {

@@ -277,96 +277,95 @@ def get_reject_reasons(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    rows = db.execute(text("SELECT id_tipo_rechazo, nombre, activo FROM TIPOS_RECHAZOS_FOTOS")).fetchall()
-    return [{"id_tipo_rechazo": r[0], "nombre": r[1], "activo": r[2]} for r in rows]
+    rows = db.execute(text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS ORDER BY razon")).fetchall()
+    return [{"id": r.id_razones_rechazos, "razon": r.razon} for r in rows]
 
 
-@router.get("/{visit_id}", response_model=VisitaDetail)
+@router.get("/{visit_id}", response_model=VisitaResponse)
 def get_visit(
     visit_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    _: Usuario = Depends(get_current_user),
 ):
-    from sqlalchemy.orm import joinedload
-    v = db.query(Visita).options(joinedload(Visita.cliente), joinedload(Visita.cadena_rel)).filter(Visita.id == visit_id).first()
-    if not v:
+    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
-    if current_user.rol == "cliente" and v.id_cliente != current_user.id_perfil:
-        raise HTTPException(status_code=403, detail="No puedes ver esta visita")
-    return v
+    return visita
 
 
-@router.put("/{visit_id}", response_model=VisitaDetail)
+@router.patch("/{visit_id}", response_model=VisitaResponse)
 def update_visit(
     visit_id: int,
     data: VisitaUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('visits', 'write', fallback_roles=('admin', 'analyst'))),
+    _: Usuario = Depends(get_current_user),
 ):
-    v = db.query(Visita).filter(Visita.id == visit_id).first()
-    if not v:
+    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
-    
-    old_data = {
-        "punto_interes": v.punto_interes, "cadena": v.cadena, "ruta": v.ruta,
-        "usuario": v.usuario, "fecha": str(v.fecha) if v.fecha else None
-    }
-    
-    for k, val in data.dict(exclude_unset=True).items():
-        setattr(v, k, val)
+    for key, value in data.model_dump(exclude_none=True).items():
+        setattr(visita, key, value)
     db.commit()
-    log_action(db, action="UPDATE_VISIT", entity_type="Visita", entity_id=v.id,
-               user_id=current_user.id, username=current_user.username, rol=current_user.rol,
-               changes={"old": old_data, "new": data.dict(exclude_unset=True)})
-    return v
+    db.refresh(visita)
+    return visita
 
 
-@router.get("/{visit_id}/photos", response_model=List[VisitPhotoResponse])
+@router.get("/{visit_id}/photos", response_model=List[FotoResponse])
 def get_visit_photos(
     visit_id: int,
+    tipo: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    _: Usuario = Depends(get_current_user),
 ):
-    v = db.query(Visita).filter(Visita.id == visit_id).first()
-    if not v:
-        raise HTTPException(status_code=404, detail="Visita no encontrada")
-    if current_user.rol == "cliente" and v.id_cliente != current_user.id_perfil:
-        raise HTTPException(status_code=403, detail="No tienes acceso a esta visita")
+    query = db.query(Foto).filter(Foto.visita_id == visit_id)
+    if tipo:
+        query = query.filter(Foto.id_tipo_foto == tipo)
+    fotos = query.all()
 
-    rows = db.execute(text("""
-        SELECT f.id, f.id_visita, f.id_tipo_foto, t.nombre as tipo_nombre, f.file_path, f.blob_path,
-               f.latitud, f.longitud, f.fecha_disparo, f.estado, f.comentario, f.rechazos_count_paso1, f.ultima_fecha_rechazo_paso1
-        FROM FOTOS_TOTALES f
-        LEFT JOIN TIPO_FOTOS t ON t.id_tipo_foto = f.id_tipo_foto
-        WHERE f.id_visita = :vid
-        ORDER BY f.id_tipo_foto, f.fecha_registro
-    """), {"vid": visit_id}).fetchall()
-    out = []
-    from app.services.azure_service import azure_service
-    for r in rows:
-        out.append({
-            "id": r[0], "id_visita": r[1], "id_tipo_foto": r[2], "tipo_nombre": r[3],
-            "file_path": r[4], "blob_path": r[5], "url": azure_service.get_proxy_url(r[5]) if r[5] else None,
-            "latitud": r[6], "longitud": r[7], "fecha_disparo": r[8], "estado": r[9],
-            "comentario": r[10], "rechazos_count": r[11], "ultima_fecha_rechazo": r[12]
-        })
-    return out
+    foto_ids = [f.id for f in fotos]
+    razones_map: dict = {}
+    if foto_ids:
+        q = text("""
+            SELECT fr.id_foto, fr.id_razones_rechazos, r.razon, fr.rechazado_por, u.username
+            FROM FOTOS_RAZONES_RECHAZOS fr
+            JOIN RAZONES_RECHAZOS r ON r.id_razones_rechazos = fr.id_razones_rechazos
+            LEFT JOIN USUARIOS u ON u.id_usuario = fr.rechazado_por
+            WHERE fr.id_foto IN :ids
+        """).bindparams(bindparam("ids", expanding=True))
+        for row in db.execute(q, {"ids": foto_ids}).fetchall():
+            d = razones_map.setdefault(row.id_foto, {"razones": [], "razones_ids": [], "rechazado_por": None, "rechazado_por_nombre": None})
+            d["razones"].append(row.razon)
+            d["razones_ids"].append(row.id_razones_rechazos)
+            if row.rechazado_por and not d["rechazado_por"]:
+                d["rechazado_por"] = row.rechazado_por
+                d["rechazado_por_nombre"] = row.username
+    for f in fotos:
+        info = razones_map.get(f.id)
+        f.razones = info["razones"] if info else None
+        f.razones_ids = info["razones_ids"] if info else None
+        f.rechazado_por = info["rechazado_por"] if info else None
+        f.rechazado_por_nombre = info["rechazado_por_nombre"] if info else None
+    return fotos
 
 
 def _assert_can_manage_photos(db: Session, current_user: Usuario, foto_ids: list[int]) -> None:
+    """Admin/Analyst pueden todo. Cliente solo puede gestionar fotos de sus visitas."""
     if current_user.rol in ("admin", "analyst"):
         return
-    if current_user.rol != "cliente":
-        raise HTTPException(status_code=403, detail="No puedes gestionar fotos")
-    if not foto_ids:
-        return
-    ids_str = ",".join(str(i) for i in foto_ids)
-    rows = db.execute(text(f"""
-        SELECT f.id, v.id_cliente
-        FROM FOTOS_TOTALES f
-        JOIN Visitas v ON v.id = f.id_visita
-        WHERE f.id IN ({ids_str})
-    """)).fetchall()
+    if not current_user.is_client:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    if not current_user.id_perfil:
+        raise HTTPException(status_code=403, detail="Usuario cliente sin id_perfil")
+
+    # Validar que TODAS las fotos pertenezcan a visitas del cliente.
+    rows = (
+        db.query(Foto.id, Visita.id_cliente)
+        .join(Visita, Foto.visita_id == Visita.id)
+        .filter(Foto.id.in_(foto_ids))
+        .all()
+    )
+    if len(rows) != len(set(foto_ids)):
+        raise HTTPException(status_code=404, detail="Alguna foto no existe")
     for foto_id, cliente_id in rows:
         if cliente_id != current_user.id_perfil:
             raise HTTPException(status_code=403, detail="No puedes gestionar fotos de otro cliente")
@@ -408,6 +407,13 @@ async def approve_photos(
 
 async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: Foto, motivo: str,
                                    current_user: Usuario) -> None:
+    """Postea un mensaje de sistema con la foto rechazada SOLO en el
+    sub-hilo de esa visita (CHAT_MENSAJES_GRUPO_VISITA, tipo_grupo='operativo')
+    -- a diferencia de v1, que lo duplica también en el chat general del
+    grupo. Decisión explícita: el chat general es para cosas generales del
+    equipo, el aviso de una foto rechazada es sobre ESA visita puntual.
+    Best-effort: no debe tumbar el rechazo de la foto (ya persistido antes
+    de llamar esto)."""
     if not visita or not visita.id_cliente:
         return
     texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
