@@ -1051,6 +1051,13 @@ def get_activaciones(
         if cliente_id:
             gpd_af += " AND c4.id_cliente = ?"
             gpd_ap = gpd_ap + [cliente_id]
+        # "total" = TODAS las visitas planificadas del día (mismo criterio que
+        # total_planificadas/planned_pp/planned_pc de arriba: VISITAS_MERCADERISTA
+        # + CLIENTES + PUNTOS_INTERES1, sin exigir que ya tenga foto). Antes
+        # exigía EXISTS de una foto tipo 5/6, así que el denominador solo
+        # contaba visitas que YA habían arrancado — un día con 26
+        # planificadas y 17 activadas mostraba "17/17" (100%) en vez de
+        # "17/26", porque las 9 que faltaron ni entraban en el conteo.
         gestion_query = """
             SELECT CAST(vm4.fecha_visita AS DATE) AS fecha,
                    c4.cliente,
@@ -1063,7 +1070,6 @@ def get_activaciones(
             LEFT JOIN (SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES WHERE id_tipo_foto=5 GROUP BY id_visita) act4 ON act4.id_visita=vm4.id_visita
             LEFT JOIN (SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES WHERE id_tipo_foto=6 GROUP BY id_visita) des4 ON des4.id_visita=vm4.id_visita
             WHERE CAST(vm4.fecha_visita AS DATE) >= CAST(DATEADD(day,-6,GETDATE()) AS DATE)
-              AND EXISTS (SELECT 1 FROM FOTOS_TOTALES ft4 WHERE ft4.id_visita=vm4.id_visita AND ft4.id_tipo_foto IN (5,6))
         """ + gpd_af + """
             GROUP BY CAST(vm4.fecha_visita AS DATE), c4.cliente
             ORDER BY fecha DESC, c4.cliente
