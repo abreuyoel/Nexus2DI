@@ -15,21 +15,49 @@ from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 from app.core.config import settings
 import app.db.all_models  # noqa: F401 — registers all SQLAlchemy models
-from app.routes import auth, users, merchandisers, visits, rutas, points, supervisors, auditors, reporteria, chat, admin_sessions, atencion_cliente, mercaderista_rutas, push, notifications, clients, audit, catalogos, productos_catalogos, auditor_campo
+
+# Import modular routers
+from app.modules.auth.controller import router as auth_router
+from app.modules.users.controller import router as users_router
+from app.modules.merchandisers.controller import router as merchandisers_router
+from app.modules.visits.controller import router as visits_router
+from app.modules.routes.controller import router as rutas_router
+from app.modules.routes.points_controller import router as points_router
+from app.modules.supervisors.controller import router as supervisors_router
+from app.modules.auditors.controller import router as auditors_router
+from app.modules.reporting.controller import router as reporteria_router
+from app.modules.chat.controller import router as chat_router
+from app.modules.customer_service.controller import router as atencion_cliente_router
+from app.modules.routes.mercaderista_rutas_controller import router as mercaderista_rutas_router
+from app.modules.push.controller import router as push_router
+from app.modules.visits.notifications_controller import router as notifications_router
+from app.modules.clients.controller import router as clients_router
+from app.modules.catalogues.controller import router as catalogos_router
+from app.modules.analysts.controller import router as analysts_router
+from app.modules.reporting.dashboard_controller import router as centro_mando_router
+from app.modules.realtime.controller import router as realtime_router
+from app.modules.clients.photos_controller import router as client_photos_router
+from app.modules.clients.data_controller import router as client_data_router
+from app.modules.merchandisers.portal_controller import router as mercaderista_portal_router
+from app.modules.routes.segmentacion_controller import router as cliente_segmentacion_router
+from app.modules.surveyors.controller import router as surveyors_router
+from app.modules.sellers.controller import router as vendedor_router
+from app.modules.frequencies.controller import router as frequencies_router
+from app.modules.sessions.controller import router as sessions_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from app.services.scheduler_service import start_scheduler, stop_scheduler
+    from app.shared.scheduler_service import start_scheduler, stop_scheduler
     from app.services.catalogos_init import ensure_catalog_tables
     import asyncio
-    from app.services.realtime import set_loop
+    from app.shared.realtime import set_loop
     try:
         ensure_catalog_tables()
     except Exception as e:
         logger.exception(f"Fallo inicializando catálogos: {e}")
         
-    # Pre-calentamiento del pool de conexiones (Punto B5 del Informe Optimización)
+    # Pre-calentamiento del pool de conexiones
     try:
         from app.db.session import engine
         from sqlalchemy import text
@@ -80,10 +108,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors(), "body": exc.body},
     )
 
-# En producción solo se confía en FRONTEND_URL (el frontend real, servido bajo
-# el mismo origen que hace proxy a esta API) — los orígenes de localhost solo
-# se agregan fuera de producción, para no ampliar innecesariamente la lista
-# de orígenes con allow_credentials=True en el dominio público.
 _cors_origins = [settings.FRONTEND_URL]
 if settings.ENVIRONMENT != "production":
     _cors_origins += [
@@ -104,7 +128,7 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-from fastapi.exceptions import RequestValidationError, ResponseValidationError
+from fastapi.exceptions import ResponseValidationError
 
 @app.exception_handler(ResponseValidationError)
 async def validation_exception_handler(request: Request, exc: ResponseValidationError):
@@ -112,7 +136,6 @@ async def validation_exception_handler(request: Request, exc: ResponseValidation
     return JSONResponse(status_code=500, content={"detail": "Response validation error", "errors": exc.errors()})
 
 @app.exception_handler(Exception)
-
 async def global_exception_handler(request: Request, exc: Exception):
     import sys
     import traceback
@@ -131,63 +154,43 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(merchandisers.router)
-app.include_router(visits.router)
-app.include_router(rutas.router)
-app.include_router(points.router)
-app.include_router(supervisors.router)
-app.include_router(auditors.router)
-app.include_router(reporteria.router)
-app.include_router(chat.router)
-app.include_router(admin_sessions.router)
-app.include_router(atencion_cliente.router)
-app.include_router(mercaderista_rutas.router)
-app.include_router(push.router)
-app.include_router(notifications.router)
-app.include_router(clients.router)
-app.include_router(audit.router)
-app.include_router(catalogos.router)
-app.include_router(productos_catalogos.router)
-app.include_router(auditor_campo.router)
-from app.routes import permisos
-app.include_router(permisos.router)
-from app.routes import analysts
-app.include_router(analysts.router)
-from app.routes import centro_mando
-app.include_router(centro_mando.router)
-from app.routes import realtime as realtime_routes
-app.include_router(realtime_routes.router)
-from app.routes import supervisor_rutas
-app.include_router(supervisor_rutas.router)
-from app.routes import client_photos
-app.include_router(client_photos.router)
-from app.routes import client_data
-app.include_router(client_data.router)
-from app.routes import mercaderista_portal
-app.include_router(mercaderista_portal.router)
-from app.routes import cliente_segmentacion
-app.include_router(cliente_segmentacion.router)
-from app.routes import encuestador
-app.include_router(encuestador.router)
-from app.routes import cliente_encuestador
-app.include_router(cliente_encuestador.router)
-from app.routes import vendedor
-app.include_router(vendedor.router)
-from app.routes import frecuencias_pdvs_cliente
-app.include_router(frecuencias_pdvs_cliente.router)
-from app.routes import horas_promedio_ejecucion
-app.include_router(horas_promedio_ejecucion.router)
+# Register modular routers
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(merchandisers_router)
+app.include_router(visits_router)
+app.include_router(rutas_router)
+app.include_router(points_router)
+app.include_router(supervisors_router)
+app.include_router(auditors_router)
+app.include_router(reporteria_router)
+app.include_router(chat_router)
+app.include_router(atencion_cliente_router)
+app.include_router(mercaderista_rutas_router)
+app.include_router(push_router)
+app.include_router(notifications_router)
+app.include_router(clients_router)
+app.include_router(catalogos_router)
+app.include_router(analysts_router)
+app.include_router(centro_mando_router)
+app.include_router(realtime_router)
+app.include_router(client_photos_router)
+app.include_router(client_data_router)
+app.include_router(mercaderista_portal_router)
+app.include_router(cliente_segmentacion_router)
+app.include_router(surveyors_router)
+app.include_router(vendedor_router)
+app.include_router(frequencies_router)
+app.include_router(sessions_router)
 
 
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
 
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    # Intenta servir el favicon si existe, si no retorna 204
     favicon_path = "app/static/favicon.ico"
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)

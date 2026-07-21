@@ -1,14 +1,3 @@
-"""Permisos por defecto por rol (usuario_permisos), para que la visibilidad
-del sidebar salga de la tabla de permisos y no de arrays de roles hardcodeados
-en el frontend. Solo se seedean los roles con restricciones explícitas
-solicitadas; el resto de roles (mercaderista, supervisor, atc, vendedor,
-auditor, admin) sigue sin filas propias y cae al fallback por rol existente.
-
-'dashboard' y 'chat' son de acceso universal en el sidebar (roles: []) — hay
-que concederlos explícitamente en CADA rol seedeado, porque en cuanto un
-usuario tiene alguna fila de permisos, ese fallback universal deja de
-aplicarle (auth.service.ts: canAccess -> si hasAnyPerms() ignora el array
-roles por completo)."""
 from sqlalchemy.orm import Session
 from app.modules.auth.entities import Usuario, UserPermission
 

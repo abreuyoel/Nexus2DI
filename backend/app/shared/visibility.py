@@ -15,7 +15,7 @@ Roles:
 from typing import Optional, List
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from app.models.user import Usuario
+from app.modules.auth.entities import Usuario
 
 # Rutas que tienen más de un cliente (compartidas / tradex)
 _RUTAS_COMPARTIDAS = """

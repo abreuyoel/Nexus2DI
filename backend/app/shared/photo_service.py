@@ -3,7 +3,7 @@ import exifread
 from typing import Optional
 from datetime import datetime
 from PIL import Image
-from app.services.azure_service import azure_service
+from app.shared.azure_service import azure_service
 
 
 def extract_exif_data(file_bytes: bytes) -> dict:

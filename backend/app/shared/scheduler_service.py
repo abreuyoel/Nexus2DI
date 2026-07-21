@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.models.ruta import RutaCambioFuturo, RutaProgramacion
+from app.modules.routes.entities import RutaCambioFuturo, RutaProgramacion
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

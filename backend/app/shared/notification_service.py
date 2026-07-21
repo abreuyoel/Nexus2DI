@@ -1,7 +1,7 @@
 import json
 from typing import Optional
 from sqlalchemy.orm import Session
-from app.models.foto import PushSubscription
+from app.modules.visits.entities import PushSubscription
 from app.core.config import settings
 
 

@@ -3,13 +3,12 @@ import logging
 from sqlalchemy import inspect, text, func
 from app.db.session import engine, SessionLocal
 from app.db.base import Base
-from app.models.catalogo import (
+from app.modules.catalogues.entities import (
     TipoNegocio, SubtipoNegocio, Alcance, CanalVenta, DepartamentoGeo, Ciudad,
     Cuadrante, Servicio,
 )
-from app.models.punto import PuntoInteres
-from app.models.ruta import Ruta, RutaProgramacion
-from app.models.foto_razon import FotoRazonRechazo  # noqa: F401  (para que esté en Base.metadata)
+from app.modules.routes.entities import PuntoInteres, Ruta, RutaProgramacion
+from app.modules.visits.entities import FotoRazonRechazo  # noqa: F401  (para que esté en Base.metadata)
 
 logger = logging.getLogger("app")
 

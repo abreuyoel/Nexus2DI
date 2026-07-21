@@ -3,9 +3,11 @@ backend/**/__pycache__/
 backend/*.pyc
 backend/**/*.pyc
 backend/.env
+backend/.env.dev
 backend/app.db
 backend/*.log
 backend/.pytest_cache/
+backend/.venv/
 
 frontend/node_modules/
 frontend/dist/
@@ -16,3 +18,9 @@ frontend/*.log
 .idea/
 .DS_Store
 Thumbs.db
+
+# Docker dev — datos de volúmenes locales (si alguna vez se montan en el repo)
+docker-volumes/
+
+# Scripts temporales de diagnóstico (generados localmente)
+scripts/*.tmp

@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.security import decode_token
-from app.models.user import Usuario
+from app.modules.auth.entities import Usuario, UserPermission, SesionActiva
 
 bearer_scheme = HTTPBearer()
 
@@ -21,7 +21,6 @@ def get_current_user(
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
-    from app.models.sesion import SesionActiva
     session = db.query(SesionActiva).filter(
         SesionActiva.session_token == token,
         SesionActiva.activa == True,
@@ -79,7 +78,6 @@ def require_permission(clave: str, action: str = "read", fallback_roles: tuple =
     def _checker(current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)) -> Usuario:
         if current_user.rol == "admin":
             return current_user
-        from app.models.user import UserPermission
         perms = db.query(UserPermission).filter(UserPermission.user_id == current_user.id).all()
         if perms:
             p = next((x for x in perms if x.module == clave), None)

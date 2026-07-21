@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -10,13 +11,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
-    DB_DRIVER: str = "ODBC Driver 17 for SQL Server"
+    DB_DRIVER: str = "ODBC Driver 18 for SQL Server"
     DB_SERVER: str = "172.174.41.110"
     DB_NAME: str = "epran-qa"
-    DB_USER: str
-    DB_PASSWORD: str
+    # Opcionales cuando se usa Trusted_Connection (Windows Auth)
+    DB_USER: Optional[str] = None
+    DB_PASSWORD: Optional[str] = None
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
+    # True → usa Windows Authentication (Trusted_Connection=yes) sin user/pass
+    DB_TRUSTED_CONNECTION: bool = False
 
     ENVIRONMENT: str = "development"
 
@@ -39,6 +43,15 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         driver = self.DB_DRIVER.replace(" ", "+")
+        if self.DB_TRUSTED_CONNECTION:
+            # Windows Authentication — no user/password en la URL
+            return (
+                f"mssql+pyodbc://@{self.DB_SERVER}/{self.DB_NAME}"
+                f"?driver={driver}"
+                f"&Trusted_Connection=yes"
+                f"&TrustServerCertificate=yes"
+            )
+        # SQL Server Authentication (producción / Azure)
         return (
             f"mssql+pyodbc://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_SERVER}/{self.DB_NAME}"

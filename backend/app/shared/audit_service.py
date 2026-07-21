@@ -2,7 +2,7 @@ import json
 from typing import Optional, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from app.models.audit import AuditLog
+from app.modules.auditors.entities import AuditLog
 
 
 def log_action(
