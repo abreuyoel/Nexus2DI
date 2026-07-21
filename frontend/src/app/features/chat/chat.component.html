@@ -42,11 +42,13 @@
           <mat-icon class="text-primary-500">forum</mat-icon>
           Chats
         </h2>
-        <button (click)="openNewChatDialog()"
-                class="inline-flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold rounded-xl shadow-md shadow-primary-500/20 transition-all active:scale-95">
-          <mat-icon class="!text-[18px] !w-[18px] !h-[18px]">add</mat-icon>
-          Nuevo
-        </button>
+        @if (!auth.currentUser()?.is_client) {
+          <button (click)="openNewChatDialog()"
+                  class="inline-flex items-center gap-1 px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white text-xs font-bold rounded-xl shadow-md shadow-primary-500/20 transition-all active:scale-95">
+            <mat-icon class="!text-[18px] !w-[18px] !h-[18px]">add</mat-icon>
+            Nuevo
+          </button>
+        }
       </div>
 
       <!-- Banner cliente seleccionado (coordinador exclusivo) -->
@@ -78,22 +80,24 @@
         }
       </div>
       <!-- Pestañas: Cliente / Equipo Operativo -->
-      <div class="flex gap-1 mt-3 bg-slate-100 dark:bg-slate-950/40 rounded-xl p-1">
-        <button (click)="setChatTab('cliente')"
-                [class]="activeChatTab() === 'cliente' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
-                class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
-          <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">store</mat-icon>
-          Cliente
-          @if (clienteCount() > 0) { <span class="text-[10px] opacity-70">({{ clienteCount() }})</span> }
-        </button>
-        <button (click)="setChatTab('equipo')"
-                [class]="activeChatTab() === 'equipo' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
-                class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
-          <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">groups</mat-icon>
-          Equipo Operativo
-          @if (equipoCount() > 0) { <span class="text-[10px] opacity-70">({{ equipoCount() }})</span> }
-        </button>
-      </div>
+      @if (!auth.currentUser()?.is_client) {
+        <div class="flex gap-1 mt-3 bg-slate-100 dark:bg-slate-950/40 rounded-xl p-1">
+          <button (click)="setChatTab('cliente')"
+                  [class]="activeChatTab() === 'cliente' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
+                  class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
+            <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">store</mat-icon>
+            Cliente
+            @if (clienteCount() > 0) { <span class="text-[10px] opacity-70">({{ clienteCount() }})</span> }
+          </button>
+          <button (click)="setChatTab('equipo')"
+                  [class]="activeChatTab() === 'equipo' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
+                  class="flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-1.5">
+            <mat-icon class="!text-[16px] !w-[16px] !h-[16px]">groups</mat-icon>
+            Equipo Operativo
+            @if (equipoCount() > 0) { <span class="text-[10px] opacity-70">({{ equipoCount() }})</span> }
+          </button>
+        </div>
+      }
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
