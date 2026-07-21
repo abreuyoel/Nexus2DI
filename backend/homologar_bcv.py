@@ -1,6 +1,6 @@
 import os
 from sqlalchemy import text
-from app.core.database import SessionLocal
+from app.db.session import SessionLocal
 
 def homologar_bcv():
     db = SessionLocal()
