@@ -10,7 +10,7 @@ class FrecuenciaPdvCliente(Base):
 
     id = Column("id_frecuencia_pdv_cliente", Integer, primary_key=True, index=True)
     id_cliente = Column(Integer, ForeignKey("CLIENTES.id_cliente"), nullable=False)
-    id_punto_interes = Column(String(50), ForeignKey("PUNTOS_INTERES1.identificador"), nullable=False)
+    id_punto_interes = Column(String(100), ForeignKey("PUNTOS_INTERES1.identificador"), nullable=False)
     frecuencia_semanal = Column(Numeric(5, 2), nullable=False)
     observaciones = Column(String(500), nullable=True)
     activo = Column(Boolean, nullable=False, default=True)

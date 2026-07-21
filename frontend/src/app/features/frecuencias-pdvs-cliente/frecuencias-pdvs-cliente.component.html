@@ -4,10 +4,13 @@
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
     <div>
       <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Frecuencias PDVs · Cliente</h1>
-      <p class="text-slate-500 dark:text-slate-400 mt-1">Cuántas veces por semana debe visitarse cada PDV para un cliente.</p>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Cuántas veces por semana debe visitarse cada PDV para un
+        cliente.</p>
     </div>
     <div class="flex gap-3">
-      <button mat-stroked-button class="!rounded-xl !font-bold !text-slate-700 dark:!text-white !border-slate-300 dark:!border-white/20 !bg-white dark:!bg-slate-800" (click)="abrirBulk()">
+      <button mat-stroked-button
+        class="!rounded-xl !font-bold !text-slate-700 dark:!text-white !border-slate-300 dark:!border-white/20 !bg-white dark:!bg-slate-800"
+        (click)="abrirBulk()">
         <mat-icon class="!text-base align-middle mr-1">playlist_add</mat-icon>
         Carga masiva
       </button>
@@ -19,190 +22,194 @@
   </div>
 
   <!-- Filtros -->
-  <div class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-white/5">
+  <div
+    class="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-white/5">
     <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Cliente</label>
-    <select class="input !w-auto" [(ngModel)]="filtroCliente" (ngModelChange)="cargar()">
-      <option [ngValue]="null">Todos</option>
-      @for (c of clientes(); track c.id) {
-        <option [ngValue]="c.id">{{ c.nombre }}</option>
-      }
-    </select>
+    <app-searchable-select [options]="clienteOptions()" [placeholder]="'Todos'" [clearable]="true" [darkMode]="isDark()"
+      (valueChange)="onFiltroClienteChange($event)">
+    </app-searchable-select>
 
     <label class="text-xs font-bold text-slate-500 uppercase tracking-wide ml-2">Estado</label>
-    <select class="input !w-auto" [(ngModel)]="filtroActivo" (ngModelChange)="cargar()">
-      <option value="">Todos</option>
-      <option value="true">Activo</option>
-      <option value="false">Inactivo</option>
-    </select>
+    <app-searchable-select [options]="estadoOptions" [placeholder]="'Filtrar por estado...'" [clearable]="true"
+      [darkMode]="isDark()" (valueChange)="onFiltroActivoChange($event)">
+    </app-searchable-select>
   </div>
 
   <!-- Formulario crear/editar -->
   @if (showForm()) {
-    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
-      <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">{{ editing() ? 'Editar frecuencia' : 'Nueva frecuencia' }}</h3>
+  <div
+    class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
+    <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">{{ editing() ? 'Editar frecuencia' : 'Nueva
+      frecuencia' }}</h3>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <select class="input" [(ngModel)]="form.id_cliente">
-          <option [ngValue]="null">Cliente...</option>
-          @for (c of clientes(); track c.id) {
-            <option [ngValue]="c.id">{{ c.nombre }}</option>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <app-searchable-select [options]="clienteOptions()" [placeholder]="'Cliente...'" [clearable]="true"
+        [darkMode]="isDark()" (valueChange)="form.id_cliente = $event">
+      </app-searchable-select>
+
+      <div class="space-y-1">
+        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">PDV</label>
+        <app-searchable-select [options]="pdvOptions()" [placeholder]="'Buscar PDV por nombre o identificador...'"
+          [clearable]="true" [darkMode]="isDark()" (valueChange)="form.id_punto_interes = $event ?? ''">
+        </app-searchable-select>
+      </div>
+
+      <div class="space-y-1">
+        <input class="input" type="number" step="0.25" min="0" placeholder="Frecuencia semanal"
+          [(ngModel)]="form.frecuencia_semanal" />
+        <p class="text-[11px] text-slate-400 leading-snug">
+          @for (h of frecuenciaHints; track h.valor) {
+          <span class="block">{{ h.texto }}</span>
           }
-        </select>
-
-        <div class="space-y-1">
-          <input class="input" placeholder="Buscar PDV por nombre o identificador..." [(ngModel)]="pdvFiltro" />
-          <select class="input" [(ngModel)]="form.id_punto_interes">
-            <option value="">PDV...</option>
-            @for (p of pdvsFiltrados(); track p.id) {
-              <option [value]="p.id">{{ p.nombre }} ({{ p.id }})</option>
-            }
-          </select>
-        </div>
-
-        <div class="space-y-1">
-          <input class="input" type="number" step="0.25" min="0" placeholder="Frecuencia semanal" [(ngModel)]="form.frecuencia_semanal" />
-          <p class="text-[11px] text-slate-400 leading-snug">
-            @for (h of frecuenciaHints; track h.valor) {
-              <span class="block">{{ h.texto }}</span>
-            }
-          </p>
-        </div>
-
-        <label class="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-          <input type="checkbox" [(ngModel)]="form.activo" class="w-4 h-4" />
-          Activo
-        </label>
-
-        <textarea class="input md:col-span-2" rows="2" placeholder="Observaciones (opcional)" [(ngModel)]="form.observaciones"></textarea>
+        </p>
       </div>
 
-      <div class="flex justify-end gap-3">
-        <button mat-button class="!rounded-xl" (click)="cancelar()">Cancelar</button>
-        <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" [disabled]="saving()" (click)="guardar()">
-          {{ editing() ? 'Guardar cambios' : 'Crear' }}
-        </button>
-      </div>
+      <label class="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+        <input type="checkbox" [(ngModel)]="form.activo" class="w-4 h-4" />
+        Activo
+      </label>
+
+      <textarea class="input md:col-span-2" rows="2" placeholder="Observaciones (opcional)"
+        [(ngModel)]="form.observaciones"></textarea>
     </div>
+
+    <div class="flex justify-end gap-3">
+      <button mat-button class="!rounded-xl" (click)="cancelar()">Cancelar</button>
+      <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" [disabled]="saving()"
+        (click)="guardar()">
+        {{ editing() ? 'Guardar cambios' : 'Crear' }}
+      </button>
+    </div>
+  </div>
   }
 
   <!-- Carga masiva -->
   @if (showBulk()) {
-    <div class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
-      <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">Carga masiva por cliente</h3>
-      <p class="text-xs text-slate-400 -mt-2">Selecciona un cliente para traer los PDVs únicos de su programación de ruta y asignarles la frecuencia rápidamente.</p>
+  <div
+    class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
+    <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">Carga masiva por cliente</h3>
+    <p class="text-xs text-slate-400 -mt-2">Selecciona un cliente para traer los PDVs únicos de su programación de ruta
+      y asignarles la frecuencia rápidamente.</p>
 
-      <select class="input md:w-80" [(ngModel)]="bulkCliente" (ngModelChange)="onBulkClienteChange()">
-        <option [ngValue]="null">Cliente...</option>
-        @for (c of clientes(); track c.id) {
-          <option [ngValue]="c.id">{{ c.nombre }}</option>
-        }
-      </select>
+    <app-searchable-select [options]="clienteOptions()" [placeholder]="'Cliente...'" [clearable]="true"
+      [darkMode]="isDark()" (valueChange)="onBulkClienteSelect($event)">
+    </app-searchable-select>
 
-      @if (bulkLoading()) {
-        <div class="flex justify-center py-10"><mat-spinner diameter="32"></mat-spinner></div>
-      } @else if (bulkCliente != null) {
-        @if (bulkPdvs().length) {
-          <div class="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/5 rounded-2xl p-3">
-            <span class="text-xs font-bold text-slate-500 uppercase">Aplicar a todos:</span>
-            <input class="input !w-32" type="number" step="0.25" min="0" placeholder="Valor" [(ngModel)]="bulkAplicarTodos" />
-            <button mat-button class="!rounded-xl !font-bold" (click)="aplicarATodos()">Aplicar a todos</button>
-            <span class="text-xs text-slate-400 ml-auto">{{ bulkPendientesCount() }} de {{ bulkPdvs().length }} con frecuencia asignada</span>
-          </div>
-
-          <div class="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-100 dark:border-white/5">
-            <table class="w-full text-sm">
-              <thead class="sticky top-0 bg-white dark:bg-slate-900">
-                <tr class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  <th class="px-4 py-2">PDV</th>
-                  <th class="px-4 py-2 w-32">Frecuencia/sem</th>
-                  <th class="px-4 py-2">Observaciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (p of bulkPdvs(); track p.id_punto_interes) {
-                  <tr class="border-b border-slate-100 dark:border-white/5">
-                    <td class="px-4 py-2 text-slate-700 dark:text-slate-200">
-                      {{ p.pdv_nombre }}
-                      <span class="text-[10px] text-slate-400 block">{{ p.id_punto_interes }}</span>
-                    </td>
-                    <td class="px-4 py-2">
-                      <input class="input" type="number" step="0.25" min="0" [(ngModel)]="p.frecuencia_semanal" />
-                    </td>
-                    <td class="px-4 py-2">
-                      <input class="input" [(ngModel)]="p.observaciones" />
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        } @else {
-          <div class="py-10 text-center text-slate-400 text-sm">
-            Este cliente no tiene PDVs en su programación de ruta.
-          </div>
-        }
-      }
-
-      <div class="flex justify-end gap-3">
-        <button mat-button class="!rounded-xl" (click)="cancelarBulk()">Cancelar</button>
-        <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500" [disabled]="bulkSaving() || !bulkPdvs().length" (click)="guardarBulk()">
-          Guardar {{ bulkPendientesCount() ? '(' + bulkPendientesCount() + ')' : '' }}
-        </button>
-      </div>
+    @if (bulkLoading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="32"></mat-spinner></div>
+    } @else if (bulkCliente != null) {
+    @if (bulkPdvs().length) {
+    <div
+      class="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/5 rounded-2xl p-3">
+      <span class="text-xs font-bold text-slate-500 uppercase">Aplicar a todos:</span>
+      <input class="input !w-32" type="number" step="0.25" min="0" placeholder="Valor" [(ngModel)]="bulkAplicarTodos" />
+      <button mat-button class="!rounded-xl !font-bold" (click)="aplicarATodos()">Aplicar a todos</button>
+      <span class="text-xs text-slate-400 ml-auto">{{ bulkPendientesCount() }} de {{ bulkPdvs().length }} con frecuencia
+        asignada</span>
     </div>
+
+    <div class="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-100 dark:border-white/5">
+      <table class="w-full text-sm">
+        <thead class="sticky top-0 bg-white dark:bg-slate-900">
+          <tr
+            class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <th class="px-4 py-2">PDV</th>
+            <th class="px-4 py-2 w-32">Frecuencia/sem</th>
+            <th class="px-4 py-2">Observaciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of bulkPdvs(); track p.id_punto_interes) {
+          <tr class="border-b border-slate-100 dark:border-white/5">
+            <td class="px-4 py-2 text-slate-700 dark:text-slate-200">
+              {{ p.pdv_nombre }}
+              <span class="text-[10px] text-slate-400 block">{{ p.id_punto_interes }}</span>
+            </td>
+            <td class="px-4 py-2">
+              <input class="input" type="number" step="0.25" min="0" [(ngModel)]="p.frecuencia_semanal" />
+            </td>
+            <td class="px-4 py-2">
+              <input class="input" [(ngModel)]="p.observaciones" />
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    } @else {
+    <div class="py-10 text-center text-slate-400 text-sm">
+      Este cliente no tiene PDVs en su programación de ruta.
+    </div>
+    }
+    }
+
+    <div class="flex justify-end gap-3">
+      <button mat-button class="!rounded-xl" (click)="cancelarBulk()">Cancelar</button>
+      <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500"
+        [disabled]="bulkSaving() || !bulkPdvs().length" (click)="guardarBulk()">
+        Guardar {{ bulkPendientesCount() ? '(' + bulkPendientesCount() + ')' : '' }}
+      </button>
+    </div>
+  </div>
   }
 
   <!-- Tabla -->
   @if (loading()) {
-    <div class="flex flex-col items-center py-24 gap-3">
-      <mat-spinner diameter="40"></mat-spinner>
-      <p class="text-slate-400 font-medium">Cargando frecuencias...</p>
-    </div>
+  <div class="flex flex-col items-center py-24 gap-3">
+    <mat-spinner diameter="40"></mat-spinner>
+    <p class="text-slate-400 font-medium">Cargando frecuencias...</p>
+  </div>
   } @else {
-    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
-              <th class="px-4 py-3">Cliente</th>
-              <th class="px-4 py-3">PDV</th>
-              <th class="px-4 py-3">Frecuencia/sem</th>
-              <th class="px-4 py-3">Observaciones</th>
-              <th class="px-4 py-3">Estado</th>
-              <th class="px-4 py-3">Últ. modificó</th>
-              <th class="px-4 py-3 text-right">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (r of registros(); track r.id) {
-              <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                <td class="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{{ r.cliente_nombre || r.id_cliente }}</td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ r.pdv_nombre || r.id_punto_interes }}</td>
-                <td class="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{{ r.frecuencia_semanal }}</td>
-                <td class="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" [title]="r.observaciones">{{ r.observaciones }}</td>
-                <td class="px-4 py-3">
-                  <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase"
-                    [class]="r.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
-                    {{ r.activo ? 'Activo' : 'Inactivo' }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-slate-400 text-xs">{{ r.usuario_username }}</td>
-                <td class="px-4 py-3 text-right whitespace-nowrap">
-                  <button mat-button class="!min-w-0 !px-2" (click)="openEdit(r)"><mat-icon class="!text-base">edit</mat-icon></button>
-                  <button mat-button class="!min-w-0 !px-2 !text-rose-600" (click)="eliminar(r)"><mat-icon class="!text-base">delete</mat-icon></button>
-                </td>
-              </tr>
-            } @empty {
-              <tr>
-                <td colspan="7" class="text-center py-16 text-slate-400">
-                  <mat-icon class="!text-5xl block mx-auto mb-2 opacity-40">event_repeat</mat-icon>
-                  Sin registros de frecuencia.
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
+  <div
+    class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <th class="px-4 py-3">Cliente</th>
+            <th class="px-4 py-3">PDV</th>
+            <th class="px-4 py-3">Frecuencia/sem</th>
+            <th class="px-4 py-3">Observaciones</th>
+            <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">Últ. modificó</th>
+            <th class="px-4 py-3 text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of registros(); track r.id) {
+          <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+            <td class="px-4 py-3 font-medium text-slate-700 dark:text-slate-200">{{ r.cliente_nombre || r.id_cliente }}
+            </td>
+            <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ r.pdv_nombre || r.id_punto_interes }}</td>
+            <td class="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{{ r.frecuencia_semanal }}</td>
+            <td class="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" [title]="r.observaciones">{{
+              r.observaciones }}</td>
+            <td class="px-4 py-3">
+              <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase"
+                [class]="r.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">
+                {{ r.activo ? 'Activo' : 'Inactivo' }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-slate-400 text-xs">{{ r.usuario_username }}</td>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <button mat-button class="!min-w-0 !px-2" (click)="openEdit(r)"><mat-icon
+                  class="!text-base">edit</mat-icon></button>
+              <button mat-button class="!min-w-0 !px-2 !text-rose-600" (click)="eliminar(r)"><mat-icon
+                  class="!text-base">delete</mat-icon></button>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="7" class="text-center py-16 text-slate-400">
+              <mat-icon class="!text-5xl block mx-auto mb-2 opacity-40">event_repeat</mat-icon>
+              Sin registros de frecuencia.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
     </div>
+  </div>
   }
 </div>

@@ -68,7 +68,7 @@ export class RouteDetailDialogComponent implements OnInit {
     private api: ApiService,
     private fb: FormBuilder,
     private snack: MatSnackBar
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     this.ruta = { ...this.data.ruta };
@@ -98,12 +98,12 @@ export class RouteDetailDialogComponent implements OnInit {
       debounceTime(300),
       distinctUntilChanged(),
       switchMap(term => {
-        if (!term || term.length < 2) { this.pointResults.set([]); this.searchingPoints.set(false); return of([]); }
+        if (!term || term.length < 2) { this.pointResults.set([]); this.searchingPoints.set(false); return of({ items: [], total: 0 }); }
         this.searchingPoints.set(true);
         return this.api.getPoints({ search: term, limit: 30 });
       })
     ).subscribe({
-      next: (res: any[]) => { this.pointResults.set(res); this.searchingPoints.set(false); },
+      next: (res: { items: any[]; total: number }) => { this.pointResults.set(res.items); this.searchingPoints.set(false); },
       error: () => this.searchingPoints.set(false)
     });
   }
@@ -374,10 +374,10 @@ export class RouteDetailDialogComponent implements OnInit {
   // ── Helpers de estilo ─────────────────────────────────────
   getPriorityClass(p: string): string {
     switch (p) {
-      case 'Alta':  return 'bg-red-950 text-red-400 border border-red-900';
+      case 'Alta': return 'bg-red-950 text-red-400 border border-red-900';
       case 'Media': return 'bg-amber-950 text-amber-400 border border-amber-900';
-      case 'Baja':  return 'bg-sky-950 text-sky-400 border border-sky-900';
-      default:      return 'bg-slate-800 text-slate-400';
+      case 'Baja': return 'bg-sky-950 text-sky-400 border border-sky-900';
+      default: return 'bg-slate-800 text-slate-400';
     }
   }
   getChangeBadge(c: any): string {

@@ -50,17 +50,55 @@ FOTOS_DIR = "app/static/fotos_mercaderista"
 
 
 def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
+    """Resolve the Mercaderista record for the current user.
+    Strategy:
+      1. id_perfil → MERCADERISTAS.id_mercaderista (set at user creation / login)
+      2. Numeric username matched as cedula
+      3. Mercaderista-role user with no DB row yet → auto-create a virtual record
+         so the portal doesn't hard-crash on empty databases.
+    """
+    # 1) Fast path: id_perfil links directly to MERCADERISTAS.id_mercaderista
+    if current_user.id_perfil:
+        merc = db.query(Mercaderista).filter(Mercaderista.id == current_user.id_perfil).first()
+        if merc:
+            return merc
+
+    # 2) Fallback: match by cedula (username must be a numeric cedula)
     try:
         cedula_val = int(current_user.username)
-    except ValueError:
-        cedula_val = 0
+    except (ValueError, TypeError):
+        cedula_val = None
 
-    merc = db.query(Mercaderista).filter(
-        Mercaderista.cedula == cedula_val
-    ).first()
-    if not merc:
-        raise HTTPException(status_code=403, detail="Usuario no es mercaderista")
-    return merc
+    if cedula_val is not None:
+        merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+        if merc:
+            return merc
+
+    # 3) Mercaderista-role user with no row yet: auto-provision record
+    if current_user.is_mercaderista:
+        # Try to find any existing record for this user by any means first
+        merc = db.query(Mercaderista).filter(
+            Mercaderista.nombre.ilike(f"%{current_user.username}%")
+        ).first()
+        if merc:
+            return merc
+        # Create a minimal Mercaderista record linked to this user account
+        new_merc = Mercaderista(
+            cedula=cedula_val or current_user.id,
+            nombre=current_user.username,
+            email=current_user.email,
+            tipo="Mercaderista",
+            activo=True,
+        )
+        db.add(new_merc)
+        db.flush()  # get ID without full commit
+        # Link user to this new profile
+        current_user.id_perfil = new_merc.id
+        db.commit()
+        db.refresh(new_merc)
+        return new_merc
+
+    raise HTTPException(status_code=403, detail="Usuario no es mercaderista")
 
 
 def _merc_foto_url(blob_path: Optional[str], foto_id: int) -> Optional[str]:
@@ -76,6 +114,7 @@ def _merc_foto_url(blob_path: Optional[str], foto_id: int) -> Optional[str]:
 
 
 @router.get("/mi-perfil", response_model=MiPerfilResponse)
+@router.get("/mi-perfil/", response_model=MiPerfilResponse)
 def get_mi_perfil(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -93,6 +132,7 @@ def get_mi_perfil(
 
 
 @router.get("/mi-ruta", response_model=MiRutaResponse)
+@router.get("/mi-ruta/", response_model=MiRutaResponse)
 def get_mi_ruta(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -180,6 +220,7 @@ def get_mi_ruta(
 
 
 @router.get("/mis-visitas", response_model=List[MiVisitaResponse])
+@router.get("/mis-visitas/", response_model=List[MiVisitaResponse])
 def get_mis_visitas(
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
@@ -208,7 +249,6 @@ def get_mis_visitas(
             Visita.fecha,
             Visita.estado,
             Visita.estado_data,
-            Visita.observaciones,
             Visita.punto_id,
             PuntoInteres.nombre.label("pdv_nombre"),
             PuntoInteres.cadena,
@@ -237,14 +277,13 @@ def get_mis_visitas(
             fecha=str(r[1]) if r[1] else None,
             estado=r[2],
             estado_data=r[3],
-            observaciones=r[4],
-            pdv_nombre=r[6],
-            cadena=r[7],
-            region=r[8],
-            cliente=r[9],
-            id_cliente=r[10],
-            fotos_count=r[11],
-            balances_count=r[12]
+            pdv_nombre=r[5],
+            cadena=r[6],
+            region=r[7],
+            cliente=r[8],
+            id_cliente=r[9],
+            fotos_count=r[10],
+            balances_count=r[11]
         )
         for r in rows
     ]
@@ -563,6 +602,7 @@ def guardar_balances(
 
 
 @router.get("/chat/inbox", response_model=List[ChatInboxItemResponse])
+@router.get("/chat/inbox/", response_model=List[ChatInboxItemResponse])
 def get_chat_inbox(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),

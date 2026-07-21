@@ -7,6 +7,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { SearchableSelectComponent } from '../../shared/components/searchable-select';
+import type { SearchableOption } from '../../shared/components/searchable-select';
 
 const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
   { valor: 5, texto: '5 = 5 días a la semana' },
@@ -19,7 +21,7 @@ const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
 @Component({
   selector: 'app-frecuencias-pdvs-cliente',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, SearchableSelectComponent],
   templateUrl: './frecuencias-pdvs-cliente.component.html',
   styleUrls: ['./frecuencias-pdvs-cliente.component.scss'],
 })
@@ -64,12 +66,46 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
 
   bulkPendientesCount = computed(() => this.bulkPdvs().filter(p => p.frecuencia_semanal != null).length);
 
-  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) {}
+  // --- Opciones para searchable-select ---
+  clienteOptions = computed<SearchableOption<number>[]>(() =>
+    this.clientes().map(c => ({ value: c.id, label: c.nombre }))
+  );
+
+  pdvOptions = computed<SearchableOption<string>[]>(() =>
+    this.pdvsFiltrados().map(p => ({ value: p.id, label: `${p.nombre} (${p.id})` }))
+  );
+
+  readonly estadoOptions: SearchableOption<string>[] = [
+    { value: '', label: 'Todos' },
+    { value: 'true', label: 'Activo' },
+    { value: 'false', label: 'Inactivo' },
+  ];
+
+  isDark(): boolean {
+    return document.documentElement.classList.contains('dark');
+  }
+
+  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) { }
+
+  onFiltroClienteChange(val: number | null): void {
+    this.filtroCliente.set(val);
+    this.cargar();
+  }
+
+  onFiltroActivoChange(val: string | null): void {
+    this.filtroActivo.set(val ?? '');
+    this.cargar();
+  }
+
+  onBulkClienteSelect(val: number | null): void {
+    this.bulkCliente = val;
+    this.onBulkClienteChange();
+  }
 
   ngOnInit(): void {
     this.cargar();
-    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => {} });
-    this.api.getPDVList().subscribe({ next: d => this.pdvs.set(d), error: () => {} });
+    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => { } });
+    this.api.getPDVList().subscribe({ next: d => this.pdvs.set(d), error: () => { } });
   }
 
   cargar(): void {

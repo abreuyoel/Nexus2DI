@@ -44,6 +44,7 @@ def _to_resp_frecuencia(f: FrecuenciaPdvCliente, cliente_nombre=None, pdv_nombre
 
 
 @router.get("/api/frecuencias-pdvs-cliente", response_model=List[FrecuenciaPdvClienteResponse])
+@router.get("/api/frecuencias-pdvs-cliente/", response_model=List[FrecuenciaPdvClienteResponse])
 def list_frecuencias(
     id_cliente: Optional[int] = Query(None),
     id_punto_interes: Optional[str] = Query(None),

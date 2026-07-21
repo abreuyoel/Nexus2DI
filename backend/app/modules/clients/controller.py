@@ -20,6 +20,7 @@ router = APIRouter(tags=["Clientes"])
 
 
 @router.get("/api/clients", response_model=List[ClienteResponse])
+@router.get("/api/clients/", response_model=List[ClienteResponse])
 def list_clients(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
@@ -36,6 +37,7 @@ def get_client(client_id: int, db: Session = Depends(get_db), _: Usuario = Depen
 
 
 @router.post("/api/clients", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/api/clients/", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
 def create_client(
     data: ClienteCreate,
     db: Session = Depends(get_db),

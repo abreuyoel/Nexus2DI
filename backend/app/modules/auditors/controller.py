@@ -3,11 +3,11 @@ import uuid
 from datetime import datetime, date
 from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from sqlalchemy import func, case
+from sqlalchemy import func, case, Date
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.dependencies import get_current_user, require_admin
+from app.core.dependencies import get_current_user, require_admin, require_analyst_or_admin, require_permission
 from app.modules.auth.entities import Usuario
 from app.modules.auditors.entities import AuditLog, AuditoriaCategoria
 from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
@@ -591,7 +591,7 @@ def get_audit_logs(
     limit: int = Query(100, le=500),
     offset: int = 0,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_admin),
+    _: Usuario = Depends(require_permission('audit', 'read')),
 ):
     q = db.query(AuditLog)
     if entity_type:
@@ -637,5 +637,5 @@ def get_audit_logs(
 
 
 @router.get("/api/audit/entity-types")
-def get_entity_types(_: Usuario = Depends(require_admin)):
+def get_entity_types(_: Usuario = Depends(require_permission('audit', 'read'))):
     return ENTITY_TYPES

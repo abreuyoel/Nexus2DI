@@ -1,36 +1,37 @@
 <!-- unauthorized.component.html -->
-<div class="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-  <div class="bg-white rounded-[2.5rem] p-12 shadow-2xl border border-slate-200 text-center max-w-lg w-full animate-in zoom-in-95 duration-500">
-    <div class="w-24 h-24 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner">
+<div class="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+  <div
+    class="bg-white dark:bg-slate-900 rounded-[2.5rem] p-12 shadow-2xl border border-slate-200 dark:border-white/5 text-center max-w-lg w-full animate-in zoom-in-95 duration-500">
+    <div
+      class="w-24 h-24 bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner">
       <mat-icon class="!text-6xl">lock_person</mat-icon>
     </div>
-    
-    <h1 class="text-3xl font-black text-slate-800 tracking-tighter mb-4 uppercase">Acceso Denegado</h1>
-    
-    <div class="p-6 bg-slate-50 rounded-2xl border border-slate-100 mb-8">
-      <p class="text-slate-600 font-medium leading-relaxed">
-        Su perfil de usuario no cuenta con los privilegios necesarios para visualizar este módulo de <span class="text-primary-600 font-bold tracking-tight">Nexus2DI</span>.
+
+    <h1 class="text-3xl font-black text-slate-800 dark:text-white tracking-tighter mb-4 uppercase">Acceso Denegado</h1>
+
+    <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/5 mb-8">
+      <p class="text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+        Su perfil de usuario no cuenta con los privilegios necesarios para visualizar este módulo de <span
+          class="text-primary-600 dark:text-primary-400 font-bold tracking-tight">Nexus2DI</span>.
       </p>
     </div>
 
     <div class="flex flex-col gap-3">
-      <a 
-        routerLink="/dashboard"
-        class="flex items-center justify-center gap-2 h-14 bg-primary-500 hover:bg-primary-600 text-white rounded-2xl font-bold shadow-lg shadow-primary-500/20 transition-all active:scale-95"
-      >
+      <a routerLink="/dashboard"
+        class="flex items-center justify-center gap-2 h-14 bg-primary-500 hover:bg-primary-600 text-white rounded-2xl font-bold shadow-lg shadow-primary-500/20 transition-all active:scale-95">
         <mat-icon>dashboard</mat-icon>
         Volver al Panel Principal
       </a>
-      
-      <button 
-        class="text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors py-2"
-        onclick="window.history.back()"
-      >
+
+      <button
+        class="text-slate-400 dark:text-slate-500 font-bold text-sm hover:text-slate-600 dark:hover:text-slate-300 transition-colors py-2"
+        onclick="window.history.back()">
         Regresar a la página anterior
       </button>
     </div>
 
-    <div class="mt-12 pt-8 border-t border-slate-100 flex items-center justify-center gap-2 opacity-30">
+    <div
+      class="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 flex items-center justify-center gap-2 opacity-30">
       <mat-icon class="!text-sm">security</mat-icon>
       <span class="text-[10px] font-black uppercase tracking-[0.3em]">Protocolo de Seguridad Nexus</span>
     </div>

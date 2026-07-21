@@ -96,6 +96,7 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
     } for r in rutas]
 
 
+@router.get("", response_model=List[RutaResponse])
 @router.get("/", response_model=List[RutaResponse])
 def list_routes(
     activa: Optional[bool] = None,
@@ -115,6 +116,7 @@ def list_routes(
     return _enrich_routes(db, rutas)
 
 
+@router.post("", response_model=RutaResponse, status_code=201)
 @router.post("/", response_model=RutaResponse, status_code=201)
 def create_route(
     data: RutaCreate,

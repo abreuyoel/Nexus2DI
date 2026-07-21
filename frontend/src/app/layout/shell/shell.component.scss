@@ -8,13 +8,16 @@
   &::-webkit-scrollbar {
     width: 4px;
   }
+
   &::-webkit-scrollbar-track {
     background: transparent;
   }
+
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.05);
     border-radius: 10px;
   }
+
   &:hover::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
   }
@@ -48,6 +51,24 @@
         font-size: 20px !important;
         width: 20px !important;
         height: 20px !important;
+      }
+    }
+  }
+
+  .dark .modern-menu {
+    background: rgba(15, 23, 42, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+
+    .mat-mdc-menu-item {
+      color: #cbd5e1 !important;
+
+      &:hover:not([disabled]) {
+        background: rgba(255, 255, 255, 0.08) !important;
+        color: #f1f5f9 !important;
+      }
+
+      .mat-icon {
+        color: #64748b !important;
       }
     }
   }

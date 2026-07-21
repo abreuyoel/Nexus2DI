@@ -23,6 +23,7 @@ class RouteAssignment(BaseModel):
 
 
 @router.get("/api/merchandisers", response_model=List[MercaderistaResponse])
+@router.get("/api/merchandisers/", response_model=List[MercaderistaResponse])
 def list_mercaderistas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -31,6 +32,7 @@ def list_mercaderistas(
 
 
 @router.post("/api/merchandisers", response_model=MercaderistaResponse, status_code=201)
+@router.post("/api/merchandisers/", response_model=MercaderistaResponse, status_code=201)
 def create_mercaderista(
     data: MercaderistaCreate,
     db: Session = Depends(get_db),

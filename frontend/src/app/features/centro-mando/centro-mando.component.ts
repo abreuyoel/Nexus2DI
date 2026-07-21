@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, HostListener } from '@angular/core';
+import { Component, OnInit, signal, computed, HostListener } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,6 +9,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.component';
+import { SearchableSelectComponent, SearchableOption } from '../../shared/components/searchable-select';
 
 @Component({
   selector: 'app-centro-mando',
@@ -17,7 +18,8 @@ import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.c
     CommonModule, FormsModule,
     MatIconModule, MatButtonModule,
     MatProgressSpinnerModule, MatTooltipModule,
-    RevisionVisitasComponent
+    RevisionVisitasComponent,
+    SearchableSelectComponent
   ],
   templateUrl: './centro-mando.component.html',
   styleUrls: ['./centro-mando.component.scss']
@@ -28,19 +30,27 @@ export class CentroMandoComponent implements OnInit {
   vista = signal<'activaciones' | 'visitas'>('activaciones');
 
   // ─── Loading ───────────────────────────────────────────────────────────────
-  loadingResumen      = signal(true);
+  loadingResumen = signal(true);
   loadingActivaciones = signal(false);
 
   // ─── Resumen del Día (top stats) ───────────────────────────────────────────
   resumenDia = signal<any>(null);
 
   // ─── Activaciones / Tabs ───────────────────────────────────────────────────
-  activaciones    = signal<any[]>([]);
-  stats           = signal<any>({});
+  activaciones = signal<any[]>([]);
+  stats = signal<any>({});
   porMercaderista = signal<any[]>([]);
-  pendientes      = signal<any[]>([]);
-  gestionPorDia   = signal<any>({ fechas: [], clientes: [] });
-  clientes        = signal<any[]>([]);
+  pendientes = signal<any[]>([]);
+  gestionPorDia = signal<any>({ fechas: [], clientes: [] });
+  clientes = signal<any[]>([]);
+
+  /** Opciones para el searchable-select de clientes */
+  clienteOptions = computed<SearchableOption[]>(() => {
+    return this.clientes().map(c => ({
+      value: c.id_cliente,
+      label: c.cliente,
+    }));
+  });
 
   // ─── Filtros Globales (Día) ────────────────────────────────────────────────
   get fecha(): string {
@@ -50,7 +60,7 @@ export class CentroMandoComponent implements OnInit {
     this.filtroDesde = val;
   }
 
-  filtroCliente: number | null  = null;
+  filtroCliente: number | null = null;
 
   // ─── Filtros Rango (Global) ────────────────────────────────────────────────
   filtroDesde: string = this.todayStr();
@@ -62,25 +72,25 @@ export class CentroMandoComponent implements OnInit {
   // ─── UI State (Detalle y Modal) ───────────────────────────────────────────
   showDetalle: 'activos' | 'faltantes' | null = null;
   detalleList: any[] = [];
-  
+
   showModalPdvs = false;
   modalPdvs = { pendientes: [] as any[], activos: [] as any[], completados: [] as any[] };
 
   // ─── Búsqueda / sub-filtros locales ───────────────────────────────────────
   searchText: string = '';
-  tabPunto:   'act' | 'com' = 'act';
+  tabPunto: 'act' | 'com' = 'act';
   tabCliente: 'act' | 'com' = 'act';
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
   get diaSemana(): string {
-    const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
     const d = new Date(this.filtroDesde + 'T12:00:00');
     return DIAS[d.getDay()];
   }
 
   get fechaDisplay(): string {
     const d = new Date(this.filtroDesde + 'T12:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
   get isHoy(): boolean {
@@ -94,7 +104,7 @@ export class CentroMandoComponent implements OnInit {
   get dateRangeDisplay(): string {
     if (this.filtroDesde === this.filtroHasta) {
       const d = new Date(this.filtroDesde + 'T12:00:00');
-      const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+      const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
       const dia = DIAS[d.getDay()];
       return `${dia} ${this.formatDateDMY(this.filtroDesde)}`;
     } else {
@@ -104,10 +114,10 @@ export class CentroMandoComponent implements OnInit {
 
   formatDateDMY(dateStr: string): string {
     const d = new Date(dateStr + 'T12:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
-  constructor(private api: ApiService, private auth: AuthService, private realtime: RealtimeService) {}
+  constructor(private api: ApiService, private auth: AuthService, private realtime: RealtimeService) { }
 
   private rtDebounce?: any;
 
@@ -138,7 +148,7 @@ export class CentroMandoComponent implements OnInit {
   loadClientes() {
     this.api.getCentroMandoClientes().subscribe({
       next: (res) => { if (res.success) this.clientes.set(res.clientes); },
-      error: () => {}
+      error: () => { }
     });
   }
 
@@ -204,6 +214,11 @@ export class CentroMandoComponent implements OnInit {
   }
 
   onClienteChange() {
+    this.refresh();
+  }
+
+  onClienteSearchableChange(value: number | null) {
+    this.filtroCliente = value;
     this.refresh();
   }
 
@@ -333,18 +348,18 @@ export class CentroMandoComponent implements OnInit {
   get filteredPendientes() {
     const q = this.searchText.toLowerCase();
     return this.pendientes().filter(p =>
-      !q || (p.mercaderista||'').toLowerCase().includes(q) ||
-            (p.cliente||'').toLowerCase().includes(q) ||
-            (p.punto_de_interes||'').toLowerCase().includes(q)
+      !q || (p.mercaderista || '').toLowerCase().includes(q) ||
+      (p.cliente || '').toLowerCase().includes(q) ||
+      (p.punto_de_interes || '').toLowerCase().includes(q)
     );
   }
 
   get filteredLista() {
     const q = this.searchText.toLowerCase();
     return this.activaciones().filter(v =>
-      !q || (v.mercaderista||'').toLowerCase().includes(q) ||
-            (v.cliente||'').toLowerCase().includes(q) ||
-            (v.punto_de_interes||'').toLowerCase().includes(q)
+      !q || (v.mercaderista || '').toLowerCase().includes(q) ||
+      (v.cliente || '').toLowerCase().includes(q) ||
+      (v.punto_de_interes || '').toLowerCase().includes(q)
     );
   }
 

@@ -1,7 +1,7 @@
 from datetime import date, timedelta, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -155,12 +155,12 @@ def review_list(
             sub_ruta.c.ruta_nombre,
             Mercaderista.nombre.label("mercaderista_nombre"),
             Visita.fecha,
-            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)).label("revisar"),
-            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Aprobada"), 1), else_=0)).label("aprobadas"),
-            func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Rechazada"), 1), else_=0)).label("rechazadas"),
-            func.sum(func.case((Foto.id_tipo_foto.in_([5, 6]), 1), else_=0)).label("activaciones"),
+            func.sum(case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)).label("revisar"),
+            func.sum(case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Aprobada"), 1), else_=0)).label("aprobadas"),
+            func.sum(case((Foto.id_tipo_foto.notin_([5, 6]) & (Foto.estado == "Rechazada"), 1), else_=0)).label("rechazadas"),
+            func.sum(case((Foto.id_tipo_foto.in_([5, 6]), 1), else_=0)).label("activaciones"),
             func.max(func.coalesce(sub_chat.c.chat_msgs, 0)).label("chat_msgs"),
-            func.max(func.case((Visita.revisada_por.isnot(None) | (Visita.estado == "Revisado"), 1), else_=0)).label("revisada_flag"),
+            func.max(case((Visita.revisada_por.isnot(None) | (Visita.estado == "Revisado"), 1), else_=0)).label("revisada_flag"),
             func.max(func.coalesce(Visita.estado, "Pendiente")).label("estado_visita")
         )
         .join(Cliente, Visita.id_cliente == Cliente.id)
@@ -193,7 +193,7 @@ def review_list(
             Visita.id, Cliente.nombre, Cliente.id, PuntoInteres.nombre, PuntoInteres.id,
             PuntoInteres.ciudad, sub_ruta.c.ruta_nombre, Mercaderista.nombre, Visita.fecha
         )
-        .having(func.sum(func.case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)) > 0)
+        .having(func.sum(case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)) > 0)
         .order_by(Visita.fecha.desc())
         .all()
     )
@@ -204,8 +204,8 @@ def review_list(
             Foto.id_tipo_foto,
             func.coalesce(TipoFoto.nombre, func.concat("Tipo ", Foto.id_tipo_foto)).label("label"),
             func.count(Foto.id).label("total"),
-            func.sum(func.case((Foto.estado == "Aprobada", 1), else_=0)).label("aprobadas"),
-            func.sum(func.case((Foto.estado == "Rechazada", 1), else_=0)).label("rechazadas")
+            func.sum(case((Foto.estado == "Aprobada", 1), else_=0)).label("aprobadas"),
+            func.sum(case((Foto.estado == "Rechazada", 1), else_=0)).label("rechazadas")
         )
         .join(Foto, Foto.visita_id == Visita.id)
         .outerjoin(TipoFoto, TipoFoto.id == Foto.id_tipo_foto)

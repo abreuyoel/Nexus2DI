@@ -8,316 +8,341 @@
     </div>
 
     @if (clientDashboardUrl()) {
-      <div class="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl flex gap-1 shadow-inner border border-slate-200/50 dark:border-white/5">
-        <button (click)="activeView.set('summary')" 
-                [class.bg-white]="activeView() === 'summary'"
-                [class.dark:bg-slate-700]="activeView() === 'summary'"
-                [class.shadow-md]="activeView() === 'summary'"
-                [class.text-indigo-600]="activeView() === 'summary'"
-                [class.text-slate-500]="activeView() !== 'summary'"
-                class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
-          <mat-icon style="font-size: 18px; width: 18px; height: 18px;">analytics</mat-icon> Resumen
-        </button>
-        <button (click)="activeView.set('powerbi')" 
-                [class.bg-white]="activeView() === 'powerbi'"
-                [class.dark:bg-slate-700]="activeView() === 'powerbi'"
-                [class.shadow-md]="activeView() === 'powerbi'"
-                [class.text-indigo-600]="activeView() === 'powerbi'"
-                [class.text-slate-500]="activeView() !== 'powerbi'"
-                class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
-          <mat-icon style="font-size: 18px; width: 18px; height: 18px;">insert_chart</mat-icon> Power BI
-        </button>
-      </div>
+    <div
+      class="bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl flex gap-1 shadow-inner border border-slate-200/50 dark:border-white/5">
+      <button (click)="activeView.set('summary')" [class.bg-white]="activeView() === 'summary'"
+        [class.dark:bg-slate-700]="activeView() === 'summary'" [class.shadow-md]="activeView() === 'summary'"
+        [class.text-indigo-600]="activeView() === 'summary'" [class.text-slate-500]="activeView() !== 'summary'"
+        class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
+        <mat-icon style="font-size: 18px; width: 18px; height: 18px;">analytics</mat-icon> Resumen
+      </button>
+      <button (click)="activeView.set('powerbi')" [class.bg-white]="activeView() === 'powerbi'"
+        [class.dark:bg-slate-700]="activeView() === 'powerbi'" [class.shadow-md]="activeView() === 'powerbi'"
+        [class.text-indigo-600]="activeView() === 'powerbi'" [class.text-slate-500]="activeView() !== 'powerbi'"
+        class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
+        <mat-icon style="font-size: 18px; width: 18px; height: 18px;">insert_chart</mat-icon> Power BI
+      </button>
+    </div>
     }
 
-    <div class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
+    <div
+      class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
       <mat-icon class="text-primary-500">calendar_today</mat-icon>
       <span class="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">{{ today }}</span>
     </div>
   </div>
 
   @if (loading()) {
-    <div class="flex flex-col items-center justify-center py-20 gap-4">
-      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
-      <p class="text-slate-400 font-medium animate-pulse">Cargando datos del sistema...</p>
-    </div>
+  <div class="flex flex-col items-center justify-center py-20 gap-4">
+    <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+    <p class="text-slate-400 font-medium animate-pulse">Cargando datos del sistema...</p>
+  </div>
   }
 
   <!-- Vista Power BI: solo si tiene dashboard Y está en esa vista -->
   @if (!loading() && clientDashboardUrl() && activeView() === 'powerbi') {
-    <div class="client-dashboard-container animate-in fade-in zoom-in duration-700">
-      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-xl overflow-hidden p-2 min-h-[600px]">
-        <div class="dashboard-iframe-wrapper w-full h-full" [innerHTML]="clientDashboardUrl()"></div>
-      </div>
+  <div class="client-dashboard-container animate-in fade-in zoom-in duration-700">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-xl overflow-hidden p-2 min-h-[600px]">
+      <div class="dashboard-iframe-wrapper w-full h-full" [innerHTML]="clientDashboardUrl()"></div>
     </div>
+  </div>
   }
 
   <!-- Vista Resumen Cliente: cualquier cliente que NO esté en Power BI -->
   @if (!loading() && isClientUser() && activeView() === 'summary') {
-    <!-- Client Fallback Dashboard -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      
-      <!-- Visitas Recientes -->
-      <div class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
-        <div class="flex items-center justify-between mb-6">
-          <div class="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-            <mat-icon class="text-2xl">event_available</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">{{ clientSummary()?.period }}</span>
+  <!-- Client Fallback Dashboard -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+
+    <!-- Visitas Recientes -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
+      <div class="flex items-center justify-between mb-6">
+        <div
+          class="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+          <mat-icon class="text-2xl">event_available</mat-icon>
         </div>
-        <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_visits }}</h3>
-        <p class="text-slate-500 dark:text-slate-400 font-semibold">Visitas Recientes</p>
-        <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
-          <a routerLink="/client/visits" class="text-indigo-600 dark:text-indigo-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
-            Ver todas las visitas <mat-icon class="text-sm">arrow_forward</mat-icon>
-          </a>
-        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">{{ clientSummary()?.period }}</span>
       </div>
-
-      <!-- Fotos Nuevas -->
-      <div class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
-        <div class="flex items-center justify-between mb-6">
-          <div class="w-14 h-14 bg-rose-50 dark:bg-rose-900/20 rounded-2xl flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white transition-all">
-            <mat-icon class="text-2xl">collections</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total históricas</span>
-        </div>
-        <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_photos }}</h3>
-        <p class="text-slate-500 dark:text-slate-400 font-semibold">Fotos Aprobadas</p>
-        <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
-          <a routerLink="/client" class="text-rose-600 dark:text-rose-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
-            Explorar galería <mat-icon class="text-sm">arrow_forward</mat-icon>
-          </a>
-        </div>
-      </div>
-
-      <!-- Mensajes -->
-      <div class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
-        <div class="flex items-center justify-between mb-6">
-          <div class="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-all">
-            <mat-icon class="text-2xl">forum</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Últimas 48h</span>
-        </div>
-        <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_messages }}</h3>
-        <p class="text-slate-500 dark:text-slate-400 font-semibold">Mensajes Nuevos</p>
-        <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
-          <a routerLink="/chat" class="text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
-            Ir al centro de mensajes <mat-icon class="text-sm">arrow_forward</mat-icon>
-          </a>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Additional Client Info/Quick Actions -->
-    <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-1000">
-      <div class="bg-indigo-600 rounded-3xl p-8 text-white shadow-lg shadow-indigo-500/20 flex flex-col justify-center">
-        <h2 class="text-2xl font-bold mb-2">Bienvenido a su Portal de Gestión</h2>
-        <p class="text-indigo-100 mb-6 opacity-90">Aquí puede supervisar en tiempo real la ejecución de sus puntos de venta y la gestión de los mercaderistas.</p>
-        <div class="flex gap-4">
-          <button mat-flat-button routerLink="/client" style="background: white; color: #4f46e5; font-weight: 700; border-radius: 12px;">
-            Ver Fotos
-          </button>
-          <button mat-stroked-button routerLink="/client/visits" style="color: white; border-color: rgba(255,255,255,0.3); font-weight: 700; border-radius: 12px;">
-            Historial de Visitas
-          </button>
-        </div>
-      </div>
-
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-white/5 shadow-sm">
-        <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Accesos Rápidos</h3>
-        <div class="space-y-3">
-          <a routerLink="/client" class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
-            <div class="flex items-center gap-4">
-              <mat-icon class="text-indigo-500">photo_library</mat-icon>
-              <span class="font-bold text-slate-700 dark:text-slate-300">Mis Fotos</span>
-            </div>
-            <mat-icon class="text-slate-400">chevron_right</mat-icon>
-          </a>
-          <a routerLink="/client/visits" class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
-            <div class="flex items-center gap-4">
-              <mat-icon class="text-rose-500">calendar_today</mat-icon>
-              <span class="font-bold text-slate-700 dark:text-slate-300">Mis Visitas</span>
-            </div>
-            <mat-icon class="text-slate-400">chevron_right</mat-icon>
-          </a>
-          <a routerLink="/data" class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
-            <div class="flex items-center gap-4">
-              <mat-icon class="text-emerald-500">table_chart</mat-icon>
-              <span class="font-bold text-slate-700 dark:text-slate-300">Data e Inventarios</span>
-            </div>
-            <mat-icon class="text-slate-400">chevron_right</mat-icon>
-          </a>
-        </div>
+      <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_visits }}</h3>
+      <p class="text-slate-500 dark:text-slate-400 font-semibold">Visitas Recientes</p>
+      <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
+        <a routerLink="/client/visits"
+          class="text-indigo-600 dark:text-indigo-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
+          Ver todas las visitas <mat-icon class="text-sm">arrow_forward</mat-icon>
+        </a>
       </div>
     </div>
+
+    <!-- Fotos Nuevas -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
+      <div class="flex items-center justify-between mb-6">
+        <div
+          class="w-14 h-14 bg-rose-50 dark:bg-rose-900/20 rounded-2xl flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white transition-all">
+          <mat-icon class="text-2xl">collections</mat-icon>
+        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total históricas</span>
+      </div>
+      <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_photos }}</h3>
+      <p class="text-slate-500 dark:text-slate-400 font-semibold">Fotos Aprobadas</p>
+      <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
+        <a routerLink="/client"
+          class="text-rose-600 dark:text-rose-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
+          Explorar galería <mat-icon class="text-sm">arrow_forward</mat-icon>
+        </a>
+      </div>
+    </div>
+
+    <!-- Mensajes -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl transition-all duration-300">
+      <div class="flex items-center justify-between mb-6">
+        <div
+          class="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+          <mat-icon class="text-2xl">forum</mat-icon>
+        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Últimas 48h</span>
+      </div>
+      <h3 class="text-4xl font-black text-slate-800 dark:text-white mb-1">{{ clientSummary()?.recent_messages }}</h3>
+      <p class="text-slate-500 dark:text-slate-400 font-semibold">Mensajes Nuevos</p>
+      <div class="mt-6 pt-6 border-t border-slate-50 dark:border-white/5">
+        <a routerLink="/chat"
+          class="text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all">
+          Ir al centro de mensajes <mat-icon class="text-sm">arrow_forward</mat-icon>
+        </a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Additional Client Info/Quick Actions -->
+  <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+    <div class="bg-indigo-600 rounded-3xl p-8 text-white shadow-lg shadow-indigo-500/20 flex flex-col justify-center">
+      <h2 class="text-2xl font-bold mb-2">Bienvenido a su Portal de Gestión</h2>
+      <p class="text-indigo-100 mb-6 opacity-90">Aquí puede supervisar en tiempo real la ejecución de sus puntos de
+        venta y la gestión de los mercaderistas.</p>
+      <div class="flex gap-4">
+        <button mat-flat-button routerLink="/client"
+          style="background: white; color: #4f46e5; font-weight: 700; border-radius: 12px;">
+          Ver Fotos
+        </button>
+        <button mat-stroked-button routerLink="/client/visits"
+          style="color: white; border-color: rgba(255,255,255,0.3); font-weight: 700; border-radius: 12px;">
+          Historial de Visitas
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-white/5 shadow-sm">
+      <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Accesos Rápidos</h3>
+      <div class="space-y-3">
+        <a routerLink="/client"
+          class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
+          <div class="flex items-center gap-4">
+            <mat-icon class="text-indigo-500">photo_library</mat-icon>
+            <span class="font-bold text-slate-700 dark:text-slate-300">Mis Fotos</span>
+          </div>
+          <mat-icon class="text-slate-400">chevron_right</mat-icon>
+        </a>
+        <a routerLink="/client/visits"
+          class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
+          <div class="flex items-center gap-4">
+            <mat-icon class="text-rose-500">calendar_today</mat-icon>
+            <span class="font-bold text-slate-700 dark:text-slate-300">Mis Visitas</span>
+          </div>
+          <mat-icon class="text-slate-400">chevron_right</mat-icon>
+        </a>
+        <a routerLink="/data"
+          class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-200">
+          <div class="flex items-center gap-4">
+            <mat-icon class="text-emerald-500">table_chart</mat-icon>
+            <span class="font-bold text-slate-700 dark:text-slate-300">Data e Inventarios</span>
+          </div>
+          <mat-icon class="text-slate-400">chevron_right</mat-icon>
+        </a>
+      </div>
+    </div>
+  </div>
   }
 
   <!-- Vista Admin/Analista -->
   @if (!loading() && !isClientUser() && summary()) {
-    <!-- Stats Grid -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-      <!-- Total Visitas -->
-      <div class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-primary-500/10 transition-all duration-300">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 bg-primary-50 dark:bg-primary-900/20 rounded-2xl flex items-center justify-center text-primary-600 dark:text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-colors">
-            <mat-icon>map</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">30 Días</span>
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+    <!-- Total Visitas -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-primary-500/10 transition-all duration-300">
+      <div class="flex items-start justify-between">
+        <div
+          class="w-12 h-12 bg-primary-50 dark:bg-primary-900/20 rounded-2xl flex items-center justify-center text-primary-600 dark:text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-colors">
+          <mat-icon>map</mat-icon>
         </div>
-        <div class="mt-6">
-          <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.visitas?.total ?? 0 }}</h3>
-          <p class="text-slate-500 dark:text-slate-400 font-medium">Visitas Totales</p>
-        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">30 Días</span>
       </div>
-
-      <!-- Completadas -->
-      <div class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-            <mat-icon>check_circle</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-emerald-600">Eficiencia</span>
-        </div>
-        <div class="mt-6">
-          <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.visitas?.completadas ?? 0 }}</h3>
-          <p class="text-slate-500 dark:text-slate-400 font-medium">Visitas Completadas</p>
-        </div>
+      <div class="mt-6">
+        <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.visitas?.total ?? 0 }}</h3>
+        <p class="text-slate-500 dark:text-slate-400 font-medium">Visitas Totales</p>
       </div>
+    </div>
 
-      <!-- Pendientes -->
-      <div class="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors">
-            <mat-icon>schedule</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-amber-600">En Curso</span>
+    <!-- Completadas -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300">
+      <div class="flex items-start justify-between">
+        <div
+          class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+          <mat-icon>check_circle</mat-icon>
         </div>
-        <div class="mt-6">
-          <h3 class="text-3xl font-bold text-slate-800">{{ summary()?.visitas?.pendientes ?? 0 }}</h3>
-          <p class="text-slate-500 font-medium">Visitas Pendientes</p>
-        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-emerald-600">Eficiencia</span>
       </div>
+      <div class="mt-6">
+        <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.visitas?.completadas ?? 0 }}</h3>
+        <p class="text-slate-500 dark:text-slate-400 font-medium">Visitas Completadas</p>
+      </div>
+    </div>
 
-      <!-- Rechazadas -->
-      <div class="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-rose-500/10 transition-all duration-300">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-600 group-hover:bg-rose-500 group-hover:text-white transition-colors">
-            <mat-icon>report_problem</mat-icon>
-          </div>
-          <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-rose-600">Alerta</span>
+    <!-- Pendientes -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300">
+      <div class="flex items-start justify-between">
+        <div
+          class="w-12 h-12 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center text-amber-600 dark:text-amber-400 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+          <mat-icon>schedule</mat-icon>
         </div>
-        <div class="mt-6">
-          <h3 class="text-3xl font-bold text-slate-800">{{ summary()?.fotos?.rechazadas ?? 0 }}</h3>
-          <p class="text-slate-500 font-medium">Fotos Rechazadas</p>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-amber-600">En Curso</span>
+      </div>
+      <div class="mt-6">
+        <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.visitas?.pendientes ?? 0 }}</h3>
+        <p class="text-slate-500 dark:text-slate-400 font-medium">Visitas Pendientes</p>
+      </div>
+    </div>
+
+    <!-- Rechazadas -->
+    <div
+      class="group bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm hover:shadow-xl hover:shadow-rose-500/10 transition-all duration-300">
+      <div class="flex items-start justify-between">
+        <div
+          class="w-12 h-12 bg-rose-50 dark:bg-rose-900/20 rounded-2xl flex items-center justify-center text-rose-600 dark:text-rose-400 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+          <mat-icon>report_problem</mat-icon>
+        </div>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider text-rose-600">Alerta</span>
+      </div>
+      <div class="mt-6">
+        <h3 class="text-3xl font-bold text-slate-800 dark:text-white">{{ summary()?.fotos?.rechazadas ?? 0 }}</h3>
+        <p class="text-slate-500 dark:text-slate-400 font-medium">Fotos Rechazadas</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Details Section -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- Fotos Summary Card -->
+    <div
+      class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+      <div class="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-slate-800 dark:text-white">Estado de Fotografías</h3>
+        <button mat-icon-button class="text-slate-400"><mat-icon>more_vert</mat-icon></button>
+      </div>
+      <div class="p-8 space-y-6">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+              <span class="text-slate-600 dark:text-slate-300 font-medium">Aprobadas</span>
+            </div>
+            <span
+              class="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg text-sm font-bold">
+              {{ summary()?.fotos?.aprobadas ?? 0 }}
+            </span>
+          </div>
+          <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+            <div class="bg-emerald-500 h-2 rounded-full" [style.width.%]="65"></div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-amber-500"></div>
+              <span class="text-slate-600 dark:text-slate-300 font-medium">Pendientes</span>
+            </div>
+            <span
+              class="px-3 py-1 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-sm font-bold">
+              {{ summary()?.fotos?.pendientes ?? 0 }}
+            </span>
+          </div>
+          <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+            <div class="bg-amber-500 h-2 rounded-full" [style.width.%]="20"></div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-2 h-2 rounded-full bg-rose-500"></div>
+              <span class="text-slate-600 dark:text-slate-300 font-medium">Rechazadas</span>
+            </div>
+            <span
+              class="px-3 py-1 bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 rounded-lg text-sm font-bold">
+              {{ summary()?.fotos?.rechazadas ?? 0 }}
+            </span>
+          </div>
+          <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+            <div class="bg-rose-500 h-2 rounded-full" [style.width.%]="15"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Details Section -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      <!-- Fotos Summary Card -->
-      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
-        <div class="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
-          <h3 class="text-lg font-bold text-slate-800 dark:text-white">Estado de Fotografías</h3>
-          <button mat-icon-button class="text-slate-400"><mat-icon>more_vert</mat-icon></button>
-        </div>
-        <div class="p-8 space-y-6">
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-                <span class="text-slate-600 font-medium">Aprobadas</span>
-              </div>
-              <span class="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold">
-                {{ summary()?.fotos?.aprobadas ?? 0 }}
-              </span>
-            </div>
-            <div class="w-full bg-slate-100 rounded-full h-2">
-              <div class="bg-emerald-500 h-2 rounded-full" [style.width.%]="65"></div>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-2 h-2 rounded-full bg-amber-500"></div>
-                <span class="text-slate-600 font-medium">Pendientes</span>
-              </div>
-              <span class="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg text-sm font-bold">
-                {{ summary()?.fotos?.pendientes ?? 0 }}
-              </span>
-            </div>
-            <div class="w-full bg-slate-100 rounded-full h-2">
-              <div class="bg-amber-500 h-2 rounded-full" [style.width.%]="20"></div>
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-2 h-2 rounded-full bg-rose-500"></div>
-                <span class="text-slate-600 font-medium">Rechazadas</span>
-              </div>
-              <span class="px-3 py-1 bg-rose-50 text-rose-700 rounded-lg text-sm font-bold">
-                {{ summary()?.fotos?.rechazadas ?? 0 }}
-              </span>
-            </div>
-            <div class="w-full bg-slate-100 rounded-full h-2">
-              <div class="bg-rose-500 h-2 rounded-full" [style.width.%]="15"></div>
-            </div>
-          </div>
-        </div>
+    <!-- Quick Actions Card -->
+    <div
+      class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+      <div class="px-8 py-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+        <h3 class="text-lg font-bold text-slate-800 dark:text-white">Accesos Rápidos</h3>
+        <mat-icon class="text-slate-400">bolt</mat-icon>
       </div>
-
-      <!-- Quick Actions Card -->
-      <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-          <h3 class="text-lg font-bold text-slate-800">Accesos Rápidos</h3>
-          <mat-icon class="text-slate-400">bolt</mat-icon>
-        </div>
-        <div class="p-8 grid grid-cols-1 gap-4">
-          <a 
-            routerLink="/visits" 
-            class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100"
-          >
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                <mat-icon class="text-primary-500">map</mat-icon>
-              </div>
-              <span class="font-semibold text-slate-700 group-hover:text-white">Ver Visitas</span>
+      <div class="p-8 grid grid-cols-1 gap-4">
+        <a routerLink="/visits"
+          class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100 dark:border-white/5">
+          <div class="flex items-center gap-4">
+            <div
+              class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+              <mat-icon class="text-primary-500">map</mat-icon>
             </div>
-            <mat-icon class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
-          </a>
+            <span class="font-semibold text-slate-700 dark:text-slate-300 group-hover:text-white">Ver Visitas</span>
+          </div>
+          <mat-icon
+            class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
+        </a>
 
-          <a 
-            routerLink="/photos" 
-            class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100"
-          >
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                <mat-icon class="text-primary-500">photo_library</mat-icon>
-              </div>
-              <span class="font-semibold text-slate-700 group-hover:text-white">Revisar Fotos</span>
+        <a routerLink="/photos"
+          class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100 dark:border-white/5">
+          <div class="flex items-center gap-4">
+            <div
+              class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+              <mat-icon class="text-primary-500">photo_library</mat-icon>
             </div>
-            <mat-icon class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
-          </a>
+            <span class="font-semibold text-slate-700 dark:text-slate-300 group-hover:text-white">Revisar Fotos</span>
+          </div>
+          <mat-icon
+            class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
+        </a>
 
-          <a 
-            routerLink="/reports" 
-            class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100"
-          >
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                <mat-icon class="text-primary-500">bar_chart</mat-icon>
-              </div>
-              <span class="font-semibold text-slate-700 group-hover:text-white">Reportería</span>
+        <a routerLink="/reports"
+          class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 hover:bg-primary-500 group transition-all duration-300 border border-slate-100 dark:border-white/5">
+          <div class="flex items-center gap-4">
+            <div
+              class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+              <mat-icon class="text-primary-500">bar_chart</mat-icon>
             </div>
-            <mat-icon class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
-          </a>
-        </div>
+            <span class="font-semibold text-slate-700 dark:text-slate-300 group-hover:text-white">Reportería</span>
+          </div>
+          <mat-icon
+            class="text-slate-400 group-hover:text-white group-hover:translate-x-1 transition-all">chevron_right</mat-icon>
+        </a>
       </div>
     </div>
+  </div>
   }
 </div>

@@ -1,570 +1,687 @@
 <!-- users.component.html -->
 <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
   <!-- Hero Header -->
-  <div class="relative rounded-3xl overflow-hidden p-8 bg-gradient-to-r from-primary-700 via-primary-600 to-indigo-600 shadow-lg shadow-primary-500/20">
+  <div
+    class="relative rounded-3xl overflow-hidden p-8 bg-gradient-to-r from-primary-700 via-primary-600 to-indigo-600 shadow-lg shadow-primary-500/20">
     <div class="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10 blur-2xl"></div>
     <div class="absolute -left-8 -bottom-12 w-56 h-56 rounded-full bg-indigo-400/20 blur-3xl"></div>
     <div class="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
       <div>
         <div class="flex items-center gap-3 mb-2">
-          <div class="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center"><mat-icon class="text-white">groups</mat-icon></div>
+          <div class="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center"><mat-icon
+              class="text-white">groups</mat-icon></div>
           <span class="text-[11px] font-black text-white/80 uppercase tracking-[0.2em]">Centro de Personal</span>
         </div>
-        <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">Gestión de Usuarios y Perfiles</h1>
-        <p class="text-primary-100 mt-1 text-sm font-medium">Accesos, roles, analistas, supervisores, clientes y mercaderistas.</p>
+        <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">Gestión de Usuarios y
+          Perfiles</h1>
+        <p class="text-primary-100 mt-1 text-sm font-medium">Accesos, roles, analistas, supervisores, clientes y
+          mercaderistas.</p>
       </div>
       <div class="grid grid-cols-3 sm:grid-cols-5 gap-3">
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
-          <div class="text-2xl font-black text-white">{{ users().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Usuarios</div>
+          <div class="text-2xl font-black text-white">{{ users().length }}</div>
+          <div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Usuarios</div>
         </div>
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
-          <div class="text-2xl font-black text-white">{{ realAnalysts.length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Analistas</div>
+          <div class="text-2xl font-black text-white">{{ realAnalysts.length }}</div>
+          <div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Analistas</div>
         </div>
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
-          <div class="text-2xl font-black text-white">{{ supervisors().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Supervis.</div>
+          <div class="text-2xl font-black text-white">{{ supervisors().length }}</div>
+          <div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Supervis.</div>
         </div>
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
-          <div class="text-2xl font-black text-white">{{ clients().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Clientes</div>
+          <div class="text-2xl font-black text-white">{{ clients().length }}</div>
+          <div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Clientes</div>
         </div>
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
-          <div class="text-2xl font-black text-white">{{ mercaderistas().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Mercad.</div>
+          <div class="text-2xl font-black text-white">{{ mercaderistas().length }}</div>
+          <div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Mercad.</div>
         </div>
       </div>
     </div>
   </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-2 overflow-x-auto mb-6">
+  <div
+    class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-2 overflow-x-auto mb-6">
     <div class="flex gap-1 min-w-max">
-      <button (click)="activeTab.set('usuarios')" [ngClass]="activeTab() === 'usuarios' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Usuarios</button>
-      <button (click)="activeTab.set('analistas')" [ngClass]="activeTab() === 'analistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Analistas</button>
-      <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
-      <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
-      <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
+      <button (click)="activeTab.set('usuarios')"
+        [ngClass]="activeTab() === 'usuarios' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+        class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Usuarios</button>
+      <button (click)="activeTab.set('analistas')"
+        [ngClass]="activeTab() === 'analistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+        class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Analistas</button>
+      <button (click)="activeTab.set('clientes')"
+        [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+        class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
+      <button (click)="activeTab.set('mercaderistas')"
+        [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+        class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
+      <button (click)="activeTab.set('supervisores')"
+        [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'"
+        class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
     </div>
   </div>
   @if (activeTab() === 'usuarios') {
-      <div class="p-6 space-y-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 flex flex-col md:flex-row md:items-end gap-4">
-          <div class="flex-1">
-            <h2 class="text-xl font-black text-slate-900 dark:text-white">Usuarios</h2>
-            <p class="text-xs text-slate-500 mt-1">{{ tabHints['usuarios'] }}</p>
-          </div>
-          <button (click)="showForm() ? showForm.set(false) : openCreateForm()"
-            [ngClass]="showForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
-            class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
-            <mat-icon class="!text-base">{{ showForm() ? 'close' : 'person_add' }}</mat-icon>
-            {{ showForm() ? 'Cerrar' : 'Nuevo Usuario' }}
-          </button>
-        </div>
-
-        <!-- Create/Edit User Form -->
-        @if (showForm()) {
-          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-            <div class="bg-slate-50 dark:bg-slate-900/50 p-6 border-b border-slate-100 dark:border-white/5 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center">
-                <mat-icon>{{ editingUser() ? 'edit' : 'person_add' }}</mat-icon>
-              </div>
-              <div>
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingUser() ? 'Editar Usuario' : 'Nuevo Usuario' }}</h3>
-                <p class="text-sm text-slate-500">Completa los campos a continuación para guardar el usuario.</p>
-              </div>
-            </div>
-            <div class="p-6">
-              <form [formGroup]="createForm" (ngSubmit)="saveUser()" class="space-y-5">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre de Usuario <span class="text-rose-500">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">person_outline</mat-icon>
-                      <input formControlName="username" placeholder="ej. jperez"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">mail_outline</mat-icon>
-                      <input formControlName="email" type="email" placeholder="correo@empresa.com"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Contraseña <span class="text-rose-500" *ngIf="!editingUser()">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">lock_outline</mat-icon>
-                      <input formControlName="password" type="password" [placeholder]="editingUser() ? 'Dejar en blanco para no cambiar' : '••••••••'"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rol Asignado <span class="text-rose-500">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
-                      <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">expand_more</mat-icon>
-                      <select formControlName="id_rol"
-                        class="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl pl-10 pr-9 py-3 text-sm font-semibold outline-none transition-colors cursor-pointer">
-                        @for (r of rolesDisponibles; track r.id) {
-                          <option [ngValue]="r.id">{{ r.nombre }}</option>
-                        }
-                      </select>
-                    </div>
-                  </div>
-                  @if (showProfileSelect()) {
-                    <div class="md:col-span-2">
-                      <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Perfil Relacionado (Opcional)</label>
-                      <div class="relative">
-                        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">link</mat-icon>
-                        <mat-icon class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">expand_more</mat-icon>
-                        <select formControlName="id_perfil"
-                          class="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl pl-10 pr-9 py-3 text-sm font-semibold outline-none transition-colors cursor-pointer">
-                          <option [ngValue]="null">Sin perfil asignado</option>
-                          @for (p of getProfilesForSelectedRole(); track p.id) {
-                            <option [ngValue]="p.id">{{ p.nombre || p.cliente || p.nombre_completo || p.nombre_analista }}</option>
-                          }
-                        </select>
-                      </div>
-                    </div>
-                  }
-                </div>
-
-                <label class="flex items-center gap-2 cursor-pointer select-none w-fit">
-                  <input type="checkbox" formControlName="activo" class="w-5 h-5 accent-primary-600 rounded">
-                  <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Usuario activo</span>
-                  <span class="text-xs text-slate-400">— desmárcalo para desactivar su acceso</span>
-                </label>
-
-                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
-                  <button type="button" (click)="showForm.set(false)"
-                    class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
-                  <button type="submit" [disabled]="createForm.invalid || saving()"
-                    class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
-                    @if (saving()) { <mat-spinner diameter="18"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
-                    {{ editingUser() ? 'Guardar Cambios' : 'Crear Usuario' }}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        }
-
-        <!-- Users Table -->
-        @if (loading()) {
-          <div class="flex flex-col items-center justify-center py-12 gap-4">
-            <mat-spinner diameter="48"></mat-spinner>
-          </div>
-        } @else {
-          <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-white/5">
-            <table mat-table [dataSource]="users()" class="w-full">
-              <!-- Columns -->
-              <ng-container matColumnDef="id">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">ID</th>
-                <td mat-cell *matCellDef="let u" class="!py-4">
-                  <span class="text-xs font-mono text-slate-400">#{{ u.id }}</span>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="username">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Usuario</th>
-                <td mat-cell *matCellDef="let u" class="!py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center font-bold">
-                      {{ u.username.charAt(0).toUpperCase() }}
-                    </div>
-                    <span class="font-bold text-slate-800 dark:text-white">{{ u.username }}</span>
-                  </div>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="email">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Email</th>
-                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600">{{ u.email || 'No asignado' }}</td>
-              </ng-container>
-
-              <ng-container matColumnDef="rol">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Rol</th>
-                <td mat-cell *matCellDef="let u" class="!py-4">
-                  <span [class]="getRoleClasses(u.id_rol)" class="px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider">
-                    {{ u.rol_nombre || u.rol }}
-                  </span>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="perfil">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Perfil Relacionado</th>
-                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 font-medium">
-                  {{ u.perfil_nombre || 'N/A' }}
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="activo">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Estado</th>
-                <td mat-cell *matCellDef="let u" class="!py-4">
-                  <div class="flex items-center gap-2">
-                    <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
-                    <span [class]="u.activo ? 'text-emerald-700' : 'text-slate-500'" class="text-sm font-medium">{{ u.activo ? 'Activo' : 'Inactivo' }}</span>
-                  </div>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="acciones">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5 text-right px-6">Acciones</th>
-                <td mat-cell *matCellDef="let u" class="!py-4 text-right px-6">
-                  <button mat-icon-button (click)="toggleActivo(u)"
-                    [matTooltip]="u.activo ? 'Desactivar usuario' : 'Activar usuario'"
-                    [class]="u.activo ? 'hover:!bg-amber-50 !text-amber-500' : 'hover:!bg-emerald-50 !text-emerald-500'">
-                    <mat-icon>{{ u.activo ? 'toggle_on' : 'toggle_off' }}</mat-icon>
-                  </button>
-                  <button mat-icon-button (click)="editUser(u)" class="hover:!bg-slate-100 !text-slate-400">
-                    <mat-icon>edit_square</mat-icon>
-                  </button>
-                  <button mat-icon-button (click)="deleteUser(u)" class="hover:!bg-rose-50 !text-rose-500">
-                    <mat-icon>delete_outline</mat-icon>
-                  </button>
-                </td>
-              </ng-container>
-
-              <tr mat-header-row *matHeaderRowDef="columns"></tr>
-              <tr mat-row *matRowDef="let row; columns: columns;" class="hover:bg-slate-50 transition-colors border-b border-slate-100"></tr>
-            </table>
-          </div>
-        }
+  <div class="p-6 space-y-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 flex flex-col md:flex-row md:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Usuarios</h2>
+        <p class="text-xs text-slate-500 mt-1">{{ tabHints['usuarios'] }}</p>
       </div>
+      <button (click)="showForm() ? showForm.set(false) : openCreateForm()"
+        [ngClass]="showForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
+        <mat-icon class="!text-base">{{ showForm() ? 'close' : 'person_add' }}</mat-icon>
+        {{ showForm() ? 'Cerrar' : 'Nuevo Usuario' }}
+      </button>
+    </div>
+
+    <!-- Create/Edit User Form -->
+    @if (showForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-slate-50 dark:bg-slate-900/50 p-6 border-b border-slate-100 dark:border-white/5 flex items-center gap-3">
+        <div
+          class="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center">
+          <mat-icon>{{ editingUser() ? 'edit' : 'person_add' }}</mat-icon>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingUser() ? 'Editar Usuario' : 'Nuevo
+            Usuario' }}</h3>
+          <p class="text-sm text-slate-500">Completa los campos a continuación para guardar el usuario.</p>
+        </div>
+      </div>
+      <div class="p-6">
+        <form [formGroup]="createForm" (ngSubmit)="saveUser()" class="space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre
+                de Usuario <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">person_outline</mat-icon>
+                <input formControlName="username" placeholder="ej. jperez"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">mail_outline</mat-icon>
+                <input formControlName="email" type="email" placeholder="correo@empresa.com"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Contraseña
+                <span class="text-rose-500" *ngIf="!editingUser()">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">lock_outline</mat-icon>
+                <input formControlName="password" type="password"
+                  [placeholder]="editingUser() ? 'Dejar en blanco para no cambiar' : '••••••••'"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rol
+                Asignado <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
+                <mat-icon
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">expand_more</mat-icon>
+                <select formControlName="id_rol"
+                  class="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl pl-10 pr-9 py-3 text-sm font-semibold outline-none transition-colors cursor-pointer">
+                  @for (r of rolesDisponibles; track r.id) {
+                  <option [ngValue]="r.id">{{ r.nombre }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+            @if (showProfileSelect()) {
+            <div class="md:col-span-2">
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Perfil
+                Relacionado (Opcional)</label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">link</mat-icon>
+                <mat-icon
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">expand_more</mat-icon>
+                <select formControlName="id_perfil"
+                  class="w-full appearance-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl pl-10 pr-9 py-3 text-sm font-semibold outline-none transition-colors cursor-pointer">
+                  <option [ngValue]="null">Sin perfil asignado</option>
+                  @for (p of getProfilesForSelectedRole(); track p.id) {
+                  <option [ngValue]="p.id">{{ p.nombre || p.cliente || p.nombre_completo || p.nombre_analista }}
+                  </option>
+                  }
+                </select>
+              </div>
+            </div>
+            }
+          </div>
+
+          <label class="flex items-center gap-2 cursor-pointer select-none w-fit">
+            <input type="checkbox" formControlName="activo" class="w-5 h-5 accent-primary-600 rounded">
+            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Usuario activo</span>
+            <span class="text-xs text-slate-400">— desmárcalo para desactivar su acceso</span>
+          </label>
+
+          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+            <button type="button" (click)="showForm.set(false)"
+              class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
+            <button type="submit" [disabled]="createForm.invalid || saving()"
+              class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
+              @if (saving()) { <mat-spinner diameter="18"></mat-spinner> } @else { <mat-icon
+                class="!text-base">save</mat-icon> }
+              {{ editingUser() ? 'Guardar Cambios' : 'Crear Usuario' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    }
+
+    <!-- Users Table -->
+    @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-12 gap-4">
+      <mat-spinner diameter="48"></mat-spinner>
+    </div>
+    } @else {
+    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-white/5">
+      <table mat-table [dataSource]="users()" class="w-full">
+        <!-- Columns -->
+        <ng-container matColumnDef="id">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">ID</th>
+          <td mat-cell *matCellDef="let u" class="!py-4">
+            <span class="text-xs font-mono text-slate-500 dark:text-slate-400">#{{ u.id }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="username">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Usuario
+          </th>
+          <td mat-cell *matCellDef="let u" class="!py-4">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-2xl bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-300 flex items-center justify-center font-bold">
+                {{ u.username.charAt(0).toUpperCase() }}
+              </div>
+              <span class="font-bold text-slate-800 dark:text-white">{{ u.username }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="email">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Email</th>
+          <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 dark:text-slate-400">{{ u.email || 'No asignado'
+            }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="rol">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Rol</th>
+          <td mat-cell *matCellDef="let u" class="!py-4">
+            <span [class]="getRoleClasses(u.id_rol)"
+              class="px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider">
+              {{ u.rol_nombre || u.rol }}
+            </span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="perfil">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Perfil
+            Relacionado</th>
+          <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 dark:text-slate-400 font-medium">
+            {{ u.perfil_nombre || 'N/A' }}
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="activo">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Estado</th>
+          <td mat-cell *matCellDef="let u" class="!py-4">
+            <div class="flex items-center gap-2">
+              <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+                class="w-2 h-2 rounded-full"></span>
+              <span [class]="u.activo ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'"
+                class="text-sm font-medium">{{ u.activo ? 'Activo' : 'Inactivo' }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="acciones">
+          <th mat-header-cell *matHeaderCellDef
+            class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 dark:!text-slate-400 !font-bold !py-5 text-right px-6">
+            Acciones</th>
+          <td mat-cell *matCellDef="let u" class="!py-4 text-right px-6">
+            <button mat-icon-button (click)="toggleActivo(u)"
+              [matTooltip]="u.activo ? 'Desactivar usuario' : 'Activar usuario'"
+              [class]="u.activo ? 'hover:!bg-amber-50 dark:hover:!bg-amber-950/30 !text-amber-500' : 'hover:!bg-emerald-50 dark:hover:!bg-emerald-950/30 !text-emerald-500'">
+              <mat-icon>{{ u.activo ? 'toggle_on' : 'toggle_off' }}</mat-icon>
+            </button>
+            <button mat-icon-button (click)="editUser(u)"
+              class="hover:!bg-slate-100 dark:hover:!bg-slate-800 !text-slate-500 dark:!text-slate-400">
+              <mat-icon>edit_square</mat-icon>
+            </button>
+            <button mat-icon-button (click)="deleteUser(u)"
+              class="hover:!bg-rose-50 dark:hover:!bg-rose-950/30 !text-rose-500">
+              <mat-icon>delete_outline</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns;"
+          class="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors border-b border-slate-200 dark:border-white/5">
+        </tr>
+      </table>
+    </div>
+    }
+  </div>
   }
   @if (activeTab() === 'analistas') {
-      <div class="p-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col md:flex-row md:items-end gap-4">
-          <div class="flex-1">
-            <h2 class="text-xl font-black text-slate-900 dark:text-white">Analistas</h2>
-            <p class="text-xs text-slate-500 mt-1">{{ tabHints['analistas'] }}</p>
-          </div>
-          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
-            <div class="space-y-1">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
-              <input [(ngModel)]="quickAnalyst" (keyup.enter)="addQuickAnalyst()" placeholder="Nombre del analista"
-                class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
-            </div>
-            <button (click)="addQuickAnalyst()" [disabled]="!quickAnalyst.trim() || saving()"
-              class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
-              <mat-icon class="!text-base">add</mat-icon> Agregar
-            </button>
-          </div>
+  <div class="p-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col md:flex-row md:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Analistas</h2>
+        <p class="text-xs text-slate-500 mt-1">{{ tabHints['analistas'] }}</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
+          <input [(ngModel)]="quickAnalyst" (keyup.enter)="addQuickAnalyst()" placeholder="Nombre del analista"
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
         </div>
+        <button (click)="addQuickAnalyst()" [disabled]="!quickAnalyst.trim() || saving()"
+          class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          <mat-icon class="!text-base">add</mat-icon> Agregar
+        </button>
+      </div>
+    </div>
 
-        @if (showAnalystForm()) {
-          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-            <div class="bg-blue-50 dark:bg-blue-900/30 p-5 border-b border-blue-100 dark:border-blue-900/50 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                <mat-icon>{{ editingAnalyst() ? 'edit' : 'person_add' }}</mat-icon>
-              </div>
-              <div>
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingAnalyst() ? 'Editar Analista' : 'Nuevo Analista' }}</h3>
-                <p class="text-xs text-slate-500">Ingresa la información del analista de ruta.</p>
-              </div>
-            </div>
-            <div class="p-6">
-              <form [formGroup]="analystForm" (ngSubmit)="saveAnalyst()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <mat-form-field appearance="outline" class="w-full">
-                  <mat-label>Nombre Completo del Analista</mat-label>
-                  <input matInput formControlName="nombre_analista">
-                  <mat-icon matPrefix class="text-slate-400 mr-2">badge</mat-icon>
-                </mat-form-field>
-                <div class="flex items-center justify-end gap-3 mt-2 md:mt-0">
-                  <button mat-stroked-button type="button" (click)="showAnalystForm.set(false)" class="!rounded-xl !h-12 px-6">Cancelar</button>
-                  <button mat-flat-button color="primary" type="submit" [disabled]="analystForm.invalid || saving()" class="!rounded-xl !h-12 px-8 shadow-md">
-                    {{ editingAnalyst() ? 'Guardar Cambios' : 'Guardar Analista' }}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        }
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          @for (a of realAnalysts; track a.id) {
-            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
-              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><mat-icon>analytics</mat-icon></div>
-                  <div>
-                    <div class="font-bold text-base text-slate-800 dark:text-white">{{ a.nombre_analista || a.nombre || 'Sin nombre' }}</div>
-                    <div class="text-xs text-slate-400">ID: {{ a.id }}</div>
-                  </div>
-                </div>
-                <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  <button mat-icon-button color="primary" (click)="editAnalyst(a)"><mat-icon>edit</mat-icon></button>
-                  <button mat-icon-button color="warn" (click)="deleteAnalyst(a)"><mat-icon>delete</mat-icon></button>
-                </div>
-              </mat-card-content>
-            </mat-card>
-          }
+    @if (showAnalystForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-blue-50 dark:bg-blue-900/30 p-5 border-b border-blue-100 dark:border-blue-900/50 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+          <mat-icon>{{ editingAnalyst() ? 'edit' : 'person_add' }}</mat-icon>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingAnalyst() ? 'Editar Analista' : 'Nuevo
+            Analista' }}</h3>
+          <p class="text-xs text-slate-500">Ingresa la información del analista de ruta.</p>
         </div>
       </div>
+      <div class="p-6">
+        <form [formGroup]="analystForm" (ngSubmit)="saveAnalyst()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Nombre Completo del Analista</mat-label>
+            <input matInput formControlName="nombre_analista">
+            <mat-icon matPrefix class="text-slate-400 mr-2">badge</mat-icon>
+          </mat-form-field>
+          <div class="flex items-center justify-end gap-3 mt-2 md:mt-0">
+            <button mat-stroked-button type="button" (click)="showAnalystForm.set(false)"
+              class="!rounded-xl !h-12 px-6">Cancelar</button>
+            <button mat-flat-button color="primary" type="submit" [disabled]="analystForm.invalid || saving()"
+              class="!rounded-xl !h-12 px-8 shadow-md">
+              {{ editingAnalyst() ? 'Guardar Cambios' : 'Guardar Analista' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    }
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (a of realAnalysts; track a.id) {
+      <mat-card
+        class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+        <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+              <mat-icon>analytics</mat-icon>
+            </div>
+            <div>
+              <div class="font-bold text-base text-slate-800 dark:text-white">{{ a.nombre_analista || a.nombre || 'Sin
+                nombre' }}</div>
+              <div class="text-xs text-slate-400">ID: {{ a.id }}</div>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            <button mat-icon-button color="primary" (click)="editAnalyst(a)"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button color="warn" (click)="deleteAnalyst(a)"><mat-icon>delete</mat-icon></button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+      }
+    </div>
+  </div>
   }
   @if (activeTab() === 'clientes') {
-      <div class="p-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
-          <div class="flex-1">
-            <h2 class="text-xl font-black text-slate-900 dark:text-white">Clientes</h2>
-            <p class="text-xs text-slate-500 mt-1">{{ tabHints['clientes'] }}</p>
-          </div>
-          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
-            <div class="space-y-1">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre / Razón Social</label>
-              <input [(ngModel)]="quickClienteNombre" (keyup.enter)="addQuickClient()" placeholder="Ej. Coca Cola"
-                class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-56">
-            </div>
-            <div class="space-y-1">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">RIF</label>
-              <input [(ngModel)]="quickClienteRif" (keyup.enter)="addQuickClient()" placeholder="J-12345678-9"
-                class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-44">
-            </div>
-            <button (click)="addQuickClient()" [disabled]="!quickClienteNombre.trim() || saving()"
-              class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
-              <mat-icon class="!text-base">add</mat-icon> Agregar
-            </button>
-          </div>
+  <div class="p-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Clientes</h2>
+        <p class="text-xs text-slate-500 mt-1">{{ tabHints['clientes'] }}</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre / Razón Social</label>
+          <input [(ngModel)]="quickClienteNombre" (keyup.enter)="addQuickClient()" placeholder="Ej. Coca Cola"
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-56">
         </div>
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">RIF</label>
+          <input [(ngModel)]="quickClienteRif" (keyup.enter)="addQuickClient()" placeholder="J-12345678-9"
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-44">
+        </div>
+        <button (click)="addQuickClient()" [disabled]="!quickClienteNombre.trim() || saving()"
+          class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          <mat-icon class="!text-base">add</mat-icon> Agregar
+        </button>
+      </div>
+    </div>
 
-        @if (showClientForm()) {
-          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-            <div class="bg-indigo-50 dark:bg-indigo-900/30 p-5 border-b border-indigo-100 dark:border-indigo-900/50 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                <mat-icon>{{ editingClient() ? 'domain_verification' : 'domain_add' }}</mat-icon>
-              </div>
-              <div>
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingClient() ? 'Editar Cliente' : 'Registrar Nuevo Cliente' }}</h3>
-                <p class="text-xs text-slate-500">Información comercial del cliente.</p>
-              </div>
-            </div>
-            <div class="p-6">
-              <form [formGroup]="clientForm" (ngSubmit)="saveClient()" class="space-y-5">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre / Razón Social <span class="text-rose-500">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">storefront</mat-icon>
-                      <input formControlName="cliente" placeholder="Ej. Coca Cola, Unilever..."
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">RIF</label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">receipt_long</mat-icon>
-                      <input formControlName="rif" placeholder="J-12345678-9"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                </div>
-                <p class="text-xs text-slate-400 flex items-center gap-1.5">
-                  <mat-icon class="!text-sm">info</mat-icon>
-                  El tipo de cuenta (Exclusiva / Tradex) se determina por la ruta a la que se asigne el cliente.
-                </p>
-                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
-                  <button type="button" (click)="showClientForm.set(false)"
-                    class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
-                  <button type="submit" [disabled]="clientForm.invalid || saving()"
-                    class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
-                    <mat-icon class="!text-base">save</mat-icon>
-                    {{ editingClient() ? 'Guardar Cambios' : 'Guardar Cliente' }}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        }
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          @for (c of clients(); track c.id) {
-            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
-              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
-                <div>
-                  <div class="font-bold text-lg text-slate-800 dark:text-white">{{ c.nombre || c.cliente }}</div>
-                  <div class="text-sm text-slate-500 dark:text-slate-400 font-mono">{{ c.rif || 'Sin RIF' }}</div>
-                  <div class="text-xs text-slate-400 mt-1">ID: {{ c.id }}</div>
-                </div>
-                <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  <button mat-icon-button color="accent" (click)="manageClientCategories(c)" matTooltip="Categorías de Productos"><mat-icon>category</mat-icon></button>
-                  <button mat-icon-button color="primary" (click)="editClient(c)" matTooltip="Editar Cliente"><mat-icon>edit</mat-icon></button>
-                  <button mat-icon-button color="warn" (click)="deleteClient(c)" matTooltip="Eliminar Cliente"><mat-icon>delete</mat-icon></button>
-                </div>
-              </mat-card-content>
-            </mat-card>
-          }
+    @if (showClientForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-indigo-50 dark:bg-indigo-900/30 p-5 border-b border-indigo-100 dark:border-indigo-900/50 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+          <mat-icon>{{ editingClient() ? 'domain_verification' : 'domain_add' }}</mat-icon>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingClient() ? 'Editar Cliente' :
+            'Registrar Nuevo Cliente' }}</h3>
+          <p class="text-xs text-slate-500">Información comercial del cliente.</p>
         </div>
       </div>
+      <div class="p-6">
+        <form [formGroup]="clientForm" (ngSubmit)="saveClient()" class="space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre
+                / Razón Social <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">storefront</mat-icon>
+                <input formControlName="cliente" placeholder="Ej. Coca Cola, Unilever..."
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">RIF</label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">receipt_long</mat-icon>
+                <input formControlName="rif" placeholder="J-12345678-9"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 flex items-center gap-1.5">
+            <mat-icon class="!text-sm">info</mat-icon>
+            El tipo de cuenta (Exclusiva / Tradex) se determina por la ruta a la que se asigne el cliente.
+          </p>
+          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+            <button type="button" (click)="showClientForm.set(false)"
+              class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
+            <button type="submit" [disabled]="clientForm.invalid || saving()"
+              class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">save</mat-icon>
+              {{ editingClient() ? 'Guardar Cambios' : 'Guardar Cliente' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    }
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (c of clients(); track c.id) {
+      <mat-card
+        class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+        <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
+          <div>
+            <div class="font-bold text-lg text-slate-800 dark:text-white">{{ c.nombre || c.cliente }}</div>
+            <div class="text-sm text-slate-500 dark:text-slate-400 font-mono">{{ c.rif || 'Sin RIF' }}</div>
+            <div class="text-xs text-slate-400 mt-1">ID: {{ c.id }}</div>
+          </div>
+          <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            <button mat-icon-button color="accent" (click)="manageClientCategories(c)"
+              matTooltip="Categorías de Productos"><mat-icon>category</mat-icon></button>
+            <button mat-icon-button color="primary" (click)="editClient(c)"
+              matTooltip="Editar Cliente"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button color="warn" (click)="deleteClient(c)"
+              matTooltip="Eliminar Cliente"><mat-icon>delete</mat-icon></button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+      }
+    </div>
+  </div>
   }
   @if (activeTab() === 'mercaderistas') {
-      <div class="p-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col md:flex-row md:items-end gap-4">
-          <div class="flex-1">
-            <h2 class="text-xl font-black text-slate-900 dark:text-white">Mercaderistas</h2>
-            <p class="text-xs text-slate-500 mt-1">{{ tabHints['mercaderistas'] }}</p>
-          </div>
-          <button (click)="showMercaderistaForm() ? showMercaderistaForm.set(false) : openMercaderistaForm()"
-            [ngClass]="showMercaderistaForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
-            class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
-            <mat-icon class="!text-base">{{ showMercaderistaForm() ? 'close' : 'person_add_alt' }}</mat-icon>
-            {{ showMercaderistaForm() ? 'Cerrar' : 'Nuevo Mercaderista' }}
-          </button>
+  <div class="p-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col md:flex-row md:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Mercaderistas</h2>
+        <p class="text-xs text-slate-500 mt-1">{{ tabHints['mercaderistas'] }}</p>
+      </div>
+      <button (click)="showMercaderistaForm() ? showMercaderistaForm.set(false) : openMercaderistaForm()"
+        [ngClass]="showMercaderistaForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
+        class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
+        <mat-icon class="!text-base">{{ showMercaderistaForm() ? 'close' : 'person_add_alt' }}</mat-icon>
+        {{ showMercaderistaForm() ? 'Cerrar' : 'Nuevo Mercaderista' }}
+      </button>
+    </div>
+
+    @if (showMercaderistaForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-amber-50 dark:bg-amber-900/30 p-5 border-b border-amber-100 dark:border-amber-900/50 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+          <mat-icon>{{ editingMercaderista() ? 'manage_accounts' : 'person_add_alt' }}</mat-icon>
         </div>
-
-        @if (showMercaderistaForm()) {
-          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-            <div class="bg-amber-50 dark:bg-amber-900/30 p-5 border-b border-amber-100 dark:border-amber-900/50 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
-                <mat-icon>{{ editingMercaderista() ? 'manage_accounts' : 'person_add_alt' }}</mat-icon>
-              </div>
-              <div>
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingMercaderista() ? 'Editar Mercaderista' : 'Registrar Mercaderista' }}</h3>
-                <p class="text-xs text-slate-500">Datos personales y de contacto del trabajador de campo.</p>
-              </div>
-            </div>
-            <div class="p-6">
-              <form [formGroup]="mercaderistaForm" (ngSubmit)="saveMercaderista()" class="space-y-5">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre Completo <span class="text-rose-500">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
-                      <input formControlName="nombre" placeholder="Nombre y apellido"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Cédula de Identidad <span class="text-rose-500">*</span></label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">pin</mat-icon>
-                      <input formControlName="cedula" placeholder="V-12345678"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Teléfono</label>
-                    <div class="relative">
-                      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">phone</mat-icon>
-                      <input formControlName="telefono" placeholder="0412-1234567"
-                        class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-                    </div>
-                  </div>
-                </div>
-                <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
-                  <button type="button" (click)="showMercaderistaForm.set(false)"
-                    class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
-                  <button type="submit" [disabled]="mercaderistaForm.invalid || saving()"
-                    class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
-                    <mat-icon class="!text-base">save</mat-icon>
-                    {{ editingMercaderista() ? 'Guardar Cambios' : 'Guardar Mercaderista' }}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        }
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          @for (m of mercaderistas(); track m.id) {
-            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
-              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
-                <div>
-                  <div class="font-bold text-lg text-slate-800 dark:text-white">{{ m.nombre || m.nombre_completo }}</div>
-                  <div class="text-sm text-slate-500 dark:text-slate-300">Cédula: {{ m.cedula }}</div>
-                  @if (m.telefono) { <div class="text-xs text-slate-400 mt-1">Tel: {{ m.telefono }}</div> }
-                </div>
-                <div class="flex justify-between items-center mt-2">
-                  <div class="flex items-center gap-1">
-                    <span [class]="m.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
-                    <span [class]="m.activo ? 'text-emerald-700' : 'text-slate-500'" class="text-xs font-medium">{{ m.activo ? 'Activo' : 'Inactivo' }}</span>
-                  </div>
-                  <div class="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <button mat-icon-button color="primary" (click)="editMercaderista(m)"><mat-icon>edit</mat-icon></button>
-                    <button mat-icon-button color="warn" (click)="deleteMercaderista(m)"><mat-icon>delete</mat-icon></button>
-                  </div>
-                </div>
-              </mat-card-content>
-            </mat-card>
-          }
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingMercaderista() ? 'Editar Mercaderista'
+            : 'Registrar Mercaderista' }}</h3>
+          <p class="text-xs text-slate-500">Datos personales y de contacto del trabajador de campo.</p>
         </div>
       </div>
-  }
-  @if (activeTab() === 'supervisores') {
       <div class="p-6">
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
-          <div class="flex-1">
-            <h2 class="text-xl font-black text-slate-900 dark:text-white">Supervisores</h2>
-            <p class="text-xs text-slate-500 mt-1">Supervisores de rutas y clientes. Sus rutas/clientes se asignan en <b>Rutas → Asignación Supervisores</b>.</p>
-          </div>
-          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
-            <div class="space-y-1">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
-              <input [(ngModel)]="quickSupervisor" (keyup.enter)="addQuickSupervisor()" placeholder="Nombre del supervisor"
-                class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
+        <form [formGroup]="mercaderistaForm" (ngSubmit)="saveMercaderista()" class="space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre
+                Completo <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
+                <input formControlName="nombre" placeholder="Nombre y apellido"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
             </div>
-            <button (click)="addQuickSupervisor()" [disabled]="!quickSupervisor.trim() || saving()"
-              class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
-              <mat-icon class="!text-base">add</mat-icon> Agregar
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Cédula
+                de Identidad <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">pin</mat-icon>
+                <input formControlName="cedula" placeholder="V-12345678"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label
+                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Teléfono</label>
+              <div class="relative">
+                <mat-icon
+                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">phone</mat-icon>
+                <input formControlName="telefono" placeholder="0412-1234567"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+            <button type="button" (click)="showMercaderistaForm.set(false)"
+              class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
+            <button type="submit" [disabled]="mercaderistaForm.invalid || saving()"
+              class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
+              <mat-icon class="!text-base">save</mat-icon>
+              {{ editingMercaderista() ? 'Guardar Cambios' : 'Guardar Mercaderista' }}
             </button>
           </div>
-        </div>
+        </form>
+      </div>
+    </div>
+    }
 
-        @if (showSupervisorForm()) {
-          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-            <div class="bg-amber-50 dark:bg-amber-900/30 p-5 border-b border-amber-100 dark:border-amber-900/50 flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
-                <mat-icon>{{ editingSupervisor() ? 'edit' : 'supervisor_account' }}</mat-icon>
-              </div>
-              <div>
-                <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingSupervisor() ? 'Editar Supervisor' : 'Nuevo Supervisor' }}</h3>
-                <p class="text-xs text-slate-500">Ingresa el nombre del supervisor.</p>
-              </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (m of mercaderistas(); track m.id) {
+      <mat-card
+        class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+        <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-2">
+          <div>
+            <div class="font-bold text-lg text-slate-800 dark:text-white">{{ m.nombre || m.nombre_completo }}</div>
+            <div class="text-sm text-slate-500 dark:text-slate-300">Cédula: {{ m.cedula }}</div>
+            @if (m.telefono) { <div class="text-xs text-slate-400 mt-1">Tel: {{ m.telefono }}</div> }
+          </div>
+          <div class="flex justify-between items-center mt-2">
+            <div class="flex items-center gap-1">
+              <span [class]="m.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
+              <span [class]="m.activo ? 'text-emerald-700' : 'text-slate-500'" class="text-xs font-medium">{{ m.activo ?
+                'Activo' : 'Inactivo' }}</span>
             </div>
-            <div class="p-6">
-              <form [formGroup]="supervisorForm" (ngSubmit)="saveSupervisor()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <mat-form-field appearance="outline" class="w-full">
-                  <mat-label>Nombre del Supervisor</mat-label>
-                  <input matInput formControlName="nombre">
-                  <mat-icon matPrefix class="text-slate-400 mr-2">badge</mat-icon>
-                </mat-form-field>
-                <div class="flex items-center justify-end gap-3 mt-2 md:mt-0">
-                  <button mat-stroked-button type="button" (click)="showSupervisorForm.set(false)" class="!rounded-xl !h-12 px-6">Cancelar</button>
-                  <button mat-flat-button color="primary" type="submit" [disabled]="supervisorForm.invalid || saving()" class="!rounded-xl !h-12 px-8 shadow-md">
-                    {{ editingSupervisor() ? 'Guardar Cambios' : 'Guardar Supervisor' }}
-                  </button>
-                </div>
-              </form>
+            <div class="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+              <button mat-icon-button color="primary" (click)="editMercaderista(m)"><mat-icon>edit</mat-icon></button>
+              <button mat-icon-button color="warn" (click)="deleteMercaderista(m)"><mat-icon>delete</mat-icon></button>
             </div>
           </div>
-        }
+        </mat-card-content>
+      </mat-card>
+      }
+    </div>
+  </div>
+  }
+  @if (activeTab() === 'supervisores') {
+  <div class="p-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Supervisores</h2>
+        <p class="text-xs text-slate-500 mt-1">Supervisores de rutas y clientes. Sus rutas/clientes se asignan en
+          <b>Rutas → Asignación Supervisores</b>.
+        </p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+        <div class="space-y-1">
+          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
+          <input [(ngModel)]="quickSupervisor" (keyup.enter)="addQuickSupervisor()" placeholder="Nombre del supervisor"
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
+        </div>
+        <button (click)="addQuickSupervisor()" [disabled]="!quickSupervisor.trim() || saving()"
+          class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          <mat-icon class="!text-base">add</mat-icon> Agregar
+        </button>
+      </div>
+    </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          @for (s of supervisors(); track s.id) {
-            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
-              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-3">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><mat-icon>supervisor_account</mat-icon></div>
-                  <div>
-                    <div class="font-bold text-base text-slate-800 dark:text-white">{{ s.nombre }}</div>
-                    <div class="text-xs text-slate-400">ID: {{ s.id }}</div>
-                  </div>
-                </div>
-                <div class="flex items-center gap-2 text-xs">
-                  <span class="px-2 py-1 rounded-lg bg-primary-50 text-primary-700 font-bold">{{ s.rutas_count }} rutas</span>
-                  <span class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold">{{ s.clientes_count }} clientes</span>
-                </div>
-                <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                  <button mat-icon-button color="primary" (click)="editSupervisor(s)"><mat-icon>edit</mat-icon></button>
-                  <button mat-icon-button color="warn" (click)="deleteSupervisor(s)"><mat-icon>delete</mat-icon></button>
-                </div>
-              </mat-card-content>
-            </mat-card>
-          }
-          @if (supervisors().length === 0) {
-            <div class="col-span-3 py-12 text-center text-slate-400">
-              <mat-icon class="!text-5xl opacity-40">supervisor_account</mat-icon>
-              <p class="font-bold mt-2">No hay supervisores. Crea el primero.</p>
-            </div>
-          }
+    @if (showSupervisorForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-amber-50 dark:bg-amber-900/30 p-5 border-b border-amber-100 dark:border-amber-900/50 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+          <mat-icon>{{ editingSupervisor() ? 'edit' : 'supervisor_account' }}</mat-icon>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingSupervisor() ? 'Editar Supervisor' :
+            'Nuevo Supervisor' }}</h3>
+          <p class="text-xs text-slate-500">Ingresa el nombre del supervisor.</p>
         </div>
       </div>
+      <div class="p-6">
+        <form [formGroup]="supervisorForm" (ngSubmit)="saveSupervisor()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Nombre del Supervisor</mat-label>
+            <input matInput formControlName="nombre">
+            <mat-icon matPrefix class="text-slate-400 mr-2">badge</mat-icon>
+          </mat-form-field>
+          <div class="flex items-center justify-end gap-3 mt-2 md:mt-0">
+            <button mat-stroked-button type="button" (click)="showSupervisorForm.set(false)"
+              class="!rounded-xl !h-12 px-6">Cancelar</button>
+            <button mat-flat-button color="primary" type="submit" [disabled]="supervisorForm.invalid || saving()"
+              class="!rounded-xl !h-12 px-8 shadow-md">
+              {{ editingSupervisor() ? 'Guardar Cambios' : 'Guardar Supervisor' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    }
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (s of supervisors(); track s.id) {
+      <mat-card
+        class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+        <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-3">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0">
+              <mat-icon>supervisor_account</mat-icon>
+            </div>
+            <div>
+              <div class="font-bold text-base text-slate-800 dark:text-white">{{ s.nombre }}</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400">ID: {{ s.id }}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <span
+              class="px-2 py-1 rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold">{{
+              s.rutas_count }} rutas</span>
+            <span
+              class="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold">{{
+              s.clientes_count }}
+              clientes</span>
+          </div>
+          <div class="flex justify-end gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            <button mat-icon-button color="primary" (click)="editSupervisor(s)"><mat-icon>edit</mat-icon></button>
+            <button mat-icon-button color="warn" (click)="deleteSupervisor(s)"><mat-icon>delete</mat-icon></button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+      }
+      @if (supervisors().length === 0) {
+      <div class="col-span-3 py-12 text-center text-slate-500 dark:text-slate-400">
+        <mat-icon class="!text-5xl opacity-40">supervisor_account</mat-icon>
+        <p class="font-bold mt-2">No hay supervisores. Crea el primero.</p>
+      </div>
+      }
+    </div>
+  </div>
   }
 </div>

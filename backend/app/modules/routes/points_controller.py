@@ -15,18 +15,8 @@ from app.core.request_ip import get_client_ip
 router = APIRouter(prefix="/api/points", tags=["Puntos de Interés"])
 
 
-@router.get("/", response_model=List[PuntoInteresResponse])
-def list_points(
-    region: Optional[str] = None,
-    ciudad: Optional[str] = None,
-    cadena: Optional[str] = None,
-    jerarquia_n2: Optional[str] = None,
-    search: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 50,
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
-):
+def _build_base_query(db: Session, region=None, ciudad=None, cadena=None, jerarquia_n2=None, search=None):
+    """Construye la query con filtros reutilizable para list y count."""
     query = db.query(PuntoInteres)
     if region:
         query = query.filter(PuntoInteres.departamento == region)
@@ -38,12 +28,33 @@ def list_points(
         query = query.filter(PuntoInteres.jerarquia_n2 == jerarquia_n2)
     if search:
         query = query.filter(
-            PuntoInteres.nombre.ilike(f"%{search}%") |
-            PuntoInteres.id.ilike(f"%{search}%")
+            (PuntoInteres.nombre.ilike(f"%{search}%")) |
+            (PuntoInteres.id.ilike(f"%{search}%"))
         )
-    return query.order_by(PuntoInteres.nombre).offset(skip).limit(limit).all()
+    return query
 
 
+@router.get("")
+@router.get("/")
+def list_points(
+    region: Optional[str] = None,
+    ciudad: Optional[str] = None,
+    cadena: Optional[str] = None,
+    jerarquia_n2: Optional[str] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Devuelve lista paginada de puntos. Si include_total=true, responde {items, total}."""
+    query = _build_base_query(db, region, ciudad, cadena, jerarquia_n2, search)
+    total = query.count()
+    items = query.order_by(PuntoInteres.id).offset(skip).limit(limit).all()
+    return {"items": items, "total": total}
+
+
+@router.post("")
 @router.post("/", response_model=PuntoInteresResponse, status_code=201)
 def create_point(
     data: PuntoInteresCreate,
@@ -108,33 +119,6 @@ def get_jerarquia_n2_2(db: Session = Depends(get_db), _: Usuario = Depends(get_c
 def get_nivel_alcance(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
     rows = db.query(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre).all()
     return [r[0] for r in rows]
-
-
-@router.get("/count")
-def count_points(
-    region: Optional[str] = None,
-    ciudad: Optional[str] = None,
-    cadena: Optional[str] = None,
-    jerarquia_n2: Optional[str] = None,
-    search: Optional[str] = None,
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
-):
-    query = db.query(PuntoInteres)
-    if region:
-        query = query.filter(PuntoInteres.departamento == region)
-    if ciudad:
-        query = query.filter(PuntoInteres.ciudad == ciudad)
-    if cadena:
-        query = query.filter(PuntoInteres.cadena == cadena)
-    if jerarquia_n2:
-        query = query.filter(PuntoInteres.jerarquia_n2 == jerarquia_n2)
-    if search:
-        query = query.filter(
-            PuntoInteres.nombre.ilike(f"%{search}%") |
-            PuntoInteres.id.ilike(f"%{search}%")
-        )
-    return {"total": query.count()}
 
 
 @router.get("/{point_id}", response_model=PuntoInteresResponse)

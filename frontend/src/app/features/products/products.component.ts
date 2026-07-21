@@ -8,6 +8,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { HasPermDirective } from '../../core/directives/has-perm.directive';
+import { SearchableSelectComponent } from '../../shared/components/searchable-select';
+import type { SearchableOption } from '../../shared/components/searchable-select';
 
 interface Producto {
   id: number;
@@ -32,24 +34,24 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
 @Component({
   selector: 'app-products',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule, HasPermDirective],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule, HasPermDirective, SearchableSelectComponent],
   template: `
-<div class="min-h-screen bg-slate-950 text-white">
+<div class="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
 
   <!-- HEADER -->
-  <div class="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-white/8 px-8 py-6">
+  <div class="bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-white/5 px-8 py-6">
     <div class="flex items-center justify-between gap-4 flex-wrap">
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-lg shrink-0">
           <mat-icon class="text-white !text-2xl">inventory_2</mat-icon>
         </div>
         <div>
-          <h1 class="text-2xl font-black tracking-tight text-white leading-none">Productos</h1>
-          <p class="text-slate-400 text-sm mt-0.5"><span class="font-bold text-violet-400">{{ total() }}</span> productos en catálogo</p>
+          <h1 class="text-2xl font-black tracking-tight leading-none">Productos</h1>
+          <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5"><span class="font-bold text-violet-600 dark:text-violet-400">{{ total() }}</span> productos en catálogo</p>
         </div>
       </div>
       <div class="flex items-center gap-3">
-        <button *hasPerm="'products'; action:'write'" (click)="openCatalogPanel()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl shadow-sm transition-all active:scale-95 text-sm border border-slate-700">
+        <button *hasPerm="'products'; action:'write'" (click)="openCatalogPanel()" class="flex items-center gap-2 px-5 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl shadow-sm transition-all active:scale-95 text-sm border border-slate-200 dark:border-slate-700">
           <mat-icon class="!text-base">tune</mat-icon> Catálogos
         </button>
         <button *hasPerm="'products'; action:'write'" (click)="openPanel(null)" class="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 text-sm">
@@ -59,30 +61,32 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
     </div>
 
     <!-- SEARCH + FILTERS -->
-    <div class="flex flex-wrap gap-3 mt-5">
+    <div class="flex flex-wrap items-center gap-3 mt-5">
       <div class="relative flex-1 min-w-52">
-        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">search</mat-icon>
+        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none !text-base">search</mat-icon>
         <input [ngModel]="searchText()" (ngModelChange)="onSearch($event)" placeholder="Buscar por nombre o código..."
-          class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 text-white placeholder-slate-500 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors">
+          class="w-full h-11 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl pl-9 pr-4 text-sm font-semibold outline-none transition-colors">
       </div>
-      <div class="relative">
-        <select [ngModel]="filterCategoria()" (ngModelChange)="filterCategoria.set($event); reload()"
-          class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
-          <option [ngValue]="null">Todas las categorías</option>
-          @for (c of catList(); track c.id_categoria) { <option [ngValue]="c.id_categoria">{{ c.nombre }}</option> }
-        </select>
-        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
-      </div>
-      <div class="relative">
-        <select [ngModel]="filterMarca()" (ngModelChange)="filterMarca.set($event); reload()"
-          class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
-          <option [ngValue]="null">Todas las marcas</option>
-          @for (m of marcasList(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }}</option> }
-        </select>
-        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
-      </div>
+      <app-searchable-select
+        [options]="catFilterOptions()"
+        [value]="filterCategoria()"
+        [placeholder]="'Todas las categorías'"
+        [searchPlaceholder]="'Buscar categoría...'"
+        [clearable]="true"
+        (valueChange)="onCategoriaFilter($event)"
+        class="min-w-48">
+      </app-searchable-select>
+      <app-searchable-select
+        [options]="marcaFilterOptions()"
+        [value]="filterMarca()"
+        [placeholder]="'Todas las marcas'"
+        [searchPlaceholder]="'Buscar marca...'"
+        [clearable]="true"
+        (valueChange)="onMarcaFilter($event)"
+        class="min-w-48">
+      </app-searchable-select>
       @if (searchText() || filterCategoria() || filterMarca()) {
-        <button (click)="clearFilters()" class="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white rounded-xl text-sm font-bold transition-all">
+        <button (click)="clearFilters()" class="flex items-center gap-1.5 px-4 h-11 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-sm font-bold transition-all">
           <mat-icon class="!text-base">close</mat-icon> Limpiar
         </button>
       }
@@ -94,50 +98,50 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
     @if (loading()) {
       <div class="flex items-center justify-center py-32"><mat-spinner diameter="40"></mat-spinner></div>
     } @else if (productos().length === 0) {
-      <div class="flex flex-col items-center justify-center py-32 gap-4 text-slate-600">
-        <div class="w-20 h-20 rounded-3xl bg-slate-800 flex items-center justify-center"><mat-icon class="!text-4xl">inventory_2</mat-icon></div>
+      <div class="flex flex-col items-center justify-center py-32 gap-4 text-slate-400 dark:text-slate-600">
+        <div class="w-20 h-20 rounded-3xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="!text-4xl">inventory_2</mat-icon></div>
         <p class="font-bold text-lg tracking-tight">No se encontraron productos</p>
       </div>
     } @else {
-      <div class="bg-slate-900 border border-white/8 rounded-2xl overflow-hidden overflow-x-auto">
-        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-800 border-b border-white/8 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1380px]">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
+        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-white/5 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1380px]">
           <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
         </div>
         @for (p of productos(); track p.id) {
-          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-white/5 hover:bg-slate-800 transition-colors group min-w-[1380px]">
+          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group min-w-[1380px]">
             <div class="flex items-center gap-3 min-w-0">
-              <div class="w-9 h-9 rounded-xl bg-violet-900 flex items-center justify-center shrink-0"><mat-icon class="!text-base text-violet-400">inventory_2</mat-icon></div>
-              <p class="font-bold text-white text-sm truncate">{{ p.producto_gu || '—' }}</p>
+              <div class="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900 flex items-center justify-center shrink-0"><mat-icon class="!text-base text-violet-600 dark:text-violet-400">inventory_2</mat-icon></div>
+              <p class="font-bold text-sm truncate">{{ p.producto_gu || '—' }}</p>
             </div>
-            <span class="text-xs font-mono text-slate-400 truncate">{{ p.cod_prod || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.departamento || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.categoria || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.subcategoria || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.marca || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.presentacion || '—' }}</span>
-            <span class="text-sm text-slate-400 truncate">{{ p.tamano || '—' }}</span>
+            <span class="text-xs font-mono text-slate-500 dark:text-slate-400 truncate">{{ p.cod_prod || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.departamento || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.categoria || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.subcategoria || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.marca || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.presentacion || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.tamano || '—' }}</span>
             <span class="flex items-center">
               @if (p.inagotable) {
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-400 text-[10px] font-black">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-400 text-[10px] font-black">
                   <mat-icon class="!text-[11px]">all_inclusive</mat-icon> Sí
                 </span>
               } @else {
-                <span class="text-slate-600 text-xs">No</span>
+                <span class="text-slate-400 dark:text-slate-600 text-xs">No</span>
               }
             </span>
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button *hasPerm="'products'; action:'write'" (click)="openPanel(p)" matTooltip="Editar" class="w-8 h-8 rounded-lg bg-violet-900 hover:bg-violet-800 text-violet-400 flex items-center justify-center"><mat-icon class="!text-base">edit</mat-icon></button>
-              <button *hasPerm="'products'; action:'delete'" (click)="deleteProducto(p)" matTooltip="Eliminar" class="w-8 h-8 rounded-lg bg-red-950 hover:bg-red-900 text-red-400 flex items-center justify-center"><mat-icon class="!text-base">delete</mat-icon></button>
+              <button *hasPerm="'products'; action:'write'" (click)="openPanel(p)" matTooltip="Editar" class="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900 hover:bg-violet-200 dark:hover:bg-violet-800 text-violet-600 dark:text-violet-400 flex items-center justify-center"><mat-icon class="!text-base">edit</mat-icon></button>
+              <button *hasPerm="'products'; action:'delete'" (click)="deleteProducto(p)" matTooltip="Eliminar" class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900 text-red-600 dark:text-red-400 flex items-center justify-center"><mat-icon class="!text-base">delete</mat-icon></button>
             </div>
           </div>
         }
       </div>
 
       <div class="flex items-center justify-between mt-5">
-        <p class="text-sm text-slate-500">Mostrando <span class="text-white font-bold">{{ skipVal() + 1 }}–{{ skipVal() + productos().length }}</span> de <span class="text-white font-bold">{{ total() }}</span></p>
+        <p class="text-sm text-slate-500">Mostrando <span class="font-bold">{{ skipVal() + 1 }}–{{ skipVal() + productos().length }}</span> de <span class="font-bold">{{ total() }}</span></p>
         <div class="flex gap-2">
-          <button (click)="prevPage()" [disabled]="skipVal() === 0" class="flex items-center gap-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-white rounded-xl text-sm font-bold"><mat-icon class="!text-base">chevron_left</mat-icon> Anterior</button>
-          <button (click)="nextPage()" [disabled]="skipVal() + pageSize >= total()" class="flex items-center gap-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-white rounded-xl text-sm font-bold">Siguiente <mat-icon class="!text-base">chevron_right</mat-icon></button>
+          <button (click)="prevPage()" [disabled]="skipVal() === 0" class="flex items-center gap-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold"><mat-icon class="!text-base">chevron_left</mat-icon> Anterior</button>
+          <button (click)="nextPage()" [disabled]="skipVal() + pageSize >= total()" class="flex items-center gap-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold">Siguiente <mat-icon class="!text-base">chevron_right</mat-icon></button>
         </div>
       </div>
     }
@@ -148,104 +152,134 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
 @if (panelOpen()) {
   <div class="fixed inset-0 z-50 flex justify-end">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closePanel()"></div>
-    <div class="relative w-full max-w-md bg-slate-900 border-l border-white/8 h-full flex flex-col shadow-2xl">
-      <div class="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-white/8 px-6 py-5 shrink-0 flex items-center justify-between">
+    <div class="relative w-full max-w-md bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/5 h-full flex flex-col shadow-2xl">
+      <div class="bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-white/5 px-6 py-5 shrink-0 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-violet-900 flex items-center justify-center"><mat-icon class="text-violet-400 !text-xl">{{ editingId() ? 'edit' : 'add_circle' }}</mat-icon></div>
-          <div><h3 class="font-black text-white">{{ editingId() ? 'Editar Producto' : 'Nuevo Producto' }}</h3><p class="text-xs text-slate-500">{{ editingId() ? 'Modifica los datos' : 'Agrega al catálogo' }}</p></div>
+          <div class="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900 flex items-center justify-center"><mat-icon class="text-violet-600 dark:text-violet-400 !text-xl">{{ editingId() ? 'edit' : 'add_circle' }}</mat-icon></div>
+          <div><h3 class="font-black">{{ editingId() ? 'Editar Producto' : 'Nuevo Producto' }}</h3><p class="text-xs text-slate-400 dark:text-slate-500">{{ editingId() ? 'Modifica los datos' : 'Agrega al catálogo' }}</p></div>
         </div>
-        <button (click)="closePanel()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white"><mat-icon class="!text-lg">close</mat-icon></button>
+        <button (click)="closePanel()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white"><mat-icon class="!text-lg">close</mat-icon></button>
       </div>
 
       <form [formGroup]="form" class="flex-1 px-6 py-6 space-y-5 overflow-y-auto">
         <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre del producto *</label>
-          <input formControlName="producto_gu" placeholder="Nombre del producto" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-white placeholder-slate-500 outline-none" [class.border-red-600]="form.get('producto_gu')?.invalid && form.get('producto_gu')?.touched">
-          @if (form.get('producto_gu')?.invalid && form.get('producto_gu')?.touched) { <p class="text-xs text-red-400">El nombre es requerido</p> }
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Nombre del producto *</label>
+          <input formControlName="producto_gu" placeholder="Nombre del producto" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold placeholder-slate-400 dark:placeholder-slate-500 outline-none" [class.border-red-600]="form.get('producto_gu')?.invalid && form.get('producto_gu')?.touched">
+          @if (form.get('producto_gu')?.invalid && form.get('producto_gu')?.touched) { <p class="text-xs text-red-500">El nombre es requerido</p> }
         </div>
         <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Código de barras / SKU</label>
-          <input formControlName="cod_prod" placeholder="Ej: 7501234567890" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold font-mono text-white placeholder-slate-500 outline-none">
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Código de barras / SKU</label>
+          <input formControlName="cod_prod" placeholder="Ej: 7501234567890" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold font-mono placeholder-slate-400 dark:placeholder-slate-500 outline-none">
         </div>
 
-        <!-- Departamento -> Categoría -> Subcategoría (cascada) -->
+        <!-- Departamento → Categoría → Subcategoría (cascada) -->
         <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-          <select formControlName="id_departamento" (change)="onDepartamentoChange()" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-            <option [ngValue]="null">— Selecciona —</option>
-            @for (d of departamentosList(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-          </select>
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Departamento</label>
+          <app-searchable-select
+            [options]="departamentoOptions()"
+            [value]="form.get('id_departamento')?.value"
+            [placeholder]="'— Selecciona —'"
+            [searchPlaceholder]="'Buscar departamento...'"
+            [clearable]="true"
+            [label]="'Departamento'"
+            (valueChange)="form.get('id_departamento')?.setValue($event); onDepartamentoChange()">
+          </app-searchable-select>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Categoría</label>
-            <select formControlName="id_categoria" (change)="onCategoriaChange()" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (c of catsFiltradas(); track c.id_categoria) { <option [ngValue]="c.id_categoria">{{ c.nombre }}</option> }
-            </select>
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Categoría</label>
+            <app-searchable-select
+              [options]="categoriaOptions()"
+              [value]="form.get('id_categoria')?.value"
+              [placeholder]="'— Selecciona —'"
+              [searchPlaceholder]="'Buscar categoría...'"
+              [clearable]="true"
+              [label]="'Categoría'"
+              (valueChange)="form.get('id_categoria')?.setValue($event); onCategoriaChange()">
+            </app-searchable-select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subcategoría</label>
-            <select formControlName="id_subcategoria" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (s of subcatsFiltradas(); track s.id_subcategoria) { <option [ngValue]="s.id_subcategoria">{{ s.nombre }}</option> }
-            </select>
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subcategoría</label>
+            <app-searchable-select
+              [options]="subcategoriaOptions()"
+              [value]="form.get('id_subcategoria')?.value"
+              [placeholder]="'— Selecciona —'"
+              [searchPlaceholder]="'Buscar subcategoría...'"
+              [clearable]="true"
+              [label]="'Subcategoría'"
+              (valueChange)="form.get('id_subcategoria')?.setValue($event)">
+            </app-searchable-select>
           </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4">
-          <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Marca / Fabricante</label>
-            <select formControlName="id_marca" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (m of marcasList(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }}</option> }
-            </select>
-          </div>
-          <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Presentación</label>
-            <select formControlName="id_presentacion" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (pr of presentacionesList(); track pr.id) { <option [ngValue]="pr.id">{{ pr.nombre }}</option> }
-            </select>
-          </div>
-        </div>
-
-        <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tamaño</label>
-          <select formControlName="id_clasificacion_tamano" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
-            <option [ngValue]="null">— Selecciona —</option>
-            @for (t of tamanosList(); track t.id) { <option [ngValue]="t.id">{{ t.nombre }}</option> }
-          </select>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Descripción BI</label>
-            <input formControlName="descripcion_bi" placeholder="Descripción" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-white placeholder-slate-500 outline-none">
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Marca / Fabricante</label>
+            <app-searchable-select
+              [options]="marcaOptions()"
+              [value]="form.get('id_marca')?.value"
+              [placeholder]="'— Selecciona —'"
+              [searchPlaceholder]="'Buscar marca...'"
+              [clearable]="true"
+              [label]="'Marca'"
+              (valueChange)="form.get('id_marca')?.setValue($event)">
+            </app-searchable-select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Gramos</label>
-            <input formControlName="gramos" type="number" placeholder="0" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-white placeholder-slate-500 outline-none">
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Presentación</label>
+            <app-searchable-select
+              [options]="presentacionOptions()"
+              [value]="form.get('id_presentacion')?.value"
+              [placeholder]="'— Selecciona —'"
+              [searchPlaceholder]="'Buscar presentación...'"
+              [clearable]="true"
+              [label]="'Presentación'"
+              (valueChange)="form.get('id_presentacion')?.setValue($event)">
+            </app-searchable-select>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Tamaño</label>
+          <app-searchable-select
+            [options]="tamanoOptions()"
+            [value]="form.get('id_clasificacion_tamano')?.value"
+            [placeholder]="'— Selecciona —'"
+            [searchPlaceholder]="'Buscar tamaño...'"
+            [clearable]="true"
+            [label]="'Tamaño'"
+            (valueChange)="form.get('id_clasificacion_tamano')?.setValue($event)">
+          </app-searchable-select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Descripción BI</label>
+            <input formControlName="descripcion_bi" placeholder="Descripción" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold placeholder-slate-400 dark:placeholder-slate-500 outline-none">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Gramos</label>
+            <input formControlName="gramos" type="number" placeholder="0" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold placeholder-slate-400 dark:placeholder-slate-500 outline-none">
           </div>
         </div>
         <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Inagotable</label>
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Inagotable</label>
           <label class="flex items-center gap-3 cursor-pointer">
             <input type="checkbox" formControlName="inagotable" class="sr-only peer">
-            <div class="relative w-11 h-6 bg-slate-700 peer-checked:bg-emerald-600 rounded-full transition-colors">
+            <div class="relative w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-checked:bg-emerald-600 rounded-full transition-colors">
               <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5 translate-x-0"></div>
             </div>
-            <span class="text-sm text-slate-300 font-semibold peer-checked:text-emerald-400">{{ form.get('inagotable')?.value ? 'Sí — el producto nunca se agota' : 'No — stock normal' }}</span>
+            <span class="text-sm font-semibold peer-checked:text-emerald-600 dark:peer-checked:text-emerald-400">{{ form.get('inagotable')?.value ? 'Sí — el producto nunca se agota' : 'No — stock normal' }}</span>
           </label>
         </div>
         <div class="space-y-1.5">
-          <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Comentario</label>
-          <textarea formControlName="comentario" rows="2" placeholder="Notas (opcional)" class="w-full bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-white placeholder-slate-500 outline-none resize-none"></textarea>
+          <label class="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Comentario</label>
+          <textarea formControlName="comentario" rows="2" placeholder="Notas (opcional)" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold placeholder-slate-400 dark:placeholder-slate-500 outline-none resize-none"></textarea>
         </div>
       </form>
 
-      <div class="px-6 py-5 border-t border-white/8 bg-slate-900 shrink-0 flex gap-3">
-        <button type="button" (click)="closePanel()" class="flex-1 py-2.5 border border-slate-700 text-slate-400 hover:text-white rounded-xl font-bold text-sm">Cancelar</button>
+      <div class="px-6 py-5 border-t border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900 shrink-0 flex gap-3">
+        <button type="button" (click)="closePanel()" class="flex-1 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl font-bold text-sm">Cancelar</button>
         <button type="button" (click)="saveProducto()" [disabled]="form.invalid || saving()" class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 disabled:opacity-50 text-white font-black rounded-xl text-sm shadow-lg active:scale-95">
           @if (saving()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-base">{{ editingId() ? 'save' : 'add' }}</mat-icon> }
           {{ editingId() ? 'Guardar Cambios' : 'Crear Producto' }}
@@ -259,47 +293,59 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
 @if (catalogPanelOpen()) {
   <div class="fixed inset-0 z-[60] flex justify-end">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closeCatalogPanel()"></div>
-    <div class="relative w-full max-w-lg bg-slate-900 border-l border-white/8 h-full flex flex-col shadow-2xl">
-      <div class="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-white/8 px-6 py-5 shrink-0 flex items-center justify-between">
+    <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/5 h-full flex flex-col shadow-2xl">
+      <div class="bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-b border-slate-200 dark:border-white/5 px-6 py-5 shrink-0 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-violet-900 flex items-center justify-center"><mat-icon class="text-violet-400 !text-xl">tune</mat-icon></div>
-          <div><h3 class="font-black text-white">Catálogos (Snowflake)</h3><p class="text-xs text-slate-500">Departamentos → Categorías → Subcategorías · Marcas · Presentaciones · Tamaños</p></div>
+          <div class="w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900 flex items-center justify-center"><mat-icon class="text-violet-600 dark:text-violet-400 !text-xl">tune</mat-icon></div>
+          <div><h3 class="font-black">Catálogos (Snowflake)</h3><p class="text-xs text-slate-400 dark:text-slate-500">Departamentos → Categorías → Subcategorías · Marcas · Presentaciones · Tamaños</p></div>
         </div>
-        <button (click)="closeCatalogPanel()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white"><mat-icon class="!text-lg">close</mat-icon></button>
+        <button (click)="closeCatalogPanel()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white"><mat-icon class="!text-lg">close</mat-icon></button>
       </div>
 
       <!-- Tabs -->
       <div class="px-4 pt-4 shrink-0">
-        <div class="flex gap-1 bg-slate-800 rounded-xl p-1 overflow-x-auto">
+        <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 overflow-x-auto">
           @for (t of tabs; track t.key) {
-            <button (click)="setTab(t.key)" [ngClass]="catTab() === t.key ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all">{{ t.label }}</button>
+            <button (click)="setTab(t.key)" [ngClass]="catTab() === t.key ? 'bg-violet-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all">{{ t.label }}</button>
           }
         </div>
       </div>
 
       <!-- Add row -->
       <div class="px-4 pt-4 shrink-0">
-        <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
-          <h4 class="text-sm font-bold text-white">Agregar {{ currentTab().singular }}</h4>
+        <div class="bg-slate-100 dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 space-y-3">
+          <h4 class="text-sm font-bold">Agregar {{ currentTab().singular }}</h4>
           <div class="flex flex-wrap gap-2">
-            <input [(ngModel)]="newName" [placeholder]="'Nombre de ' + currentTab().singular.toLowerCase()" class="flex-1 min-w-40 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500">
+            <input [(ngModel)]="newName" [placeholder]="'Nombre de ' + currentTab().singular.toLowerCase()" class="flex-1 min-w-40 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-violet-500">
             @if (catTab() === 'categorias') {
-              <select [(ngModel)]="newParent" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500">
-                <option [ngValue]="null">Departamento…</option>
-                @for (d of departamentosList(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-              </select>
+              <app-searchable-select
+                [options]="departamentoOptions()"
+                [value]="newParent"
+                [placeholder]="'Departamento…'"
+                [searchPlaceholder]="'Buscar...'"
+                [clearable]="true"
+                (valueChange)="newParent = $event">
+              </app-searchable-select>
             }
             @if (catTab() === 'subcategorias') {
-              <select [(ngModel)]="newParent" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500">
-                <option [ngValue]="null">Categoría…</option>
-                @for (c of catList(); track c.id_categoria) { <option [ngValue]="c.id_categoria">{{ c.nombre }}</option> }
-              </select>
+              <app-searchable-select
+                [options]="catOptions()"
+                [value]="newParent"
+                [placeholder]="'Categoría…'"
+                [searchPlaceholder]="'Buscar...'"
+                [clearable]="true"
+                (valueChange)="newParent = $event">
+              </app-searchable-select>
             }
             @if (catTab() === 'marcas') {
-              <select [(ngModel)]="newParent" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-violet-500">
-                <option [ngValue]="null">Productora (opcional)…</option>
-                @for (pr of productorasList(); track pr.id) { <option [ngValue]="pr.id">{{ pr.nombre }}</option> }
-              </select>
+              <app-searchable-select
+                [options]="productoraOptions()"
+                [value]="newParent"
+                [placeholder]="'Productora (opcional)…'"
+                [searchPlaceholder]="'Buscar...'"
+                [clearable]="true"
+                (valueChange)="newParent = $event">
+              </app-searchable-select>
             }
             <button (click)="addCatItem()" [disabled]="!newName || (needsParent() && !newParent)" class="px-4 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-sm font-bold disabled:opacity-50">Agregar</button>
           </div>
@@ -309,15 +355,15 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
       <!-- List -->
       <div class="flex-1 overflow-y-auto p-4 space-y-2">
         @for (it of currentCatList(); track it.id) {
-          <div class="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5">
+          <div class="flex items-center justify-between bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5">
             <div class="min-w-0">
-              <span class="font-bold text-sm text-white">{{ it.nombre }}</span>
-              @if (it.extra) { <span class="text-xs text-slate-500 ml-2">({{ it.extra }})</span> }
+              <span class="font-bold text-sm">{{ it.nombre }}</span>
+              @if (it.extra) { <span class="text-xs text-slate-400 dark:text-slate-500 ml-2">({{ it.extra }})</span> }
             </div>
-            <button (click)="delCatItem(it.id)" class="text-red-400 hover:text-red-300"><mat-icon class="!text-lg">delete</mat-icon></button>
+            <button (click)="delCatItem(it.id)" class="text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300"><mat-icon class="!text-lg">delete</mat-icon></button>
           </div>
         }
-        @if (currentCatList().length === 0) { <p class="text-center text-slate-600 text-sm py-8">Sin elementos</p> }
+        @if (currentCatList().length === 0) { <p class="text-center text-slate-400 dark:text-slate-600 text-sm py-8">Sin elementos</p> }
       </div>
     </div>
   </div>
@@ -376,7 +422,19 @@ export class ProductsComponent implements OnInit {
     comentario: [''],
   });
 
-  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar) {}
+  // ── SearchableSelect option computed helpers ──
+  catFilterOptions = signal<SearchableOption<number>[]>([]);
+  marcaFilterOptions = signal<SearchableOption<number>[]>([]);
+  departamentoOptions = signal<SearchableOption<number>[]>([]);
+  categoriaOptions = signal<SearchableOption<number>[]>([]);
+  subcategoriaOptions = signal<SearchableOption<number>[]>([]);
+  marcaOptions = signal<SearchableOption<number>[]>([]);
+  presentacionOptions = signal<SearchableOption<number>[]>([]);
+  tamanoOptions = signal<SearchableOption<number>[]>([]);
+  productoraOptions = signal<SearchableOption<number>[]>([]);
+  catOptions = signal<SearchableOption<number>[]>([]);
+
+  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar) { }
 
   ngOnInit(): void {
     this.loadProductos();
@@ -391,14 +449,47 @@ export class ProductsComponent implements OnInit {
   }
 
   loadCatalogs(): void {
-    this.api.getCatalogosCategorias().subscribe({ next: d => this.catList.set(d), error: () => {} });
-    this.api.getCatalogosSubCategorias().subscribe({ next: d => this.subcatList.set(d), error: () => {} });
-    this.api.getCatMarcas().subscribe({ next: d => this.marcasList.set(d), error: () => {} });
-    this.api.getCatPresentaciones().subscribe({ next: d => this.presentacionesList.set(d), error: () => {} });
-    this.api.getCatDepartamentos().subscribe({ next: d => this.departamentosList.set(d), error: () => {} });
-    this.api.getCatProductoras().subscribe({ next: d => this.productorasList.set(d), error: () => {} });
-    this.api.getCatTamanos().subscribe({ next: d => this.tamanosList.set(d), error: () => {} });
+    this.api.getCatalogosCategorias().subscribe({ next: d => { this.catList.set(d); this.buildCatOptions(); this.buildCatFilterOptions(); }, error: () => { } });
+    this.api.getCatalogosSubCategorias().subscribe({ next: d => { this.subcatList.set(d); this.buildSubcategoriaOptions(); }, error: () => { } });
+    this.api.getCatMarcas().subscribe({ next: d => { this.marcasList.set(d); this.buildMarcaOptions(); this.buildMarcaFilterOptions(); }, error: () => { } });
+    this.api.getCatPresentaciones().subscribe({ next: d => { this.presentacionesList.set(d); this.buildPresentacionOptions(); }, error: () => { } });
+    this.api.getCatDepartamentos().subscribe({ next: d => { this.departamentosList.set(d); this.buildDepartamentoOptions(); }, error: () => { } });
+    this.api.getCatProductoras().subscribe({ next: d => { this.productorasList.set(d); this.buildProductoraOptions(); }, error: () => { } });
+    this.api.getCatTamanos().subscribe({ next: d => { this.tamanosList.set(d); this.buildTamanoOptions(); }, error: () => { } });
   }
+
+  // ── Build SearchableOption arrays from catalog lists ──
+  private buildCatFilterOptions(): void {
+    this.catFilterOptions.set(this.catList().map(c => ({ value: c.id_categoria, label: c.nombre })));
+  }
+  private buildMarcaFilterOptions(): void {
+    this.marcaFilterOptions.set(this.marcasList().map(m => ({ value: m.id, label: m.nombre })));
+  }
+  private buildDepartamentoOptions(): void {
+    this.departamentoOptions.set(this.departamentosList().map(d => ({ value: d.id, label: d.nombre })));
+  }
+  private buildCatOptions(): void {
+    this.catOptions.set(this.catList().map(c => ({ value: c.id_categoria, label: c.nombre })));
+  }
+  private buildSubcategoriaOptions(): void {
+    this.subcategoriaOptions.set(this.subcatList().map(s => ({ value: s.id_subcategoria, label: s.nombre })));
+  }
+  private buildMarcaOptions(): void {
+    this.marcaOptions.set(this.marcasList().map(m => ({ value: m.id, label: m.nombre })));
+  }
+  private buildPresentacionOptions(): void {
+    this.presentacionOptions.set(this.presentacionesList().map(p => ({ value: p.id, label: p.nombre })));
+  }
+  private buildTamanoOptions(): void {
+    this.tamanoOptions.set(this.tamanosList().map(t => ({ value: t.id, label: t.nombre })));
+  }
+  private buildProductoraOptions(): void {
+    this.productoraOptions.set(this.productorasList().map(p => ({ value: p.id, label: p.nombre })));
+  }
+
+  // ── Filter callbacks ──
+  onCategoriaFilter(val: number | null): void { this.filterCategoria.set(val); this.reload(); }
+  onMarcaFilter(val: number | null): void { this.filterMarca.set(val); this.reload(); }
 
   catsFiltradas(): Cat[] {
     const idd = this.form.get('id_departamento')?.value;

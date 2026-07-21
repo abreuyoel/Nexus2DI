@@ -80,7 +80,6 @@ class NotificacionRechazoFoto(Base):
     fecha_notificacion = Column(DateTime, nullable=True)
     leida = Column("leido", Boolean, default=False)
     descripcion = Column(Text, nullable=True)
-    mercaderista_cedula = Column(String(20), nullable=True)
 
     foto = relationship("Foto", back_populates="notificaciones")
 

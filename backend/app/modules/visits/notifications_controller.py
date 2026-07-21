@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.entities import Usuario
-from app.modules.visits.entities import NotificacionRechazoFoto
+from app.modules.visits.entities import NotificacionRechazoFoto, Foto, Visita
+from app.modules.merchandisers.entities import Mercaderista
 from app.modules.visits.dto import NotificacionRechazoResponse
 from app.websockets.manager import manager
 from app.websockets.guard import ws_guard
@@ -14,13 +15,23 @@ router = APIRouter(prefix="/api/notifications", tags=["Notificaciones"])
 
 @router.get("/rejection", response_model=List[NotificacionRechazoResponse])
 def get_rejection_notifications(
-    cedula: str | None = None,
+    cedula: Optional[str] = None,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
     query = db.query(NotificacionRechazoFoto)
     if cedula:
-        query = query.filter(NotificacionRechazoFoto.mercaderista_cedula == cedula)
+        try:
+            ced_int = int(cedula.strip())
+            query = (
+                query.join(Foto, NotificacionRechazoFoto.foto_id == Foto.id)
+                .join(Visita, Foto.visita_id == Visita.id)
+                .join(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+                .filter(Mercaderista.cedula == ced_int)
+            )
+        except ValueError:
+            pass
+
     return query.filter(NotificacionRechazoFoto.leida == False).order_by(
         NotificacionRechazoFoto.fecha_notificacion.desc()
     ).limit(50).all()
@@ -42,14 +53,26 @@ def mark_as_read(
 
 @router.post("/mark-all-read")
 def mark_all_read(
-    cedula: str | None = None,
+    cedula: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     query = db.query(NotificacionRechazoFoto).filter(NotificacionRechazoFoto.leida == False)
     if cedula:
-        query = query.filter(NotificacionRechazoFoto.mercaderista_cedula == cedula)
-    updated = query.update({"leida": True})
+        try:
+            ced_int = int(cedula.strip())
+            sub_foto_ids = (
+                db.query(Foto.id)
+                .join(Visita, Foto.visita_id == Visita.id)
+                .join(Mercaderista, Visita.mercaderista_id == Mercaderista.id)
+                .filter(Mercaderista.cedula == ced_int)
+                .subquery()
+            )
+            query = query.filter(NotificacionRechazoFoto.foto_id.in_(sub_foto_ids))
+        except ValueError:
+            pass
+
+    updated = query.update({"leida": True}, synchronize_session=False)
     db.commit()
     return {"message": f"{updated} notificaciones marcadas como leídas"}
 

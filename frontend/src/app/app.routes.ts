@@ -99,7 +99,7 @@ export const routes: Routes = [
         path: 'audit',
         loadComponent: () => import('./features/admin/audit-log/audit-log.component').then((m) => m.AuditLogComponent),
         canActivate: [roleGuard],
-        data: { roles: ['admin'] },
+        data: { roles: ['admin', 'analyst'] },
       },
       {
         path: 'chat',

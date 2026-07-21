@@ -19,6 +19,7 @@ router = APIRouter(tags=["Usuarios"])
 
 
 @router.get("/api/users", response_model=List[UsuarioResponse])
+@router.get("/api/users/", response_model=List[UsuarioResponse])
 def list_users(
     skip: int = 0,
     limit: int = 100,
@@ -46,6 +47,7 @@ def list_users(
 
 
 @router.post("/api/users", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/api/users/", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     data: UsuarioCreate,
     request: Request,
@@ -182,11 +184,25 @@ def update_user_permissions(
     return {"message": "Permisos actualizados"}
 
 
+STATIC_MODULOS = [
+    {"id": 1, "clave": "dashboard", "nombre": "Dashboard / Resumen", "id_padre": None, "tipo": "module", "ruta": "/dashboard", "icono": "dashboard", "orden": 10},
+    {"id": 2, "clave": "centro-mando", "nombre": "Centro de Mando", "id_padre": None, "tipo": "module", "ruta": "/centro-mando", "icono": "campaign", "orden": 20},
+    {"id": 3, "clave": "chat", "nombre": "Chat / Mensajería", "id_padre": None, "tipo": "module", "ruta": "/chat", "icono": "chat", "orden": 30},
+    {"id": 4, "clave": "routes", "nombre": "Rutas", "id_padre": None, "tipo": "module", "ruta": "/routes", "icono": "map", "orden": 40},
+    {"id": 5, "clave": "routes.asignar_merc", "nombre": "Asignar Mercaderista a Ruta", "id_padre": 4, "tipo": "action", "ruta": None, "icono": None, "orden": 41},
+    {"id": 6, "clave": "clientes-rutas", "nombre": "Asignación Clientes a Rutas", "id_padre": 4, "tipo": "action", "ruta": None, "icono": None, "orden": 42},
+    {"id": 7, "clave": "frecuencias-pdvs-cliente", "nombre": "Frecuencias PDV Cliente", "id_padre": None, "tipo": "module", "ruta": "/frecuencias", "icono": "calendar_today", "orden": 50},
+    {"id": 8, "clave": "atencion-cliente", "nombre": "Atención al Cliente", "id_padre": None, "tipo": "module", "ruta": "/atencion-cliente", "icono": "support_agent", "orden": 60},
+    {"id": 9, "clave": "products", "nombre": "Catálogo de Productos", "id_padre": None, "tipo": "module", "ruta": "/products", "icono": "inventory_2", "orden": 70},
+    {"id": 10, "clave": "users", "nombre": "Gestión de Usuarios", "id_padre": None, "tipo": "module", "ruta": "/users", "icono": "people", "orden": 80},
+    {"id": 11, "clave": "auditor-campo", "nombre": "Módulo Auditoría Campo", "id_padre": None, "tipo": "module", "ruta": "/auditor-campo", "icono": "verified_user", "orden": 90},
+    {"id": 12, "clave": "encuestador", "nombre": "Módulo Encuestador", "id_padre": None, "tipo": "module", "ruta": "/encuestador", "icono": "poll", "orden": 100},
+    {"id": 13, "clave": "data", "nombre": "Visualizador de Datos", "id_padre": None, "tipo": "module", "ruta": "/data", "icono": "query_stats", "orden": 110},
+]
+
+
 @router.get("/api/modulos")
-def list_modulos(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.execute(text("""
-        SELECT id_modulo, clave, nombre, id_padre, tipo, ruta, icono, orden
-        FROM MODULOS WHERE activo = 1 ORDER BY orden, id_modulo
-    """)).fetchall()
-    return [{"id": r[0], "clave": r[1], "nombre": r[2], "id_padre": r[3],
-             "tipo": r[4], "ruta": r[5], "icono": r[6], "orden": r[7]} for r in rows]
+@router.get("/api/modulos/")
+def list_modulos(_: Usuario = Depends(get_current_user)):
+    return STATIC_MODULOS
+

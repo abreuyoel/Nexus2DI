@@ -6,6 +6,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../../core/services/api.service';
+import { SearchableSelectComponent } from '../../../shared/components/searchable-select/searchable-select.component';
 
 type CatalogKey = 'tipo-negocio' | 'subtipo-negocio' | 'alcance' | 'canal-venta' | 'departamentos' | 'ciudades';
 
@@ -30,7 +31,7 @@ interface TabDef {
 @Component({
   selector: 'app-catalogos',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule, SearchableSelectComponent],
   template: `
 <div class="space-y-5">
 
@@ -60,13 +61,13 @@ interface TabDef {
 
       <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
         @if (activeTab() === 'ciudades') {
-          <div class="space-y-1">
+          <div class="space-y-1 min-w-[200px]">
             <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-            <select [(ngModel)]="newCiudadDepId"
-              class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-            </select>
+            <app-searchable-select
+              [options]="departamentoOptions()"
+              [(value)]="newCiudadDepId"
+              placeholder="— Selecciona —">
+            </app-searchable-select>
           </div>
         }
         <div class="space-y-1">
@@ -88,11 +89,15 @@ interface TabDef {
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex items-center gap-3">
       <mat-icon class="text-primary-500 !text-base">filter_list</mat-icon>
       <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtrar por departamento</span>
-      <select [(ngModel)]="filterDepId" (ngModelChange)="loadList()"
-        class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-        <option [ngValue]="null">Todos</option>
-        @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-      </select>
+      <div class="w-64">
+        <app-searchable-select
+          [options]="departamentoOptions()"
+          [value]="filterDepId"
+          (valueChange)="filterDepId = $event; loadList()"
+          placeholder="Todos"
+          [clearable]="true">
+        </app-searchable-select>
+      </div>
     </div>
   }
 
@@ -129,10 +134,10 @@ interface TabDef {
               @if (activeTab() === 'ciudades') {
                 <td class="px-4 py-3">
                   @if (editingId() === item.id) {
-                    <select [(ngModel)]="editDepId"
-                      class="bg-slate-50 dark:bg-slate-800 border border-primary-500 rounded-lg px-2 py-1 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-                      @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-                    </select>
+                    <app-searchable-select
+                      [options]="departamentoOptions()"
+                      [(value)]="editDepId">
+                    </app-searchable-select>
                   } @else {
                     <span class="text-xs text-slate-500">{{ asCiudad(item).departamento_nombre || '—' }}</span>
                   }
@@ -140,8 +145,12 @@ interface TabDef {
               }
               <td class="px-4 py-3">
                 <button (click)="toggleActive(item)"
-                  [class.bg-emerald-100]="item.activo" [class.text-emerald-700]="item.activo"
-                  [class.bg-slate-100]="!item.activo" [class.text-slate-500]="!item.activo"
+                  [ngClass]="{
+                    'bg-emerald-100 text-emerald-700': item.activo,
+                    'dark:bg-emerald-900/30 dark:text-emerald-400': item.activo,
+                    'bg-slate-100 text-slate-500': !item.activo,
+                    'dark:bg-slate-800 dark:text-slate-400': !item.activo
+                  }"
                   class="text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-wider">
                   {{ item.activo ? 'Activo' : 'Inactivo' }}
                 </button>
@@ -154,16 +163,16 @@ interface TabDef {
                       <mat-icon class="!text-sm">check</mat-icon>
                     </button>
                     <button (click)="cancelEdit()" matTooltip="Cancelar"
-                      class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-white/5 hover:bg-slate-300 text-slate-600 inline-flex items-center justify-center">
+                      class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-white/5 hover:bg-slate-300 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 inline-flex items-center justify-center">
                       <mat-icon class="!text-sm">close</mat-icon>
                     </button>
                   } @else {
                     <button (click)="startEdit(item)" matTooltip="Editar"
-                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-primary-500 text-slate-500 hover:text-white inline-flex items-center justify-center">
+                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-primary-500 text-slate-500 dark:text-slate-400 hover:text-white inline-flex items-center justify-center">
                       <mat-icon class="!text-sm">edit</mat-icon>
                     </button>
                     <button (click)="remove(item)" matTooltip="Eliminar"
-                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-rose-500 text-slate-500 hover:text-white inline-flex items-center justify-center">
+                      class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-rose-500 text-slate-500 dark:text-slate-400 hover:text-white inline-flex items-center justify-center">
                       <mat-icon class="!text-sm">delete</mat-icon>
                     </button>
                   }
@@ -208,6 +217,7 @@ export class CatalogosComponent implements OnInit {
 
   items = signal<(CatalogItem | CiudadItem)[]>([]);
   departamentos = signal<CatalogItem[]>([]);
+  departamentoOptions = computed(() => this.departamentos().map(d => ({ value: d.id, label: d.nombre })));
 
   editingId = signal<number | null>(null);
   editName = '';
@@ -244,7 +254,7 @@ export class CatalogosComponent implements OnInit {
   loadDepartamentos(): void {
     this.api.listCatalog('departamentos').subscribe({
       next: d => this.departamentos.set(d),
-      error: () => {}
+      error: () => { }
     });
   }
 

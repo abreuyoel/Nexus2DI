@@ -1,16 +1,17 @@
-import { Component, OnInit, OnDestroy, signal, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Subject, debounceTime, distinctUntilChanged, forkJoin } from 'rxjs';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import maplibregl from 'maplibre-gl';
 import { ApiService } from '../../../core/services/api.service';
 import { PuntoInteres } from '../../../core/models/visita.model';
 import { CatalogosComponent } from './catalogos.component';
 import { HasPermDirective } from '../../../core/directives/has-perm.directive';
+import { SearchableSelectComponent } from '../../../shared/components/searchable-select/searchable-select.component';
 
 @Component({
   selector: 'app-points',
@@ -18,7 +19,7 @@ import { HasPermDirective } from '../../../core/directives/has-perm.directive';
   imports: [
     CommonModule, FormsModule, ReactiveFormsModule,
     MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule,
-    CatalogosComponent, HasPermDirective,
+    CatalogosComponent, HasPermDirective, SearchableSelectComponent,
   ],
   template: `
 <div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -84,36 +85,33 @@ import { HasPermDirective } from '../../../core/directives/has-perm.directive';
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-        <div class="relative">
-          <select [ngModel]="filterRegion()" (ngModelChange)="onFilterRegionChange($event)"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (r of regions(); track r) { <option [value]="r">{{ r }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select
+          [options]="regionOptions()"
+          [value]="filterRegion()"
+          (valueChange)="onFilterRegionChange($event)"
+          placeholder="Todos"
+          [clearable]="true">
+        </app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
-        <div class="relative">
-          <select [ngModel]="filterCiudad()" (ngModelChange)="filterCiudad.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todas</option>
-            @for (c of cities(); track c) { <option [value]="c">{{ c }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select
+          [options]="cityOptions()"
+          [value]="filterCiudad()"
+          (valueChange)="filterCiudad.set($event); reload()"
+          placeholder="Todas"
+          [clearable]="true">
+        </app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
-        <div class="relative">
-          <select [ngModel]="filterJerarquia()" (ngModelChange)="filterJerarquia.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (j of jerarquias(); track j) { <option [value]="j">{{ j }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select
+          [options]="jerarquiaOptions()"
+          [value]="filterJerarquia()"
+          (valueChange)="filterJerarquia.set($event); reload()"
+          placeholder="Todos"
+          [clearable]="true">
+        </app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Buscar</label>
@@ -221,14 +219,12 @@ import { HasPermDirective } from '../../../core/directives/has-perm.directive';
           Mostrando <span class="font-bold text-slate-800 dark:text-white">{{ skip() + 1 }}–{{ skip() + points().length }}</span>
           de <span class="font-bold text-slate-800 dark:text-white">{{ total() }}</span>
         </p>
-        <div class="relative">
-          <select [ngModel]="pageSize()" (ngModelChange)="onPageSizeChange($event)"
-            class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-1.5 pr-7 text-sm font-bold appearance-none outline-none transition-colors">
-            <option [value]="100">100 / pág</option>
-            <option [value]="200">200 / pág</option>
-            <option [value]="500">500 / pág</option>
-          </select>
-          <mat-icon class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+        <div class="w-36">
+          <app-searchable-select
+            [options]="pageSizeOptions"
+            [value]="pageSize()"
+            (valueChange)="onPageSizeChange($event)">
+          </app-searchable-select>
         </div>
       </div>
       <div class="flex gap-2">
@@ -425,6 +421,16 @@ export class PointsComponent implements OnInit, OnDestroy {
   filterJerarquia = signal('');
   searchText = signal('');
 
+  // Opciones para searchable-select
+  regionOptions = computed(() => this.regions().map(r => ({ value: r, label: r })));
+  cityOptions = computed(() => this.cities().map(c => ({ value: c, label: c })));
+  jerarquiaOptions = computed(() => this.jerarquias().map(j => ({ value: j, label: j })));
+  pageSizeOptions = [
+    { value: 100, label: '100 / pág' },
+    { value: 200, label: '200 / pág' },
+    { value: 500, label: '500 / pág' },
+  ];
+
   private search$ = new Subject<string>();
   private mapInstance: maplibregl.Map | null = null;
   private mapMarker: maplibregl.Marker | null = null;
@@ -448,14 +454,14 @@ export class PointsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadAll();
     this.loadDropdowns();
-    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => {
+    this.search$.pipe(debounceTime(500), distinctUntilChanged()).subscribe(() => {
       this.skip.set(0); this.reload();
     });
 
     // Al cambiar departamento en el form, recargar ciudades de ese departamento
     this.form.get('departamento')?.valueChanges.subscribe((dep) => {
       this.api.getCities(dep || undefined).subscribe({
-        next: d => this.cities.set(d), error: () => {}
+        next: d => this.cities.set(d), error: () => { }
       });
     });
   }
@@ -475,13 +481,10 @@ export class PointsComponent implements OnInit, OnDestroy {
 
   loadAll(): void {
     this.loading.set(true);
-    forkJoin({
-      items: this.api.getPoints({ ...this.filterParams(), skip: this.skip(), limit: this.pageSize() }),
-      count: this.api.getPointsCount(this.filterParams())
-    }).subscribe({
-      next: ({ items, count }) => {
-        this.points.set(items);
-        this.total.set(count.total);
+    this.api.getPoints({ ...this.filterParams(), skip: this.skip(), limit: this.pageSize() }).subscribe({
+      next: (res) => {
+        this.points.set(res.items);
+        this.total.set(res.total);
         this.loading.set(false);
       },
       error: () => this.loading.set(false)
@@ -491,24 +494,24 @@ export class PointsComponent implements OnInit, OnDestroy {
   reload(): void { this.skip.set(0); this.loadAll(); }
 
   loadDropdowns(): void {
-    this.api.getRegions().subscribe({ next: d => this.regions.set(d), error: () => {} });
-    this.api.getCities(this.filterRegion() || undefined).subscribe({ next: d => this.cities.set(d), error: () => {} });
-    this.api.getChains().subscribe({ next: d => this.chains.set(d), error: () => {} });
-    this.api.getJerarquiaN2().subscribe({ next: d => this.jerarquias.set(d), error: () => {} });
-    this.api.getJerarquiaN2_2().subscribe({ next: d => this.jerarquias2.set(d), error: () => {} });
-    this.api.getNivelesAlcance().subscribe({ next: d => this.nivelesAlcance.set(d), error: () => {} });
+    this.api.getRegions().subscribe({ next: d => this.regions.set(d), error: () => { } });
+    this.api.getCities(this.filterRegion() || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
+    this.api.getChains().subscribe({ next: d => this.chains.set(d), error: () => { } });
+    this.api.getJerarquiaN2().subscribe({ next: d => this.jerarquias.set(d), error: () => { } });
+    this.api.getJerarquiaN2_2().subscribe({ next: d => this.jerarquias2.set(d), error: () => { } });
+    this.api.getNivelesAlcance().subscribe({ next: d => this.nivelesAlcance.set(d), error: () => { } });
   }
 
   onSearch(val: string): void { this.searchText.set(val); this.search$.next(val); }
   onFilterRegionChange(val: string): void {
     this.filterRegion.set(val);
     this.filterCiudad.set('');
-    this.api.getCities(val || undefined).subscribe({ next: d => this.cities.set(d), error: () => {} });
+    this.api.getCities(val || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
     this.reload();
   }
   clearFilters(): void {
     this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set(''); this.searchText.set('');
-    this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => {} });
+    this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => { } });
     this.reload();
   }
   prevPage(): void { this.skip.update(v => Math.max(0, v - this.pageSize())); this.loadAll(); }
