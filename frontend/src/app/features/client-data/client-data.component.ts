@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormControl, FormGroup } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -18,6 +18,7 @@ import * as XLSX from 'xlsx';
 
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SearchableSelectComponent, SearchableOption } from '../../shared/components/searchable-select';
 
 @Component({
   selector: 'app-client-data',
@@ -27,7 +28,8 @@ import { AuthService } from '../../core/services/auth.service';
     MatCardModule, MatTableModule, MatPaginatorModule, MatSortModule,
     MatButtonModule, MatIconModule, MatSelectModule, MatInputModule,
     MatFormFieldModule, MatDatepickerModule, MatNativeDateModule,
-    MatProgressSpinnerModule, MatSnackBarModule
+    MatProgressSpinnerModule, MatSnackBarModule,
+    SearchableSelectComponent
   ],
   templateUrl: './client-data.component.html',
   styleUrls: ['./client-data.component.scss'],
@@ -40,8 +42,26 @@ export class ClientDataComponent implements OnInit {
   ];
   
   dataSource = new MatTableDataSource<any>([]);
-  @ViewChild(MatPaginator) paginator!: MatPaginator;
-  @ViewChild(MatSort) sort!: MatSort;
+  private _paginator!: MatPaginator;
+  private _sort!: MatSort;
+
+  @ViewChild(MatPaginator) set paginator(paginator: MatPaginator) {
+    if (paginator) {
+      this._paginator = paginator;
+      if (this.dataSource) {
+        this.dataSource.paginator = paginator;
+      }
+    }
+  }
+
+  @ViewChild(MatSort) set sort(sort: MatSort) {
+    if (sort) {
+      this._sort = sort;
+      if (this.dataSource) {
+        this.dataSource.sort = sort;
+      }
+    }
+  }
 
   loading = signal(false);
 
@@ -61,6 +81,39 @@ export class ClientDataComponent implements OnInit {
     cuadrantes: [] as string[],
     estados: [] as string[]
   });
+
+  // Computed SearchableSelect Options
+  regionOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().regiones.map(r => ({ value: r, label: r }))
+  );
+  cadenaOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().cadenas.map(c => ({ value: c, label: c }))
+  );
+  pdvOptions = computed<SearchableOption<any>[]>(() =>
+    this.filterOptions().pdvs.map(p => ({ value: p.id, label: p.nombre }))
+  );
+  mercaderistaOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().mercaderistas.map(m => ({ value: m, label: m }))
+  );
+  productoOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().productos.map(p => ({ value: p, label: p }))
+  );
+  categoriaOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().categorias.map(c => ({ value: c, label: c }))
+  );
+  departamentoOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().departamentos.map(d => ({ value: d, label: d }))
+  );
+  cuadranteOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().cuadrantes.map(q => ({ value: q, label: q }))
+  );
+  estadoOptions = computed<SearchableOption<string>[]>(() =>
+    this.filterOptions().estados.map(e => ({ value: e, label: e }))
+  );
+
+  onFilterControlChange(controlName: string, value: any): void {
+    this.filterForm.patchValue({ [controlName]: value ?? '' });
+  }
 
   filterForm = new FormGroup({
     fecha_inicio: new FormControl<Date | null>(null),
@@ -130,9 +183,13 @@ export class ClientDataComponent implements OnInit {
 
     this.api.getClientDataBalances(params).subscribe({
       next: (data) => {
-        this.dataSource = new MatTableDataSource(data);
-        this.dataSource.paginator = this.paginator;
-        this.dataSource.sort = this.sort;
+        this.dataSource.data = data;
+        if (this._paginator) {
+          this.dataSource.paginator = this._paginator;
+        }
+        if (this._sort) {
+          this.dataSource.sort = this._sort;
+        }
         this.loading.set(false);
       },
       error: () => {

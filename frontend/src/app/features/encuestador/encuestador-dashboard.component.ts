@@ -14,53 +14,53 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
   template: `
     <div class="p-6 max-w-4xl mx-auto">
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-3xl font-bold text-white">Dashboard Encuestador</h1>
+        <h1 class="text-3xl font-bold text-slate-800 dark:text-white">Dashboard Encuestador</h1>
         <div class="flex items-center gap-2">
-          <span class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full" [ngClass]="isOnline ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'">
-            <span class="w-1.5 h-1.5 rounded-full" [ngClass]="isOnline ? 'bg-emerald-400' : 'bg-red-400'"></span>
+          <span class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full" [ngClass]="isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'">
+            <span class="w-1.5 h-1.5 rounded-full" [ngClass]="isOnline ? 'bg-emerald-500' : 'bg-red-500'"></span>
             {{ isOnline ? 'En línea' : 'Sin conexión' }}
           </span>
-          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-950 text-amber-400">
+          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
             <span class="material-icons !text-sm">sync</span>{{ pendingSync }} pendientes
           </button>
         </div>
       </div>
-      <div *ngIf="syncError" class="mb-4 bg-red-950/60 border border-red-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-        <span class="text-xs text-red-300 font-semibold">No se pudo sincronizar: {{ syncError }}</span>
-        <button (click)="sincronizar()" class="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-red-900 text-red-200">Reintentar</button>
+      <div *ngIf="syncError" class="mb-4 bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+        <span class="text-xs text-red-600 dark:text-red-300 font-semibold">No se pudo sincronizar: {{ syncError }}</span>
+        <button (click)="sincronizar()" class="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-red-200 text-red-700 dark:bg-red-900 dark:text-red-200">Reintentar</button>
       </div>
 
-      <div *ngIf="loading" class="text-white">Cargando...</div>
+      <div *ngIf="loading" class="text-slate-600 dark:text-white">Cargando...</div>
       
-      <div *ngIf="!loading && !jornadaActiva" class="bg-slate-900 rounded-xl p-8 border border-white/10 shadow-lg text-center max-w-2xl mx-auto mt-10">
+      <div *ngIf="!loading && !jornadaActiva" class="bg-white dark:bg-slate-900 rounded-xl p-8 border border-gray-200 dark:border-white/10 shadow-lg text-center max-w-2xl mx-auto mt-10">
         <div class="mb-4 flex justify-center">
           <div class="w-16 h-16 rounded-full border-2 border-indigo-500 flex items-center justify-center text-indigo-500">
             <span class="material-icons text-4xl ml-1">play_arrow</span>
           </div>
         </div>
-        <h2 class="text-2xl font-semibold text-white mb-2">Inicia tu jornada</h2>
-        <p class="text-slate-400 mb-8">Activa para comenzar a visitar centros de salud y registrar médicos.</p>
+        <h2 class="text-2xl font-semibold text-slate-800 dark:text-white mb-2">Inicia tu jornada</h2>
+        <p class="text-slate-500 dark:text-slate-400 mb-8">Activa para comenzar a visitar centros de salud y registrar médicos.</p>
         <button (click)="activarJornada()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2 text-lg">
           <span class="material-icons">rocket_launch</span> Activar Jornada
         </button>
       </div>
 
-      <div *ngIf="!loading && jornadaActiva" class="bg-slate-900 rounded-xl p-6 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+      <div *ngIf="!loading && jornadaActiva" class="bg-white dark:bg-slate-900 rounded-xl p-6 border border-emerald-300 dark:border-emerald-500/30 shadow-lg dark:shadow-[0_0_15px_rgba(16,185,129,0.2)]">
         <div class="flex justify-between items-center mb-6">
-          <h2 class="text-2xl font-bold text-emerald-400">Jornada en Progreso</h2>
-          <button (click)="finalizarJornada()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-semibold">
+          <h2 class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">Jornada en Progreso</h2>
+          <button (click)="finalizarJornada()" class="bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-semibold">
             Finalizar Jornada
           </button>
         </div>
         
         <div class="grid grid-cols-2 gap-4 mb-6">
-          <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-            <div class="text-slate-400 text-sm">Centros Visitados</div>
-            <div class="text-3xl font-bold text-white">{{ stats.centros_visitados }}</div>
+          <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
+            <div class="text-slate-500 dark:text-slate-400 text-sm">Centros Visitados</div>
+            <div class="text-3xl font-bold text-slate-800 dark:text-white">{{ stats.centros_visitados }}</div>
           </div>
-          <div class="bg-slate-800 p-4 rounded-lg border border-slate-700">
-            <div class="text-slate-400 text-sm">Médicos Registrados</div>
-            <div class="text-3xl font-bold text-white">{{ stats.medicos_registrados }}</div>
+          <div class="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg border border-gray-200 dark:border-slate-700">
+            <div class="text-slate-500 dark:text-slate-400 text-sm">Médicos Registrados</div>
+            <div class="text-3xl font-bold text-slate-800 dark:text-white">{{ stats.medicos_registrados }}</div>
           </div>
         </div>
         

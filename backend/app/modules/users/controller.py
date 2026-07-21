@@ -198,6 +198,7 @@ STATIC_MODULOS = [
     {"id": 11, "clave": "auditor-campo", "nombre": "Módulo Auditoría Campo", "id_padre": None, "tipo": "module", "ruta": "/auditor-campo", "icono": "verified_user", "orden": 90},
     {"id": 12, "clave": "encuestador", "nombre": "Módulo Encuestador", "id_padre": None, "tipo": "module", "ruta": "/encuestador", "icono": "poll", "orden": 100},
     {"id": 13, "clave": "data", "nombre": "Visualizador de Datos", "id_padre": None, "tipo": "module", "ruta": "/data", "icono": "query_stats", "orden": 110},
+    {"id": 14, "clave": "merc_rutas", "nombre": "Portal Mercaderista (Ver Todo)", "id_padre": None, "tipo": "module", "ruta": "/mercaderista", "icono": "alt_route", "orden": 120},
 ]
 
 

@@ -37,12 +37,12 @@ interface PdvGroup {
       <div class="bg-white dark:bg-slate-900 px-6 pt-6 border-b border-slate-200 dark:border-white/5 shrink-0">
         <h2 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight italic uppercase mb-4">Mi Ruta</h2>
         <div class="flex gap-8">
-          <button (click)="changeTab('fija')" 
+          <button (click)="changeTab('fija')"
                   [class]="activeTab() === 'fija' ? 'text-primary-500 border-b-4 border-primary-500' : 'text-slate-400 border-b-4 border-transparent'"
                   class="pb-3 text-xs font-black uppercase tracking-widest transition-all">
             Rutas Fijas
           </button>
-          <button (click)="changeTab('variable')" 
+          <button (click)="changeTab('variable')"
                   [class]="activeTab() === 'variable' ? 'text-primary-500 border-b-4 border-primary-500' : 'text-slate-400 border-b-4 border-transparent'"
                   class="pb-3 text-xs font-black uppercase tracking-widest transition-all">
             Rutas Variables
@@ -62,8 +62,8 @@ interface PdvGroup {
           <!-- 1. Route Selection -->
           <div class="space-y-3">
             <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Selecciona una ruta para hoy</p>
-            @for (ruta of filteredRutas(); track ruta.id_ruta) {
-              <div (click)="selectRoute(ruta)" 
+            @for (ruta of rutas(); track ruta.id_ruta) {
+              <div (click)="selectRoute(ruta)"
                    class="bg-white dark:bg-slate-900 p-5 rounded-[1.5rem] border border-slate-100 dark:border-white/5 shadow-sm active:scale-[0.98] transition-all cursor-pointer">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-4">
@@ -72,7 +72,7 @@ interface PdvGroup {
                     </div>
                     <div>
                       <h4 class="font-bold text-slate-800 dark:text-white tracking-tight">{{ ruta.nombre }}</h4>
-                      <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">ID: {{ ruta.id_ruta }}</span>
+                      <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">{{ ruta.mercaderista_nombre || ('ID: ' + ruta.id_ruta) }}</span>
                     </div>
                   </div>
                   <mat-icon class="text-slate-200">chevron_right</mat-icon>
@@ -82,6 +82,16 @@ interface PdvGroup {
               <div class="py-12 text-center opacity-40 grayscale italic">
                 <p class="text-xs text-slate-400 uppercase font-black tracking-widest">No hay rutas {{ activeTab() }}s hoy</p>
               </div>
+            }
+            <!-- Pagination: Cargar más -->
+            @if (hasMorePages()) {
+              <button (click)="loadMore()"
+                      class="w-full py-4 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-400 font-black text-xs uppercase tracking-widest hover:border-primary-500/30 hover:text-primary-500 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                @if (loadingMore()) {
+                  <mat-spinner diameter="16"></mat-spinner>
+                }
+                Cargar más ({{ currentPage() }}/{{ totalPages() }})
+              </button>
             }
           </div>
         } @else if (!routeExecuted()) {
@@ -196,21 +206,22 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   private ui = inject(MercUiService);
 
   loading = signal(true);
+  loadingMore = signal(false);
   activeTab = signal<'fija' | 'variable'>('fija');
   rutas = signal<any[]>([]);
   pdvs = signal<any[]>([]);
   selectedRouteId = signal<number | null>(null);
   routeExecuted = signal(false);
-  
+  currentPage = signal(1);
+  totalPages = signal(0);
+
+  hasMorePages = computed(() => this.currentPage() < this.totalPages());
+
   private map: maplibregl.Map | null = null;
   private markers: maplibregl.Marker[] = [];
 
   activatingPdvId = signal<string | null>(null);
   activationGroup = signal<PdvGroup | null>(null);
-
-  filteredRutas = computed(() => {
-    return this.rutas().filter(r => r.tipo.toLowerCase() === this.activeTab().toLowerCase());
-  });
 
   selectedRoute = computed(() => {
     return this.rutas().find(r => r.id_ruta === this.selectedRouteId());
@@ -223,10 +234,10 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   groupedPdvs = computed<PdvGroup[]>(() => {
     const list = this.pdvsOfSelectedRoute();
     const groups: Record<string, PdvGroup> = {};
-    
+
     list.forEach(p => {
       if (!groups[p.id_punto]) {
-        groups[p.id_punto] = { 
+        groups[p.id_punto] = {
           id_punto: p.id_punto,
           nombre: p.nombre,
           cadena: p.cadena,
@@ -234,48 +245,68 @@ export class MercRutaComponent implements OnInit, OnDestroy {
           latitud: p.latitud,
           longitud: p.longitud,
           clients: [],
-          hasVisited: false 
+          hasVisited: false
         };
       }
-      groups[p.id_punto].clients.push({ 
-        id_cliente: p.id_cliente, 
-        nombre: p.cliente, 
-        visitado: p.visitado, 
-        visita_id: p.visita_id 
+      groups[p.id_punto].clients.push({
+        id_cliente: p.id_cliente,
+        nombre: p.cliente,
+        visitado: p.visitado,
+        visita_id: p.visita_id
       });
       if (p.visitado) groups[p.id_punto].hasVisited = true;
     });
-    
+
     return Object.values(groups);
   });
 
   ngOnInit(): void {
-    this.loadData();
+    this.loadData(1);
   }
 
   ngOnDestroy(): void {
     if (this.map) this.map.remove();
   }
 
-  loadData(): void {
-    this.loading.set(true);
-    this.api.getMercMiRuta().subscribe({
+  loadData(page: number = 1): void {
+    const isInitial = page === 1;
+    if (isInitial) {
+      this.loading.set(true);
+    } else {
+      this.loadingMore.set(true);
+    }
+    this.currentPage.set(page);
+
+    this.api.getMercMiRuta(page, 20, this.activeTab()).subscribe({
       next: (res) => {
-        this.rutas.set(res.rutas || []);
+        if (isInitial) {
+          this.rutas.set(res.rutas || []);
+        } else {
+          this.rutas.update(existing => [...existing, ...(res.rutas || [])]);
+        }
         this.pdvs.set(res.pdvs || []);
+        this.totalPages.set(res.total_pages || 0);
         this.loading.set(false);
+        this.loadingMore.set(false);
       },
       error: () => {
         this.loading.set(false);
+        this.loadingMore.set(false);
         this.snack.open('Error al cargar datos', 'OK', { duration: 3000 });
       }
     });
+  }
+
+  loadMore(): void {
+    if (this.loadingMore() || !this.hasMorePages()) return;
+    this.loadData(this.currentPage() + 1);
   }
 
   changeTab(tab: 'fija' | 'variable') {
     this.activeTab.set(tab);
     this.selectedRouteId.set(null);
     this.routeExecuted.set(false);
+    this.loadData(1);
   }
 
   selectRoute(ruta: any): void {
@@ -288,7 +319,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   loadRoutePdvs(idRuta: number): void {
     this.api.getMercRutaPdvs(idRuta).subscribe({
       next: (res) => this.pdvs.set(res.pdvs || []),
-      error: () => {},
+      error: () => { },
     });
   }
 
@@ -316,18 +347,18 @@ export class MercRutaComponent implements OnInit, OnDestroy {
     this.groupedPdvs().forEach(pdv => {
       if (pdv.latitud && pdv.longitud) {
         hasPoints = true;
-        const marker = new maplibregl.Marker({ 
+        const marker = new maplibregl.Marker({
           color: pdv.hasVisited ? '#10b981' : '#6366f1',
-          scale: 0.8 
+          scale: 0.8
         })
-        .setLngLat([pdv.longitud, pdv.latitud])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
+          .setLngLat([pdv.longitud, pdv.latitud])
+          .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
           <div style="padding:4px">
             <div style="font-weight:900;font-size:11px">${pdv.nombre}</div>
             <div style="font-size:9px;color:#64748b">${pdv.cadena}</div>
           </div>
         `))
-        .addTo(this.map!);
+          .addTo(this.map!);
         this.markers.push(marker);
         bounds.extend([pdv.longitud, pdv.latitud]);
       }
@@ -355,7 +386,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
       this.activatingPdvId.set(group.id_punto);
       return;
     }
-    
+
     this.activationGroup.set(group);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     if (input) input.click();
@@ -391,7 +422,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
           id_cliente: client.id_cliente,
           cliente: client.nombre
         });
-        
+
         this.activatingPdvId.set(null);
         this.activationGroup.set(null);
         this.loadData();

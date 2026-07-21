@@ -56,7 +56,7 @@ export class ShellComponent implements OnInit {
     { label: 'Clientes · Rutas', icon: 'alt_route', route: '/clientes-rutas', roles: ['admin', 'analyst'] },
     { label: 'Frecuencias PDVs', icon: 'event_repeat', route: '/frecuencias-pdvs-cliente', roles: ['admin', 'analyst'] },
     { label: 'Horas Promedio Ejecución', icon: 'schedule', route: '/horas-promedio-ejecucion', roles: ['admin'] },
-    { label: 'Mis Rutas', icon: 'route', route: '/mercaderista', roles: ['mercaderista'] },
+    { label: 'Mis Rutas', icon: 'route', route: '/mercaderista', roles: ['mercaderista', 'admin'] },
     { label: 'Auditoría de Campo', icon: 'fact_check', route: '/auditor-campo', roles: ['auditor_campo', 'admin'] },
     { label: 'Auditoría de Data', icon: 'inventory_2', route: '/auditoria-data', roles: ['auditor', 'admin'] },
     { label: 'Chat', icon: 'chat', route: '/chat', roles: [], module: 'chat' },

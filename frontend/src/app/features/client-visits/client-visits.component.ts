@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, AfterViewInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatSelectModule } from '@angular/material/select';
@@ -69,10 +69,16 @@ interface Filtros {
   templateUrl: './client-visits.component.html',
   styleUrls: ['./client-visits.component.scss']
 })
-export class ClientVisitsComponent implements OnInit {
+export class ClientVisitsComponent implements OnInit, AfterViewInit, OnDestroy {
   // State
   loading = signal(false);
   error = signal<string | null>(null);
+
+  // UX & Scroll state
+  showFilters = signal(true);
+  private mainElement: HTMLElement | null = null;
+  private lastScrollTop = 0;
+  private scrollListener?: () => void;
 
   // Coordinador Exclusivo
   isCoordinadorExclusivo = signal(false);
@@ -86,6 +92,19 @@ export class ClientVisitsComponent implements OnInit {
     return this.exclusiveClients().filter(c => (c.cliente || '').toLowerCase().includes(term));
   });
 
+  // ── Paginación ──
+  readonly perPage = 20;
+  currentPage = signal(1);
+  totalPages = signal(1);
+  totalItems = signal(0);
+  loadingMore = signal(false);
+  hasMorePages = computed(() => this.currentPage() < this.totalPages());
+  showingCount = computed(() => {
+    const count = this.currentPage() * this.perPage;
+    const total = this.totalItems();
+    return count > total ? total : count;
+  });
+
   // Data
   visitas = signal<Visita[]>([]);
   groupedVisitas = computed(() => {
@@ -95,13 +114,13 @@ export class ClientVisitsComponent implements OnInit {
       const r = v.ruta || 'Sin Ruta';
       const c = v.cadena || 'Sin Cadena';
       const p = v.punto_nombre || 'Punto Desconocido';
-      
+
       if (!groups[r]) groups[r] = {};
       if (!groups[r][c]) groups[r][c] = {};
       if (!groups[r][c][p]) groups[r][c][p] = [];
       groups[r][c][p].push(v);
     }
-    
+
     // Convert to arrays for easy iteration
     return Object.keys(groups).sort().map(rutaName => ({
       name: rutaName,
@@ -152,7 +171,7 @@ export class ClientVisitsComponent implements OnInit {
     { nombre: 'Material POP Despues', emoji: '🎁', color: '#ec4899' },
   ];
 
-  constructor(private api: ApiService, private auth: AuthService) {}
+  constructor(private api: ApiService, private auth: AuthService) { }
 
   ngOnInit(): void {
     const u = this.auth.currentUser();
@@ -161,7 +180,38 @@ export class ClientVisitsComponent implements OnInit {
       this.needsClientSelection.set(true);
       this.loadExclusiveClients();
     } else {
-      this.cargarVisitas();
+      this.resetAndLoad();
+    }
+  }
+
+  ngAfterViewInit(): void {
+    this.mainElement = document.querySelector('main');
+
+    this.scrollListener = () => {
+      const currentScrollTop = this.mainElement ? this.mainElement.scrollTop : window.scrollY;
+      const delta = currentScrollTop - this.lastScrollTop;
+
+      if (delta > 5 && currentScrollTop > 60) {
+        this.showFilters.set(false);
+      } else if (delta < -5) {
+        this.showFilters.set(true);
+      }
+
+      this.lastScrollTop = Math.max(0, currentScrollTop);
+    };
+
+    if (this.mainElement) {
+      this.mainElement.addEventListener('scroll', this.scrollListener, { passive: true });
+    }
+    window.addEventListener('scroll', this.scrollListener, { passive: true });
+  }
+
+  ngOnDestroy(): void {
+    if (this.scrollListener) {
+      if (this.mainElement) {
+        this.mainElement.removeEventListener('scroll', this.scrollListener);
+      }
+      window.removeEventListener('scroll', this.scrollListener);
     }
   }
 
@@ -177,7 +227,7 @@ export class ClientVisitsComponent implements OnInit {
   selectExclusiveClient(c: ExclusiveClient): void {
     this.selectedExclusiveClient.set(c);
     this.needsClientSelection.set(false);
-    this.cargarVisitas();
+    this.resetAndLoad();
   }
 
   changeExclusiveClient(): void {
@@ -193,13 +243,27 @@ export class ClientVisitsComponent implements OnInit {
   }
 
   // Load data from API
-  cargarVisitas(): void {
-    this.loading.set(true);
+  resetAndLoad(): void {
+    this.currentPage.set(1);
+    this.visitas.set([]);
+    this.cargarVisitas();
+  }
+
+  cargarVisitas(append: boolean = false): void {
+    if (append) {
+      this.loadingMore.set(true);
+    } else {
+      this.loading.set(true);
+    }
     this.error.set(null);
+
+    const pageToFetch = append ? this.currentPage() + 1 : 1;
 
     const params: any = {
       fecha_inicio: this.fechaInicio(),
-      fecha_fin: this.fechaFin()
+      fecha_fin: this.fechaFin(),
+      page: pageToFetch,
+      per_page: this.perPage
     };
     if (this.ruta()) params.ruta = this.ruta();
     if (this.cadena()) params.cadena = this.cadena();
@@ -210,15 +274,24 @@ export class ClientVisitsComponent implements OnInit {
     this.api.getClientMisVisitas(params).subscribe({
       next: (res: any) => {
         if (res.success) {
-          // Add expanded=false to each visit by default
           const visitsData = res.visitas.map((v: any) => ({ ...v, expanded: false }));
-          this.visitas.set(visitsData);
-          
+
+          if (append) {
+            this.visitas.update(current => [...current, ...visitsData]);
+            this.currentPage.update(p => p + 1);
+          } else {
+            this.visitas.set(visitsData);
+            this.currentPage.set(1);
+          }
+
+          this.totalPages.set(res.total_pages);
+          this.totalItems.set(res.total);
+
           if (res.filtros) {
             this.filtrosDisponibles.set(res.filtros);
           }
 
-          const totalFotos = visitsData.reduce((sum: number, v: Visita) => sum + v.total_fotos, 0);
+          const totalFotos = this.visitas().reduce((sum: number, v: Visita) => sum + v.total_fotos, 0);
 
           this.bannerInfo.set({
             esHoy: res.es_hoy,
@@ -228,15 +301,26 @@ export class ClientVisitsComponent implements OnInit {
             totalFotos: totalFotos
           });
         } else {
-          this.error.set(res.error || 'Error al cargar visitas');
+          if (!append) {
+            this.error.set(res.error || 'Error al cargar visitas');
+          }
         }
         this.loading.set(false);
+        this.loadingMore.set(false);
       },
       error: (err) => {
-        this.error.set('No se pudo conectar con el servidor. Intenta de nuevo.');
+        if (!append) {
+          this.error.set('No se pudo conectar con el servidor. Intenta de nuevo.');
+        }
         this.loading.set(false);
+        this.loadingMore.set(false);
       }
     });
+  }
+
+  loadMore(): void {
+    if (!this.hasMorePages()) return;
+    this.cargarVisitas(true);
   }
 
   // Filter actions
@@ -248,25 +332,26 @@ export class ClientVisitsComponent implements OnInit {
     this.ruta.set('');
     this.cadena.set('');
     this.puntoId.set('');
-    this.cargarVisitas();
+    this.showFilters.set(true);
+    this.resetAndLoad();
   }
 
   onRutaChange(value: string): void {
     this.ruta.set(value);
     this.cadena.set('');
     this.puntoId.set('');
-    this.cargarVisitas();
+    this.resetAndLoad();
   }
 
   onCadenaChange(value: string): void {
     this.cadena.set(value);
     this.puntoId.set('');
-    this.cargarVisitas();
+    this.resetAndLoad();
   }
 
   onPuntoChange(value: string): void {
     this.puntoId.set(value);
-    this.cargarVisitas();
+    this.resetAndLoad();
   }
 
   // Adaptadores para el SearchableSelect

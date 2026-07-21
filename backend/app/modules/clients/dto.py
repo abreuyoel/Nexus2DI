@@ -206,3 +206,38 @@ class BalanceItemResponse(BaseModel):
     caras: Optional[int] = None
     precio_bs: Optional[float] = None
     precio_ds: Optional[float] = None
+
+
+class VisitaItemResponse(BaseModel):
+    id_visita: int
+    fecha_visita: Optional[str] = None
+    mercaderista: str = ""
+    punto_id: Optional[str] = None
+    punto_nombre: str = ""
+    departamento: str = ""
+    ciudad: str = ""
+    ruta: str = ""
+    cadena: str = ""
+    cliente_nombre: str = ""
+    total_fotos: int = 0
+    preview_foto: Optional[str] = None
+    fotos_por_categoria: Dict[str, List[Any]] = {}
+
+
+class FiltrosResponse(BaseModel):
+    rutas: List[str] = []
+    cadenas: List[str] = []
+    puntos: List[Any] = []
+
+
+class MisVisitasPaginatedResponse(BaseModel):
+    success: bool = True
+    fecha_inicio: str = ""
+    fecha_fin: str = ""
+    es_hoy: bool = False
+    visitas: List[VisitaItemResponse] = []
+    total: int = 0
+    page: int = 1
+    per_page: int = 20
+    total_pages: int = 0
+    filtros: FiltrosResponse = FiltrosResponse()

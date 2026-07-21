@@ -6,71 +6,233 @@
       <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Panel de Supervisión</h1>
       <p class="text-slate-500 dark:text-slate-400 mt-1">Revisión de incidencias y aprobación de material gráfico.</p>
     </div>
-    
-    <div class="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-      <div class="w-10 h-10 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center">
+
+    <div
+      class="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+      <div
+        class="w-10 h-10 bg-rose-100 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center">
         <mat-icon>security</mat-icon>
       </div>
       <div class="pr-4">
         <p class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Estado Crítico</p>
-        <p class="text-lg font-black text-rose-600 dark:text-rose-400 leading-none">{{ photos().length }} Fotos</p>
+        <p class="text-lg font-black text-rose-600 dark:text-rose-400 leading-none">{{ totalItems() }} Fotos</p>
+        <p class="text-[10px] text-slate-400 dark:text-slate-500">fotos pendientes</p>
       </div>
     </div>
   </div>
 
-  @if (loading()) {
-    <div class="flex flex-col items-center justify-center py-24 gap-4">
-      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
-      <p class="text-slate-400 font-medium">Escaneando base de datos...</p>
-    </div>
-  } @else if (photos().length === 0) {
-    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 p-16 text-center flex flex-col items-center gap-4 shadow-sm">
-      <div class="w-24 h-24 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center text-emerald-500 mb-2">
-        <mat-icon class="!text-6xl">verified</mat-icon>
+  <!-- ════════════ FILTROS (sticky dinámico) ════════════ -->
+  <div
+    class="sticky top-[72px] z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/5 p-4 shadow-sm transition-all duration-300 ease-in-out"
+    [class.translate-y-0]="showFilters()"
+    [class.opacity-100]="showFilters()"
+    [class.-translate-y-[150%]]="!showFilters()"
+    [class.opacity-0]="!showFilters()"
+    [class.pointer-events-none]="!showFilters()">
+    <div class="flex flex-wrap items-end gap-3">
+      <!-- Fecha desde -->
+      <div class="flex flex-col gap-1 min-w-0">
+        <label
+          class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Desde</label>
+        <input type="date" [ngModel]="fechaDesde()" (input)="onFechaDesde($event)"
+          class="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-transparent text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/30">
       </div>
-      <h3 class="text-2xl font-bold text-slate-800 dark:text-white">Todo Aprobado</h3>
-      <p class="text-slate-500 dark:text-slate-400 max-w-sm mx-auto">No hay discrepancias pendientes. El sistema está operando bajo los estándares de calidad.</p>
-    </div>
-  } @else {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-      @for (foto of photos(); track foto.id) {
-        <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col border-b-4 border-b-rose-500/20">
-          <div class="relative h-56 bg-slate-100 dark:bg-slate-800">
-            @if (foto.url) {
-              <img [src]="foto.url" alt="Foto rechazada" class="w-full h-full object-cover">
-            } @else {
-              <div class="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
-                <mat-icon class="!text-5xl">image_not_supported</mat-icon>
-              </div>
-            }
-            <div class="absolute bottom-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-lg px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">
-              Visita #{{ foto.visita_id }}
-            </div>
-          </div>
 
-          <div class="p-6 flex-1 flex flex-col justify-between space-y-4">
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Observación Técnica</span>
-                <span class="text-rose-500 dark:text-rose-400 font-bold text-xs">ID: {{ foto.id }}</span>
-              </div>
-              <div class="p-4 bg-rose-50 dark:bg-rose-900/10 rounded-2xl border border-rose-100 dark:border-rose-900/20 text-sm font-semibold text-rose-800 dark:text-rose-400 italic leading-relaxed">
-                "{{ foto.motivo_rechazo || 'El supervisor debe definir el motivo del rechazo' }}"
-              </div>
-            </div>
+      <!-- Fecha hasta -->
+      <div class="flex flex-col gap-1 min-w-0">
+        <label
+          class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Hasta</label>
+        <input type="date" [ngModel]="fechaHasta()" (input)="onFechaHasta($event)"
+          class="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-transparent text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/30">
+      </div>
 
-            <button 
-              mat-flat-button 
-              color="primary" 
-              (click)="approvePhoto(foto)" 
-              class="!w-full !rounded-2xl !h-12 !font-bold !bg-primary-600 hover:!bg-primary-700 transition-all shadow-lg shadow-primary-500/10"
-            >
-              <mat-icon class="mr-2">verified_user</mat-icon>
-              Aprobación Forzada
-            </button>
-          </div>
-        </div>
+      <!-- Mercaderista -->
+      <div class="min-w-[180px] flex-1">
+        <app-searchable-select [options]="mercaderistaOptions()" placeholder="Todos los mercaderistas"
+          label="Mercaderista" [clearable]="true" [value]="filtroMercaderista()"
+          (valueChange)="onMercaderistaChange($event)" />
+      </div>
+
+
+      <!-- Cédula -->
+      <div class="flex flex-col gap-1 min-w-[140px]">
+        <label
+          class="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cédula</label>
+        <input type="text" placeholder="Buscar cédula..." [ngModel]="filtroCedula()" (input)="onCedulaInput($event)"
+          class="px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-transparent text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/30 placeholder:text-slate-400">
+      </div>
+
+      <!-- Limpiar filtros -->
+      @if (hasActiveFilters()) {
+      <button mat-stroked-button (click)="clearFilters()"
+        class="!rounded-xl !h-[38px] !border-slate-300 dark:!border-white/10 !text-slate-500">
+        <mat-icon class="!text-lg">clear_all</mat-icon>
+        Limpiar
+      </button>
       }
     </div>
+  </div>
+
+  @if (loading()) {
+  <div class="flex flex-col items-center justify-center py-24 gap-4">
+    <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+    <p class="text-slate-400 font-medium">Escaneando base de datos...</p>
+  </div>
+  } @else if (photos().length === 0) {
+  <div
+    class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 p-16 text-center flex flex-col items-center gap-4 shadow-sm">
+    <div
+      class="w-24 h-24 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center text-emerald-500 mb-2">
+      <mat-icon class="!text-6xl">verified</mat-icon>
+    </div>
+    <h3 class="text-2xl font-bold text-slate-800 dark:text-white">Todo Aprobado</h3>
+    <p class="text-slate-500 dark:text-slate-400 max-w-sm mx-auto">No hay discrepancias pendientes. El sistema está
+      operando bajo los estándares de calidad.</p>
+  </div>
+  } @else {
+  <!-- Result counter -->
+  <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400 mb-4 px-1">
+    <p>Mostrando <strong class="text-slate-700 dark:text-slate-300">{{ photos().length }}</strong> de <strong
+        class="text-slate-700 dark:text-slate-300">{{ totalItems() }}</strong> fotos</p>
+    <p>Página <strong class="text-slate-700 dark:text-slate-300">{{ currentPage() }}</strong> de <strong
+        class="text-slate-700 dark:text-slate-300">{{ totalPages() }}</strong></p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+    @for (foto of photos(); track foto.id) {
+    <div
+      class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col border-b-4 border-b-rose-500/20">
+      <!-- Imagen -->
+      <div class="relative h-56 bg-slate-100 dark:bg-slate-800">
+        @if (foto.url) {
+        <img [src]="foto.url" alt="Foto rechazada" class="w-full h-full object-cover">
+        } @else {
+        <div class="w-full h-full flex items-center justify-center text-slate-300 dark:text-slate-600">
+          <mat-icon class="!text-5xl">image_not_supported</mat-icon>
+        </div>
+        }
+        <div
+          class="absolute bottom-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur shadow-lg px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 dark:text-white">
+          Visita #{{ foto.visita_id }}
+        </div>
+      </div>
+
+      <!-- Cuerpo -->
+      <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+        <!-- Metadata en grilla -->
+        <div class="space-y-3">
+          <!-- Motivo del rechazo (destacado) -->
+          <div
+            class="p-3 bg-rose-50 dark:bg-rose-900/10 rounded-2xl border border-rose-100 dark:border-rose-900/20 text-sm font-semibold text-rose-800 dark:text-rose-400 italic leading-relaxed">
+            "{{ foto.motivo_rechazo || 'El supervisor debe definir el motivo del rechazo' }}"
+          </div>
+
+          <!-- Información detallada -->
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
+
+            <!-- Fecha de registro -->
+            @if (foto.fecha_registro) {
+            <div>
+              <span class="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">Subida</span>
+              <p class="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{{ formatDate(foto.fecha_registro) }}</p>
+            </div>
+            }
+
+            <!-- Mercaderista que tomó la foto -->
+            @if (foto.mercaderista_nombre) {
+            <div>
+              <span
+                class="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">Mercaderista</span>
+              <p class="text-slate-700 dark:text-slate-300 font-medium mt-0.5 truncate"
+                [title]="foto.mercaderista_nombre">
+                <mat-icon class="!text-xs !w-3.5 !h-3.5 align-text-bottom text-slate-400">person</mat-icon>
+                {{ foto.mercaderista_nombre }}
+              </p>
+            </div>
+            }
+
+            <!-- Cédula mercaderista -->
+            @if (foto.mercaderista_cedula) {
+            <div>
+              <span class="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">Cédula</span>
+              <p class="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{{ foto.mercaderista_cedula }}</p>
+            </div>
+            }
+
+            <!-- Fecha de la visita -->
+            @if (foto.fecha_visita) {
+            <div>
+              <span class="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">Visita
+                fecha</span>
+              <p class="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{{ formatDate(foto.fecha_visita) }}</p>
+            </div>
+            }
+
+            <!-- Fecha de rechazo -->
+            @if (foto.fecha_revision || foto.ultima_fecha_rechazo) {
+            <div>
+              <span class="text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">Rechazo
+                fecha</span>
+              <p class="text-slate-700 dark:text-slate-300 font-medium mt-0.5">{{ formatDate(foto.fecha_revision ||
+                foto.ultima_fecha_rechazo) }}</p>
+            </div>
+            }
+          </div>
+
+          <!-- Cámara -->
+          @if (foto.camera_model) {
+          <div class="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+            <mat-icon class="!text-sm !w-4 !h-4">camera_alt</mat-icon>
+            <span>{{ foto.camera_model }}</span>
+            @if (foto.exif_timestamp) {
+            <span class="mx-1">•</span>
+            <mat-icon class="!text-sm !w-4 !h-4">schedule</mat-icon>
+            <span>{{ formatDate(foto.exif_timestamp) }}</span>
+            }
+          </div>
+          }
+
+          <!-- Comentario adicional -->
+          @if (foto.comentario) {
+          <div class="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/20">
+            <span
+              class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider block mb-1">Comentario</span>
+            <p class="text-sm text-amber-800 dark:text-amber-300">{{ foto.comentario }}</p>
+          </div>
+          }
+        </div>
+
+        <!-- Botón de aprobación -->
+        <button mat-flat-button color="primary" (click)="approvePhoto(foto)"
+          class="!w-full !rounded-2xl !h-12 !font-bold !bg-primary-600 hover:!bg-primary-700 transition-all shadow-lg shadow-primary-500/10">
+          <mat-icon class="mr-2">verified_user</mat-icon>
+          Aprobación Forzada
+        </button>
+      </div>
+    </div>
+    }
+  </div>
+
+  @if (hasMorePages()) {
+  <div class="flex flex-col items-center gap-3 pt-4 pb-8">
+    <button mat-stroked-button (click)="loadMore()" [disabled]="loadingMore()"
+      class="!rounded-2xl !px-8 !h-12 !font-semibold !border-primary-300 dark:!border-primary-700 !text-primary-600 dark:!text-primary-400">
+      @if (loadingMore()) {
+      <mat-spinner diameter="20" strokeWidth="3" class="mr-2"></mat-spinner>
+      } @else {
+      <mat-icon class="mr-2">expand_more</mat-icon>
+      }
+      Cargar más ({{ totalItems() - photos().length }} restantes)
+    </button>
+  </div>
+  }
+  }
+
+  <!-- ════════════ SCROLL TO TOP ════════════ -->
+  @if (showScrollTop()) {
+  <button (click)="scrollToTop()"
+    class="fixed bottom-8 right-8 z-50 w-12 h-12 rounded-2xl bg-primary-600 hover:bg-primary-700 text-white shadow-lg shadow-primary-500/30 flex items-center justify-center transition-all hover:scale-110 hover:shadow-xl active:scale-95">
+    <mat-icon class="!text-2xl">arrow_upward</mat-icon>
+  </button>
   }
 </div>

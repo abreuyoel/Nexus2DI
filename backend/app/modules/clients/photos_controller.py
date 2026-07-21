@@ -18,6 +18,7 @@ from app.modules.clients.dto import (
     RegionItemResponse, ChainItemResponse, PointItemResponse
 )
 from app.shared.visibility import client_route_ids
+from app.shared.redis_cache import make_cache_key, get_cached_or_compute
 
 router = APIRouter(prefix="/api/client", tags=["Client Photos"])
 logger = logging.getLogger("app.client_photos")
@@ -298,10 +299,20 @@ def get_client_mis_visitas(
     cadena: Optional[str] = None,
     punto_id: Optional[str] = None,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
+    page: int = Query(1, ge=1, description="Número de página"),
+    per_page: int = Query(20, ge=1, le=100, description="Resultados por página"),
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
+    # ── Admin con permiso "merc_rutas" puede ver todo ──────────────
+    puede_ver_todo = (
+        current_user.is_admin
+        and current_user.has_permission("merc_rutas", "read")
+    )
+    if puede_ver_todo:
+        resolved_cliente_id = None
+    else:
+        resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
 
     route_ids = None
     if current_user.rol == "client":
@@ -323,7 +334,7 @@ def get_client_mis_visitas(
         except ValueError:
             raise HTTPException(status_code=400, detail="Formato de fecha inválido (YYYY-MM-DD)")
 
-    query = (
+    base_query = (
         db.query(
             Visita.id.label("id_visita"),
             Visita.fecha.label("fecha_visita"),
@@ -347,11 +358,13 @@ def get_client_mis_visitas(
         .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
         .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
         .filter(
-            Visita.id_cliente == resolved_cliente_id,
             Visita.fecha >= fecha_inicio_date,
             Visita.fecha <= fecha_fin_date
         )
     )
+    if resolved_cliente_id is not None:
+        base_query = base_query.filter(Visita.id_cliente == resolved_cliente_id)
+    query = base_query
 
     if route_ids is not None:
         if not route_ids:
@@ -381,6 +394,43 @@ def get_client_mis_visitas(
         query = query.filter(PuntoInteres.cadena == cadena)
     if punto_id:
         query = query.filter(PuntoInteres.id == punto_id)
+
+    # ── Paginación: contar visitas distintas ──
+    total = (
+        query.with_entities(Visita.id)
+        .distinct()
+        .count()
+    )
+    total_pages = (total + per_page - 1) // per_page if total else 0
+
+    # Obtener IDs de visitas de la página actual
+    paginated_vids = [
+        r[0] for r in
+        query.with_entities(Visita.id)
+        .distinct()
+        .order_by(Visita.id.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    ]
+
+    if not paginated_vids:
+        # Sin resultados para esta página
+        return {
+            'success': True,
+            'fecha_inicio': str(fecha_inicio_date),
+            'fecha_fin': str(fecha_fin_date),
+            'es_hoy': fecha_inicio_date == date.today() and fecha_fin_date == date.today(),
+            'visitas': [],
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages,
+            'filtros': {'rutas': [], 'cadenas': [], 'puntos': []}
+        }
+
+    # ── Filtrar solo las visitas de esta página ──
+    query = query.filter(Visita.id.in_(paginated_vids))
 
     rows = query.order_by(Visita.id.desc(), Foto.id_tipo_foto, Foto.id.desc()).all()
 
@@ -443,7 +493,10 @@ def get_client_mis_visitas(
                 8: 'Material POP Antes', 9: 'Material POP Después'
             }
 
-            url = _fast_sas_url(row[10]) if row[10] else None
+            try:
+                url = _fast_sas_url(row[10]) if row[10] else None
+            except Exception:
+                url = None
 
             foto = {
                 'id_foto': row[9],
@@ -466,6 +519,7 @@ def get_client_mis_visitas(
             if not visitas_dict[vid]['preview_foto']:
                 visitas_dict[vid]['preview_foto'] = url
 
+    # ── Obtener filtros disponibles (sin paginar) ──
     base_filter_q = (
         db.query(
             PuntoInteres.id.label("punto_id"),
@@ -477,12 +531,13 @@ def get_client_mis_visitas(
         .outerjoin(RutaProgramacion, (RutaProgramacion.punto_id == PuntoInteres.id) & (RutaProgramacion.id_cliente == Visita.id_cliente))
         .outerjoin(Ruta, Ruta.id == RutaProgramacion.ruta_id)
         .filter(
-            Visita.id_cliente == resolved_cliente_id,
             Visita.fecha >= fecha_inicio_date,
             Visita.fecha <= fecha_fin_date,
             Visita.estado == "Revisado"
         )
     )
+    if resolved_cliente_id is not None:
+        base_filter_q = base_filter_q.filter(Visita.id_cliente == resolved_cliente_id)
     if route_ids is not None:
         sub_rp_filter = (
             db.query(RutaProgramacion.punto_id)
@@ -509,13 +564,18 @@ def get_client_mis_visitas(
 
     puntos_list.sort(key=lambda x: x['nombre'])
 
+    total_visitas = len(visitas_dict)
+
     return {
         'success': True,
         'fecha_inicio': str(fecha_inicio_date),
         'fecha_fin': str(fecha_fin_date),
         'es_hoy': fecha_inicio_date == date.today() and fecha_fin_date == date.today(),
         'visitas': list(visitas_dict.values()),
-        'total': len(visitas_dict),
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
         'filtros': {
             'rutas': rutas_list,
             'cadenas': cadenas_list,

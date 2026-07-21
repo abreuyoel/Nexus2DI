@@ -46,6 +46,12 @@ class Foto(Base):
     apertura = Column(String(50), nullable=True)
     tiempo_exposicion = Column(String(50), nullable=True)
     orientacion = Column(Integer, nullable=True)
+    motivo_rechazo = Column("motivo_rechazo", String(500), nullable=True)
+    revisada_por = Column("revisada_por", String(100), nullable=True)
+    fecha_revision = Column("fecha_revision", DateTime, nullable=True)
+    comentario = Column("comentario", Text, nullable=True)
+    ultimo_rechazo_por_paso1 = Column("ultimo_rechazo_por_paso1", String(100), nullable=True)
+    ultima_fecha_rechazo_paso1 = Column("ultima_fecha_rechazo_paso1", DateTime, nullable=True)
 
     visita = relationship("Visita", back_populates="fotos")
     notificaciones = relationship("NotificacionRechazoFoto", back_populates="foto", cascade="all, delete-orphan")

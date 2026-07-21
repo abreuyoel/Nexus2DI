@@ -82,13 +82,15 @@ class RutaCambioFuturo(Base):
 class RutaActivada(Base):
     __tablename__ = "RUTAS_ACTIVADAS"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column("id_ruta_activada", Integer, primary_key=True, index=True)
     ruta_id = Column("id_ruta", Integer, ForeignKey("RUTAS_NUEVAS.id_ruta"), nullable=False)
     mercaderista_id = Column("id_mercaderista", Integer, ForeignKey("MERCADERISTAS.id_mercaderista"), nullable=True)
     fecha_hora_activacion = Column(DateTime, nullable=True)
     estado = Column(String(50), nullable=True)
     tipo_activacion = Column(String(50), nullable=True)
-    motivo_no_activacion = Column(String(500), nullable=True)
+    motivo_no_activacion = Column("motivo_no_activacion", String(500), nullable=True)
+    id_cliente = Column("id_cliente", Integer, nullable=True)
+    identificador_punto_interes = Column("identificador_punto_interes", String(50), nullable=True)
 
     ruta = relationship("Ruta", back_populates="activaciones_ruta")
 

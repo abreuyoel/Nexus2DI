@@ -12,7 +12,7 @@ export class AuthService {
 
   currentUser = signal<User | null>(this.loadUser());
 
-  constructor(private http: HttpClient, private router: Router) {}
+  constructor(private http: HttpClient, private router: Router) { }
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials).pipe(
@@ -72,6 +72,16 @@ export class AuthService {
     if (action === 'write') return !!p.can_write;
     if (action === 'delete') return !!p.can_delete;
     return !!p.can_read;
+  }
+
+  /** ¿Tiene el usuario el flag can_see_all activo para un módulo específico?
+   *  No hace bypass para admin: debe tener explícitamente can_see_all=true
+   *  en la tabla usuario_permisos. */
+  canSeeAll(clave: string): boolean {
+    const u = this.currentUser();
+    if (!u) return false;
+    const p = (u.permisos || []).find((x) => x.module === clave);
+    return !!p?.can_see_all;
   }
 
   /** Decide si un usuario puede ACCEDER a un módulo/ruta.

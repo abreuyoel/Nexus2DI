@@ -5,13 +5,13 @@ import uuid
 from datetime import datetime, date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
-from app.modules.auth.entities import Usuario
+from app.modules.auth.entities import Usuario, UserPermission
 from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
 from app.modules.routes.entities import Ruta, RutaProgramacion, PuntoInteres
 from app.modules.clients.entities import Cliente
@@ -49,13 +49,14 @@ ID_TO_CODIGO = {v["id"]: k for k, v in FOTO_TIPOS.items()}
 FOTOS_DIR = "app/static/fotos_mercaderista"
 
 
-def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
+def _get_mercaderista(current_user: Usuario, db: Session, requerido: bool = True) -> Optional[Mercaderista]:
     """Resolve the Mercaderista record for the current user.
     Strategy:
       1. id_perfil → MERCADERISTAS.id_mercaderista (set at user creation / login)
       2. Numeric username matched as cedula
       3. Mercaderista-role user with no DB row yet → auto-create a virtual record
          so the portal doesn't hard-crash on empty databases.
+      4. If not found and requerido=False, return None (admins can bypass)
     """
     # 1) Fast path: id_perfil links directly to MERCADERISTAS.id_mercaderista
     if current_user.id_perfil:
@@ -98,7 +99,23 @@ def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
         db.refresh(new_merc)
         return new_merc
 
+    # 4) If not required (admin override), return None
+    if not requerido:
+        return None
+
     raise HTTPException(status_code=403, detail="Usuario no es mercaderista")
+
+
+def _puede_ver_todos(current_user: Usuario, db: Session) -> bool:
+    """Verifica si el usuario admin tiene el permiso can_see_all en módulo merc_rutas."""
+    if not current_user.is_admin:
+        return False
+    permiso = db.query(UserPermission).filter(
+        UserPermission.user_id == current_user.id,
+        UserPermission.module == "merc_rutas",
+        UserPermission.can_see_all == True
+    ).first()
+    return permiso is not None
 
 
 def _merc_foto_url(blob_path: Optional[str], foto_id: int) -> Optional[str]:
@@ -119,7 +136,17 @@ def get_mi_perfil(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = _get_mercaderista(current_user, db, requerido=False)
+    if merc is None:
+        # Admin sin mercaderista asociado → responde con datos del usuario
+        return MiPerfilResponse(
+            id=0,
+            nombre=current_user.username,
+            cedula=0,
+            email=current_user.email or "",
+            telefono="",
+            rutas=[]
+        )
     rutas = db.query(MercaderistaRuta).filter(MercaderistaRuta.mercaderista_id == merc.id).all()
     return MiPerfilResponse(
         id=merc.id,
@@ -136,86 +163,97 @@ def get_mi_perfil(
 def get_mi_ruta(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
+    page: int = Query(1, ge=1, description="Número de página"),
+    per_page: int = Query(20, ge=1, le=100, description="Resultados por página"),
+    tipo: Optional[str] = Query(None, description="Filtrar por tipo de ruta: fija o variable"),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = _get_mercaderista(current_user, db, requerido=False)
     hoy = date.today()
     dia_semana = DAY_MAP_ES[hoy.weekday()]
+    puede_ver_todos = merc is None and _puede_ver_todos(current_user, db)
 
-    rutas_rows = (
-        db.query(MercaderistaRuta.ruta_id, MercaderistaRuta.tipo_ruta, Ruta.nombre)
-        .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
-        .filter(MercaderistaRuta.mercaderista_id == merc.id)
-        .all()
-    )
-    rutas = [RutaItemResponse(id_ruta=r[0], tipo=r[1], nombre=r[2]) for r in rutas_rows]
-
-    pdvs_rows = (
-        db.query(
-            RutaProgramacion.id,
-            RutaProgramacion.punto_id,
-            RutaProgramacion.punto_interes_nombre,
-            RutaProgramacion.id_cliente,
-            RutaProgramacion.ruta_id,
-            RutaProgramacion.prioridad,
-            MercaderistaRuta.tipo_ruta,
-            PuntoInteres.latitud,
-            PuntoInteres.longitud,
-            PuntoInteres.cadena,
-            PuntoInteres.departamento,
-            PuntoInteres.direccion,
-            Cliente.nombre
+    # Admin sin mercaderista y sin permiso → respuesta vacía
+    if merc is None and not puede_ver_todos:
+        return MiRutaResponse(
+            fecha=hoy.isoformat(),
+            dia=dia_semana,
+            rutas=[],
+            pdvs=[],
+            total=0,
+            page=page,
+            per_page=per_page,
+            total_pages=0,
         )
-        .distinct()
-        .join(MercaderistaRuta, MercaderistaRuta.ruta_id == RutaProgramacion.ruta_id)
-        .outerjoin(PuntoInteres, PuntoInteres.id == RutaProgramacion.punto_id)
-        .outerjoin(Cliente, Cliente.id == RutaProgramacion.id_cliente)
-        .filter(
-            MercaderistaRuta.mercaderista_id == merc.id,
-            RutaProgramacion.dia == dia_semana,
-            RutaProgramacion.activo == True
-        )
-        .all()
-    )
 
-    visitas_hoy = (
-        db.query(Visita)
-        .filter(
-            Visita.mercaderista_id == merc.id,
-            Visita.fecha == hoy
+    # Admin con permiso ve TODAS las rutas; mercaderista ve solo las suyas
+    if puede_ver_todos:
+        count_q = (
+            db.query(func.count(MercaderistaRuta.ruta_id.distinct()))
+            .join(Mercaderista, MercaderistaRuta.mercaderista_id == Mercaderista.id)
         )
-        .all()
-    )
-    visita_por_pdv = {v.punto_id: v for v in visitas_hoy}
+        base_q = (
+            db.query(MercaderistaRuta.ruta_id, MercaderistaRuta.tipo_ruta, Ruta.nombre, Mercaderista.nombre)
+            .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
+            .join(Mercaderista, MercaderistaRuta.mercaderista_id == Mercaderista.id)
+        )
+        if tipo:
+            tipo_val = tipo.lower()
+            count_q = count_q.filter(MercaderistaRuta.tipo_ruta == tipo_val)
+            base_q = base_q.filter(MercaderistaRuta.tipo_ruta == tipo_val)
 
+        total = count_q.scalar() or 0
+        rutas_rows = (
+            base_q
+            .order_by(Mercaderista.nombre, Ruta.nombre)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+    else:
+        count_q = (
+            db.query(func.count(MercaderistaRuta.ruta_id.distinct()))
+            .filter(MercaderistaRuta.mercaderista_id == merc.id)
+        )
+        base_q = (
+            db.query(MercaderistaRuta.ruta_id, MercaderistaRuta.tipo_ruta, Ruta.nombre)
+            .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
+            .filter(MercaderistaRuta.mercaderista_id == merc.id)
+        )
+        if tipo:
+            tipo_val = tipo.lower()
+            count_q = count_q.filter(MercaderistaRuta.tipo_ruta == tipo_val)
+            base_q = base_q.filter(MercaderistaRuta.tipo_ruta == tipo_val)
+
+        total = count_q.scalar() or 0
+        rutas_rows = (
+            base_q
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    if puede_ver_todos:
+        rutas = [RutaItemResponse(id_ruta=r[0], tipo=r[1], nombre=r[2], mercaderista_nombre=r[3]) for r in rutas_rows]
+    else:
+        rutas = [RutaItemResponse(id_ruta=r[0], tipo=r[1], nombre=r[2]) for r in rutas_rows]
+
+    # 🚀 OPTIMIZACIÓN: No cargamos PDVs aquí — se cargan bajo demanda
+    # cuando el usuario selecciona una ruta (loadRoutePdvs en el frontend).
+    # Esto elimina las consultas masivas a RUTA_PROGRAMACION + PuntoInteres + Cliente
+    # que se ejecutaban para TODAS las rutas en cada petición.
     pdvs = []
-    for row in pdvs_rows:
-        pid = row[1]
-        visita = visita_por_pdv.get(pid)
-        pdvs.append(PdvPuntoItem(
-            id_punto=pid or "",
-            nombre=row[2],
-            id_cliente=row[3],
-            cliente=row[12],
-            id_ruta=row[4],
-            cadena=row[9],
-            region=row[10],
-            direccion=row[11],
-            tipo_ruta=row[6],
-            prioridad=row[5],
-            tiene_coords=row[7] is not None and row[8] is not None,
-            latitud=float(str(row[7]).replace(",", ".")) if row[7] else None,
-            longitud=float(str(row[8]).replace(",", ".")) if row[8] else None,
-            visita_id=visita.id if visita else None,
-            visitado=visita is not None,
-            estado=visita.estado if visita else None,
-            estado_data=visita.estado_data if (visita and hasattr(visita, 'estado_data')) else None,
-        ))
 
     return MiRutaResponse(
         dia=dia_semana,
         fecha=str(hoy),
         rutas=rutas,
-        pdvs=pdvs
+        pdvs=pdvs,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
     )
 
 
@@ -227,10 +265,15 @@ def get_mis_visitas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = _get_mercaderista(current_user, db, requerido=False)
 
     fi = datetime.strptime(fecha_inicio, '%Y-%m-%d').date() if fecha_inicio else date.today()
     ff = datetime.strptime(fecha_fin, '%Y-%m-%d').date() if fecha_fin else date.today()
+    puede_ver_todos = merc is None and _puede_ver_todos(current_user, db)
+
+    # Admin sin mercaderista y sin permiso → lista vacía
+    if merc is None and not puede_ver_todos:
+        return []
 
     sub_fotos = (
         db.query(Foto.visita_id, func.count(Foto.id).label("fotos_count"))
@@ -243,7 +286,8 @@ def get_mis_visitas(
         .subquery()
     )
 
-    rows = (
+    # Build base query
+    query = (
         db.query(
             Visita.id,
             Visita.fecha,
@@ -262,14 +306,21 @@ def get_mis_visitas(
         .outerjoin(Cliente, Cliente.id == Visita.id_cliente)
         .outerjoin(sub_fotos, sub_fotos.c.visita_id == Visita.id)
         .outerjoin(sub_balances, sub_balances.c.visita_id == Visita.id)
-        .filter(
+    )
+
+    if puede_ver_todos:
+        query = query.filter(
+            Visita.fecha >= fi,
+            Visita.fecha <= ff
+        )
+    else:
+        query = query.filter(
             Visita.mercaderista_id == merc.id,
             Visita.fecha >= fi,
             Visita.fecha <= ff
         )
-        .order_by(Visita.fecha.desc(), Visita.id.desc())
-        .all()
-    )
+
+    rows = query.order_by(Visita.fecha.desc(), Visita.id.desc()).all()
 
     return [
         MiVisitaResponse(
@@ -332,10 +383,16 @@ def get_pdvs_de_ruta(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = _get_mercaderista(current_user, db, requerido=False)
     hoy = date.today()
+    puede_ver_todos = merc is None and _puede_ver_todos(current_user, db)
 
-    pdvs_rows = (
+    # Admin sin mercaderista y sin permiso → lista vacía
+    if merc is None and not puede_ver_todos:
+        return []
+
+    # Base query without mercaderista filter for admins with can_see_all
+    query = (
         db.query(
             RutaProgramacion.punto_id,
             RutaProgramacion.punto_interes_nombre,
@@ -355,22 +412,28 @@ def get_pdvs_de_ruta(
         .outerjoin(PuntoInteres, PuntoInteres.id == RutaProgramacion.punto_id)
         .outerjoin(Cliente, Cliente.id == RutaProgramacion.id_cliente)
         .filter(
-            MercaderistaRuta.mercaderista_id == merc.id,
             RutaProgramacion.ruta_id == id_ruta,
             RutaProgramacion.activo == True
         )
-        .order_by(RutaProgramacion.punto_interes_nombre)
-        .all()
     )
 
-    visitas_hoy = (
-        db.query(Visita)
-        .filter(
-            Visita.mercaderista_id == merc.id,
-            Visita.fecha == hoy
+    if not puede_ver_todos:
+        query = query.filter(MercaderistaRuta.mercaderista_id == merc.id)
+
+    pdvs_rows = query.order_by(RutaProgramacion.punto_interes_nombre).all()
+
+    # Visitas filter
+    if puede_ver_todos:
+        visitas_hoy = db.query(Visita).filter(Visita.fecha == hoy).all()
+    else:
+        visitas_hoy = (
+            db.query(Visita)
+            .filter(
+                Visita.mercaderista_id == merc.id,
+                Visita.fecha == hoy
+            )
+            .all()
         )
-        .all()
-    )
     visita_por_pdv = {v.punto_id: v for v in visitas_hoy}
 
     pdvs = []
@@ -607,7 +670,12 @@ def get_chat_inbox(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = _get_mercaderista(current_user, db, requerido=False)
+    puede_ver_todos = merc is None and _puede_ver_todos(current_user, db)
+
+    # Admin sin mercaderista y sin permiso → lista vacía
+    if merc is None and not puede_ver_todos:
+        return []
 
     sub_msgs_count = (
         db.query(ChatMensaje.visita_id, func.count(ChatMensaje.id).label("total_msgs"))
@@ -625,7 +693,7 @@ def get_chat_inbox(
         .subquery()
     )
 
-    rows = (
+    query = (
         db.query(
             Visita.id,
             Visita.fecha,
@@ -640,10 +708,12 @@ def get_chat_inbox(
         .outerjoin(sub_last_msg, sub_last_msg.c.visita_id == Visita.id)
         .outerjoin(PuntoInteres, PuntoInteres.id == Visita.punto_id)
         .outerjoin(Cliente, Cliente.id == Visita.id_cliente)
-        .filter(Visita.mercaderista_id == merc.id)
-        .order_by(sub_last_msg.c.ultimo_at.desc())
-        .all()
     )
+
+    if not puede_ver_todos:
+        query = query.filter(Visita.mercaderista_id == merc.id)
+
+    rows = query.order_by(sub_last_msg.c.ultimo_at.desc()).all()
 
     return [
         ChatInboxItemResponse(

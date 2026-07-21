@@ -27,19 +27,19 @@ export class PhotosComponent implements OnInit {
   loading = signal(true);
   photos = signal<Foto[]>([]);
 
-  constructor(private api: ApiService, private snack: MatSnackBar) {}
+  constructor(private api: ApiService, private snack: MatSnackBar) { }
 
   ngOnInit(): void { this.loadPhotos(); }
 
   loadPhotos(): void {
     this.loading.set(true);
     this.api.getRejectedPhotos().subscribe({
-      next: (data) => { 
-        this.photos.set(data); 
-        this.loading.set(false); 
+      next: (data) => {
+        this.photos.set(data.items);
+        this.loading.set(false);
       },
-      error: () => { 
-        this.loading.set(false); 
+      error: () => {
+        this.loading.set(false);
       },
     });
   }
@@ -50,8 +50,8 @@ export class PhotosComponent implements OnInit {
         this.photos.update((ps) => ps.filter((p) => p.id !== foto.id));
         this.snack.open('Foto aprobada', 'OK', { duration: 2000 });
       },
-      error: () => { 
-        this.snack.open('Error al aprobar foto', 'OK', { duration: 3000 }); 
+      error: () => {
+        this.snack.open('Error al aprobar foto', 'OK', { duration: 3000 });
       },
     });
   }

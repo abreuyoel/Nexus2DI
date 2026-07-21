@@ -89,14 +89,15 @@
           <mat-icon class="!text-sm">public</mat-icon>
           Región
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="region">
-            <mat-option value="">Todas las regiones</mat-option>
-            @for (r of filterOptions().regiones; track r) {
-              <mat-option [value]="r">{{ r }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="regionOptions()"
+          [value]="filterForm.get('region')?.value || ''"
+          placeholder="Todas las regiones"
+          searchPlaceholder="Buscar región..."
+          allLabel="Todas las regiones"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('region', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Cadena -->
@@ -105,14 +106,15 @@
           <mat-icon class="!text-sm">storefront</mat-icon>
           Cadena
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="cadena">
-            <mat-option value="">Todas las cadenas</mat-option>
-            @for (c of filterOptions().cadenas; track c) {
-              <mat-option [value]="c">{{ c }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="cadenaOptions()"
+          [value]="filterForm.get('cadena')?.value || ''"
+          placeholder="Todas las cadenas"
+          searchPlaceholder="Buscar cadena..."
+          allLabel="Todas las cadenas"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('cadena', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- PDV -->
@@ -121,14 +123,15 @@
           <mat-icon class="!text-sm">store</mat-icon>
           Punto de Venta
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="pdv">
-            <mat-option value="">Todos los PDV</mat-option>
-            @for (p of filterOptions().pdvs; track p.id) {
-              <mat-option [value]="p.id">{{ p.nombre }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="pdvOptions()"
+          [value]="filterForm.get('pdv')?.value || ''"
+          placeholder="Todos los PDV"
+          searchPlaceholder="Buscar PDV..."
+          allLabel="Todos los PDV"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('pdv', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Mercaderista -->
@@ -137,14 +140,15 @@
           <mat-icon class="!text-sm">person</mat-icon>
           Mercaderista
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="mercaderista">
-            <mat-option value="">Todos</mat-option>
-            @for (m of filterOptions().mercaderistas; track m) {
-              <mat-option [value]="m">{{ m }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="mercaderistaOptions()"
+          [value]="filterForm.get('mercaderista')?.value || ''"
+          placeholder="Todos los mercaderistas"
+          searchPlaceholder="Buscar mercaderista..."
+          allLabel="Todos los mercaderistas"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('mercaderista', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Producto -->
@@ -153,14 +157,15 @@
           <mat-icon class="!text-sm">inventory_2</mat-icon>
           Producto
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="producto">
-            <mat-option value="">Todos los productos</mat-option>
-            @for (p of filterOptions().productos; track p) {
-              <mat-option [value]="p">{{ p }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="productoOptions()"
+          [value]="filterForm.get('producto')?.value || ''"
+          placeholder="Todos los productos"
+          searchPlaceholder="Buscar producto..."
+          allLabel="Todos los productos"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('producto', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Visita ID -->
@@ -169,9 +174,7 @@
           <mat-icon class="!text-sm">tag</mat-icon>
           ID de Visita
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <input matInput type="number" formControlName="visita_id" placeholder="Ej: 766">
-        </mat-form-field>
+        <input type="number" formControlName="visita_id" placeholder="Ej: 766" class="filter-input-id">
       </div>
 
       <!-- Categoría de producto -->
@@ -180,14 +183,15 @@
           <mat-icon class="!text-sm">category</mat-icon>
           Categoría
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="categoria">
-            <mat-option value="">Todas las categorías</mat-option>
-            @for (c of filterOptions().categorias; track c) {
-              <mat-option [value]="c">{{ c }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="categoriaOptions()"
+          [value]="filterForm.get('categoria')?.value || ''"
+          placeholder="Todas las categorías"
+          searchPlaceholder="Buscar categoría..."
+          allLabel="Todas las categorías"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('categoria', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Departamento -->
@@ -196,14 +200,15 @@
           <mat-icon class="!text-sm">map</mat-icon>
           Departamento
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="departamento">
-            <mat-option value="">Todos los departamentos</mat-option>
-            @for (d of filterOptions().departamentos; track d) {
-              <mat-option [value]="d">{{ d }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="departamentoOptions()"
+          [value]="filterForm.get('departamento')?.value || ''"
+          placeholder="Todos los departamentos"
+          searchPlaceholder="Buscar departamento..."
+          allLabel="Todos los departamentos"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('departamento', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Cuadrante -->
@@ -212,14 +217,15 @@
           <mat-icon class="!text-sm">grid_view</mat-icon>
           Cuadrante
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="cuadrante">
-            <mat-option value="">Todos los cuadrantes</mat-option>
-            @for (q of filterOptions().cuadrantes; track q) {
-              <mat-option [value]="q">{{ q }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="cuadranteOptions()"
+          [value]="filterForm.get('cuadrante')?.value || ''"
+          placeholder="Todos los cuadrantes"
+          searchPlaceholder="Buscar cuadrante..."
+          allLabel="Todos los cuadrantes"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('cuadrante', $event)">
+        </app-searchable-select>
       </div>
 
       <!-- Estado de la visita -->
@@ -228,14 +234,15 @@
           <mat-icon class="!text-sm">flag</mat-icon>
           Estado
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="estado">
-            <mat-option value="">Todos los estados</mat-option>
-            @for (e of filterOptions().estados; track e) {
-              <mat-option [value]="e">{{ e }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="estadoOptions()"
+          [value]="filterForm.get('estado')?.value || ''"
+          placeholder="Todos los estados"
+          searchPlaceholder="Buscar estado..."
+          allLabel="Todos los estados"
+          [clearable]="true"
+          (valueChange)="onFilterControlChange('estado', $event)">
+        </app-searchable-select>
       </div>
 
     </form>
@@ -382,8 +389,8 @@
       </div>
 
       <mat-paginator
-        [pageSizeOptions]="[25, 50, 100, 200]"
-        [pageSize]="50"
+        [pageSizeOptions]="[20, 50, 100, 200]"
+        [pageSize]="20"
         showFirstLastButtons
         class="table-paginator"
       ></mat-paginator>

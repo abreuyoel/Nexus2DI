@@ -46,42 +46,57 @@ from app.modules.frequencies.controller import router as frequencies_router
 from app.modules.sessions.controller import router as sessions_router
 
 
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse, ORJSONResponse
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.shared.scheduler_service import start_scheduler, stop_scheduler
     from app.services.catalogos_init import ensure_catalog_tables
     import asyncio
     from app.shared.realtime import set_loop
-    try:
-        ensure_catalog_tables()
-    except Exception as e:
-        logger.exception(f"Fallo inicializando catálogos: {e}")
-        
-    # Pre-calentamiento del pool de conexiones
-    try:
-        from app.db.session import engine
-        from sqlalchemy import text
-        logger.info("Iniciando pre-calentamiento del pool de base de datos...")
-        def _warm_pool():
-            conns = []
-            for _ in range(settings.DB_POOL_SIZE):
-                try:
-                    conn = engine.connect()
-                    conn.execute(text("SELECT 1"))
-                    conns.append(conn)
-                except Exception:
-                    pass
-            for conn in conns:
-                conn.close()
-        await asyncio.to_thread(_warm_pool)
-        logger.info(f"[DB] Pool pre-calentado: {settings.DB_POOL_SIZE} conexiones idle")
-    except Exception as e:
-        logger.warning(f"Error pre-calentando pool: {e}")
+    from app.db.session import engine
 
-    set_loop(asyncio.get_running_loop())  # para difundir eventos en tiempo real
+    # 1. Pre-calentamiento del pool asíncrono y no bloqueante
+    async def _async_warmup():
+        try:
+            from sqlalchemy import text
+            def _warm():
+                conns = []
+                for _ in range(min(5, settings.DB_POOL_SIZE)):
+                    try:
+                        conn = engine.connect()
+                        conn.execute(text("SELECT 1"))
+                        conns.append(conn)
+                    except Exception:
+                        pass
+                for conn in conns:
+                    conn.close()
+            await asyncio.to_thread(_warm)
+        except Exception:
+            pass
+
+    # 2. Inicialización de catálogos no bloqueante
+    async def _async_init_catalogs():
+        try:
+            await asyncio.to_thread(ensure_catalog_tables)
+        except Exception as e:
+            logger.warning(f"Error inicializando catálogos: {e}")
+
+    # Ejecutar tareas pesadas de inicio en background para recarga instantánea
+    asyncio.create_task(_async_init_catalogs())
+    asyncio.create_task(_async_warmup())
+
+    set_loop(asyncio.get_running_loop())
     start_scheduler()
+
     yield
+
+    # Apagado ultra-rápido sin bloqueos
     stop_scheduler()
+    try:
+        engine.dispose()
+    except Exception:
+        pass
 
 
 from slowapi import _rate_limit_exceeded_handler
@@ -93,6 +108,7 @@ app = FastAPI(
     title="EPRAN API",
     description="Sistema de gestión de visitas y merchandising",
     version="2.0.0",
+    default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
 

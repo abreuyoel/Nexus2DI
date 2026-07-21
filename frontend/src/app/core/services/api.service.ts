@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { Ruta, RutaProgramacion, CambioFuturo } from '../models/ruta.model';
-import { Visita, Foto, Mercaderista, PuntoInteres, ChatMensaje, Balance } from '../models/visita.model';
+import { Visita, VisitaPaginatedResponse, Foto, Mercaderista, PuntoInteres, ChatMensaje, Balance } from '../models/visita.model';
 import { User } from '../models/user.model';
 
 @Injectable({ providedIn: 'root' })
@@ -151,8 +151,8 @@ export class ApiService {
   syncSupervisorClients(id: number, ids: number[]): Observable<object> { return this.http.post<object>(`${this.base}/api/supervisores/${id}/sync-clients`, { ids }); }
 
   // --- VISITAS ---
-  getVisits(opts: { estado?: string; ruta_id?: number; fecha?: string } = {}): Observable<Visita[]> {
-    return this.http.get<Visita[]>(`${this.base}/api/visits/`, { params: this.params(opts) });
+  getVisits(opts: { estado?: string; ruta_id?: number; fecha?: string; page?: number; per_page?: number } = {}): Observable<VisitaPaginatedResponse> {
+    return this.http.get<VisitaPaginatedResponse>(`${this.base}/api/visits/`, { params: this.params(opts) });
   }
   createVisit(data: object): Observable<Visita> { return this.http.post<Visita>(`${this.base}/api/visits/`, data); }
   updateVisit(id: number, data: object): Observable<Visita> { return this.http.patch<Visita>(`${this.base}/api/visits/${id}`, data); }
@@ -259,7 +259,41 @@ export class ApiService {
   }
 
   // --- SUPERVISOR ---
-  getRejectedPhotos(): Observable<Foto[]> { return this.http.get<Foto[]>(`${this.base}/api/supervisor/rejected-photos`); }
+  getRejectedPhotoFilters(): Observable<{ mercaderistas: { value: string; label: string }[]; rechazados_por: { value: string; label: string }[] }> {
+    return this.http.get<any>(`${this.base}/api/supervisor/rejected-photos/filters`);
+  }
+  getRejectedPhotos(
+    page: number = 1,
+    perPage: number = 20,
+    filters?: {
+      fecha_desde?: string;
+      fecha_hasta?: string;
+      mercaderista?: string;
+      rechazado_por?: string;
+      cedula?: string;
+    }
+  ): Observable<{
+    items: Foto[];
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+  }> {
+    const params = {
+      page,
+      per_page: perPage,
+      ...(filters || {}),
+    };
+    return this.http.get<{
+      items: Foto[];
+      total: number;
+      page: number;
+      per_page: number;
+      total_pages: number;
+    }>(`${this.base}/api/supervisor/rejected-photos`, {
+      params: this.params(params),
+    });
+  }
   replacePhoto(formData: FormData): Observable<object> { return this.http.post<object>(`${this.base}/api/supervisor/replace-photo`, formData); }
 
   // --- MERCADERISTA RUTAS ---
@@ -432,7 +466,7 @@ export class ApiService {
   getClientPointVisits(pointId: string, clienteId?: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/client/point/${encodeURIComponent(pointId)}/visits`, { params: this.params({ cliente_id: clienteId }) });
   }
-  getClientMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string; region?: string; cadena?: string; punto_id?: string; cliente_id?: number } = {}): Observable<any> {
+  getClientMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string; region?: string; cadena?: string; punto_id?: string; cliente_id?: number; page?: number; per_page?: number } = {}): Observable<any> {
     return this.http.get<any>(`${this.base}/api/client/mis-visitas`, { params: this.params(opts) });
   }
   getClientDashboard(clienteId?: number): Observable<{ has_dashboard: boolean; url_html: string | null; tipo?: string }> {
@@ -444,7 +478,11 @@ export class ApiService {
 
   // --- PORTAL MERCADERISTA ---
   getMercMiPerfil(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/mi-perfil`); }
-  getMercMiRuta(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/mi-ruta`); }
+  getMercMiRuta(page: number = 1, perPage: number = 20, tipo?: string): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/merc/mi-ruta`, {
+      params: this.params({ page, per_page: perPage, tipo })
+    });
+  }
   getMercMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/merc/mis-visitas`, { params: this.params(opts) });
   }

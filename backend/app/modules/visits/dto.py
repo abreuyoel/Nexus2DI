@@ -3,6 +3,7 @@ from typing import Optional, List
 from datetime import date, datetime
 from app.modules.merchandisers.dto import MercaderistaResponse
 from app.modules.clients.dto import ClienteResponse
+from app.modules.routes.dto import PuntoResponse
 
 
 class VisitaBase(BaseModel):
@@ -26,9 +27,7 @@ class VisitaUpdate(BaseModel):
 
 class VisitaResponse(VisitaBase):
     id: int
-    # Las importaciones dinámicas o circulares se pueden evitar usando clases básicas
-    # o de los dtos migrados
-    punto: Optional[dict] = None  # Estilo dinámico para desacoplar de app.modules.routes.dto
+    punto: Optional[PuntoResponse] = None
     mercaderista: Optional[MercaderistaResponse] = None
     cliente: Optional[ClienteResponse] = None
 
@@ -88,6 +87,15 @@ class FotoResponse(BaseModel):
     razones_ids: Optional[List[int]] = None
     rechazado_por: Optional[int] = None
     rechazado_por_nombre: Optional[str] = None
+    motivo_rechazo: Optional[str] = None
+    revisada_por: Optional[str] = None
+    fecha_revision: Optional[datetime] = None
+    comentario: Optional[str] = None
+    ultimo_rechazo_por: Optional[str] = None
+    ultima_fecha_rechazo: Optional[datetime] = None
+    mercaderista_nombre: Optional[str] = None
+    mercaderista_cedula: Optional[str] = None
+    fecha_visita: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -121,6 +129,22 @@ class NotificacionRechazoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VisitaPaginatedResponse(BaseModel):
+    items: List[VisitaResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+
+
+class RejectedPhotosPaginatedResponse(BaseModel):
+    items: List[FotoResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
 
 
 class FotoMetadatosResponse(BaseModel):

@@ -74,6 +74,7 @@ class RutaItemResponse(BaseModel):
     id_ruta: int
     tipo: Optional[str] = None
     nombre: Optional[str] = None
+    mercaderista_nombre: Optional[str] = None
 
 
 class PdvPuntoItem(BaseModel):
@@ -86,7 +87,7 @@ class PdvPuntoItem(BaseModel):
     region: Optional[str] = None
     direccion: Optional[str] = None
     tipo_ruta: Optional[str] = None
-    prioridad: Optional[int] = None
+    prioridad: Optional[Union[str, int]] = None
     tiene_coords: bool = False
     latitud: Optional[float] = None
     longitud: Optional[float] = None
@@ -101,6 +102,10 @@ class MiRutaResponse(BaseModel):
     fecha: str
     rutas: List[RutaItemResponse] = []
     pdvs: List[PdvPuntoItem] = []
+    total: int = 0
+    page: int = 1
+    per_page: int = 20
+    total_pages: int = 0
 
 
 class MiVisitaResponse(BaseModel):

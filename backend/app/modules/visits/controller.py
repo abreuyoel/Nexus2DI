@@ -1,6 +1,6 @@
 from datetime import date, timedelta, datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session, joinedload
 
@@ -16,7 +16,8 @@ from app.modules.clients.entities import Cliente
 from app.modules.merchandisers.entities import Mercaderista
 from app.modules.chat.entities import ChatMensaje
 from app.modules.visits.dto import (
-    VisitaCreate, VisitaUpdate, VisitaResponse, UpdateBalancesRequest, BalanceResponse,
+    VisitaCreate, VisitaUpdate, VisitaResponse, VisitaPaginatedResponse,
+    UpdateBalancesRequest, BalanceResponse,
     FotoResponse, ApprovePhotosRequest, RejectPhotoRequest, SavePhotoDecisionsRequest, RejectReason
 )
 from app.shared.audit_service import log_action
@@ -25,11 +26,13 @@ from app.shared.realtime import notify_event
 router = APIRouter(prefix="/api/visits", tags=["Visitas"])
 
 
-@router.get("/", response_model=List[VisitaResponse])
+@router.get("/", response_model=VisitaPaginatedResponse)
 def list_visits(
     ruta_id: Optional[int] = None,
     fecha: Optional[date] = None,
     estado: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -40,7 +43,33 @@ def list_visits(
         query = query.filter(Visita.fecha == fecha)
     if estado:
         query = query.filter(Visita.estado == estado)
-    return query.order_by(Visita.fecha.desc()).all()
+
+    # Total antes de paginar
+    total = query.count()
+
+    # Eager loading para evitar N+1 al serializar relaciones
+    query = query.options(
+        joinedload(Visita.punto),
+        joinedload(Visita.mercaderista),
+        joinedload(Visita.cliente),
+    )
+
+    items = (
+        query.order_by(Visita.fecha.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    return VisitaPaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+    )
 
 
 @router.post("/", response_model=VisitaResponse, status_code=201)
@@ -75,6 +104,8 @@ def get_visits_with_balances(
     cliente_id: Optional[int] = None,
     mercaderista_id: Optional[int] = None,
     punto_id: Optional[str] = None,
+    page: Optional[int] = None,
+    per_page: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
@@ -98,11 +129,16 @@ def get_visits_with_balances(
     if punto_id:
         query = query.filter(Visita.punto_id == punto_id)
 
-    return query.options(
+    query = query.options(
         joinedload(Visita.punto),
         joinedload(Visita.mercaderista),
         joinedload(Visita.cliente)
-    ).order_by(Visita.fecha.desc()).all()
+    )
+
+    if page is not None and per_page is not None:
+        query = query.offset((page - 1) * per_page).limit(per_page)
+
+    return query.order_by(Visita.fecha.desc()).all()
 
 
 @router.get("/review-list")
@@ -198,37 +234,29 @@ def review_list(
         .all()
     )
 
-    query_tipos = (
-        db.query(
-            Visita.id.label("visita_id"),
-            Foto.id_tipo_foto,
-            func.coalesce(TipoFoto.nombre, func.concat("Tipo ", Foto.id_tipo_foto)).label("label"),
-            func.count(Foto.id).label("total"),
-            func.sum(case((Foto.estado == "Aprobada", 1), else_=0)).label("aprobadas"),
-            func.sum(case((Foto.estado == "Rechazada", 1), else_=0)).label("rechazadas")
+    # Optimización: solo consultar tipos para los IDs de visita obtenidos,
+    # evitando escanear todo el rango de fechas nuevamente
+    visita_ids = [r[0] for r in rows]
+    rows_tipos: list = []
+    if visita_ids:
+        query_tipos = (
+            db.query(
+                Visita.id.label("visita_id"),
+                Foto.id_tipo_foto,
+                func.coalesce(TipoFoto.nombre, func.concat("Tipo ", Foto.id_tipo_foto)).label("label"),
+                func.count(Foto.id).label("total"),
+                func.sum(case((Foto.estado == "Aprobada", 1), else_=0)).label("aprobadas"),
+                func.sum(case((Foto.estado == "Rechazada", 1), else_=0)).label("rechazadas")
+            )
+            .join(Foto, Foto.visita_id == Visita.id)
+            .outerjoin(TipoFoto, TipoFoto.id == Foto.id_tipo_foto)
+            .filter(Visita.id.in_(visita_ids), Foto.id_tipo_foto.isnot(None))
         )
-        .join(Foto, Foto.visita_id == Visita.id)
-        .outerjoin(TipoFoto, TipoFoto.id == Foto.id_tipo_foto)
-        .filter(Visita.fecha >= f_desde, Visita.fecha <= f_hasta, Foto.id_tipo_foto.isnot(None))
-    )
 
-    if cliente_id:
-        query_tipos = query_tipos.filter(Visita.id_cliente == cliente_id)
-    if visible_ids is not None:
-        query_tipos = query_tipos.filter(Visita.id_cliente.in_(visible_ids))
-    if current_user.is_analyst and current_user.id_perfil:
-        analista_id = int(current_user.id_perfil)
-        sub_ac = (
-            db.query(AnalistaCliente.id_cliente)
-            .filter(AnalistaCliente.id_analista == analista_id)
-            .subquery()
+        rows_tipos = (
+            query_tipos.group_by(Visita.id, Foto.id_tipo_foto, TipoFoto.nombre)
+            .all()
         )
-        query_tipos = query_tipos.filter(Visita.id_cliente.in_(sub_ac))
-
-    rows_tipos = (
-        query_tipos.group_by(Visita.id, Foto.id_tipo_foto, TipoFoto.nombre)
-        .all()
-    )
 
     tipos_map: dict = {}
     for r in rows_tipos:
@@ -488,10 +516,14 @@ def save_photo_decisions(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
+    # Batch query: obtener todas las fotos en UNA sola consulta en lugar de N+1
+    foto_ids = [d.get("foto_id") for d in data.decisions if d.get("foto_id")]
+    fotos_map = {f.id: f for f in db.query(Foto).filter(Foto.id.in_(foto_ids)).all()} if foto_ids else {}
+
     for decision in data.decisions:
         foto_id = decision.get("foto_id")
         estado = decision.get("estado")
-        foto = db.query(Foto).filter(Foto.id == foto_id).first()
+        foto = fotos_map.get(foto_id)
         if foto and estado in ("Aprobada", "Rechazada"):
             foto.estado = estado
     db.commit()
