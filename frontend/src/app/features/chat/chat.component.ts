@@ -63,6 +63,7 @@ interface VisitaConChat {
   fecha_visita?: string;
   mercaderista?: string;
   punto?: string;
+  estado?: string;
   ultimo_mensaje?: string;
   fecha_ultimo?: string;
 }
@@ -111,6 +112,10 @@ export class ChatComponent implements OnInit, OnDestroy {
   expandedGrupoId = signal<number | null>(null);
   visitasPorGrupo = signal<Record<number, VisitaConChat[]>>({});
   loadingVisitasGrupo = signal<number | null>(null);
+  // Visitas Revisadas quedan colapsadas aparte, para no saturar la lista de
+  // pendientes -- el chat de la visita se sigue viendo, solo que no está a
+  // la vista por defecto una vez que el analista la marcó Revisada.
+  expandedArchivadasGrupoId = signal<number | null>(null);
 
   setChatTab(tab: 'cliente' | 'equipo'): void {
     this.activeChatTab.set(tab);
@@ -248,6 +253,19 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   visitasDe(g: Grupo): VisitaConChat[] {
     return this.visitasPorGrupo()[g.id_grupo] || [];
+  }
+
+  visitasActivasDe(g: Grupo): VisitaConChat[] {
+    return this.visitasDe(g).filter(v => v.estado !== 'Revisado');
+  }
+
+  visitasArchivadasDe(g: Grupo): VisitaConChat[] {
+    return this.visitasDe(g).filter(v => v.estado === 'Revisado');
+  }
+
+  toggleArchivadas(g: Grupo, ev: Event): void {
+    ev.stopPropagation();
+    this.expandedArchivadasGrupoId.set(this.expandedArchivadasGrupoId() === g.id_grupo ? null : g.id_grupo);
   }
 
   get activeList(): InboxItem[] | any[] {

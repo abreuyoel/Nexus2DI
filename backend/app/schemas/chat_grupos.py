@@ -63,6 +63,7 @@ class VisitaConChatResponse(BaseModel):
     fecha_visita: Optional[str] = None
     mercaderista: Optional[str] = None
     punto: Optional[str] = None
+    estado: Optional[str] = None  # 'Revisado' -> el frontend lo agrupa como archivado
     ultimo_mensaje: Optional[str] = None
     fecha_ultimo: Optional[datetime] = None
 

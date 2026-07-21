@@ -322,7 +322,7 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
 
     rows = db.execute(text(f"""
         SELECT v.id_visita, v.fecha_visita, m.nombre AS mercaderista, p.punto_de_interes,
-               x.ultimo_mensaje, x.fecha_ultimo
+               v.estado, x.ultimo_mensaje, x.fecha_ultimo
         FROM (
             SELECT DISTINCT id_visita FROM CHAT_MENSAJES_GRUPO_VISITA
             WHERE id_cliente = :cid AND tipo_grupo = :tipo
@@ -343,7 +343,7 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
     return [
         VisitaConChatResponse(
             id_visita=r[0], fecha_visita=str(r[1]) if r[1] else None,
-            mercaderista=r[2], punto=r[3], ultimo_mensaje=r[4], fecha_ultimo=r[5],
+            mercaderista=r[2], punto=r[3], estado=r[4], ultimo_mensaje=r[5], fecha_ultimo=r[6],
         )
         for r in rows
     ]
