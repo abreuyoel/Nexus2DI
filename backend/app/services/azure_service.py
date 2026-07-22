@@ -63,11 +63,18 @@ class AzureStorageService:
         return f"https://{settings.AZURE_ACCOUNT_NAME}.blob.core.windows.net/{settings.AZURE_CONTAINER_NAME}/{encoded}"
 
     def get_proxy_url(self, blob_name: str) -> Optional[str]:
-        """Devuelve la URL del proxy interno para bypassear CSP/ngsw en el frontend."""
+        """Devuelve la URL SAS directa de Azure Blob Storage.
+
+        Antes devolvía /api/media/foto?path=... (proxy interno), pero eso
+        forzaba a descargar CADA imagen a través del único worker de uvicorn,
+        colapsando el backend con muchas fotos simultáneas (502/504/OOM).
+
+        La CSP del nginx.conf ya permite *.blob.core.windows.net en img-src
+        y connect-src, así que el navegador puede cargar las imágenes directo.
+        """
         if not blob_name:
             return None
-        encoded = urllib.parse.quote(blob_name, safe="")
-        return f"/api/media/foto?path={encoded}"
+        return self.get_sas_url(blob_name)
 
     def download_blob(self, blob_name: str) -> bytes:
         container = self.client.get_container_client(settings.AZURE_CONTAINER_NAME)
