@@ -89,7 +89,7 @@ export class UsersComponent implements OnInit {
   showAnalystForm = signal(false);
   editingAnalyst = signal<any>(null);
   analystForm = this.fb.group({
-    nombre_analista: ['', Validators.required],
+    nombre: ['', Validators.required],
     id_rol: [2]
   });
 
@@ -135,7 +135,7 @@ export class UsersComponent implements OnInit {
     const nombre = this.quickAnalyst.trim();
     if (!nombre) return;
     this.saving.set(true);
-    this.api.createAnalyst({ nombre_analista: nombre, id_rol: 2 }).subscribe({
+    this.api.createAnalyst({ nombre: nombre, id_rol: 2 }).subscribe({
       next: () => { this.saving.set(false); this.quickAnalyst = ''; this.api.getAnalystsList().subscribe(d => this.analysts.set(d)); this.snack.open('Analista creado', 'OK', { duration: 2500 }); },
       error: () => { this.saving.set(false); this.snack.open('Error al crear analista', 'OK', { duration: 3000 }); },
     });
@@ -273,7 +273,7 @@ export class UsersComponent implements OnInit {
 
   editAnalyst(a: any) {
     this.editingAnalyst.set(a);
-    this.analystForm.patchValue({ nombre_analista: a.nombre, id_rol: a.id_rol });
+    this.analystForm.patchValue({ nombre: a.nombre, id_rol: a.id_rol });
     this.showAnalystForm.set(true);
   }
 

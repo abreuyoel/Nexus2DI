@@ -379,14 +379,14 @@ async def approve_photos(
 ):
     _assert_can_manage_photos(db, current_user, data.foto_ids)
     
-    ids_str = ",".join(str(i) for i in data.foto_ids)
-    conteo = db.execute(text(f"""
-        SELECT v.id, v.id_cliente, COUNT(f.id), v.punto_interes
-        FROM FOTOS_TOTALES f
-        JOIN Visitas v ON v.id = f.id_visita
-        WHERE f.id IN ({ids_str})
-        GROUP BY v.id, v.id_cliente, v.punto_interes
-    """)).fetchall()
+    from sqlalchemy import func
+    conteo = (
+        db.query(Visita.id, Visita.id_cliente, func.count(Foto.id), Visita.punto_id)
+        .join(Foto, Foto.visita_id == Visita.id)
+        .filter(Foto.id.in_(data.foto_ids))
+        .group_by(Visita.id, Visita.id_cliente, Visita.punto_id)
+        .all()
+    )
 
     updated = db.query(Foto).filter(Foto.id.in_(data.foto_ids)).update(
         {"estado": "Aprobada"},
