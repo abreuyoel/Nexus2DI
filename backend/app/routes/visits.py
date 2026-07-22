@@ -77,22 +77,24 @@ def get_visits_with_balances(
     if current_user.is_analyst and current_user.id_perfil:
         # analistas_rutas -> RUTA_PROGRAMACION, no ANALISTAS_CLIENTE
         # (desactualizada) — mismo criterio que /review-list y centro_mando.
-        # Se escopa por (punto_interes, cliente), no solo cliente: filtrar
-        # solo por cliente dejaba ver visitas de rutas de otros analistas
-        # para el mismo cliente.
+        # Un mismo PDV puede estar cubierto por más de una ruta activa, así
+        # que se exige también que el mercaderista de la visita esté
+        # asignado (MERCADERISTAS_RUTAS) a esa misma ruta del analista —
+        # ver comentario largo en review_list().
         managed_rows = db.execute(text("""
-            SELECT DISTINCT rp.id_punto_interes, rp.id_cliente
+            SELECT DISTINCT rp.id_punto_interes, rp.id_cliente, mr.id_mercaderista
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+            JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
             WHERE ar.id_analista = :aid AND rp.activa = 1
         """), {"aid": current_user.id_perfil}).fetchall()
-        managed_pairs = [(r[0], r[1]) for r in managed_rows if r[0] is not None and r[1] is not None]
-        if not managed_pairs:
+        managed_triples = [(r[0], r[1], r[2]) for r in managed_rows if r[0] is not None and r[1] is not None]
+        if not managed_triples:
             return []
-        # OR de pares (no tuple_().in_()): SQL Server no soporta row-value IN.
+        # OR de tripletas (no tuple_().in_()): SQL Server no soporta row-value IN.
         query = query.filter(or_(*[
-            and_(Visita.punto_id == pid, Visita.id_cliente == cid)
-            for pid, cid in managed_pairs
+            and_(Visita.punto_id == pid, Visita.id_cliente == cid, Visita.mercaderista_id == mid)
+            for pid, cid, mid in managed_triples
         ]))
 
     if fecha_inicio:
@@ -147,13 +149,24 @@ def review_list(
         # por cliente dejaba ver TODAS las visitas de ese cliente, incluidas
         # las de rutas de otros analistas — mismo criterio que mk_analyst()
         # en centro_mando.py, que sí escopa por punto de interés.
+        # Un mismo PDV puede estar cubierto por más de una ruta activa (de
+        # ahí el MIN(rn.ruta) en rinfo más abajo) — filtrar solo por PDV+
+        # cliente dejaba colar visitas de OTRA ruta que también sirve ese
+        # PDV pero que no es del analista. Se exige además que la ruta
+        # coincidente sea la misma que tiene asignada el mercaderista que
+        # hizo la visita (MERCADERISTAS_RUTAS), no solo que exista alguna
+        # ruta del analista que toque ese PDV.
         analyst_join = """
             JOIN (
-                SELECT DISTINCT rp.id_punto_interes, rp.id_cliente
+                SELECT DISTINCT rp.id_punto_interes, rp.id_cliente, rp.id_ruta
                 FROM analistas_rutas ar
                 JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
                 WHERE ar.id_analista = :aid AND rp.activa = 1
             ) ac ON ac.id_punto_interes = v.identificador_punto_interes AND ac.id_cliente = v.id_cliente
+                 AND EXISTS (
+                     SELECT 1 FROM MERCADERISTAS_RUTAS mr
+                     WHERE mr.id_ruta = ac.id_ruta AND mr.id_mercaderista = v.id_mercaderista
+                 )
         """
         params["aid"] = current_user.id_perfil
 
@@ -551,16 +564,23 @@ def get_visit_balances(
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     
     if current_user.is_analyst and current_user.id_perfil:
-        # Escopado por (punto_interes, cliente), no solo cliente: filtrar
-        # solo por cliente dejaba modificar visitas de rutas de otros
-        # analistas para el mismo cliente.
+        # Escopado por (punto_interes, cliente, mercaderista): un mismo PDV
+        # puede estar cubierto por más de una ruta activa, así que además
+        # de que el analista tenga una ruta que sirva ese PDV+cliente, se
+        # exige que el mercaderista de la visita esté asignado a esa misma
+        # ruta (MERCADERISTAS_RUTAS) — ver comentario largo en review_list().
         is_managed = db.execute(text("""
             SELECT TOP 1 1
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+            JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
             WHERE ar.id_analista = :aid AND rp.activa = 1
               AND rp.id_cliente = :cid AND rp.id_punto_interes = :pid
-        """), {"aid": current_user.id_perfil, "cid": visita.id_cliente, "pid": visita.punto_id}).first()
+              AND mr.id_mercaderista = :mid
+        """), {
+            "aid": current_user.id_perfil, "cid": visita.id_cliente,
+            "pid": visita.punto_id, "mid": visita.mercaderista_id,
+        }).first()
         if not is_managed:
             raise HTTPException(status_code=403, detail="No tiene permiso para ver esta visita")
 
