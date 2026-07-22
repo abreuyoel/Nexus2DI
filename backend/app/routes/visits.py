@@ -142,6 +142,15 @@ def review_list(
         if not visible_ids:
             return []
         where += f" AND v.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
+    # Las visitas de auditoría (mercaderista asignado a una ruta con
+    # servicio tipo "auditoría") son un control de calidad aparte, no
+    # gestión regular — no deben aparecer en la cola de revisión de nadie.
+    where += """ AND NOT EXISTS (
+        SELECT 1 FROM MERCADERISTAS_RUTAS mr_aud
+        JOIN RUTAS_NUEVAS rn_aud ON rn_aud.id_ruta = mr_aud.id_ruta
+        WHERE mr_aud.id_mercaderista = v.id_mercaderista
+          AND rn_aud.servicio LIKE '%auditor%'
+    )"""
     analyst_join = ""
     if current_user.is_analyst and current_user.id_perfil:
         # analistas_rutas -> RUTA_PROGRAMACION es la fuente de verdad. Se
