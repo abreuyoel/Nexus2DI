@@ -20,6 +20,9 @@ ANALYST_MODULES = [
     "data",
     # Submódulos de rutas
     "routes.asignar_merc",
+]
+
+MODULES_TO_REMOVE = [
     "routes.asignar_analista",
     "routes.asignar_supervisor",
 ]
@@ -32,8 +35,10 @@ def main():
 
         count_updated = 0
         count_created = 0
+        count_deleted = 0
 
         for analista in analistas:
+            # Asignar/actualizar módulos permitidos
             for mod in ANALYST_MODULES:
                 perm = db.query(UserPermission).filter(
                     UserPermission.user_id == analista.id,
@@ -68,9 +73,19 @@ def main():
                     )
                     db.add(perm)
                     count_created += 1
+            
+            # Eliminar submódulos que no deben tener
+            for mod in MODULES_TO_REMOVE:
+                perm = db.query(UserPermission).filter(
+                    UserPermission.user_id == analista.id,
+                    UserPermission.module == mod
+                ).first()
+                if perm:
+                    db.delete(perm)
+                    count_deleted += 1
 
         db.commit()
-        print(f"✅ Permisos creados: {count_created}, actualizados: {count_updated}")
+        print(f"✅ Permisos creados: {count_created}, actualizados: {count_updated}, eliminados: {count_deleted}")
         print(f"   Módulos asignados a cada analista: {', '.join(ANALYST_MODULES)}")
 
     except Exception as e:
