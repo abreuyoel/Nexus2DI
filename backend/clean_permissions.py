@@ -2,6 +2,8 @@ import os
 from sqlalchemy import text
 from app.db.session import SessionLocal
 from app.models.user import Usuario, UserPermission
+from app.models.sesion import SesionActiva
+from app.models.solicitud import Solicitud
 
 def main():
     db = SessionLocal()
