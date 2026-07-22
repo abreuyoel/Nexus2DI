@@ -55,15 +55,6 @@ export class AuthService {
     return user ? roles.includes(user.rol) : false;
   }
 
-  /** Decide si un usuario puede ACCEDER a un módulo/ruta.
-   *  - Admin: siempre.
-   *  - Si existe un registro explícito en DB (Permitido o Denegado), manda el permiso (can_read).
-   *  - Si NO existe, hereda del rol por defecto. */
-  canAccess(clave: string, roles: string[] = []): boolean {
-    const u = this.currentUser();
-    if (!u) return false;
-    if (u.is_admin || u.rol === 'admin') return true;
-    
   /** ¿Puede el usuario 'read' | 'write' | 'delete' sobre la clave del módulo/botón?
    *  Admin = todo. Si no hay permiso para la clave → false (a menos que lo implementemos por rol). */
   can(clave: string, action: 'read' | 'write' | 'delete' = 'read'): boolean {
@@ -73,13 +64,8 @@ export class AuthService {
     
     const p = (u.permisos || []).find((x) => x.module === clave);
     
-    // Si NO hay permiso explícito, podríamos heredar de un mapa de roles,
-    // pero por ahora, si es un submódulo y no está explícito, asumimos false
-    // para mantener la seguridad, o true si queremos que todo lo no explícito sea visible.
-    // Como la nueva directriz es "si no se dice nada, hereda", para botones específicos
-    // necesitamos saber si el rol tiene acceso. Si no tenemos la lista de roles, 
-    // asumiremos TRUE por defecto si es una lectura básica? No, es peligroso.
-    // Por ahora dejaremos que retorne false si no existe y no tenemos roles.
+    // Si NO hay permiso explícito, asumimos false para submódulos específicos 
+    // a menos que desarrollemos un mapa completo de roles.
     if (!p) return false;
     
     if (action === 'write') return !!p.can_write;
