@@ -49,15 +49,17 @@ def get_report_summary(
     from sqlalchemy import func, case
     if total:
         counts = db.query(
+            func.count(Foto.id).label("total"),
             func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
             func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
             func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes")
         ).filter(Foto.visita_id.in_(visita_ids_subq)).first()
+        fotos_total = counts.total or 0
         fotos_aprobadas = counts.aprobadas or 0
         fotos_rechazadas = counts.rechazadas or 0
         fotos_pendientes = counts.pendientes or 0
     else:
-        fotos_aprobadas = fotos_rechazadas = fotos_pendientes = 0
+        fotos_total = fotos_aprobadas = fotos_rechazadas = fotos_pendientes = 0
 
     return {
         "periodo": {"inicio": str(fecha_inicio), "fin": str(fecha_fin)},
@@ -68,7 +70,7 @@ def get_report_summary(
             "porcentaje_completadas": round(completadas / total * 100, 1) if total > 0 else 0,
         },
         "fotos": {
-            "total": len(fotos),
+            "total": fotos_total,
             "aprobadas": fotos_aprobadas,
             "rechazadas": fotos_rechazadas,
             "pendientes": fotos_pendientes,
