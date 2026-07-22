@@ -173,6 +173,17 @@ def update_user_permissions(
     current_user: Usuario = Depends(require_admin),
 ):
     target = db.query(Usuario).filter(Usuario.id == user_id).first()
+    
+    # 1. Obtener los módulos enviados desde el frontend (los que no son 'inherit')
+    sent_modules = [p['module'] for p in data.permissions]
+    
+    # 2. Borrar los permisos existentes que ya no están en la lista (ahora son 'inherit')
+    db.query(UserPermission).filter(
+        UserPermission.user_id == user_id,
+        UserPermission.module.notin_(sent_modules) if sent_modules else True
+    ).delete(synchronize_session=False)
+
+    # 3. Actualizar o insertar los enviados
     for p in data.permissions:
         existing = db.query(UserPermission).filter(
             UserPermission.user_id == user_id,
