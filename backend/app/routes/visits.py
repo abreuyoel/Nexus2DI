@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text, bindparam
+from sqlalchemy import text, bindparam, and_, or_
 from typing import List, Optional
 from datetime import date, timedelta
 from app.db.session import get_db
@@ -77,14 +77,23 @@ def get_visits_with_balances(
     if current_user.is_analyst and current_user.id_perfil:
         # analistas_rutas -> RUTA_PROGRAMACION, no ANALISTAS_CLIENTE
         # (desactualizada) — mismo criterio que /review-list y centro_mando.
+        # Se escopa por (punto_interes, cliente), no solo cliente: filtrar
+        # solo por cliente dejaba ver visitas de rutas de otros analistas
+        # para el mismo cliente.
         managed_rows = db.execute(text("""
-            SELECT DISTINCT rp.id_cliente
+            SELECT DISTINCT rp.id_punto_interes, rp.id_cliente
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
             WHERE ar.id_analista = :aid AND rp.activa = 1
         """), {"aid": current_user.id_perfil}).fetchall()
-        managed_ids = [r[0] for r in managed_rows]
-        query = query.filter(Balance.id_cliente.in_(managed_ids))
+        managed_pairs = [(r[0], r[1]) for r in managed_rows if r[0] is not None and r[1] is not None]
+        if not managed_pairs:
+            return []
+        # OR de pares (no tuple_().in_()): SQL Server no soporta row-value IN.
+        query = query.filter(or_(*[
+            and_(Visita.punto_id == pid, Visita.id_cliente == cid)
+            for pid, cid in managed_pairs
+        ]))
 
     if fecha_inicio:
         query = query.filter(Visita.fecha >= fecha_inicio)
@@ -133,17 +142,18 @@ def review_list(
         where += f" AND v.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
     analyst_join = ""
     if current_user.is_analyst and current_user.id_perfil:
-        # analistas_rutas -> RUTA_PROGRAMACION es la fuente de verdad — antes
-        # esto usaba ANALISTAS_CLIENTE (desactualizada) sola, sin cruce con
-        # rutas: un analista con ruta asignada pero sin fila ahí veía 0
-        # visitas para ese cliente pese a tener acceso real.
+        # analistas_rutas -> RUTA_PROGRAMACION es la fuente de verdad. Se
+        # cruza por id_punto_interes (no solo por id_cliente): filtrar solo
+        # por cliente dejaba ver TODAS las visitas de ese cliente, incluidas
+        # las de rutas de otros analistas — mismo criterio que mk_analyst()
+        # en centro_mando.py, que sí escopa por punto de interés.
         analyst_join = """
             JOIN (
-                SELECT DISTINCT rp.id_cliente
+                SELECT DISTINCT rp.id_punto_interes, rp.id_cliente
                 FROM analistas_rutas ar
                 JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
                 WHERE ar.id_analista = :aid AND rp.activa = 1
-            ) ac ON ac.id_cliente = v.id_cliente
+            ) ac ON ac.id_punto_interes = v.identificador_punto_interes AND ac.id_cliente = v.id_cliente
         """
         params["aid"] = current_user.id_perfil
 
@@ -541,12 +551,16 @@ def get_visit_balances(
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     
     if current_user.is_analyst and current_user.id_perfil:
+        # Escopado por (punto_interes, cliente), no solo cliente: filtrar
+        # solo por cliente dejaba modificar visitas de rutas de otros
+        # analistas para el mismo cliente.
         is_managed = db.execute(text("""
             SELECT TOP 1 1
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
-            WHERE ar.id_analista = :aid AND rp.activa = 1 AND rp.id_cliente = :cid
-        """), {"aid": current_user.id_perfil, "cid": visita.id_cliente}).first()
+            WHERE ar.id_analista = :aid AND rp.activa = 1
+              AND rp.id_cliente = :cid AND rp.id_punto_interes = :pid
+        """), {"aid": current_user.id_perfil, "cid": visita.id_cliente, "pid": visita.punto_id}).first()
         if not is_managed:
             raise HTTPException(status_code=403, detail="No tiene permiso para ver esta visita")
 
