@@ -196,14 +196,14 @@ def review_list(
         JOIN MERCADERISTAS m ON v.id_mercaderista = m.id_mercaderista
         {analyst_join}
         LEFT JOIN FOTOS_TOTALES f ON f.id_visita = v.id_visita
-        LEFT JOIN (
-            SELECT rp.id_punto_interes, MIN(rn.ruta) AS ruta
+        OUTER APPLY (
+            SELECT MIN(rn.ruta) AS ruta
             FROM RUTA_PROGRAMACION rp JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
-            WHERE rp.activa = 1 GROUP BY rp.id_punto_interes
-        ) rinfo ON rinfo.id_punto_interes = p.identificador
-        LEFT JOIN (
-            SELECT id_visita, COUNT(*) AS n FROM CHAT_MENSAJES_CLIENTE GROUP BY id_visita
-        ) chat ON chat.id_visita = v.id_visita
+            WHERE rp.activa = 1 AND rp.id_punto_interes = p.identificador
+        ) rinfo
+        OUTER APPLY (
+            SELECT COUNT(*) AS n FROM CHAT_MENSAJES_CLIENTE c WHERE c.id_visita = v.id_visita
+        ) chat
         {where}
         GROUP BY v.id_visita, c.cliente, c.id_cliente, p.punto_de_interes, p.identificador,
                  p.ciudad, rinfo.ruta, m.nombre, v.fecha_visita

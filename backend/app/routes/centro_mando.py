@@ -385,8 +385,8 @@ def resumen_dia(
                        MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
                        MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_des
                 FROM VISITAS_MERCADERISTA vm
-                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
-                WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
+                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
+                WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?
                   AND vm.id_cliente = ?
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             """
@@ -398,8 +398,8 @@ def resumen_dia(
                        MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
                        MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_des
                 FROM VISITAS_MERCADERISTA vm
-                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
-                WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?{cli_filter_vm}
+                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
+                WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?{cli_filter_vm}
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             """
             ev_rows = execute_query(db, estado_visita_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
@@ -683,47 +683,41 @@ def get_activaciones(
             JOIN PUNTOS_INTERES1 pin ON vm.identificador_punto_interes = pin.identificador
             JOIN MERCADERISTAS  m   ON vm.id_mercaderista             = m.id_mercaderista
 
-            LEFT JOIN (
-                SELECT ft.id_visita, ft.id_foto, ft.file_path,
-                       ft.fecha_registro, ft.Estado,
-                       ROW_NUMBER() OVER (PARTITION BY ft.id_visita
-                                          ORDER BY ft.fecha_registro DESC) AS rn
+            OUTER APPLY (
+                SELECT TOP 1 ft.id_visita, ft.id_foto, ft.file_path,
+                       ft.fecha_registro, ft.Estado
                 FROM FOTOS_TOTALES ft
-                WHERE ft.id_tipo_foto = 5
-            ) act ON act.id_visita = vm.id_visita AND act.rn = 1
+                WHERE ft.id_visita = vm.id_visita AND ft.id_tipo_foto = 5
+                ORDER BY ft.fecha_registro DESC
+            ) act
 
-            LEFT JOIN (
-                SELECT ft.id_visita, ft.id_foto, ft.file_path,
-                       ft.fecha_registro, ft.Estado,
-                       ROW_NUMBER() OVER (PARTITION BY ft.id_visita
-                                          ORDER BY ft.fecha_registro DESC) AS rn
+            OUTER APPLY (
+                SELECT TOP 1 ft.id_visita, ft.id_foto, ft.file_path,
+                       ft.fecha_registro, ft.Estado
                 FROM FOTOS_TOTALES ft
-                WHERE ft.id_tipo_foto = 6
-            ) des ON des.id_visita = vm.id_visita AND des.rn = 1
+                WHERE ft.id_visita = vm.id_visita AND ft.id_tipo_foto = 6
+                ORDER BY ft.fecha_registro DESC
+            ) des
 
-            LEFT JOIN (
-                SELECT rp2.id_punto_interes,
+            OUTER APPLY (
+                SELECT TOP 1 rp2.id_punto_interes,
                        rn2.ruta,
                        rn2.id_ruta,
                        a2.nombre_analista AS analista,
-                       rn2.cuadrante,
-                       ROW_NUMBER() OVER (PARTITION BY rp2.id_punto_interes
-                                          ORDER BY rn2.id_ruta) AS rn
+                       rn2.cuadrante
                 FROM RUTA_PROGRAMACION rp2
                 JOIN RUTAS_NUEVAS rn2 ON rp2.id_ruta  = rn2.id_ruta
                 LEFT JOIN analistas_rutas ar2 ON ar2.id_ruta = rn2.id_ruta
                 LEFT JOIN analistas a2 ON a2.id_analista = ar2.id_analista
-                WHERE rp2.activa = 1
-            ) ruta_pre ON ruta_pre.id_punto_interes = pin.identificador
-                      AND ruta_pre.rn = 1
+                WHERE rp2.id_punto_interes = pin.identificador AND rp2.activa = 1
+                ORDER BY rn2.id_ruta
+            ) ruta_pre
 
-            LEFT JOIN (
-                SELECT id_visita,
-                       SUM(CASE WHEN visto = 0 AND tipo_mensaje = 'usuario' THEN 1 ELSE 0 END)
-                           AS no_leidos
+            OUTER APPLY (
+                SELECT SUM(CASE WHEN visto = 0 AND tipo_mensaje = 'usuario' THEN 1 ELSE 0 END) AS no_leidos
                 FROM CHAT_MENSAJES
-                GROUP BY id_visita
-            ) chat_pre ON chat_pre.id_visita = vm.id_visita
+                WHERE id_visita = vm.id_visita
+            ) chat_pre
 
             WHERE (act.id_foto IS NOT NULL OR des.id_foto IS NOT NULL)
         """ + rango_filter + af + " ORDER BY vm.fecha_visita DESC"
