@@ -199,7 +199,9 @@ def review_list(
         OUTER APPLY (
             SELECT MIN(rn.ruta) AS ruta
             FROM RUTA_PROGRAMACION rp JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
+            JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
             WHERE rp.activa = 1 AND rp.id_punto_interes = p.identificador
+              AND mr.id_mercaderista = v.id_mercaderista
         ) rinfo
         OUTER APPLY (
             SELECT COUNT(*) AS n FROM CHAT_MENSAJES_CLIENTE c WHERE c.id_visita = v.id_visita

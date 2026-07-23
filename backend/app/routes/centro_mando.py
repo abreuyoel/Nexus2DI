@@ -707,9 +707,11 @@ def get_activaciones(
                        rn2.cuadrante
                 FROM RUTA_PROGRAMACION rp2
                 JOIN RUTAS_NUEVAS rn2 ON rp2.id_ruta  = rn2.id_ruta
+                JOIN MERCADERISTAS_RUTAS mr2 ON mr2.id_ruta = rn2.id_ruta
                 LEFT JOIN analistas_rutas ar2 ON ar2.id_ruta = rn2.id_ruta
                 LEFT JOIN analistas a2 ON a2.id_analista = ar2.id_analista
                 WHERE rp2.id_punto_interes = pin.identificador AND rp2.activa = 1
+                  AND mr2.id_mercaderista = vm.id_mercaderista
                 ORDER BY rn2.id_ruta
             ) ruta_pre
 
