@@ -12,11 +12,7 @@ export class AuthService {
 
   currentUser = signal<User | null>(this.loadUser());
 
-  constructor(private http: HttpClient, private router: Router) {
-    if (this.getToken()) {
-      this.getMe().subscribe({ error: () => {} });
-    }
-  }
+  constructor(private http: HttpClient, private router: Router) {}
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials).pipe(
@@ -41,7 +37,7 @@ export class AuthService {
     return this.http.get<User>(`${environment.apiUrl}/auth/me`).pipe(
       tap((user: User) => {
         this.currentUser.set(user);
-        localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+        sessionStorage.setItem(this.USER_KEY, JSON.stringify(user));
       })
     );
   }
@@ -59,44 +55,40 @@ export class AuthService {
     return user ? roles.includes(user.rol) : false;
   }
 
-  /** ¿El usuario tiene registros de permisos configurados? (si no, se cae al rol) */
-  hasAnyPerms(): boolean {
-    const u = this.currentUser();
-    return !!(u && u.permisos && u.permisos.length > 0);
-  }
-
   /** ¿Puede el usuario 'read' | 'write' | 'delete' sobre la clave del módulo/botón?
-   *  Admin = todo. Si no hay permiso para la clave → false. */
+   *  Admin = todo. Si no hay permiso para la clave → false (a menos que lo implementemos por rol). */
   can(clave: string, action: 'read' | 'write' | 'delete' = 'read'): boolean {
     const u = this.currentUser();
     if (!u) return false;
-    if (u.is_admin) return true;
+    if (u.is_admin || u.rol === 'admin') return true;
+    
     const p = (u.permisos || []).find((x) => x.module === clave);
+    
+    // Si NO hay permiso explícito, asumimos false para submódulos específicos 
+    // a menos que desarrollemos un mapa completo de roles.
     if (!p) return false;
+    
     if (action === 'write') return !!p.can_write;
     if (action === 'delete') return !!p.can_delete;
     return !!p.can_read;
   }
 
-  /** ¿Tiene el usuario el flag can_see_all activo para un módulo específico?
-   *  No hace bypass para admin: debe tener explícitamente can_see_all=true
-   *  en la tabla usuario_permisos. */
-  canSeeAll(clave: string): boolean {
-    const u = this.currentUser();
-    if (!u) return false;
-    const p = (u.permisos || []).find((x) => x.module === clave);
-    return !!p?.can_see_all;
-  }
-
   /** Decide si un usuario puede ACCEDER a un módulo/ruta.
    *  - Admin: siempre.
-   *  - Si tiene permisos configurados: manda el permiso (can_read de la clave).
-   *  - Si NO tiene permisos: se cae al rol (comportamiento previo, no rompe nada). */
+   *  - Si existe un registro explícito en DB (Permitido o Denegado), manda el permiso (can_read).
+   *  - Si NO existe, hereda del rol por defecto. */
   canAccess(clave: string, roles: string[] = []): boolean {
     const u = this.currentUser();
     if (!u) return false;
     if (u.is_admin || u.rol === 'admin') return true;
-    if (this.hasAnyPerms()) return this.can(clave, 'read');
+    
+    // 1. Buscar si hay una sobrescritura explícita
+    const p = (u.permisos || []).find((x) => x.module === clave);
+    if (p) {
+      return !!p.can_read;
+    }
+
+    // 2. Si no hay sobrescritura, heredar del rol
     return roles.length === 0 || roles.includes(u.rol);
   }
 
@@ -129,7 +121,6 @@ export class AuthService {
 
   private clearSession(): void {
     localStorage.removeItem(this.TOKEN_KEY);
-    localStorage.removeItem(this.USER_KEY);
     sessionStorage.removeItem(this.USER_KEY);
     this.currentUser.set(null);
     this.router.navigateByUrl('/login');
@@ -137,11 +128,10 @@ export class AuthService {
 
   private loadUser(): User | null {
     try {
-      const raw = localStorage.getItem(this.USER_KEY) || sessionStorage.getItem(this.USER_KEY);
+      const raw = sessionStorage.getItem(this.USER_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
     }
   }
-
 }

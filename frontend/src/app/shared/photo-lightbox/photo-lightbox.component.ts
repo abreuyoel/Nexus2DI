@@ -1,10 +1,12 @@
 import {
   Component, HostListener, OnChanges, SimpleChanges,
-  computed, signal, input, output,
+  computed, signal, input, output, inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { AuthImgDirective } from '../directives/auth-img.directive';
+import { AuthImageCacheService } from '../../core/services/auth-image-cache.service';
 
 /** Forma mínima de foto que el lightbox necesita.
  *  Cualquier objeto con `url` (o `file_path`) sirve. */
@@ -18,7 +20,7 @@ export interface LightboxPhoto {
 @Component({
   selector: 'app-photo-lightbox',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [CommonModule, MatIconModule, MatProgressSpinnerModule, AuthImgDirective],
   template: `
 @if (open()) {
   <div class="pl-backdrop" (click)="close()"></div>
@@ -46,7 +48,7 @@ export interface LightboxPhoto {
 
         <div class="pl-img-wrap">
           @if (currentUrl()) {
-            <img [src]="currentUrl()"
+            <img [appAuthSrc]="currentUrl()"
                  alt="Foto"
                  (load)="onImgLoad()"
                  (error)="onImgError()"
@@ -178,6 +180,8 @@ export interface LightboxPhoto {
   `],
 })
 export class PhotoLightboxComponent implements OnChanges {
+  private cacheSvc = inject(AuthImageCacheService);
+
   open = input<boolean>(false);
   photos = input<LightboxPhoto[]>([]);
   startIndex = input<number>(0);
@@ -250,7 +254,13 @@ export class PhotoLightboxComponent implements OnChanges {
     const fotos = this.photos();
     for (const i of [index, index + 1, index - 1, index + 2]) {
       const url = this.urlOf(fotos[i]);
-      if (url && !this.preloadCache.has(url)) {
+      if (!url || this.preloadCache.has(url)) continue;
+
+      if (url.startsWith('/api/media/')) {
+        // Requiere el token de auth: se descarga vía HttpClient (mismo
+        // mecanismo que AuthImgDirective), no con un <img> nativo.
+        this.cacheSvc.get(url).subscribe(() => this.preloadCache.add(url));
+      } else {
         const img = new Image();
         img.onload = () => this.preloadCache.add(url);
         img.src = url;

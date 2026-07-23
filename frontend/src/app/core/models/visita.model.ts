@@ -32,15 +32,6 @@ export interface Foto {
   exif_timestamp?: string;
   camera_model?: string;
   created_at?: string;
-  fecha_registro?: string;
-  revisada_por?: string;
-  fecha_revision?: string;
-  comentario?: string;
-  ultimo_rechazo_por?: string;
-  ultima_fecha_rechazo?: string;
-  mercaderista_nombre?: string;
-  mercaderista_cedula?: string;
-  fecha_visita?: string;
 }
 
 export interface Balance {
@@ -110,12 +101,4 @@ export interface PuntoInteres {
   longitud?: string;
   rif?: string;
   radio?: string;
-}
-
-export interface VisitaPaginatedResponse {
-  items: Visita[];
-  total: number;
-  page: number;
-  per_page: number;
-  total_pages: number;
 }
