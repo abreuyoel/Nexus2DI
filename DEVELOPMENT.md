@@ -175,6 +175,7 @@ Ejecútalo desde el directorio `backend` con el entorno virtual activado:
 ```powershell
 python seed_admin.py
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+source .venv/Scripts/activate
 
 bash
 

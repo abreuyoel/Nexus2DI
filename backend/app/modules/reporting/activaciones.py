@@ -680,7 +680,6 @@ def get_activaciones(
             .outerjoin(act4_alias, act4_alias.c.visita_id == Visita.id)
             .outerjoin(des4_alias, des4_alias.c.visita_id == Visita.id)
             .filter(Visita.fecha >= date_limit)
-            .filter(exists_foto)
         )
         if cliente_id:
             q_gpd = q_gpd.filter(Cliente.id == cliente_id)

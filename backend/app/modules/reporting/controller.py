@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
@@ -46,11 +46,20 @@ def get_report_summary(
     completadas = sum(1 for v in visitas if v.estado == "completada")
     pendientes = sum(1 for v in visitas if v.estado == "pendiente")
 
-    visita_ids = [v.id for v in visitas]
-    fotos = db.query(Foto).filter(Foto.visita_id.in_(visita_ids)).all() if visita_ids else []
-    fotos_aprobadas = sum(1 for f in fotos if f.estado == "aprobada")
-    fotos_rechazadas = sum(1 for f in fotos if f.estado == "rechazada")
-    fotos_pendientes = sum(1 for f in fotos if f.estado == "pendiente")
+    visita_ids_subq = query.with_entities(Visita.id)
+    if total:
+        counts = db.query(
+            func.count(Foto.id).label("total"),
+            func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
+            func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
+            func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes")
+        ).filter(Foto.visita_id.in_(visita_ids_subq)).first()
+        fotos_total = counts.total or 0
+        fotos_aprobadas = counts.aprobadas or 0
+        fotos_rechazadas = counts.rechazadas or 0
+        fotos_pendientes = counts.pendientes or 0
+    else:
+        fotos_total = fotos_aprobadas = fotos_rechazadas = fotos_pendientes = 0
 
     return ReportSummaryResponse(
         periodo=PeriodoDto(inicio=str(fecha_inicio), fin=str(fecha_fin)),
@@ -61,7 +70,7 @@ def get_report_summary(
             porcentaje_completadas=round(completadas / total * 100, 1) if total > 0 else 0.0,
         ),
         fotos=SummaryFotosDto(
-            total=len(fotos),
+            total=fotos_total,
             aprobadas=fotos_aprobadas,
             rechazadas=fotos_rechazadas,
             pendientes=fotos_pendientes,

@@ -18,6 +18,14 @@ export interface Visita {
   mercaderista?: Mercaderista;
 }
 
+export interface VisitaPaginatedResponse {
+  items: Visita[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
 export interface Foto {
   id: number;
   visita_id: number;
@@ -32,6 +40,13 @@ export interface Foto {
   exif_timestamp?: string;
   camera_model?: string;
   created_at?: string;
+  fecha_registro?: string;
+  mercaderista_nombre?: string;
+  mercaderista_cedula?: string;
+  fecha_visita?: string;
+  fecha_revision?: string;
+  ultima_fecha_rechazo?: string;
+  comentario?: string;
 }
 
 export interface Balance {

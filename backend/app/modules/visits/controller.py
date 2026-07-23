@@ -1,7 +1,7 @@
 from datetime import date, timedelta, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, case
+from sqlalchemy import func, case, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
