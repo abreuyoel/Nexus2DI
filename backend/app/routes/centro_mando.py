@@ -58,9 +58,11 @@ def mk_analyst(is_analyst: bool, analista_id: int, vm_a='vm', pin_a='pin', c_a='
     f = f"""
     AND EXISTS (SELECT 1 FROM RUTA_PROGRAMACION rp_a
         JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
+        JOIN MERCADERISTAS_RUTAS mr_a ON mr_a.id_ruta = rp_a.id_ruta
         WHERE rp_a.id_punto_interes = {pin_a}.identificador
           AND rp_a.id_cliente = {c_a}.id_cliente
-          AND rp_a.activa = 1 AND ar_a.id_analista = ?)
+          AND rp_a.activa = 1 AND ar_a.id_analista = ?
+          AND mr_a.id_mercaderista = {vm_a}.id_mercaderista)
     """
     return f, [analista_id]
 
