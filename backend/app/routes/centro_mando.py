@@ -903,7 +903,16 @@ def get_activaciones(
         planned_merc_pdvs: dict = {}   # mid -> set id_punto
         planned_merc_clis: dict = {}   # mid -> set id_cliente
         if dias_rango:
-            af_p, ap_p = mk_analyst(is_analyst, analista_id, 'vmx', 'pin', 'c')
+            # 'm' (MERCADERISTAS), no 'vmx' -- este query arma "pendientes"
+            # desde la programación de ruta (MERCADERISTAS/RUTA_PROGRAMACION),
+            # no tiene VISITAS_MERCADERISTA en el FROM. El alias 'vmx' no
+            # existía en esta consulta -- pyodbc tiraba 42000 "multi-part
+            # identifier vmx.id_mercaderista could not be bound" y tumbaba
+            # TODO /activaciones con 500 para cualquier analista, en
+            # cualquier fecha (Por Mercaderista, Gestión por Día, Pendientes,
+            # Todas las visitas y las tarjetas Por Punto/Por Cliente
+            # dependen todas de este mismo endpoint).
+            af_p, ap_p = mk_analyst(is_analyst, analista_id, 'm', 'pin', 'c')
             ph_dias = ",".join("?" for _ in dias_rango)
             cli_filter = " AND rp.id_cliente = ?" if cliente_id else ""
             pend_query = f"""
