@@ -723,8 +723,16 @@ def get_activaciones(
                 WHERE id_visita = vm.id_visita
             ) chat_pre
 
-            WHERE (act.id_foto IS NOT NULL OR des.id_foto IS NOT NULL)
+            WHERE 1=1
         """ + rango_filter + af + " ORDER BY vm.fecha_visita DESC"
+        # (antes exigía act.id_foto/des.id_foto no nulos acá -- pero eso
+        # filtraba la fila ANTES de que el bloque "Tradex" de abajo pudiera
+        # heredarle la foto desde otra visita del mismo punto/mercaderista/
+        # día. Resultado: si el PDV de un cliente ya fue activado por otro
+        # cliente ese día, su propia visita nunca entraba a "rows" y
+        # desaparecía de /activaciones (y por lo tanto de TODAS las
+        # pestañas del Centro de Mando, que se alimentan de este mismo
+        # endpoint: dashboard, por_mercaderista, pendientes, gestion_por_dia).
 
         all_params = rango_params + ap
         rows = execute_query(db, base_query, all_params)
