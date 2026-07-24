@@ -198,8 +198,13 @@
           </div>
           <div class="cm-metric-sep"></div>
           <div class="cm-metric">
-            <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.completadas }}</span>
-            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+            <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.activas - resumenDia().rutas.completadas }}</span>
+            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.activas - resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num blue">{{ resumenDia().rutas.activas }}</span>
+            <span class="cm-metric-lbl">Act. · {{ pct(resumenDia().rutas.activas, resumenDia().rutas.planificadas) }}%</span>
           </div>
           <div class="cm-metric-sep"></div>
           <div class="cm-metric">
@@ -222,8 +227,17 @@
           </div>
           <div class="cm-metric-sep"></div>
           <div class="cm-metric">
-            <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.completados }}</span>
-            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.completados, resumenDia().puntos_interes.planificados) }}%</span>
+            <!-- Pendiente = sin foto de activación NI de desactivación -- antes
+                 restaba solo "completados" (act+des), así que un PDV recién
+                 activado (solo foto de apertura, todavía sin cerrar) contaba
+                 como "pendiente" igual que uno sin ninguna foto. -->
+            <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados }}</span>
+            <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().puntos_interes.planificados - resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados, resumenDia().puntos_interes.planificados) }}%</span>
+          </div>
+          <div class="cm-metric-sep"></div>
+          <div class="cm-metric">
+            <span class="cm-metric-num blue">{{ resumenDia().puntos_interes.activos }}</span>
+            <span class="cm-metric-lbl">Act. · {{ pct(resumenDia().puntos_interes.activos, resumenDia().puntos_interes.planificados) }}%</span>
           </div>
           <div class="cm-metric-sep"></div>
           <div class="cm-metric">
