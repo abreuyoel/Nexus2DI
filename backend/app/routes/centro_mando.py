@@ -382,10 +382,17 @@ def resumen_dia(
             pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + analista_cliente_ids))
 
         if cliente_id:
+            # tiene_act/tiene_des = existe la foto, sin exigir Estado='Aprobada'
+            # -- "activo"/"completado" es sobre lo que el mercaderista YA
+            # subió, no sobre lo que el analista ya revisó. Con el filtro de
+            # aprobada, un PDV con foto de activación recién subida (todavía
+            # "sin revisar") contaba como pendiente igual que uno sin ninguna
+            # foto -- por eso "20 activaron hoy" (RUTAS_ACTIVADAS, sin
+            # depender de revisión) no cuadraba con "0 activos" acá.
             estado_visita_q = """
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
-                       MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
-                       MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_des
+                       MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END) AS tiene_act,
+                       MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
                 FROM VISITAS_MERCADERISTA vm
                 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
                 WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?
@@ -397,8 +404,8 @@ def resumen_dia(
             cli_filter_vm = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             estado_visita_q = f"""
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
-                       MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
-                       MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END) AS tiene_des
+                       MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END) AS tiene_act,
+                       MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
                 FROM VISITAS_MERCADERISTA vm
                 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
                 WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?{cli_filter_vm}
@@ -488,8 +495,8 @@ def resumen_dia(
 
             estado_visita_full_q = """
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
-                       MAX(CASE WHEN ft.id_tipo_foto=5 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END),
-                       MAX(CASE WHEN ft.id_tipo_foto=6 AND ft.Estado='Aprobada' THEN 1 ELSE 0 END)
+                       MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END),
+                       MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END)
                 FROM VISITAS_MERCADERISTA vm
                 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
                 WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
