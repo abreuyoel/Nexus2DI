@@ -335,16 +335,33 @@ def resumen_dia(
             WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
         """
         ra_rows = execute_query(db, ra_q, (d_desde, d_hasta))
-        
-        # Agrupar estado por ruta_merc
+
+        # Agrupar estado por ruta_merc -- una ruta puede reactivarse y
+        # finalizarse varias veces el mismo día (ej. reabrir una ya
+        # finalizada), así que NO se suma +1 por cada fila de
+        # RUTAS_ACTIVADAS (eso hacía que activas/completadas superaran a
+        # planificadas y diera "Pendientes" negativo). Cada ruta/mercaderista
+        # cuenta como máximo 1 vez: "Finalizado" si en algún momento del
+        # rango llegó a estarlo, "En Progreso" si no.
+        ruta_estado_final: dict = {}
         for rid, mid, estado, fd in ra_rows:
             k = (rid, mid)
-            if k in ruta_merc_pairs:
-                if estado == 'Finalizado':
-                    ruta_merc_pairs[k]["completadas"] += 1
-                    ruta_merc_pairs[k]["activas"] += 1
-                elif estado == 'En Progreso':
-                    ruta_merc_pairs[k]["activas"] += 1
+            if k not in ruta_merc_pairs:
+                continue
+            if estado == 'Finalizado' or ruta_estado_final.get(k) == 'Finalizado':
+                ruta_estado_final[k] = 'Finalizado'
+            else:
+                ruta_estado_final[k] = 'En Progreso'
+
+        # activas y completadas mutuamente excluyentes (una ruta finalizada
+        # NO también cuenta como "activa") -- el frontend hace
+        # Pend. = Plan. - Activas - Completadas, así que si se solapan,
+        # las completadas se restan dos veces y da "Pendientes" negativo.
+        for k, estado_final in ruta_estado_final.items():
+            if estado_final == 'Finalizado':
+                ruta_merc_pairs[k]["completadas"] = 1
+            else:
+                ruta_merc_pairs[k]["activas"] = 1
 
         rutas_planificadas = sum(x["planificadas"] for x in ruta_merc_pairs.values())
         rutas_activas      = sum(x["activas"] for x in ruta_merc_pairs.values())
@@ -469,8 +486,36 @@ def resumen_dia(
                 pair["clientes_com"]  += ent["clientes_com"]
 
         pois_planificados = sum(v["plan"] for v in pois_status.values())
-        pois_activos      = sum(v["act"] for v in pois_status.values())
-        pois_completados  = sum(v["com"] for v in pois_status.values())
+
+        # activos/completados NO se calculan cruzando pois_status (que exige
+        # que el mercaderista de la visita real coincida exacto con el
+        # "planificado" en MERCADERISTAS_RUTAS) -- si alguien más cubrió esa
+        # ruta ese día, el cruce nunca matcheaba y el punto quedaba en 0 pese
+        # a tener sus fotos. Acá se cuenta directo por punto, desde las
+        # visitas reales del rango, igual que ya se valida contra la BD.
+        if cliente_id:
+            real_cli_filter = " AND vm.id_cliente = ?"
+            real_params = [d_desde, d_hasta, cliente_id]
+        else:
+            real_cli_filter = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            real_params = [d_desde, d_hasta] + analista_cliente_ids
+
+        pois_reales_q = f"""
+            SELECT vm.identificador_punto_interes,
+                   MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END) AS tiene_act,
+                   MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
+            FROM VISITAS_MERCADERISTA vm
+            LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
+            WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?{real_cli_filter}
+            GROUP BY vm.identificador_punto_interes
+        """
+        pois_reales_rows = execute_query(db, pois_reales_q, tuple(real_params))
+        pois_activos = pois_completados = 0
+        for _id_punto, tiene_act, tiene_des in (pois_reales_rows or []):
+            if tiene_act and tiene_des:
+                pois_completados += 1
+            elif tiene_act:
+                pois_activos += 1
 
         # 7) CLIENTES
         tradex_ids = [mid for mid, m in asignados_map.items()
