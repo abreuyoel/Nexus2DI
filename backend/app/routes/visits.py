@@ -302,7 +302,8 @@ async def mark_reviewed(
     db.commit()
     notify_event("visit.reviewed", {"id_visita": visita.id, "revisada": revisada})
     if revisada and visita.id_cliente:
-        await _post_system_message_to_general_chat(db, visita.id_cliente, f"✅ Visita #{visita.id} ({visita.punto_interes or 'Sin PDV'}) aprobada por el analista")
+        nombre_punto = visita.punto.nombre if visita.punto else None
+        await _post_system_message_to_general_chat(db, visita.id_cliente, f"✅ Visita #{visita.id} ({nombre_punto or 'Sin PDV'}) aprobada por el analista")
     return {"id_visita": visita.id, "revisada": revisada}
 
 
