@@ -48,7 +48,7 @@ class NotificacionRechazoFoto(Base):
 
     id = Column("id_notificacion", Integer, primary_key=True, index=True)
     foto_id = Column("id_foto_original", Integer, ForeignKey("FOTOS_TOTALES.id_foto"), nullable=True)
-    id_foto_rechazada = Column(Integer, nullable=True)
+    id_foto_rechazada = Column(Integer, nullable=False)
     id_visita = Column(Integer, nullable=True)
     id_cliente = Column(Integer, nullable=True)
     nombre_cliente = Column(String(200), nullable=True)

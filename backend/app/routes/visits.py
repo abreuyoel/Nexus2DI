@@ -513,8 +513,32 @@ async def reject_photo(
     # — pasar ese kwarg tiraba TypeError antes de cualquier commit, así que
     # el rechazo entero fallaba sin persistir nada, ni siquiera foto.estado.
     ahora = datetime.now()
+
+    # FOTOS_RECHAZADAS: fila "maestra" del rechazo, igual que hace v1 --
+    # NOTIFICACIONES_RECHAZO_FOTOS.id_foto_rechazada es NOT NULL en la base
+    # real (el modelo SQLAlchemy la marcaba nullable=True) y referencia el id
+    # generado acá. Sin esto el INSERT de la notificación fallaba siempre con
+    # "Cannot insert the value NULL into column 'id_foto_rechazada'".
+    primera_razon_id = data.razones_ids[0] if data.razones_ids else None
+    rechazo_row = db.execute(text("""
+        INSERT INTO FOTOS_RECHAZADAS
+            (id_visita, id_foto_original, fecha_registro, fecha_rechazo,
+             id_razones_rechazos, descripcion, rechazado_por)
+        OUTPUT INSERTED.id_foto_rechazada
+        VALUES (:id_visita, :id_foto_original, :fecha_registro, GETDATE(), :id_razon, :descripcion, :rechazado_por)
+    """), {
+        "id_visita": visita.id if visita else foto.visita_id,
+        "id_foto_original": foto.id,
+        "fecha_registro": foto.fecha_registro or ahora,
+        "id_razon": primera_razon_id,
+        "descripcion": motivo,
+        "rechazado_por": current_user.username,
+    }).fetchone()
+    id_foto_rechazada = rechazo_row[0] if rechazo_row else None
+
     notif = NotificacionRechazoFoto(
         foto_id=foto.id,
+        id_foto_rechazada=id_foto_rechazada,
         id_visita=visita.id if visita else foto.visita_id,
         id_cliente=visita.cliente.id if visita and visita.cliente else None,
         nombre_cliente=visita.cliente.nombre if visita and visita.cliente else None,
