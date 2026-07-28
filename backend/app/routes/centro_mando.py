@@ -423,13 +423,20 @@ def resumen_dia(
             GROUP BY vm.identificador_punto_interes
         """
         pois_reales_rows = execute_query(db, pois_reales_q, tuple(real_params))
+        # .strip(): id_punto_interes/identificador_punto_interes pueden venir de
+        # columnas CHAR de ancho fijo -- SQL Server las compara ignorando
+        # espacios finales (por eso el cruce A/B daba 0 diferencias en SQL),
+        # pero pyodbc devuelve el string CRUDO con el padding, y Python sí
+        # distingue "AIK0002" de "AIK0002   " -- el cruce en memoria de abajo
+        # nunca encontraba el punto real aunque fuera la misma fila.
         real_por_punto = {
-            id_punto: (bool(tiene_act), bool(tiene_des))
+            (id_punto or "").strip(): (bool(tiene_act), bool(tiene_des))
             for id_punto, tiene_act, tiene_des in (pois_reales_rows or [])
         }
 
         pois_status = {}
-        for id_punto, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
+        for id_punto_raw, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
+            id_punto = (id_punto_raw or "").strip()
             key = (id_punto, id_merc)
             if key not in pois_status:
                 pois_status[key] = {
