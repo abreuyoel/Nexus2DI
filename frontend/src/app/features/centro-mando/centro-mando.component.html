@@ -46,7 +46,7 @@
              flecha nativa) -- sin este click no abría nada, porque el icono
              no forma parte del elemento <select>. showPicker() es la forma
              estándar de abrir el desplegable nativo desde otro elemento. -->
-        <mat-icon class="cm-select-arrow" (click)="clienteSelect.showPicker()">expand_more</mat-icon>
+        <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
       </div>
 
       <!-- Rango de Fechas Global -->
