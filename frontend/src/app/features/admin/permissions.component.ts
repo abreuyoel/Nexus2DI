@@ -28,10 +28,15 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
         </div>
       </div>
       <div class="flex items-center gap-3">
+        <select [ngModel]="roleFilter()" (ngModelChange)="roleFilter.set($event)"
+          class="bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none">
+          <option [ngValue]="null">Todos los roles</option>
+          @for (r of roles(); track r) { <option [ngValue]="r">{{ r }}</option> }
+        </select>
         <select [(ngModel)]="selectedUserId" (ngModelChange)="onUserChange($event)"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-3 py-2.5 text-sm font-semibold text-white outline-none min-w-64">
-          <option [ngValue]="null">— Selecciona un usuario —</option>
-          @for (u of users(); track u.id) { <option [ngValue]="u.id">{{ u.username }} ({{ u.rol }})</option> }
+          <option [ngValue]="null">— Selecciona un usuario ({{ filteredUsers().length }}) —</option>
+          @for (u of filteredUsers(); track u.id) { <option [ngValue]="u.id">{{ u.username }} ({{ u.rol }})</option> }
         </select>
         <button (click)="save()" [disabled]="!selectedUserId || saving()"
           class="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 disabled:opacity-50 rounded-xl font-black text-sm shadow-lg">
@@ -108,6 +113,14 @@ export class PermissionsComponent implements OnInit {
   saving = signal(false);
   loading = signal(false);
   perms: Record<string, Perm> = {};
+
+  roleFilter = signal<string | null>(null);
+  roles = computed(() => [...new Set(this.users().map(u => u.rol))].sort());
+  filteredUsers = computed(() => {
+    const rf = this.roleFilter();
+    const list = this.users();
+    return rf ? list.filter(u => u.rol === rf) : list;
+  });
 
   roots = computed(() => this.modulos().filter(m => !m.id_padre).sort((a, b) => a.orden - b.orden));
 
