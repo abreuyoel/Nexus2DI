@@ -398,101 +398,14 @@ def resumen_dia(
             """
             pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + analista_cliente_ids))
 
-        if cliente_id:
-            # tiene_act/tiene_des = existe la foto, sin exigir Estado='Aprobada'
-            # -- "activo"/"completado" es sobre lo que el mercaderista YA
-            # subió, no sobre lo que el analista ya revisó. Con el filtro de
-            # aprobada, un PDV con foto de activación recién subida (todavía
-            # "sin revisar") contaba como pendiente igual que uno sin ninguna
-            # foto -- por eso "20 activaron hoy" (RUTAS_ACTIVADAS, sin
-            # depender de revisión) no cuadraba con "0 activos" acá.
-            estado_visita_q = """
-                SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
-                       MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END) AS tiene_act,
-                       MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
-                FROM VISITAS_MERCADERISTA vm
-                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
-                WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?
-                  AND vm.id_cliente = ?
-                GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
-            """
-            ev_rows = execute_query(db, estado_visita_q, (d_desde, d_hasta, cliente_id))
-        else:
-            cli_filter_vm = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
-            estado_visita_q = f"""
-                SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
-                       MAX(CASE WHEN ft.id_tipo_foto=5 THEN 1 ELSE 0 END) AS tiene_act,
-                       MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
-                FROM VISITAS_MERCADERISTA vm
-                LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
-                WHERE vm.fecha_visita >= ? AND vm.fecha_visita <= ?{cli_filter_vm}
-                GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
-            """
-            ev_rows = execute_query(db, estado_visita_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
-            
-        estado_visita = {(r[0], r[1], r[2], r[3]): {"act": bool(r[4]), "des": bool(r[5])}
-                         for r in ev_rows}
-
-        ev_agg = {}
-        for (id_punto, id_merc, _cli, _fd), st in estado_visita.items():
-            d = ev_agg.setdefault((id_punto, id_merc), {"act": 0, "com": 0})
-            if st["act"]:               d["act"] += 1
-            if st["act"] and st["des"]: d["com"] += 1
-            
-        ev_agg_cli = {}
-        for (id_punto, id_merc, id_cli, _fd), st in estado_visita.items():
-            d = ev_agg_cli.setdefault((id_punto, id_merc, id_cli), {"act": 0, "com": 0})
-            if st["act"]:               d["act"] += 1
-            if st["act"] and st["des"]: d["com"] += 1
-
-        pois_status = {}
-        for id_punto, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
-            key = (id_punto, id_merc)
-            if key not in pois_status:
-                pois_status[key] = {
-                    "id_punto": id_punto, "punto_de_interes": nombre_punto,
-                    "id_mercaderista": id_merc, "id_ruta": id_ruta, "ruta": ruta_nombre,
-                    "mercaderista": asignados_map.get(id_merc, {}).get("nombre", "Desconocido"),
-                    "departamento": depto, "prioridad": prio,
-                    "plan": 0, "act": 0, "com": 0,
-                    "clientes_plan": 0, "clientes_act": 0, "clientes_com": 0
-                }
-            pois_status[key]["plan"] += day_counts.get(dia, 0)
-            pois_status[key]["clientes_plan"] += day_counts.get(dia, 0)
-
-        for key, ent in pois_status.items():
-            if cliente_id is not None:
-                ev_c = ev_agg_cli.get((key[0], key[1], cliente_id))
-                if ev_c:
-                    ent["act"] = ev_c["act"]
-                    ent["com"] = ev_c["com"]
-                    ent["clientes_act"] = ev_c["act"]
-                    ent["clientes_com"] = ev_c["com"]
-            else:
-                ag = ev_agg.get(key)
-                if ag:
-                    ent["act"] = ag["act"]
-                    ent["com"] = ag["com"]
-                    ent["clientes_act"] = ag["act"]
-                    ent["clientes_com"] = ag["com"]
-
-            pair = ruta_merc_pairs.get((ent["id_ruta"], ent["id_mercaderista"]))
-            if pair is not None:
-                pair["pois_plan"] += ent["plan"]
-                pair["pois_act"] += ent["act"]
-                pair["pois_com"] += ent["com"]
-                pair["clientes_plan"] += ent["clientes_plan"]
-                pair["clientes_act"]  += ent["clientes_act"]
-                pair["clientes_com"]  += ent["clientes_com"]
-
-        pois_planificados = sum(v["plan"] for v in pois_status.values())
-
-        # activos/completados NO se calculan cruzando pois_status (que exige
-        # que el mercaderista de la visita real coincida exacto con el
-        # "planificado" en MERCADERISTAS_RUTAS) -- si alguien más cubrió esa
-        # ruta ese día, el cruce nunca matcheaba y el punto quedaba en 0 pese
-        # a tener sus fotos. Acá se cuenta directo por punto, desde las
-        # visitas reales del rango, igual que ya se valida contra la BD.
+        # Estado real por PUNTO (no por punto+mercaderista): tiene_act/tiene_des
+        # sale de la foto existiendo, sin exigir Estado='Aprobada' -- "activo"/
+        # "completado" es sobre lo que el mercaderista YA subió, no sobre lo que
+        # el analista ya revisó. Deliberadamente NO se cruza contra qué
+        # mercaderista tenía PLANIFICADO ese punto en MERCADERISTAS_RUTAS: si
+        # otro cubrió la ruta ese día (cobertura/reemplazo), el punto sigue
+        # activado/completado igual, y antes ese cruce lo dejaba en 0 -- tanto
+        # acá (detalle de "Ver PDVs") como en el agregado de la tarjeta.
         if cliente_id:
             real_cli_filter = " AND vm.id_cliente = ?"
             real_params = [d_desde, d_hasta, cliente_id]
@@ -510,8 +423,53 @@ def resumen_dia(
             GROUP BY vm.identificador_punto_interes
         """
         pois_reales_rows = execute_query(db, pois_reales_q, tuple(real_params))
+        real_por_punto = {
+            id_punto: (bool(tiene_act), bool(tiene_des))
+            for id_punto, tiene_act, tiene_des in (pois_reales_rows or [])
+        }
+
+        pois_status = {}
+        for id_punto, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
+            key = (id_punto, id_merc)
+            if key not in pois_status:
+                pois_status[key] = {
+                    "id_punto": id_punto, "punto_de_interes": nombre_punto,
+                    "id_mercaderista": id_merc, "id_ruta": id_ruta, "ruta": ruta_nombre,
+                    "mercaderista": asignados_map.get(id_merc, {}).get("nombre", "Desconocido"),
+                    "departamento": depto, "prioridad": prio,
+                    "plan": 0, "act": 0, "com": 0,
+                    "clientes_plan": 0, "clientes_act": 0, "clientes_com": 0
+                }
+            pois_status[key]["plan"] += day_counts.get(dia, 0)
+            pois_status[key]["clientes_plan"] += day_counts.get(dia, 0)
+
+        for key, ent in pois_status.items():
+            real = real_por_punto.get(key[0])
+            if real:
+                tiene_act, tiene_des = real
+                act = 1 if tiene_act else 0
+                com = 1 if (tiene_act and tiene_des) else 0
+                ent["act"] = act
+                ent["com"] = com
+                ent["clientes_act"] = act
+                ent["clientes_com"] = com
+
+            pair = ruta_merc_pairs.get((ent["id_ruta"], ent["id_mercaderista"]))
+            if pair is not None:
+                pair["pois_plan"] += ent["plan"]
+                pair["pois_act"] += ent["act"]
+                pair["pois_com"] += ent["com"]
+                pair["clientes_plan"] += ent["clientes_plan"]
+                pair["clientes_act"]  += ent["clientes_act"]
+                pair["clientes_com"]  += ent["clientes_com"]
+
+        pois_planificados = sum(v["plan"] for v in pois_status.values())
+
+        # Agregado de la tarjeta: misma fuente (real_por_punto) que el detalle
+        # de arriba, cuenta puntos DISTINTOS (no pares punto+mercaderista) para
+        # no duplicar un punto compartido por varios mercaderistas planificados.
         pois_activos = pois_completados = 0
-        for _id_punto, tiene_act, tiene_des in (pois_reales_rows or []):
+        for tiene_act, tiene_des in real_por_punto.values():
             if tiene_act and tiene_des:
                 pois_completados += 1
             elif tiene_act:
