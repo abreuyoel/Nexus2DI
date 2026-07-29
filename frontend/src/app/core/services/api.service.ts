@@ -46,7 +46,7 @@ export class ApiService {
   getFotoMetadatos(fotoId: number): Observable<object> { return this.http.get<object>(`${this.base}/api/merchandisers/foto/${fotoId}/metadatos`); }
 
   // --- PUNTOS DE INTERÉS ---
-  getPoints(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; cadena?: string; search?: string; skip?: number; limit?: number } = {}): Observable<PuntoInteres[]> {
+  getPoints(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string; skip?: number; limit?: number } = {}): Observable<PuntoInteres[]> {
     return this.http.get<PuntoInteres[]>(`${this.base}/api/points/`, { params: this.params(opts) });
   }
   createPoint(data: object): Observable<PuntoInteres> { return this.http.post<PuntoInteres>(`${this.base}/api/points/`, data); }
@@ -60,7 +60,7 @@ export class ApiService {
   getJerarquiaN2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2/list`); }
   getJerarquiaN2_2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2_2/list`); }
   getNivelesAlcance(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/nivel_alcance/list`); }
-  getPointsCount(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; cadena?: string; search?: string } = {}): Observable<{total: number}> {
+  getPointsCount(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string } = {}): Observable<{total: number}> {
     return this.http.get<{total: number}>(`${this.base}/api/points/count`, { params: this.params(opts) });
   }
   getPointPhotos(pointId: number, estado?: string): Observable<object[]> {

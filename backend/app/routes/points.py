@@ -21,6 +21,8 @@ def list_points(
     ciudad: Optional[str] = None,
     cadena: Optional[str] = None,
     jerarquia_n2: Optional[str] = None,
+    jerarquia_n2_2: Optional[str] = None,
+    nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
@@ -36,6 +38,10 @@ def list_points(
         query = query.filter(PuntoInteres.cadena == cadena)
     if jerarquia_n2:
         query = query.filter(PuntoInteres.jerarquia_n2 == jerarquia_n2)
+    if jerarquia_n2_2:
+        query = query.filter(PuntoInteres.jerarquia_n2_2 == jerarquia_n2_2)
+    if nivel_de_alcance:
+        query = query.filter(PuntoInteres.nivel_de_alcance == nivel_de_alcance)
     if search:
         query = query.filter(
             PuntoInteres.nombre.ilike(f"%{search}%") |
@@ -49,7 +55,7 @@ def create_point(
     data: PuntoInteresCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = PuntoInteres(**data.model_dump())
     db.add(punto)
@@ -118,6 +124,8 @@ def count_points(
     ciudad: Optional[str] = None,
     cadena: Optional[str] = None,
     jerarquia_n2: Optional[str] = None,
+    jerarquia_n2_2: Optional[str] = None,
+    nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
@@ -131,6 +139,10 @@ def count_points(
         query = query.filter(PuntoInteres.cadena == cadena)
     if jerarquia_n2:
         query = query.filter(PuntoInteres.jerarquia_n2 == jerarquia_n2)
+    if jerarquia_n2_2:
+        query = query.filter(PuntoInteres.jerarquia_n2_2 == jerarquia_n2_2)
+    if nivel_de_alcance:
+        query = query.filter(PuntoInteres.nivel_de_alcance == nivel_de_alcance)
     if search:
         query = query.filter(
             PuntoInteres.nombre.ilike(f"%{search}%") |
@@ -156,7 +168,7 @@ def delete_point(
     point_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'delete')),
+    current_user: Usuario = Depends(require_permission('points', 'delete', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:
@@ -178,7 +190,7 @@ def update_point(
     data: PuntoInteresUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:

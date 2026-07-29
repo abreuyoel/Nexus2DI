@@ -74,7 +74,7 @@ import { HasPermDirective } from '../../../core/directives/has-perm.directive';
     <div class="flex items-center gap-2 mb-3">
       <mat-icon class="!text-base text-primary-500">filter_list</mat-icon>
       <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtros</span>
-      @if (filterRegion() || filterCiudad() || filterJerarquia() || searchText()) {
+      @if (filterRegion() || filterCiudad() || filterJerarquia() || filterJerarquia2() || filterNivelAlcance() || filterCadena() || searchText()) {
         <button (click)="clearFilters()"
           class="ml-auto flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-rose-400 transition-colors">
           <mat-icon class="!text-sm">close</mat-icon> Limpiar
@@ -111,6 +111,39 @@ import { HasPermDirective } from '../../../core/directives/has-perm.directive';
             class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
             <option value="">Todos</option>
             @for (j of jerarquias(); track j) { <option [value]="j">{{ j }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Jerarquía Nivel 2_2</label>
+        <div class="relative">
+          <select [ngModel]="filterJerarquia2()" (ngModelChange)="filterJerarquia2.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (j of jerarquias2(); track j) { <option [value]="j">{{ j }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nivel de Alcance</label>
+        <div class="relative">
+          <select [ngModel]="filterNivelAlcance()" (ngModelChange)="filterNivelAlcance.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (n of nivelesAlcance(); track n) { <option [value]="n">{{ n }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Clasificación de Canal</label>
+        <div class="relative">
+          <select [ngModel]="filterCadena()" (ngModelChange)="filterCadena.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (c of chains(); track c) { <option [value]="c">{{ c }}</option> }
           </select>
           <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
         </div>
@@ -423,6 +456,9 @@ export class PointsComponent implements OnInit, OnDestroy {
   filterRegion = signal('');
   filterCiudad = signal('');
   filterJerarquia = signal('');
+  filterJerarquia2 = signal('');
+  filterNivelAlcance = signal('');
+  filterCadena = signal('');
   searchText = signal('');
 
   private search$ = new Subject<string>();
@@ -469,6 +505,9 @@ export class PointsComponent implements OnInit, OnDestroy {
       region: this.filterRegion() || undefined,
       ciudad: this.filterCiudad() || undefined,
       jerarquia_n2: this.filterJerarquia() || undefined,
+      jerarquia_n2_2: this.filterJerarquia2() || undefined,
+      nivel_de_alcance: this.filterNivelAlcance() || undefined,
+      cadena: this.filterCadena() || undefined,
       search: this.searchText() || undefined,
     };
   }
@@ -507,7 +546,9 @@ export class PointsComponent implements OnInit, OnDestroy {
     this.reload();
   }
   clearFilters(): void {
-    this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set(''); this.searchText.set('');
+    this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set('');
+    this.filterJerarquia2.set(''); this.filterNivelAlcance.set(''); this.filterCadena.set('');
+    this.searchText.set('');
     this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => {} });
     this.reload();
   }
