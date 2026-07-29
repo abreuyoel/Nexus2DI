@@ -77,6 +77,47 @@ def _backfill_exclusive_clients() -> None:
         db.close()
 
 
+def ensure_servicio_prefijo_column() -> None:
+    """Agrega SERVICIOS.prefijo (idempotente) y rellena los servicios existentes
+    con el mismo prefijo que usaba la whitelist E/T/A hardcodeada en rutas.py
+    -- sin este backfill, crear una ruta para esos servicios dejaría de
+    funcionar apenas se despliega el refactor que lee el prefijo de acá."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("SERVICIOS")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar SERVICIOS: {e}")
+        return
+    if "prefijo" not in cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE SERVICIOS ADD prefijo VARCHAR(10) NULL"))
+            logger.info("Columna SERVICIOS.prefijo creada")
+        except Exception as e:
+            logger.exception(f"No se pudo crear SERVICIOS.prefijo: {e}")
+            return
+    _backfill_servicio_prefijos()
+
+
+def _backfill_servicio_prefijos() -> None:
+    known = {"exclusivo": "E", "tradex": "T", "auditor": "A", "auditoría": "A", "auditoria": "A"}
+    db = SessionLocal()
+    try:
+        updated = 0
+        for s in db.query(Servicio).filter(Servicio.prefijo.is_(None)).all():
+            prefijo = known.get((s.nombre or "").strip().lower())
+            if prefijo:
+                s.prefijo = prefijo
+                updated += 1
+        if updated:
+            db.commit()
+            logger.info(f"Backfill de prefijo en {updated} servicio(s)")
+    except Exception as e:
+        logger.exception(f"Error en backfill de prefijo de servicios: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def ensure_catalog_tables() -> None:
     """Crea las tablas de catálogo si no existen, y siembra con valores distintos
     de PUNTOS_INTERES1 la primera vez."""
@@ -96,6 +137,9 @@ def ensure_catalog_tables() -> None:
 
     _seed_from_existing_pdv()
     _seed_from_existing_routes()
+    # Después de sembrar SERVICIOS (arriba) para que el backfill de prefijo
+    # tenga filas que actualizar en un ambiente recién creado (epran-qa).
+    ensure_servicio_prefijo_column()
 
 
 def _seed_from_existing_routes() -> None:

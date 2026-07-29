@@ -13,6 +13,7 @@ from app.models.catalogo import (
 from app.schemas.catalogo import (
     CatalogoCreate, CatalogoUpdate, CatalogoResponse,
     CiudadCreate, CiudadUpdate, CiudadResponse,
+    ServicioCreate, ServicioUpdate, ServicioResponse,
 )
 
 router = APIRouter(prefix="/api/catalogos", tags=["Catálogos"])
@@ -21,6 +22,8 @@ router = APIRouter(prefix="/api/catalogos", tags=["Catálogos"])
 # Mapping: catalog_key → (usage_model, usage_column, sample_column)
 # usage_model/usage_column = dónde se referencia el valor (para validar borrado/rename).
 # sample_column = columna a mostrar como ejemplo de registros que lo usan.
+# "servicios" NO va acá -- tiene endpoints dedicados (necesita el campo extra
+# "prefijo" que el genérico no soporta), ver más abajo.
 CATALOG_USAGE = {
     "tipo-negocio": (PuntoInteres, PuntoInteres.jerarquia_n2, PuntoInteres.id),
     "subtipo-negocio": (PuntoInteres, PuntoInteres.jerarquia_n2_2, PuntoInteres.id),
@@ -28,7 +31,6 @@ CATALOG_USAGE = {
     "canal-venta": (PuntoInteres, PuntoInteres.cadena, PuntoInteres.id),
     "departamentos": (PuntoInteres, PuntoInteres.departamento, PuntoInteres.id),
     "cuadrantes": (Ruta, Ruta.cuadrante, Ruta.nombre),
-    "servicios": (Ruta, Ruta.servicio, Ruta.nombre),
 }
 
 
@@ -169,6 +171,107 @@ def delete_ciudad(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Servicios — registrados ANTES del genérico (necesita el campo extra "prefijo",
+# la sigla que arma el correlativo de nombre de ruta, ver routes/rutas.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/servicios/", response_model=List[ServicioResponse])
+def list_servicios(
+    activo: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    q = db.query(Servicio)
+    if activo is not None:
+        q = q.filter(Servicio.activo == activo)
+    return q.order_by(Servicio.nombre).all()
+
+
+@router.post("/servicios/", response_model=ServicioResponse, status_code=201)
+def create_servicio(
+    data: ServicioCreate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'write')),
+):
+    nombre = data.nombre.strip()
+    prefijo = data.prefijo.strip().upper()
+    if db.query(Servicio).filter(Servicio.nombre == nombre).first():
+        raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}'")
+    if db.query(Servicio).filter(Servicio.prefijo == prefijo).first():
+        raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa otro servicio -- las rutas se numerarían mezcladas")
+    item = Servicio(nombre=nombre, prefijo=prefijo, activo=data.activo)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/servicios/{item_id}", response_model=ServicioResponse)
+def update_servicio(
+    item_id: int,
+    data: ServicioUpdate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'write')),
+):
+    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    old_nombre = item.nombre
+    if data.nombre is not None:
+        nuevo = data.nombre.strip()
+        if nuevo != old_nombre:
+            if db.query(Servicio).filter(Servicio.nombre == nuevo).first():
+                raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo}'")
+            db.query(Ruta).filter(Ruta.servicio == old_nombre).update(
+                {Ruta.servicio: nuevo}, synchronize_session=False
+            )
+            item.nombre = nuevo
+
+    if data.prefijo is not None:
+        prefijo = data.prefijo.strip().upper()
+        clash = db.query(Servicio).filter(Servicio.prefijo == prefijo, Servicio.id != item_id).first()
+        if clash:
+            raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa '{clash.nombre}'")
+        item.prefijo = prefijo
+
+    if data.activo is not None:
+        item.activo = data.activo
+
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/servicios/{item_id}")
+def delete_servicio(
+    item_id: int,
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'delete')),
+):
+    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    usage = _count_usage(db, Ruta, Ruta.servicio, item.nombre)
+    if usage > 0 and not force:
+        sample = _list_usage_ids(db, Ruta.servicio, Ruta.nombre, item.nombre)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"No se puede eliminar '{item.nombre}' porque está siendo usado por {usage} ruta(s). Reasigne o elimine esas rutas primero, o use ?force=true.",
+                "usage_count": usage,
+                "sample_pdv_ids": sample,
+            },
+        )
+
+    db.delete(item)
+    db.commit()
+    return {"message": "Eliminado", "usage_count": usage, "force": force}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Estados - registrados antes del genérico
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -199,7 +302,6 @@ GENERIC_CATALOGS: dict[str, Type] = {
     "canal-venta": CanalVenta,
     "departamentos": DepartamentoGeo,
     "cuadrantes": Cuadrante,
-    "servicios": Servicio,
 }
 
 

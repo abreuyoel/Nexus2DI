@@ -23,6 +23,25 @@ class CatalogoResponse(CatalogoBase):
         from_attributes = True
 
 
+# Servicio — extiende con prefijo (sigla usada en el correlativo de rutas)
+class ServicioCreate(CatalogoBase):
+    prefijo: str = Field(..., min_length=1, max_length=10)
+
+
+class ServicioUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=1, max_length=200)
+    prefijo: Optional[str] = Field(None, min_length=1, max_length=10)
+    activo: Optional[bool] = None
+
+
+class ServicioResponse(CatalogoBase):
+    id: int
+    prefijo: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 # Ciudad — extiende con departamento_id
 class CiudadCreate(CatalogoBase):
     departamento_id: int

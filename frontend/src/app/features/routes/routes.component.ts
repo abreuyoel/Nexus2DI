@@ -24,7 +24,7 @@ interface AssignedRoute {
   tipo_ruta: string;
 }
 
-interface CatalogItem { id: number; nombre: string; activo: boolean; }
+interface CatalogItem { id: number; nombre: string; activo: boolean; prefijo?: string | null; }
 
 @Component({
   selector: 'app-routes',
@@ -56,9 +56,9 @@ export class RoutesComponent implements OnInit {
   searchTerm = '';
   filterCuadrante = '';
   filterCliente = '';
+  filterServicio = '';
 
   createForm = this.fb.group({
-    tipo: ['E', Validators.required],
     nombre_previsto: [{ value: '', disabled: true }],
     servicio: ['', Validators.required],
     coordinador_1: ['', Validators.required],
@@ -121,12 +121,11 @@ export class RoutesComponent implements OnInit {
     this.loadRoutes();
     this.loadCatalogs();
     this.loadClients();
-    this.onTipoChange('E');
   }
 
   // ── Carga ─────────────────────────────────────────────────
   loadCatalogs(): void {
-    this.api.listCatalog('servicios', true).subscribe(d => this.servicios.set(d));
+    this.api.listServicios(true).subscribe(d => this.servicios.set(d));
     this.api.listCatalog('cuadrantes', true).subscribe(d => this.cuadrantes.set(d));
   }
 
@@ -147,10 +146,12 @@ export class RoutesComponent implements OnInit {
     const s = this.searchTerm.trim().toLowerCase();
     const cu = this.filterCuadrante;
     const cl = this.filterCliente;
+    const se = this.filterServicio;
     return this.routes().filter(r =>
       (!s || r.nombre?.toLowerCase().includes(s)) &&
       (!cu || (r.region ?? r.cuadrante) === cu) &&
-      (!cl || (r.clientes ?? []).includes(cl))
+      (!cl || (r.clientes ?? []).includes(cl)) &&
+      (!se || r.servicio === se)
     );
   }
 
@@ -160,16 +161,16 @@ export class RoutesComponent implements OnInit {
     return [...set].sort();
   }
 
-  clearFilters(): void { this.searchTerm = ''; this.filterCuadrante = ''; this.filterCliente = ''; }
+  clearFilters(): void { this.searchTerm = ''; this.filterCuadrante = ''; this.filterCliente = ''; this.filterServicio = ''; }
 
   // ── Crear ─────────────────────────────────────────────────
-  get isExclusiva(): boolean { return this.createForm.get('tipo')?.value === 'E'; }
+  get isExclusiva(): boolean { return this.createForm.get('servicio')?.value === 'Exclusivo'; }
 
-  onTipoChange(tipo: string): void {
-    if (!tipo) return;
-    // Cliente exclusivo sólo es obligatorio para tipo E
+  onServicioChange(servicio: string): void {
+    if (!servicio) return;
+    // Cliente exclusivo sólo es obligatorio para el servicio "Exclusivo"
     const clienteCtrl = this.createForm.get('id_cliente_exclusivo');
-    if (tipo === 'E') {
+    if (servicio === 'Exclusivo') {
       clienteCtrl?.setValidators([Validators.required]);
     } else {
       clienteCtrl?.clearValidators();
@@ -177,9 +178,12 @@ export class RoutesComponent implements OnInit {
     }
     clienteCtrl?.updateValueAndValidity();
 
-    this.api.getNextRouteNumber(tipo).subscribe(data => {
-      this.nextNumber.set(data.next_number);
-      this.createForm.patchValue({ nombre_previsto: `Ruta ${tipo}${data.next_number}` });
+    this.api.getNextRouteNumber(servicio).subscribe({
+      next: (data) => {
+        this.nextNumber.set(data.next_number);
+        this.createForm.patchValue({ nombre_previsto: `Ruta ${data.prefijo}${data.next_number}` });
+      },
+      error: () => this.createForm.patchValue({ nombre_previsto: '' }),
     });
   }
 
@@ -188,19 +192,18 @@ export class RoutesComponent implements OnInit {
     this.saving.set(true);
     const v = this.createForm.value;
     const payload: any = {
-      tipo: v.tipo,
       servicio: v.servicio,
       coordinador_1: v.coordinador_1,
       coordinador_2: v.coordinador_2 || null,
       cuadrante: v.cuadrante,
-      id_cliente_exclusivo: v.tipo === 'E' && v.id_cliente_exclusivo ? Number(v.id_cliente_exclusivo) : null,
+      id_cliente_exclusivo: v.servicio === 'Exclusivo' && v.id_cliente_exclusivo ? Number(v.id_cliente_exclusivo) : null,
     };
     this.api.createRoute(payload).subscribe({
       next: (ruta) => {
         this.saving.set(false);
         this.routes.update((rs: Ruta[]) => [...rs, ruta].sort((a, b) => a.nombre.localeCompare(b.nombre)));
-        this.createForm.reset({ tipo: 'E', activa: true });
-        this.onTipoChange('E');
+        this.createForm.reset({ activa: true });
+        this.nextNumber.set(null);
         this.showCreateForm.set(false);
         this.snack.open('Ruta creada exitosamente', 'OK', { duration: 3000 });
       },
@@ -241,9 +244,12 @@ export class RoutesComponent implements OnInit {
   }
 
   // ── Catálogo ABM ──────────────────────────────────────────
+  catalogNewPrefijo = '';
+
   openCatalogModal(kind: 'cuadrantes' | 'servicios'): void {
     this.catalogKind.set(kind);
     this.catalogNewName = '';
+    this.catalogNewPrefijo = '';
     this.catalogModalOpen.set(true);
   }
   closeCatalogModal(): void { this.catalogModalOpen.set(false); }
@@ -252,15 +258,27 @@ export class RoutesComponent implements OnInit {
     return this.catalogKind() === 'cuadrantes' ? this.cuadrantes() : this.servicios();
   }
   private refreshCatalog(kind: 'cuadrantes' | 'servicios'): void {
-    this.api.listCatalog(kind, true).subscribe(d => {
-      if (kind === 'cuadrantes') this.cuadrantes.set(d); else this.servicios.set(d);
-    });
+    if (kind === 'servicios') {
+      this.api.listServicios(true).subscribe(d => this.servicios.set(d));
+    } else {
+      this.api.listCatalog(kind, true).subscribe(d => this.cuadrantes.set(d));
+    }
   }
 
   addCatalogItem(): void {
     const nombre = this.catalogNewName.trim();
     if (!nombre) return;
     const kind = this.catalogKind();
+    if (kind === 'servicios') {
+      const prefijo = this.catalogNewPrefijo.trim();
+      if (!prefijo) { this.snack.open('El prefijo es obligatorio (ej. "PR" para Promovendedor)', 'OK', { duration: 3500 }); return; }
+      this.catalogSaving.set(true);
+      this.api.createServicio({ nombre, prefijo }).subscribe({
+        next: () => { this.catalogNewName = ''; this.catalogNewPrefijo = ''; this.catalogSaving.set(false); this.refreshCatalog(kind); },
+        error: (err) => { this.catalogSaving.set(false); this.snack.open(err.error?.detail ?? 'Error', 'OK', { duration: 3500 }); },
+      });
+      return;
+    }
     this.catalogSaving.set(true);
     this.api.createCatalogItem(kind, { nombre }).subscribe({
       next: () => { this.catalogNewName = ''; this.catalogSaving.set(false); this.refreshCatalog(kind); },
@@ -270,23 +288,40 @@ export class RoutesComponent implements OnInit {
 
   renameCatalogItem(item: CatalogItem, nuevo: string): void {
     const nombre = nuevo.trim();
-    if (!nombre || nombre === item.nombre) return;
     const kind = this.catalogKind();
+    if (!nombre || nombre === item.nombre) return;
+    if (kind === 'servicios') {
+      this.api.updateServicio(item.id, { nombre }).subscribe({
+        next: () => { this.refreshCatalog(kind); this.loadRoutes(); },
+        error: (err) => this.snack.open(err.error?.detail ?? 'Error', 'OK', { duration: 3500 }),
+      });
+      return;
+    }
     this.api.updateCatalogItem(kind, item.id, { nombre }).subscribe({
       next: () => { this.refreshCatalog(kind); this.loadRoutes(); },
       error: (err) => this.snack.open(err.error?.detail ?? 'Error', 'OK', { duration: 3500 }),
     });
   }
 
+  renameServicioPrefijo(item: CatalogItem, nuevo: string): void {
+    const prefijo = nuevo.trim().toUpperCase();
+    if (!prefijo || prefijo === item.prefijo) return;
+    this.api.updateServicio(item.id, { prefijo }).subscribe({
+      next: () => this.refreshCatalog('servicios'),
+      error: (err) => this.snack.open(err.error?.detail ?? 'Error', 'OK', { duration: 3500 }),
+    });
+  }
+
   deleteCatalogItem(item: CatalogItem): void {
     const kind = this.catalogKind();
-    this.api.deleteCatalogItem(kind, item.id).subscribe({
+    const del = (force = false) => kind === 'servicios' ? this.api.deleteServicio(item.id, force) : this.api.deleteCatalogItem(kind, item.id, force);
+    del().subscribe({
       next: () => this.refreshCatalog(kind),
       error: (err) => {
         const detail = err.error?.detail;
         const msg = typeof detail === 'object' ? detail.message : detail;
         if (err.status === 409 && confirm(`${msg}\n\n¿Eliminar de todos modos?`)) {
-          this.api.deleteCatalogItem(kind, item.id, true).subscribe({
+          del(true).subscribe({
             next: () => { this.refreshCatalog(kind); this.loadRoutes(); },
             error: () => this.snack.open('No se pudo eliminar', 'OK', { duration: 3500 }),
           });

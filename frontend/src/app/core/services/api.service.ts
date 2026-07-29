@@ -85,6 +85,21 @@ export class ApiService {
     return this.http.delete<object>(`${this.base}/api/catalogos/${catalog}/${id}`, { params: this.params({ force }) });
   }
 
+  // Servicios — endpoints específicos (extienden el genérico con "prefijo",
+  // la sigla usada para el correlativo de nombre de ruta)
+  listServicios(activo?: boolean): Observable<{id:number; nombre:string; prefijo:string|null; activo:boolean}[]> {
+    return this.http.get<any[]>(`${this.base}/api/catalogos/servicios/`, { params: this.params({ activo }) });
+  }
+  createServicio(data: { nombre: string; prefijo: string; activo?: boolean }): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/catalogos/servicios/`, data);
+  }
+  updateServicio(id: number, data: { nombre?: string; prefijo?: string; activo?: boolean }): Observable<any> {
+    return this.http.put<any>(`${this.base}/api/catalogos/servicios/${id}`, data);
+  }
+  deleteServicio(id: number, force = false): Observable<object> {
+    return this.http.delete<object>(`${this.base}/api/catalogos/servicios/${id}`, { params: this.params({ force }) });
+  }
+
   // Ciudades — endpoints específicos
   listCiudades(opts: { departamento_id?: number; departamento?: string; activo?: boolean } = {}): Observable<{id:number; nombre:string; activo:boolean; departamento_id:number; departamento_nombre:string|null}[]> {
     return this.http.get<any[]>(`${this.base}/api/catalogos/ciudades/`, { params: this.params(opts) });
@@ -122,7 +137,9 @@ export class ApiService {
   getFutureChanges(routeId: number): Observable<CambioFuturo[]> { return this.http.get<CambioFuturo[]>(`${this.base}/api/routes/${routeId}/future-changes`); }
   getActivatedRoutes(): Observable<object[]> { return this.http.get<object[]>(`${this.base}/api/routes/activated/today`); }
   getRouteOptions(): Observable<{servicios: string[]}> { return this.http.get<{servicios: string[]}>(`${this.base}/api/routes/options`); }
-  getNextRouteNumber(tipo: string): Observable<{next_number: number}> { return this.http.get<{next_number: number}>(`${this.base}/api/routes/next-number`, { params: { tipo } }); }
+  getNextRouteNumber(servicio: string): Observable<{next_number: number; prefijo: string}> {
+    return this.http.get<{next_number: number; prefijo: string}>(`${this.base}/api/routes/next-number`, { params: { servicio } });
+  }
 
   // --- CLIENTES ---
   getClients(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/clients/`); }
