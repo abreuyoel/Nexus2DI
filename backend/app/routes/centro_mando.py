@@ -501,7 +501,14 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND rp.dia IN ({ph})
                   AND mr.id_mercaderista IN ({ph2}){cli_filter}
             """
-            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids + analista_cliente_ids))
+            # cli_filter (arriba) solo agrega los placeholders de cli_ph cuando
+            # is_analyst_scoped es True -- a diferencia de los demás bloques de
+            # esta función, este no ramifica por "if cliente_id", así que hay
+            # que condicionar los params de la misma forma o sobran valores
+            # sin marcador correspondiente (pyodbc.ProgrammingError: "SQL
+            # contains N parameter markers, but M parameters were supplied").
+            tradex_cli_params = analista_cliente_ids if is_analyst_scoped else []
+            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids + tradex_cli_params))
 
             estado_visita_full_q = """
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
