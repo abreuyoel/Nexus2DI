@@ -244,7 +244,15 @@ export class RevisionVisitasComponent implements OnInit {
     this.photosLoading.set(true);
     this.api.getVisitPhotos(v.id_visita).subscribe({
       next: (ph) => { this.photos.set(ph as any[]); this.photosLoading.set(false); },
-      error: () => { this.photos.set([]); this.photosLoading.set(false); },
+      error: (err) => {
+        // Antes esto dejaba this.photos en [] sin ningún indicio de error --
+        // indistinguible de una visita sin fotos, aunque los chips de arriba
+        // (que salen de un endpoint distinto, el agregado de la lista) sí
+        // mostraran totales > 0. Si esto vuelve a pasar, el snackbar dice
+        // el motivo real en vez de "no hay fotos en este filtro".
+        this.photos.set([]); this.photosLoading.set(false);
+        this.snack.open(`No se pudieron cargar las fotos: ${err.error?.detail ?? err.message ?? 'error desconocido'}`, 'OK', { duration: 6000 });
+      },
     });
   }
   closeReview(): void {
