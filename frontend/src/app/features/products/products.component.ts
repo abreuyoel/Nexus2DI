@@ -100,11 +100,11 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
       </div>
     } @else {
       <div class="bg-slate-900 border border-white/8 rounded-2xl overflow-hidden overflow-x-auto">
-        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-800 border-b border-white/8 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1380px]">
-          <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
+        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-800 border-b border-white/8 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1520px]">
+          <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Productora</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
         </div>
         @for (p of productos(); track p.id) {
-          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-white/5 hover:bg-slate-800 transition-colors group min-w-[1380px]">
+          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-white/5 hover:bg-slate-800 transition-colors group min-w-[1520px]">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-xl bg-violet-900 flex items-center justify-center shrink-0"><mat-icon class="!text-base text-violet-400">inventory_2</mat-icon></div>
               <p class="font-bold text-white text-sm truncate">{{ p.producto_gu || '—' }}</p>
@@ -114,6 +114,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
             <span class="text-sm text-slate-400 truncate">{{ p.categoria || '—' }}</span>
             <span class="text-sm text-slate-400 truncate">{{ p.subcategoria || '—' }}</span>
             <span class="text-sm text-slate-400 truncate">{{ p.marca || '—' }}</span>
+            <span class="text-sm text-slate-400 truncate">{{ p.fabricante || '—' }}</span>
             <span class="text-sm text-slate-400 truncate">{{ p.presentacion || '—' }}</span>
             <span class="text-sm text-slate-400 truncate">{{ p.tamano || '—' }}</span>
             <span class="flex items-center">
