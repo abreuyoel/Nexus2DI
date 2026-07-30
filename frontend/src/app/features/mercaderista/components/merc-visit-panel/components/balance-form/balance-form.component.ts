@@ -10,6 +10,7 @@ import { MatNativeDateModule } from '@angular/material/core';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ApiService } from '../../../../../../core/services/api.service';
+import { OfflineQueueService } from '../../../../services/offline-queue.service';
 
 interface ProductBalance {
   id: number;
@@ -161,10 +162,15 @@ interface ProductBalance {
   `]
 })
 export class BalanceFormComponent implements OnInit {
-  @Input() visitaId!: number;
+  @Input() visitaId!: number | string;
   @Input() idCliente!: number;
+  // Id de la cadena offline (ver offline-queue.service.ts) mientras la visita
+  // todavía no tiene id_visita real. Con chainId seteado, visitaId es el
+  // placeholder "local_...".
+  @Input() chainId: string | null = null;
 
   private api = inject(ApiService);
+  private offline = inject(OfflineQueueService);
   private snack = inject(MatSnackBar);
 
   searchQuery = '';
@@ -221,7 +227,7 @@ export class BalanceFormComponent implements OnInit {
     this.addedProducts.update(list => list.filter(x => x.id !== id));
   }
 
-  saveBalances() {
+  async saveBalances() {
     this.saving.set(true);
     const payload = {
       visita_id: this.visitaId,
@@ -233,7 +239,17 @@ export class BalanceFormComponent implements OnInit {
       }))
     };
 
-    this.api.guardarMercBalances(payload).subscribe({
+    if (this.chainId) {
+      await this.offline.addChainStep(this.chainId, {
+        kind: 'balances', url: '/api/merc/balances', isMultipart: false, jsonBody: payload,
+      });
+      this.saving.set(false);
+      this.snack.open('Data guardada — se sincronizará al reconectar', 'OK', { duration: 3000 });
+      this.addedProducts.set([]);
+      return;
+    }
+
+    this.api.guardarMercBalances({ ...payload, visita_id: Number(this.visitaId) }).subscribe({
       next: () => {
         this.saving.set(false);
         this.snack.open('Data guardada correctamente', 'OK', { duration: 3000 });

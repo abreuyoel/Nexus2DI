@@ -3,6 +3,10 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTabsModule } from '@angular/material/tabs';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { ApiService } from '../../../../core/services/api.service';
+import { OfflineQueueService } from '../../services/offline-queue.service';
 import { MercUiService, ActiveVisit } from '../../services/merc-ui.service';
 import { PhotoGridComponent } from './components/photo-grid/photo-grid.component';
 import { BalanceFormComponent } from './components/balance-form/balance-form.component';
@@ -11,10 +15,10 @@ import { MercSocketService } from '../../services/merc-socket.service';
 @Component({
   selector: 'app-merc-visit-panel',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatTabsModule, PhotoGridComponent, BalanceFormComponent],
+  imports: [CommonModule, MatIconModule, MatButtonModule, MatTabsModule, MatSnackBarModule, MatProgressSpinnerModule, PhotoGridComponent, BalanceFormComponent],
   template: `
     <div class="fixed inset-0 z-[100] bg-white dark:bg-slate-950 flex flex-col animate-in slide-in-from-right-full duration-300">
-      
+
       <!-- Header -->
       <div class="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
         <div class="flex items-center gap-3">
@@ -26,17 +30,21 @@ import { MercSocketService } from '../../services/merc-socket.service';
             <h3 class="font-bold text-slate-800 dark:text-white truncate tracking-tight text-sm">{{ visit?.pdv_nombre }}</h3>
           </div>
         </div>
-        
+
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500">Activa</span>
+          @if (visit?.chainId) {
+            <span class="text-[9px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 px-2 py-1 rounded-full">Sin conexión</span>
+          } @else {
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span class="text-[10px] font-black uppercase tracking-widest text-emerald-500">Activa</span>
+          }
         </div>
       </div>
 
       <!-- Content (Scrollable) -->
       <div class="flex-grow overflow-y-auto">
         <mat-tab-group mat-stretch-tabs="false" mat-align-tabs="start" class="merc-visit-tabs">
-          
+
           <!-- FOTOS -->
           <mat-tab>
             <ng-template mat-tab-label>
@@ -46,7 +54,7 @@ import { MercSocketService } from '../../services/merc-socket.service';
               </div>
             </ng-template>
             <div class="p-4">
-              <app-photo-grid [visitaId]="visit?.id_visita!"></app-photo-grid>
+              <app-photo-grid [visitaId]="visit?.id_visita!" [chainId]="visit?.chainId ?? null"></app-photo-grid>
             </div>
           </mat-tab>
 
@@ -59,7 +67,7 @@ import { MercSocketService } from '../../services/merc-socket.service';
               </div>
             </ng-template>
             <div class="p-4">
-              <app-balance-form [visitaId]="visit?.id_visita!" [idCliente]="visit?.id_cliente!"></app-balance-form>
+              <app-balance-form [visitaId]="visit?.id_visita!" [idCliente]="visit?.id_cliente!" [chainId]="visit?.chainId ?? null"></app-balance-form>
             </div>
           </mat-tab>
 
@@ -82,9 +90,15 @@ import { MercSocketService } from '../../services/merc-socket.service';
         </mat-tab-group>
       </div>
 
-      <!-- Footer Info -->
-      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-white/5 text-center">
-         <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">ID Visita: {{ visit?.id_visita }}</p>
+      <!-- Footer: ID + Finalizar Visita -->
+      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-white/5 space-y-3 shrink-0">
+         <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">ID Visita: {{ visit?.id_visita }}</p>
+         <button (click)="finalizar()" [disabled]="finalizando()"
+                 class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-2xl font-black uppercase tracking-widest text-xs active:scale-95 transition-all flex items-center justify-center gap-2">
+           @if (finalizando()) { <mat-spinner diameter="16" color="accent"></mat-spinner> }
+           @else { <mat-icon class="!text-base">check_circle</mat-icon> }
+           Finalizar Visita
+         </button>
       </div>
     </div>
   `,
@@ -98,9 +112,14 @@ import { MercSocketService } from '../../services/merc-socket.service';
 })
 export class MercVisitPanelComponent implements OnInit {
   @Input() visit: ActiveVisit | null = null;
-  
+
+  private api = inject(ApiService);
+  private offline = inject(OfflineQueueService);
   private ui = inject(MercUiService);
   private socket = inject(MercSocketService);
+  private snack = inject(MatSnackBar);
+
+  finalizando = signal(false);
 
   ngOnInit() {
     if (this.visit) {
@@ -110,5 +129,35 @@ export class MercVisitPanelComponent implements OnInit {
 
   close() {
     this.ui.closeVisit();
+  }
+
+  async finalizar() {
+    if (!this.visit || !confirm('¿Finalizar esta visita? No vas a poder cargar más fotos ni data después.')) return;
+    this.finalizando.set(true);
+
+    if (this.visit.chainId) {
+      // Offline: encolar como paso de la cadena, con el placeholder -- se
+      // resuelve al id real igual que el resto de los pasos.
+      await this.offline.addChainStep(this.visit.chainId, {
+        kind: 'finalizar', url: '/api/merc/finalizar-visita', isMultipart: false,
+        jsonBody: { id_visita: this.visit.id_visita },
+      });
+      this.finalizando.set(false);
+      this.snack.open('Visita finalizada localmente — se sincronizará al reconectar', 'OK', { duration: 3000 });
+      this.ui.closeVisit();
+      return;
+    }
+
+    this.api.finalizarMercVisita(this.visit.id_visita as number).subscribe({
+      next: () => {
+        this.finalizando.set(false);
+        this.snack.open('Visita finalizada', 'OK', { duration: 2500 });
+        this.ui.closeVisit();
+      },
+      error: () => {
+        this.finalizando.set(false);
+        this.snack.open('No se pudo finalizar la visita', 'OK', { duration: 3000 });
+      },
+    });
   }
 }

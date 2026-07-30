@@ -79,7 +79,11 @@ import { OfflineQueueService } from '../../../../services/offline-queue.service'
   styles: [`:host { display: block; }`]
 })
 export class PhotoGridComponent implements OnInit {
-  @Input() visitaId!: number;
+  @Input() visitaId!: number | string;
+  // Id de la cadena offline (ver offline-queue.service.ts) mientras la visita
+  // todavía no tiene id_visita real -- null cuando ya sincronizó o nunca
+  // estuvo offline. Con chainId seteado, visitaId es el placeholder "local_...".
+  @Input() chainId: string | null = null;
 
   private api = inject(ApiService);
   private offline = inject(OfflineQueueService);
@@ -88,10 +92,14 @@ export class PhotoGridComponent implements OnInit {
   tipos = signal<any[]>([]);
   uploading = signal<Set<string>>(new Set());
 
-  ngOnInit() { this.loadFotos(); }
+  ngOnInit() {
+    // Con la visita todavía sin id real (chain sin resolver) no hay nada que
+    // traer del servidor -- se muestra vacío hasta que se resuelva.
+    if (!this.chainId) this.loadFotos();
+  }
 
   loadFotos() {
-    this.api.getFotosVisita(this.visitaId).subscribe(res => {
+    this.api.getFotosVisita(this.visitaId as number).subscribe(res => {
       this.tipos.set((res.tipos || []).map((t: any) => ({ ...t, fotos: t.fotos || [] })));
     });
   }
@@ -112,12 +120,21 @@ export class PhotoGridComponent implements OnInit {
     this.uploading.update(s => { s.add(tipo.codigo); return new Set(s); });
     try {
       for (const file of files) {
-        await this.offline.enqueuePhoto(this.visitaId, tipo.codigo, file);
+        if (this.chainId) {
+          await this.offline.addChainStep(this.chainId, {
+            kind: 'foto', url: '/api/merc/fotos/upload', isMultipart: true,
+            formFields: { visita_id: String(this.visitaId), tipo_foto: tipo.codigo },
+            fileBlob: file, fileName: file.name,
+          });
+        } else {
+          await this.offline.enqueuePhoto(this.visitaId as number, tipo.codigo, file);
+        }
       }
+      if (this.chainId) this.snack.open('Foto guardada — se sincronizará al reconectar', 'OK', { duration: 2500 });
     } finally {
       setTimeout(() => {
         this.uploading.update(s => { s.delete(tipo.codigo); return new Set(s); });
-        this.loadFotos();
+        if (!this.chainId) this.loadFotos();
       }, 900);
     }
   }

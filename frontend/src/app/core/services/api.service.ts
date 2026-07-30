@@ -519,8 +519,20 @@ export class ApiService {
   getMercProductosCliente(idCliente: number): Observable<any[]> { 
     return this.http.get<any[]>(`${this.base}/api/merc/productos`, { params: { id_cliente: idCliente } }); 
   }
-  guardarMercBalances(payload: { visita_id: number; id_cliente: number; productos: any[] }): Observable<any> { 
-    return this.http.post<any>(`${this.base}/api/merc/balances`, payload); 
+  guardarMercBalances(payload: { visita_id: number; id_cliente: number; productos: any[] }): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/merc/balances`, payload);
+  }
+  uploadMercFoto(visitaId: number, tipoFoto: string, file: File | Blob, lat?: number, lon?: number): Observable<any> {
+    const fd = new FormData();
+    fd.append('visita_id', String(visitaId));
+    fd.append('tipo_foto', tipoFoto);
+    fd.append('file', file, (file as File).name || 'foto.jpg');
+    if (lat != null) fd.append('lat', String(lat));
+    if (lon != null) fd.append('lon', String(lon));
+    return this.http.post<any>(`${this.base}/api/merc/fotos/upload`, fd);
+  }
+  finalizarMercVisita(idVisita: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/merc/finalizar-visita`, { id_visita: idVisita });
   }
 
   // --- CLIENT CATEGORIES ---

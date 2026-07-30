@@ -5,8 +5,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import maplibregl from 'maplibre-gl';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../../../core/services/api.service';
 import { MercUiService } from '../../services/merc-ui.service';
+import { OfflineQueueService } from '../../services/offline-queue.service';
 
 interface PdvClient {
   id_cliente: number;
@@ -154,14 +156,15 @@ interface PdvGroup {
                       <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Selecciona el Cliente</p>
                       <div class="grid grid-cols-1 gap-2">
                         @for (c of group.clients; track c.id_cliente) {
-                          <button (click)="iniciar(group, c)" 
-                                  class="w-full p-3 rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900 text-left hover:border-primary-500 transition-all flex items-center justify-between group/btn">
+                          <button (click)="iniciar(group, c)" [disabled]="creatingVisit()"
+                                  class="w-full p-3 rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900 text-left hover:border-primary-500 transition-all flex items-center justify-between group/btn disabled:opacity-50">
                             <span class="text-xs font-bold text-slate-700 dark:text-slate-200">{{ c.nombre }}</span>
-                            <mat-icon class="text-slate-300 group-hover/btn:text-primary-500 transition-colors">arrow_forward</mat-icon>
+                            @if (creatingVisit()) { <mat-spinner diameter="16"></mat-spinner> }
+                            @else { <mat-icon class="text-slate-300 group-hover/btn:text-primary-500 transition-colors">arrow_forward</mat-icon> }
                           </button>
                         }
                       </div>
-                      <button (click)="activatingPdvId.set(null)" class="w-full py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Cancelar</button>
+                      <button (click)="activatingPdvId.set(null)" [disabled]="creatingVisit()" class="w-full py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest disabled:opacity-50">Cancelar</button>
                     </div>
                   } @else {
                     <button (click)="triggerActivation(group)" 
@@ -194,6 +197,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
   private ui = inject(MercUiService);
+  private offline = inject(OfflineQueueService);
 
   loading = signal(true);
   activeTab = signal<'fija' | 'variable'>('fija');
@@ -207,6 +211,12 @@ export class MercRutaComponent implements OnInit, OnDestroy {
 
   activatingPdvId = signal<string | null>(null);
   activationGroup = signal<PdvGroup | null>(null);
+  // Foto de activación capturada al tocar "Activar PDV", en espera de que se
+  // elija el cliente (recién ahí se sabe con qué visita asociarla). Null
+  // cuando el punto ya fue activado hoy por otro cliente -- ahí no se vuelve
+  // a pedir la foto, igual que en la APK (ver SeleccionarClienteModal).
+  activationPhotoFile = signal<File | null>(null);
+  creatingVisit = signal(false);
 
   filteredRutas = computed(() => {
     return this.rutas().filter(r => r.tipo.toLowerCase() === this.activeTab().toLowerCase());
@@ -249,12 +259,22 @@ export class MercRutaComponent implements OnInit, OnDestroy {
     return Object.values(groups);
   });
 
+  private chainResolvedSub?: Subscription;
+
   ngOnInit(): void {
     this.loadData();
+    // Persistente para todo el ciclo de vida del componente (no por-activación,
+    // así no se acumulan suscripciones cada vez que se activa un PDV offline).
+    // resolveVisita() ya filtra por chainId internamente y no hace nada si no
+    // coincide con la visita actualmente abierta.
+    this.chainResolvedSub = this.offline.chainResolved$.subscribe(({ chainId, realVisitaId }) => {
+      this.ui.resolveVisita(chainId, realVisitaId);
+    });
   }
 
   ngOnDestroy(): void {
     if (this.map) this.map.remove();
+    this.chainResolvedSub?.unsubscribe();
   }
 
   loadData(): void {
@@ -363,16 +383,32 @@ export class MercRutaComponent implements OnInit, OnDestroy {
 
   onActivationPhoto(event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
+    (event.target as HTMLInputElement).value = '';
     if (!file) return;
 
     const group = this.activationGroup();
     if (group) {
+      this.activationPhotoFile.set(file);
       this.activatingPdvId.set(group.id_punto);
       this.snack.open('Foto de activación capturada', 'OK', { duration: 2000 });
     }
   }
 
-  iniciar(group: PdvGroup, client: PdvClient): void {
+  /** GPS con timeout corto -- si el mercaderista no tiene señal de ubicación no
+   * debe quedar bloqueado sin poder activar el PDV, solo se guarda sin coordenadas
+   * (mismo criterio que ya usa el resto de este módulo, ver centerOnUser()). */
+  private getPosition(): Promise<{ lat?: number; lon?: number }> {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve({});
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        () => resolve({}),
+        { enableHighAccuracy: true, timeout: 8000 },
+      );
+    });
+  }
+
+  async iniciar(group: PdvGroup, client: PdvClient): Promise<void> {
     if (client.visitado && client.visita_id) {
       this.ui.openVisit({
         id_visita: client.visita_id,
@@ -380,23 +416,64 @@ export class MercRutaComponent implements OnInit, OnDestroy {
         id_cliente: client.id_cliente,
         cliente: client.nombre
       });
+      this.activatingPdvId.set(null);
+      this.activationGroup.set(null);
+      this.activationPhotoFile.set(null);
       return;
     }
 
-    this.api.iniciarVisita({ id_punto: group.id_punto, id_cliente: client.id_cliente }).subscribe({
+    this.creatingVisit.set(true);
+    const photoFile = this.activationPhotoFile();
+    const { lat, lon } = await this.getPosition();
+    const iniciarBody = { id_punto: group.id_punto, id_cliente: client.id_cliente };
+
+    if (!navigator.onLine) {
+      const { chainId, placeholderVisitaId } = await this.offline.openChain({
+        idPunto: group.id_punto, idCliente: client.id_cliente,
+        iniciarUrl: '/api/merc/iniciar-visita', iniciarBody,
+      });
+      if (photoFile) {
+        const fields: Record<string, string> = { visita_id: placeholderVisitaId, tipo_foto: 'activacion' };
+        if (lat != null) fields['lat'] = String(lat);
+        if (lon != null) fields['lon'] = String(lon);
+        await this.offline.addChainStep(chainId, {
+          kind: 'foto', url: '/api/merc/fotos/upload', isMultipart: true,
+          formFields: fields, fileBlob: photoFile, fileName: photoFile.name,
+        });
+      }
+      this.ui.openVisit({
+        id_visita: placeholderVisitaId, pdv_nombre: group.nombre,
+        id_cliente: client.id_cliente, cliente: client.nombre, chainId,
+      });
+      this.creatingVisit.set(false);
+      this.activatingPdvId.set(null);
+      this.activationGroup.set(null);
+      this.activationPhotoFile.set(null);
+      this.snack.open('Trabajando sin conexión — se sincronizará al reconectar', 'OK', { duration: 3000 });
+      return;
+    }
+
+    this.api.iniciarVisita(iniciarBody).subscribe({
       next: (res) => {
+        if (photoFile) {
+          this.api.uploadMercFoto(res.id_visita, 'activacion', photoFile, lat, lon).subscribe({
+            error: () => this.snack.open('La visita se creó, pero la foto de activación no se pudo subir -- reintentá desde Fotos', 'OK', { duration: 5000 }),
+          });
+        }
         this.ui.openVisit({
           id_visita: res.id_visita,
           pdv_nombre: group.nombre,
           id_cliente: client.id_cliente,
           cliente: client.nombre
         });
-        
+
+        this.creatingVisit.set(false);
         this.activatingPdvId.set(null);
         this.activationGroup.set(null);
+        this.activationPhotoFile.set(null);
         this.loadData();
       },
-      error: () => this.snack.open('Error al iniciar visita', 'OK', { duration: 3000 })
+      error: () => { this.creatingVisit.set(false); this.snack.open('Error al iniciar visita', 'OK', { duration: 3000 }); }
     });
   }
 }

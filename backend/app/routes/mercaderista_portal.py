@@ -270,13 +270,18 @@ def iniciar_visita(
     if not id_punto or not id_cliente:
         raise HTTPException(status_code=400, detail="id_punto e id_cliente son requeridos")
 
-    # Verificar si ya existe visita hoy para ese PDV
+    # Verificar si ya existe visita hoy para ese PDV+cliente. OJO: un mismo PDV
+    # puede tener varios clientes programados el mismo día -- sin filtrar por
+    # id_cliente acá, la visita del segundo cliente reutilizaba por error la
+    # fila del primero y sus fotos/balance quedaban mezclados bajo el
+    # id_visita equivocado.
     existing = db.execute(text("""
         SELECT id_visita FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista = :mid
           AND identificador_punto_interes = :pid
+          AND id_cliente = :cid
           AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"mid": merc.id, "pid": id_punto, "hoy": str(date.today())}).fetchone()
+    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente, "hoy": str(date.today())}).fetchone()
 
     if existing:
         return {"id_visita": existing.id_visita, "nueva": False}
@@ -298,8 +303,8 @@ def iniciar_visita(
 
     new_id = db.execute(text("""
         SELECT MAX(id_visita) FROM VISITAS_MERCADERISTA
-        WHERE id_mercaderista = :mid AND identificador_punto_interes = :pid
-    """), {"mid": merc.id, "pid": id_punto}).scalar()
+        WHERE id_mercaderista = :mid AND identificador_punto_interes = :pid AND id_cliente = :cid
+    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente}).scalar()
 
     from app.services.realtime import notify_event
     notify_event("visit.created", {"id_visita": new_id, "id_cliente": id_cliente, "id_punto": id_punto})
@@ -422,6 +427,8 @@ async def upload_foto(
     visita_id: int = Form(...),
     tipo_foto: str = Form(...),
     file: UploadFile = File(...),
+    lat: Optional[float] = Form(None),
+    lon: Optional[float] = Form(None),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -457,9 +464,9 @@ async def upload_foto(
         raise HTTPException(status_code=400, detail=f"Tipo de foto inválido: {tipo_foto}")
     ahora = datetime.now()
     db.execute(text("""
-        INSERT INTO FOTOS_TOTALES (id_visita, id_tipo_foto, file_path, fecha_registro, Estado)
-        VALUES (:vid, :tipo_id, :path, :fecha, 'pendiente')
-    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path, "fecha": ahora})
+        INSERT INTO FOTOS_TOTALES (id_visita, id_tipo_foto, file_path, fecha_registro, Estado, latitud, longitud)
+        VALUES (:vid, :tipo_id, :path, :fecha, 'pendiente', :lat, :lon)
+    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path, "fecha": ahora, "lat": lat, "lon": lon})
     db.commit()
 
     new_id = db.execute(text("""
@@ -625,6 +632,39 @@ def guardar_balances(
 
     db.commit()
     return {"success": True, "productos_guardados": len(productos)}
+
+
+@router.post("/finalizar-visita")
+def finalizar_visita(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Cierra el ciclo de vida de la visita -- sin esto VISITAS_MERCADERISTA.estado
+    se quedaba en 'Pendiente' para siempre, igual al bug que ya tenía este mismo
+    problema resuelto en auditor_campo.py::finalizar_auditoria_cliente. Acá además
+    se valida que la visita sea del mercaderista autenticado antes de cerrarla."""
+    merc = _get_mercaderista(current_user, db)
+    id_visita = payload.get("id_visita")
+    if not id_visita:
+        raise HTTPException(status_code=400, detail="id_visita es requerido")
+
+    visita = db.execute(text("""
+        SELECT id_visita FROM VISITAS_MERCADERISTA
+        WHERE id_visita = :vid AND id_mercaderista = :mid
+    """), {"vid": id_visita, "mid": merc.id}).fetchone()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+
+    db.execute(text("""
+        UPDATE VISITAS_MERCADERISTA SET estado = 'Finalizada' WHERE id_visita = :vid
+    """), {"vid": id_visita})
+    db.commit()
+
+    from app.services.realtime import notify_event
+    notify_event("visit.finished", {"id_visita": id_visita})
+
+    return {"success": True, "id_visita": id_visita}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
