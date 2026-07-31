@@ -1,21 +1,23 @@
-import { Component, Input, signal, inject, OnInit } from '@angular/core';
+import { Component, Input, signal, inject, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../../../core/services/api.service';
 import { OfflineQueueService } from '../../services/offline-queue.service';
 import { MercUiService, ActiveVisit } from '../../services/merc-ui.service';
 import { PhotoGridComponent } from './components/photo-grid/photo-grid.component';
 import { BalanceFormComponent } from './components/balance-form/balance-form.component';
-import { MercSocketService } from '../../services/merc-socket.service';
+import { MercSocketService, ChatMessage } from '../../services/merc-socket.service';
 
 @Component({
   selector: 'app-merc-visit-panel',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatTabsModule, MatSnackBarModule, MatProgressSpinnerModule, PhotoGridComponent, BalanceFormComponent],
+  imports: [CommonModule, FormsModule, MatIconModule, MatButtonModule, MatTabsModule, MatSnackBarModule, MatProgressSpinnerModule, PhotoGridComponent, BalanceFormComponent],
   template: `
     <div class="fixed inset-0 z-[100] bg-white dark:bg-slate-950 flex flex-col animate-in slide-in-from-right-full duration-300">
 
@@ -79,12 +81,44 @@ import { MercSocketService } from '../../services/merc-socket.service';
                 <span class="text-[10px] font-black uppercase tracking-widest">Chat</span>
               </div>
             </ng-template>
-            <div class="p-4 h-[60vh]">
-               <div class="h-full flex flex-col items-center justify-center opacity-30 gap-4">
-                 <mat-icon class="!text-5xl">chat</mat-icon>
-                 <p class="font-bold">Chat de la visita activa</p>
-               </div>
-            </div>
+            @if (visit?.chainId) {
+              <div class="h-[60vh] flex flex-col items-center justify-center opacity-40 gap-4 px-8 text-center">
+                <mat-icon class="!text-5xl">cloud_off</mat-icon>
+                <p class="font-bold text-sm">El chat va a estar disponible cuando esta visita se sincronice (está guardada sin conexión).</p>
+              </div>
+            } @else {
+              <div class="h-[60vh] flex flex-col">
+                <div #msgList class="flex-grow overflow-y-auto p-4 space-y-3">
+                  @if (chatLoading()) {
+                    <div class="flex justify-center py-8"><mat-spinner diameter="28"></mat-spinner></div>
+                  } @else if (messages().length === 0) {
+                    <div class="h-full flex flex-col items-center justify-center opacity-30 gap-3">
+                      <mat-icon class="!text-4xl">chat_bubble_outline</mat-icon>
+                      <p class="text-xs font-bold">Sin mensajes todavía</p>
+                    </div>
+                  } @else {
+                    @for (m of messages(); track m.id_mensaje) {
+                      <div class="bg-slate-50 dark:bg-slate-900 rounded-2xl p-3 max-w-[85%]">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-[10px] font-black text-primary-500 uppercase tracking-widest">{{ m.sender_nombre }}</span>
+                          @if (m.created_at) { <span class="text-[9px] text-slate-400">{{ m.created_at | date:'short' }}</span> }
+                        </div>
+                        <p class="text-sm text-slate-700 dark:text-slate-200 break-words">{{ m.mensaje }}</p>
+                      </div>
+                    }
+                  }
+                </div>
+                <div class="p-3 border-t border-slate-100 dark:border-white/5 flex items-center gap-2 shrink-0">
+                  <input [(ngModel)]="newMessage" (keyup.enter)="enviarMensaje()" placeholder="Escribí un mensaje..."
+                    class="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary-500">
+                  <button (click)="enviarMensaje()" [disabled]="!newMessage.trim() || sendingMsg()"
+                    class="w-11 h-11 shrink-0 rounded-2xl bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white flex items-center justify-center transition-all active:scale-95">
+                    @if (sendingMsg()) { <mat-spinner diameter="18" color="accent"></mat-spinner> }
+                    @else { <mat-icon>send</mat-icon> }
+                  </button>
+                </div>
+              </div>
+            }
           </mat-tab>
 
         </mat-tab-group>
@@ -110,8 +144,9 @@ import { MercSocketService } from '../../services/merc-socket.service';
     }
   `]
 })
-export class MercVisitPanelComponent implements OnInit {
+export class MercVisitPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   @Input() visit: ActiveVisit | null = null;
+  @ViewChild('msgList') msgListEl?: ElementRef<HTMLDivElement>;
 
   private api = inject(ApiService);
   private offline = inject(OfflineQueueService);
@@ -120,11 +155,55 @@ export class MercVisitPanelComponent implements OnInit {
   private snack = inject(MatSnackBar);
 
   finalizando = signal(false);
+  messages = signal<ChatMessage[]>([]);
+  chatLoading = signal(false);
+  newMessage = '';
+  sendingMsg = signal(false);
+  private chatSub?: Subscription;
+  private lastMsgCount = 0;
 
   ngOnInit() {
-    if (this.visit) {
-      // this.socket.joinChat(this.visit.id_visita);
+    // El chat necesita un id_visita real del servidor -- si la visita se
+    // activó offline y todavía no sincronizó (chainId), no hay nada que
+    // consultar todavía (ver el bloque @if(visit?.chainId) del template).
+    if (this.visit && !this.visit.chainId) {
+      this.chatLoading.set(true);
+      this.chatSub = this.socket.joinChat(this.visit.id_visita as number).subscribe({
+        next: (msgs) => { this.messages.set(msgs); this.chatLoading.set(false); },
+        error: () => this.chatLoading.set(false),
+      });
     }
+  }
+
+  ngOnDestroy() {
+    this.socket.leaveChat();
+    this.chatSub?.unsubscribe();
+  }
+
+  ngAfterViewChecked() {
+    if (this.messages().length !== this.lastMsgCount && this.msgListEl) {
+      this.lastMsgCount = this.messages().length;
+      const el = this.msgListEl.nativeElement;
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  enviarMensaje() {
+    const texto = this.newMessage.trim();
+    if (!texto || !this.visit || this.visit.chainId) return;
+    this.sendingMsg.set(true);
+    this.newMessage = '';
+    // Eco optimista: el polling (cada 8s) recién va a traer este mensaje del
+    // servidor en la próxima vuelta -- sin esto, el mercaderista lo ve
+    // desaparecer y reaparecer varios segundos después.
+    this.messages.update(list => [...list, {
+      id_visita: this.visit!.id_visita as number, sender_nombre: 'Vos', mensaje: texto,
+      created_at: new Date().toISOString(),
+    }]);
+    this.socket.sendMessage(this.visit.id_visita as number, texto, this.visit.cliente || '').subscribe({
+      next: () => this.sendingMsg.set(false),
+      error: () => { this.sendingMsg.set(false); this.snack.open('No se pudo enviar el mensaje', 'OK', { duration: 3000 }); },
+    });
   }
 
   close() {
