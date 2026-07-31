@@ -15,8 +15,15 @@ class Settings(BaseSettings):
     DB_NAME: str = "epran-qa"
     DB_USER: str
     DB_PASSWORD: str
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    # Con --workers 1 (ver Dockerfile) todo el tráfico de ~400 mercaderistas +
+    # usuarios web pasa por un solo proceso -- 5+10=15 conexiones máximo se
+    # agotaban rápido bajo carga real, dejando requests en cola hasta 30s
+    # (pool_timeout) antes de fallar: eso es lo que se percibía como "el
+    # servidor está lento" y, si superaba el timeout del proxy/Cloudflare, un
+    # 502 directo. Puede sobreescribirse por env var si hace falta ajustar
+    # más sin tocar código.
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
 
     ENVIRONMENT: str = "development"
 
