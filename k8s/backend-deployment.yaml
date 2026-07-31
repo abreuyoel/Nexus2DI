@@ -49,15 +49,25 @@ spec:
           livenessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 20
-            periodSeconds: 20
-            # timeoutSeconds sin especificar defaulteaba a 1s -- con picos de
-            # tráfico real (varios usuarios con Centro de Mando abierto a la
-            # vez, cada uno recargando resumen-dia al mismo evento realtime)
-            # ese margen era demasiado corto incluso para un health check que
-            # no toca la DB, y Kubernetes reiniciaba el pod en plena carga
-            # (ver /health en main.py: ahora además es async por la misma razón).
-            timeoutSeconds: 5
-            failureThreshold: 5
+            # Con timeoutSeconds=5 y failureThreshold=5 (100s de margen) el
+            # pod SIGUIÓ reiniciándose bajo carga real -- /health (async,
+            # no toca la DB) tardó más de 100s seguidos en responder. Con
+            # --workers 1 el proceso es un único intérprete: los endpoints
+            # sync pesados (resumen-dia agregando en Python, export a Excel
+            # con pandas, etc.) corren en threads del threadpool de Starlette
+            # pero siguen serializados entre sí por el GIL mientras hacen
+            # trabajo CPU-bound, y eso alcanza a bloquear también el loop
+            # async que atendería /health. Reiniciar el pod en ese momento es
+            # lo peor posible: con 1 sola réplica, cada reinicio es ~10-15s de
+            # caída total para TODOS mientras recalienta el pool de conexiones
+            # -- y el proceso, aunque lento, sí termina respondiendo (los
+            # logs muestran 200 OK después de la demora). Se sube el margen
+            # a 5 minutos continuos sin respuesta antes de reiniciar: eso ya
+            # sería un deadlock real, no un pico de tráfico. La causa de raíz
+            # (contención de GIL bajo --workers 1) queda pendiente aparte.
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
           resources:
             # Más pesado que un backend Node equivalente: pandas/opencv/
             # scikit-learn quedan cargados en memoria del proceso.
