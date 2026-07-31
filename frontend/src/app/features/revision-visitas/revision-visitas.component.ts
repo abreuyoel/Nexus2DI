@@ -27,10 +27,10 @@ export class RevisionVisitasComponent implements OnInit {
   visitas = signal<any[]>([]);
   // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
   // RUTA_PROGRAMACION -> CLIENTES): se muestra primero, antes que las
-  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía. Se
-  // pide recién al elegir un cliente (join pesado sin ese filtro -- listar
-  // el roster completo del sistema en cada carga de pantalla no escala).
-  loadingRoster = signal(false);
+  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía. Sin
+  // cliente elegido trae el de todos los clientes visibles (ordenado por
+  // sin_revisar en `rosterFiltrado`); al elegir cliente se reescopa server-side.
+  loadingRoster = signal(true);
   mercaderistasRoster = signal<any[]>([]);
   selectedMercaderista = signal<any>(null);
   // Catálogo liviano {id_cliente, cliente} para poblar el selector "Cliente"
@@ -85,6 +85,7 @@ export class RevisionVisitasComponent implements OnInit {
     const r = this.rangeFor('semana');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
+    this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
     this.api.getCentroMandoClientes().subscribe({
       next: (r) => this.clientesCatalogo.set(r?.clientes || []),
@@ -126,11 +127,13 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
-  /** Roster de un cliente puntual (no depende del rango de fechas): quién
-   * está asignado a sus rutas activas, tenga o no visitas cargadas todavía. */
-  private loadRoster(clienteId: number): void {
+  /** Roster (no depende del rango de fechas): quién está asignado a rutas
+   * activas, tenga o no visitas cargadas todavía. Sin cliente_id trae el de
+   * todos los clientes visibles para el usuario -- es el default de la
+   * pantalla, ordenado en `rosterFiltrado` por quién tiene más sin revisar. */
+  private loadRoster(clienteId?: number): void {
     this.loadingRoster.set(true);
-    this.api.getReviewMercaderistas({ cliente_id: clienteId }).subscribe({
+    this.api.getReviewMercaderistas(clienteId ? { cliente_id: clienteId } : {}).subscribe({
       next: (rs) => { this.mercaderistasRoster.set(rs || []); this.loadingRoster.set(false); },
       error: () => { this.mercaderistasRoster.set([]); this.loadingRoster.set(false); },
     });
@@ -175,12 +178,12 @@ export class RevisionVisitasComponent implements OnInit {
    * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
    * dejar un filtro "fantasma" que no matchea nada. Volver también a la
    * vista de mercaderistas (el mercaderista elegido era de otro cliente), y
-   * pedir el roster de ESE cliente recién ahora (sin cliente elegido no se
-   * pide nada -- ver `rosterFiltrado`/template). */
+   * repedir el roster escopado a ese cliente (o al global si se limpió el
+   * filtro). */
   onClienteFiltroChange(): void {
     this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
     this.selectedMercaderista.set(null);
-    if (!this.filtroCliente) { this.mercaderistasRoster.set([]); return; }
+    if (!this.filtroCliente) { this.loadRoster(); return; }
     const c = this.clientesCatalogo().find(x => x.cliente === this.filtroCliente);
     if (c) this.loadRoster(c.id_cliente); else this.mercaderistasRoster.set([]);
   }
@@ -188,7 +191,8 @@ export class RevisionVisitasComponent implements OnInit {
   /** Roster filtrado por cliente/ruta/mercaderista/búsqueda -- es lo que se
    * muestra POR DEFECTO en vez de las tarjetas de visitas. Cada fila trae
    * sus stats (visitas/fotos/sin_revisar) ya calculadas contra el rango de
-   * fechas activo, para que se vea de un vistazo quién falta por reportar. */
+   * fechas activo, y quedan ordenadas por quién tiene más fotos sin revisar
+   * primero -- así se ve de un vistazo a quién hay que atender. */
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
     return this.mercaderistasRoster()
@@ -199,7 +203,12 @@ export class RevisionVisitasComponent implements OnInit {
         if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
         return true;
       })
-      .map(r => ({ ...r, _stats: this.statsDeRoster(r) }));
+      .map(r => ({ ...r, _stats: this.statsDeRoster(r) }))
+      .sort((a, b) => {
+        if (b._stats.sin_revisar !== a._stats.sin_revisar) return b._stats.sin_revisar - a._stats.sin_revisar;
+        if (b._stats.visitas !== a._stats.visitas) return b._stats.visitas - a._stats.visitas;
+        return (a.mercaderista || '').localeCompare(b.mercaderista || '');
+      });
   }
 
   private statsDeRoster(r: any) {
@@ -223,10 +232,12 @@ export class RevisionVisitasComponent implements OnInit {
   }
 
   clearFilters(): void {
+    const teniaCliente = !!this.filtroCliente;
     this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
     this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
     this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
-    this.selectedMercaderista.set(null); this.mercaderistasRoster.set([]);
+    this.selectedMercaderista.set(null);
+    if (teniaCliente) this.loadRoster();
   }
 
   /** Visita 100% aprobada: tiene fotos revisables y todas quedaron Aprobada
