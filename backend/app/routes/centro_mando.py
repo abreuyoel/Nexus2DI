@@ -105,6 +105,7 @@ def listar_clientes(
 def horas_trabajadas(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
+    cliente_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
@@ -115,7 +116,10 @@ def horas_trabajadas(
     entre la primera y la última foto que subió cada mercaderista por día
     (FOTOS_TOTALES.fecha_registro), sumado sobre todos los días del rango.
     Admin ve todos; analista solo los mercaderistas de SUS rutas
-    (analistas_rutas -> RUTA_PROGRAMACION -> MERCADERISTAS_RUTAS)."""
+    (analistas_rutas -> RUTA_PROGRAMACION -> MERCADERISTAS_RUTAS). Con
+    cliente_id (mismo filtro "Cliente" de arriba del dashboard) solo cuenta
+    las fotos de visitas de ESE cliente -- igual que resumen-dia/activaciones,
+    para que las 3 pestañas queden consistentes entre sí."""
     try:
         hoy = _date.today()
         if not desde:
@@ -123,8 +127,13 @@ def horas_trabajadas(
         if not hasta:
             hasta = desde
 
-        analyst_filter = ""
+        cliente_filter = ""
         params: tuple = (desde, hasta)
+        if cliente_id:
+            cliente_filter = " AND v.id_cliente = ?"
+            params = params + (cliente_id,)
+
+        analyst_filter = ""
         if current_user.is_analyst and current_user.id_perfil:
             analyst_filter = """
                 AND EXISTS (
@@ -146,6 +155,7 @@ def horas_trabajadas(
             JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
             JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
             WHERE CAST(f.fecha_registro AS DATE) BETWEEN ? AND ?
+            {cliente_filter}
             {analyst_filter}
             GROUP BY v.id_mercaderista, m.nombre, CAST(f.fecha_registro AS DATE)
         """, params)

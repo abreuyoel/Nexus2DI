@@ -203,7 +203,9 @@ export class CentroMandoComponent implements OnInit {
    * mismo mecanismo que ya causó reinicios del backend bajo tráfico real. */
   loadHorasTrabajadas() {
     this.loadingHoras.set(true);
-    this.api.getCentroMandoHorasTrabajadas({ desde: this.filtroDesde, hasta: this.filtroHasta }).subscribe({
+    const opts: any = { desde: this.filtroDesde, hasta: this.filtroHasta };
+    if (this.filtroCliente) opts.cliente_id = this.filtroCliente;
+    this.api.getCentroMandoHorasTrabajadas(opts).subscribe({
       next: (res) => {
         this.horasTrabajadas.set(res?.success ? (res.mercaderistas || []) : []);
         this.loadingHoras.set(false);
