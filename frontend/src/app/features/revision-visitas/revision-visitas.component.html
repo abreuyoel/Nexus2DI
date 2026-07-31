@@ -133,21 +133,76 @@
     </div>
   </div>
 
-  @if (loading()) {
-    <div class="flex flex-col items-center justify-center py-24 gap-4">
-      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
-      <p class="text-slate-400 font-medium">Cargando visitas...</p>
-    </div>
-  } @else if (filtered.length === 0) {
-    <div class="py-20 text-center">
-      <div class="flex flex-col items-center gap-3 opacity-40">
-        <mat-icon class="!text-5xl">photo_library</mat-icon>
-        <p class="font-bold">No hay visitas con fotos para revisar en este período.</p>
+  @if (!selectedMercaderista()) {
+    <!-- Nivel 1 (por defecto): mercaderistas asignados, no tarjetas de visitas -->
+    @if (loadingRoster()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando mercaderistas...</p>
+      </div>
+    } @else if (rosterFiltrado.length === 0) {
+      <div class="py-20 text-center">
+        <div class="flex flex-col items-center gap-3 opacity-40">
+          <mat-icon class="!text-5xl">groups</mat-icon>
+          <p class="font-bold">No hay mercaderistas asignados con estos filtros.</p>
+        </div>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        @for (r of rosterFiltrado; track r.id_mercaderista + '_' + r.id_cliente) {
+          <button type="button" (click)="selectMercaderista(r)"
+            class="text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-primary-400 transition-all active:scale-95 flex flex-col gap-3">
+            <div class="flex items-center gap-3">
+              <div class="w-11 h-11 shrink-0 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center font-black text-lg">
+                {{ r.mercaderista.charAt(0) }}
+              </div>
+              <div class="min-w-0">
+                <div class="font-black text-slate-800 dark:text-white text-sm truncate">{{ r.mercaderista }}</div>
+                <div class="text-xs text-slate-400 truncate">{{ r.cliente }} · {{ r.ruta }}</div>
+              </div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100 dark:border-white/5">
+              <span class="text-slate-500 font-semibold">{{ r._stats.visitas }} visita(s)</span>
+              @if (r._stats.sin_revisar > 0) {
+                <span class="text-amber-600 dark:text-amber-400 font-bold">{{ r._stats.sin_revisar }} sin revisar</span>
+              } @else if (r._stats.visitas > 0) {
+                <span class="text-emerald-600 dark:text-emerald-400 font-bold">Al día</span>
+              } @else {
+                <span class="text-slate-400 font-bold">Sin visitas aún</span>
+              }
+            </div>
+          </button>
+        }
+      </div>
+    }
+  } @else {
+    <!-- Nivel 2: visitas del mercaderista elegido -->
+    <div class="flex items-center gap-3 mb-1">
+      <button type="button" (click)="backToRoster()"
+        class="flex items-center gap-1.5 px-3 py-2 border border-slate-200 dark:border-white/10 text-slate-500 hover:text-primary-600 hover:border-primary-400 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">arrow_back</mat-icon> Mercaderistas
+      </button>
+      <div class="text-sm">
+        <span class="font-black text-slate-800 dark:text-white">{{ selectedMercaderista().mercaderista }}</span>
+        <span class="text-slate-400"> · {{ selectedMercaderista().cliente }}</span>
       </div>
     </div>
-  } @else {
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      @for (v of filtered; track v.id_visita) {
+
+    @if (loading()) {
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+        <p class="text-slate-400 font-medium">Cargando visitas...</p>
+      </div>
+    } @else if (filtered.length === 0) {
+      <div class="py-20 text-center">
+        <div class="flex flex-col items-center gap-3 opacity-40">
+          <mat-icon class="!text-5xl">photo_library</mat-icon>
+          <p class="font-bold">No hay visitas con fotos para revisar en este período.</p>
+        </div>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        @for (v of filtered; track v.id_visita) {
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
           <div class="px-4 py-2.5 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-white/5">
             <span class="text-xs font-mono px-2 py-0.5 rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-bold">#{{ v.id_visita }}</span>
@@ -197,6 +252,7 @@
         </div>
       }
     </div>
+    }
   }
 </div>
 

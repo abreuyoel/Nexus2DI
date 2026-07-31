@@ -25,6 +25,12 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 export class RevisionVisitasComponent implements OnInit {
   loading = signal(true);
   visitas = signal<any[]>([]);
+  // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
+  // RUTA_PROGRAMACION -> CLIENTES): se muestra primero, antes que las
+  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía.
+  loadingRoster = signal(true);
+  mercaderistasRoster = signal<any[]>([]);
+  selectedMercaderista = signal<any>(null);
   periodo: Periodo | 'custom' = 'semana';
   desde = '';
   hasta = '';
@@ -73,6 +79,7 @@ export class RevisionVisitasComponent implements OnInit {
     const r = this.rangeFor('semana');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
+    this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
     // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos
     this.realtime.events$.subscribe(ev => {
@@ -110,6 +117,16 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
+  /** Roster completo (no depende del rango de fechas): quién está asignado,
+   * tenga o no visitas cargadas todavía. */
+  loadRoster(): void {
+    this.loadingRoster.set(true);
+    this.api.getReviewMercaderistas().subscribe({
+      next: (rs) => { this.mercaderistasRoster.set(rs || []); this.loadingRoster.set(false); },
+      error: () => { this.mercaderistasRoster.set([]); this.loadingRoster.set(false); },
+    });
+  }
+
   // ── Opciones de filtros (valores distintos del set cargado) ──
   private distinct(key: string, source: any[] = this.visitas()): string[] {
     return Array.from(new Set(source.map(v => v[key]).filter(x => x != null && x !== ''))).sort();
@@ -122,17 +139,65 @@ export class RevisionVisitasComponent implements OnInit {
       ? this.visitas().filter(v => v.cliente === this.filtroCliente)
       : this.visitas();
   }
-  get rutasOpts(): string[] { return this.distinct('ruta', this.visitasDelClienteFiltrado); }
+  private get rosterDelClienteFiltrado(): any[] {
+    return this.filtroCliente
+      ? this.mercaderistasRoster().filter(r => r.cliente === this.filtroCliente)
+      : this.mercaderistasRoster();
+  }
+  // Clientes/rutas/mercaderistas salen de la UNIÓN visitas+roster: el roster
+  // trae asignaciones aunque todavía no haya ni una visita cargada (por eso
+  // no basta con derivarlos solo de `visitas()`, que solo tiene fotos ya
+  // subidas -- HAVING revisar > 0 en review-list).
+  get rutasOpts(): string[] {
+    const b = this.rosterDelClienteFiltrado.map(r => r.ruta).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('ruta', this.visitasDelClienteFiltrado), ...b])).sort();
+  }
   get puntosOpts(): string[] { return this.distinct('punto_de_interes', this.visitasDelClienteFiltrado); }
-  get clientesOpts(): string[] { return this.distinct('cliente'); }
-  get mercaderistasOpts(): string[] { return this.distinct('mercaderista', this.visitasDelClienteFiltrado); }
+  get clientesOpts(): string[] {
+    const b = this.mercaderistasRoster().map(r => r.cliente).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('cliente'), ...b])).sort();
+  }
+  get mercaderistasOpts(): string[] {
+    const b = this.rosterDelClienteFiltrado.map(r => r.mercaderista).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('mercaderista', this.visitasDelClienteFiltrado), ...b])).sort();
+  }
 
   /** Al cambiar de cliente, las selecciones de ruta/punto/mercaderista
    * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
-   * dejar un filtro "fantasma" que no matchea nada. */
+   * dejar un filtro "fantasma" que no matchea nada. Volver también a la
+   * vista de mercaderistas (el mercaderista elegido era de otro cliente). */
   onClienteFiltroChange(): void {
     this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
+    this.selectedMercaderista.set(null);
   }
+
+  /** Roster filtrado por cliente/ruta/mercaderista/búsqueda -- es lo que se
+   * muestra POR DEFECTO en vez de las tarjetas de visitas. Cada fila trae
+   * sus stats (visitas/fotos/sin_revisar) ya calculadas contra el rango de
+   * fechas activo, para que se vea de un vistazo quién falta por reportar. */
+  get rosterFiltrado(): any[] {
+    const s = this.search.trim().toLowerCase();
+    return this.mercaderistasRoster()
+      .filter(r => {
+        if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
+        if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
+        if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(r.mercaderista)) return false;
+        if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
+        return true;
+      })
+      .map(r => ({ ...r, _stats: this.statsDeRoster(r) }));
+  }
+
+  private statsDeRoster(r: any) {
+    const vs = this.visitas().filter(v => v.id_mercaderista === r.id_mercaderista && v.cliente === r.cliente);
+    const fotos = vs.reduce((a, v) => a + (v.fotos_revisar || 0), 0);
+    const apr = vs.reduce((a, v) => a + (v.aprobadas || 0), 0);
+    const sin = vs.reduce((a, v) => a + (v.sin_revisar || 0), 0);
+    return { visitas: vs.length, fotos, aprobadas: apr, sin_revisar: sin };
+  }
+
+  selectMercaderista(r: any): void { this.selectedMercaderista.set(r); }
+  backToRoster(): void { this.selectedMercaderista.set(null); }
 
   toggleRutaFiltro(r: string): void {
     const i = this.filtroRutas.indexOf(r);
@@ -147,6 +212,7 @@ export class RevisionVisitasComponent implements OnInit {
     this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
     this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
     this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
+    this.selectedMercaderista.set(null);
   }
 
   /** Visita 100% aprobada: tiene fotos revisables y todas quedaron Aprobada
@@ -157,7 +223,9 @@ export class RevisionVisitasComponent implements OnInit {
 
   get filtered(): any[] {
     const s = this.search.trim().toLowerCase();
+    const sel = this.selectedMercaderista();
     return this.visitas().filter(v => {
+      if (sel && v.id_mercaderista !== sel.id_mercaderista) return false;
       if (this.filtroRutas.length && !this.filtroRutas.includes(v.ruta)) return false;
       if (this.filtroPunto && v.punto_de_interes !== this.filtroPunto) return false;
       if (this.filtroCliente && v.cliente !== this.filtroCliente) return false;

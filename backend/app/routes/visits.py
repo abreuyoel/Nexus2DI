@@ -182,7 +182,7 @@ def review_list(
     q = text(f"""
         SELECT v.id_visita, c.cliente, c.id_cliente,
                p.punto_de_interes, p.identificador AS id_punto, ISNULL(p.ciudad,'') AS ciudad,
-               ISNULL(rinfo.ruta,'Sin ruta') AS ruta, m.nombre AS mercaderista, v.fecha_visita,
+               ISNULL(rinfo.ruta,'Sin ruta') AS ruta, m.id_mercaderista, m.nombre AS mercaderista, v.fecha_visita,
                SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.id_foto IS NOT NULL THEN 1 ELSE 0 END) AS revisar,
                SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.Estado='Aprobada' THEN 1 ELSE 0 END) AS aprobadas,
                SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.Estado='Rechazada' THEN 1 ELSE 0 END) AS rechazadas,
@@ -243,7 +243,7 @@ def review_list(
         out.append({
             "id_visita": r.id_visita, "cliente": r.cliente, "id_cliente": r.id_cliente,
             "punto_de_interes": r.punto_de_interes, "id_punto": r.id_punto, "ciudad": r.ciudad,
-            "ruta": r.ruta, "mercaderista": r.mercaderista,
+            "ruta": r.ruta, "id_mercaderista": r.id_mercaderista, "mercaderista": r.mercaderista,
             "fecha": r.fecha_visita.isoformat() if r.fecha_visita else None,
             "fotos_revisar": rev, "aprobadas": apr, "rechazadas": rec,
             "sin_revisar": max(rev - apr - rec, 0), "activaciones": int(r.activaciones or 0),
@@ -254,6 +254,57 @@ def review_list(
             "tipos": sorted(tipos_map.get(r.id_visita, []), key=lambda x: x["id_tipo_foto"]),
         })
     return out
+
+
+@router.get("/review-mercaderistas")
+def review_mercaderistas(
+    cliente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Roster de mercaderistas asignados a rutas activas (MERCADERISTAS_RUTAS ->
+    RUTA_PROGRAMACION -> CLIENTES), a diferencia de /review-list que solo trae
+    visitas que YA tienen fotos cargadas. Este endpoint existe para que la
+    pantalla de revisión pueda mostrar primero "quién debería estar reportando"
+    (incluye mercaderistas con 0 visitas todavía), y recién al elegir uno se
+    consultan sus visitas concretas."""
+    from app.services.visibility import coordinator_client_ids
+    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+
+    params: dict = {}
+    where = "WHERE rp.activa = 1 AND ISNULL(rn.servicio, '') NOT LIKE '%auditor%'"
+    if cliente_id:
+        where += " AND rp.id_cliente = :cid"
+        params["cid"] = cliente_id
+    if visible_ids is not None:
+        if not visible_ids:
+            return []
+        where += f" AND rp.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
+    if current_user.is_analyst and current_user.id_perfil:
+        where += """ AND EXISTS (
+            SELECT 1 FROM analistas_rutas ar WHERE ar.id_analista = :aid AND ar.id_ruta = rp.id_ruta
+        )"""
+        params["aid"] = current_user.id_perfil
+
+    q = text(f"""
+        SELECT DISTINCT mr.id_mercaderista, m.nombre AS mercaderista,
+               rp.id_cliente, c.cliente, rn.ruta
+        FROM MERCADERISTAS_RUTAS mr
+        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = mr.id_ruta
+        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
+        JOIN MERCADERISTAS m ON m.id_mercaderista = mr.id_mercaderista
+        JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
+        {where}
+        ORDER BY c.cliente, m.nombre
+    """)
+    rows = db.execute(q, params).fetchall()
+    return [
+        {
+            "id_mercaderista": r.id_mercaderista, "mercaderista": r.mercaderista,
+            "id_cliente": r.id_cliente, "cliente": r.cliente, "ruta": r.ruta,
+        }
+        for r in rows
+    ]
 
 
 async def _post_system_message_to_general_chat(db: Session, id_cliente: int, texto: str) -> None:

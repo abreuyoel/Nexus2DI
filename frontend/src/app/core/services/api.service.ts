@@ -187,6 +187,7 @@ export class ApiService {
 
   // --- REVISIÓN / CENTRO DE MANDO (re-aplicado tras restauración) ---
   getReviewList(opts: { desde?: string; hasta?: string; cliente_id?: number } = {}): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/visits/review-list`, { params: this.params(opts) }); }
+  getReviewMercaderistas(opts: { cliente_id?: number } = {}): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/visits/review-mercaderistas`, { params: this.params(opts) }); }
   markVisitReviewed(visitId: number, revisada = true): Observable<any> { return this.http.post<any>(`${this.base}/api/visits/${visitId}/mark-reviewed`, null, { params: this.params({ revisada }) }); }
   getRejectReasons(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/visits/reject-reasons`); }
   getCentroMandoClientes(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/clientes`); }
