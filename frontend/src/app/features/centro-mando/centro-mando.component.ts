@@ -47,6 +47,10 @@ export class CentroMandoComponent implements OnInit {
   gestionPorDia   = signal<any>({ fechas: [], clientes: [] });
   clientes        = signal<any[]>([]);
 
+  // ─── Horas Trabajadas (por mercaderista, de mayor a menor) ────────────────
+  loadingHoras    = signal(false);
+  horasTrabajadas = signal<any[]>([]);
+
   // ─── Filtros Globales (Día) ────────────────────────────────────────────────
   get fecha(): string {
     return this.filtroDesde;
@@ -62,7 +66,7 @@ export class CentroMandoComponent implements OnInit {
   filtroHasta: string = this.todayStr();
 
   // ─── Vista activa ──────────────────────────────────────────────────────────
-  activeView: 'dashboard' | 'mercaderistas' | 'gestion' | 'pendientes' | 'lista' = 'dashboard';
+  activeView: 'dashboard' | 'mercaderistas' | 'gestion' | 'pendientes' | 'lista' | 'horas' = 'dashboard';
 
   // ─── UI State (Detalle y Modal) ───────────────────────────────────────────
   showDetalle: 'activos' | 'faltantes' | null = null;
@@ -123,6 +127,7 @@ export class CentroMandoComponent implements OnInit {
     this.loadClientes();
     this.loadResumenDia();
     this.loadActivaciones();
+    this.loadHorasTrabajadas();
     // Tiempo real: refrescar al crear/revisar visitas o decidir fotos (con debounce)
     this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
@@ -192,6 +197,21 @@ export class CentroMandoComponent implements OnInit {
     });
   }
 
+  /** No depende del cliente (es por mercaderista) ni se refresca por eventos
+   * en tiempo real -- es un agregado diario, no necesita precisión al segundo,
+   * y sumarla al refresh de cada evento de foto/visita agregaría más carga al
+   * mismo mecanismo que ya causó reinicios del backend bajo tráfico real. */
+  loadHorasTrabajadas() {
+    this.loadingHoras.set(true);
+    this.api.getCentroMandoHorasTrabajadas({ desde: this.filtroDesde, hasta: this.filtroHasta }).subscribe({
+      next: (res) => {
+        this.horasTrabajadas.set(res?.success ? (res.mercaderistas || []) : []);
+        this.loadingHoras.set(false);
+      },
+      error: () => { this.horasTrabajadas.set([]); this.loadingHoras.set(false); },
+    });
+  }
+
   // ─── Acciones Top UI ──────────────────────────────────────────────────────
   irHoy() {
     const today = this.todayStr();
@@ -209,6 +229,7 @@ export class CentroMandoComponent implements OnInit {
   refresh() {
     this.loadResumenDia();
     this.loadActivaciones();
+    this.loadHorasTrabajadas();
   }
 
   onClienteChange() {
@@ -292,6 +313,14 @@ export class CentroMandoComponent implements OnInit {
     const q = this.searchText.toLowerCase();
     return this.mercaderistasUnificados.filter(m =>
       !q || (m.nombre || '').toLowerCase().includes(q)
+    );
+  }
+
+  /** Ya viene ordenado de mayor a menor por horas_trabajadas desde el backend. */
+  get filteredHoras() {
+    const q = this.searchText.toLowerCase();
+    return this.horasTrabajadas().filter(m =>
+      !q || (m.mercaderista || '').toLowerCase().includes(q)
     );
   }
 

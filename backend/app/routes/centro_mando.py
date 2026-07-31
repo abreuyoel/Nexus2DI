@@ -101,6 +101,82 @@ def listar_clientes(
     except Exception as e:
         return {"success": False, "message": str(e), "clientes": []}
 
+@router.get("/horas-trabajadas")
+def horas_trabajadas(
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_analyst_or_admin),
+):
+    """Horas trabajadas por mercaderista en el rango, de mayor a menor.
+
+    No existe check-in/check-out para mercaderistas (a diferencia de vendedor/
+    encuestador, que sí tienen tabla de jornada) -- se aproxima con el lapso
+    entre la primera y la última foto que subió cada mercaderista por día
+    (FOTOS_TOTALES.fecha_registro), sumado sobre todos los días del rango.
+    Admin ve todos; analista solo los mercaderistas de SUS rutas
+    (analistas_rutas -> RUTA_PROGRAMACION -> MERCADERISTAS_RUTAS)."""
+    try:
+        hoy = _date.today()
+        if not desde:
+            desde = hoy.isoformat()
+        if not hasta:
+            hasta = desde
+
+        analyst_filter = ""
+        params: tuple = (desde, hasta)
+        if current_user.is_analyst and current_user.id_perfil:
+            analyst_filter = """
+                AND EXISTS (
+                    SELECT 1 FROM MERCADERISTAS_RUTAS mr
+                    JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = mr.id_ruta
+                    JOIN analistas_rutas ar ON ar.id_ruta = rp.id_ruta
+                    WHERE mr.id_mercaderista = v.id_mercaderista
+                      AND ar.id_analista = ? AND rp.activa = 1
+                )
+            """
+            params = params + (current_user.id_perfil,)
+
+        rows = execute_query(db, f"""
+            SELECT v.id_mercaderista, m.nombre,
+                   CAST(f.fecha_registro AS DATE) AS dia,
+                   MIN(f.fecha_registro), MAX(f.fecha_registro),
+                   COUNT(DISTINCT f.id_visita)
+            FROM FOTOS_TOTALES f
+            JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
+            JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
+            WHERE CAST(f.fecha_registro AS DATE) BETWEEN ? AND ?
+            {analyst_filter}
+            GROUP BY v.id_mercaderista, m.nombre, CAST(f.fecha_registro AS DATE)
+        """, params)
+
+        agg: dict = {}
+        for mid, nombre, dia, inicio, fin, n_visitas in rows:
+            if not inicio or not fin:
+                continue
+            minutos = max((fin - inicio).total_seconds() / 60, 0)
+            a = agg.setdefault(mid, {"id_mercaderista": mid, "mercaderista": nombre, "minutos": 0.0, "dias": 0, "visitas": 0})
+            a["minutos"] += minutos
+            a["dias"] += 1
+            a["visitas"] += n_visitas
+
+        out = []
+        for a in agg.values():
+            horas = round(a["minutos"] / 60, 1)
+            dias = a["dias"]
+            out.append({
+                "id_mercaderista": a["id_mercaderista"],
+                "mercaderista": a["mercaderista"],
+                "horas_trabajadas": horas,
+                "dias_trabajados": dias,
+                "horas_promedio_dia": round(horas / dias, 1) if dias else 0,
+                "visitas": a["visitas"],
+            })
+        out.sort(key=lambda x: x["horas_trabajadas"], reverse=True)
+        return {"success": True, "desde": desde, "hasta": hasta, "mercaderistas": out}
+    except Exception as e:
+        return {"success": False, "message": str(e), "mercaderistas": []}
+
 @router.get("/resumen-dia")
 def resumen_dia(
     desde: Optional[str] = None,
