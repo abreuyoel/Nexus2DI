@@ -44,12 +44,20 @@ spec:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 20
             periodSeconds: 20
-            failureThreshold: 3
+            # timeoutSeconds sin especificar defaulteaba a 1s -- con picos de
+            # tráfico real (varios usuarios con Centro de Mando abierto a la
+            # vez, cada uno recargando resumen-dia al mismo evento realtime)
+            # ese margen era demasiado corto incluso para un health check que
+            # no toca la DB, y Kubernetes reiniciaba el pod en plena carga
+            # (ver /health en main.py: ahora además es async por la misma razón).
+            timeoutSeconds: 5
+            failureThreshold: 5
           resources:
             # Más pesado que un backend Node equivalente: pandas/opencv/
             # scikit-learn quedan cargados en memoria del proceso.

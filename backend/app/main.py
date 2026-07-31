@@ -187,7 +187,12 @@ app.include_router(media_routes.router)
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
+    # async, no toca la DB: las rutas sync comparten un threadpool con las
+    # queries pesadas (resumen-dia, etc.) -- si el health check también fuera
+    # sync, un pico de tráfico podía dejarlo en cola detrás de esas queries,
+    # el liveness probe expiraba (timeoutSeconds por default = 1s) y
+    # Kubernetes reiniciaba el pod en plena carga, empeorando el problema.
     return {"status": "ok", "version": "2.0.0"}
 
 @app.get("/favicon.ico", include_in_schema=False)
