@@ -208,7 +208,7 @@ def review_list(
         ) chat
         {where}
         GROUP BY v.id_visita, c.cliente, c.id_cliente, p.punto_de_interes, p.identificador,
-                 p.ciudad, rinfo.ruta, m.nombre, v.fecha_visita
+                 p.ciudad, rinfo.ruta, m.id_mercaderista, m.nombre, v.fecha_visita
         HAVING SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.id_foto IS NOT NULL THEN 1 ELSE 0 END) > 0
         ORDER BY v.fecha_visita DESC
     """)

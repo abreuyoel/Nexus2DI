@@ -27,10 +27,16 @@ export class RevisionVisitasComponent implements OnInit {
   visitas = signal<any[]>([]);
   // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
   // RUTA_PROGRAMACION -> CLIENTES): se muestra primero, antes que las
-  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía.
-  loadingRoster = signal(true);
+  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía. Se
+  // pide recién al elegir un cliente (join pesado sin ese filtro -- listar
+  // el roster completo del sistema en cada carga de pantalla no escala).
+  loadingRoster = signal(false);
   mercaderistasRoster = signal<any[]>([]);
   selectedMercaderista = signal<any>(null);
+  // Catálogo liviano {id_cliente, cliente} para poblar el selector "Cliente"
+  // completo (incluye clientes sin ninguna visita todavía) y resolver el id
+  // que necesita /review-mercaderistas a partir del nombre elegido.
+  clientesCatalogo = signal<{ id_cliente: number; cliente: string }[]>([]);
   periodo: Periodo | 'custom' = 'semana';
   desde = '';
   hasta = '';
@@ -79,8 +85,11 @@ export class RevisionVisitasComponent implements OnInit {
     const r = this.rangeFor('semana');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
-    this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
+    this.api.getCentroMandoClientes().subscribe({
+      next: (r) => this.clientesCatalogo.set(r?.clientes || []),
+      error: () => {},
+    });
     // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos
     this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
@@ -117,11 +126,11 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
-  /** Roster completo (no depende del rango de fechas): quién está asignado,
-   * tenga o no visitas cargadas todavía. */
-  loadRoster(): void {
+  /** Roster de un cliente puntual (no depende del rango de fechas): quién
+   * está asignado a sus rutas activas, tenga o no visitas cargadas todavía. */
+  private loadRoster(clienteId: number): void {
     this.loadingRoster.set(true);
-    this.api.getReviewMercaderistas().subscribe({
+    this.api.getReviewMercaderistas({ cliente_id: clienteId }).subscribe({
       next: (rs) => { this.mercaderistasRoster.set(rs || []); this.loadingRoster.set(false); },
       error: () => { this.mercaderistasRoster.set([]); this.loadingRoster.set(false); },
     });
@@ -154,7 +163,7 @@ export class RevisionVisitasComponent implements OnInit {
   }
   get puntosOpts(): string[] { return this.distinct('punto_de_interes', this.visitasDelClienteFiltrado); }
   get clientesOpts(): string[] {
-    const b = this.mercaderistasRoster().map(r => r.cliente).filter((x): x is string => !!x);
+    const b = this.clientesCatalogo().map(c => c.cliente).filter((x): x is string => !!x);
     return Array.from(new Set([...this.distinct('cliente'), ...b])).sort();
   }
   get mercaderistasOpts(): string[] {
@@ -165,10 +174,15 @@ export class RevisionVisitasComponent implements OnInit {
   /** Al cambiar de cliente, las selecciones de ruta/punto/mercaderista
    * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
    * dejar un filtro "fantasma" que no matchea nada. Volver también a la
-   * vista de mercaderistas (el mercaderista elegido era de otro cliente). */
+   * vista de mercaderistas (el mercaderista elegido era de otro cliente), y
+   * pedir el roster de ESE cliente recién ahora (sin cliente elegido no se
+   * pide nada -- ver `rosterFiltrado`/template). */
   onClienteFiltroChange(): void {
     this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
     this.selectedMercaderista.set(null);
+    if (!this.filtroCliente) { this.mercaderistasRoster.set([]); return; }
+    const c = this.clientesCatalogo().find(x => x.cliente === this.filtroCliente);
+    if (c) this.loadRoster(c.id_cliente); else this.mercaderistasRoster.set([]);
   }
 
   /** Roster filtrado por cliente/ruta/mercaderista/búsqueda -- es lo que se
@@ -212,7 +226,7 @@ export class RevisionVisitasComponent implements OnInit {
     this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
     this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
     this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
-    this.selectedMercaderista.set(null);
+    this.selectedMercaderista.set(null); this.mercaderistasRoster.set([]);
   }
 
   /** Visita 100% aprobada: tiene fotos revisables y todas quedaron Aprobada

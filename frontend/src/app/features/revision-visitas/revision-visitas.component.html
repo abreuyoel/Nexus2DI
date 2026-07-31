@@ -135,7 +135,14 @@
 
   @if (!selectedMercaderista()) {
     <!-- Nivel 1 (por defecto): mercaderistas asignados, no tarjetas de visitas -->
-    @if (loadingRoster()) {
+    @if (!filtroCliente) {
+      <div class="py-20 text-center">
+        <div class="flex flex-col items-center gap-3 opacity-40">
+          <mat-icon class="!text-5xl">groups</mat-icon>
+          <p class="font-bold">Elegí un cliente arriba para ver sus mercaderistas asignados.</p>
+        </div>
+      </div>
+    } @else if (loadingRoster()) {
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
         <p class="text-slate-400 font-medium">Cargando mercaderistas...</p>
