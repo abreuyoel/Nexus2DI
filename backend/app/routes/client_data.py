@@ -20,6 +20,14 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
     sin fila ahí quedaba viendo 0 balances de ese cliente pese a tener acceso
     real. Devuelve ("", {}) para usuarios que no son analistas (sin
     restricción aquí). `user.id_perfil` apunta a ANALISTAS.id_analista.
+
+    Correlaciona también por id_cliente (no solo por PDV): un mismo PDV
+    puede estar cubierto por rutas de MÁS DE UN cliente (caso común en este
+    sistema), así que filtrar solo por `identificador_pdv` dejaba colar
+    balances/productos de OTRO cliente que también opera en ese PDV pero que
+    el analista no tiene asignado -- mismo criterio que ya se aplica en
+    mk_analyst() (centro_mando.py) y en review_list()/get_visits_with_balances
+    (visits.py) para el mismo problema.
     """
     if not (user.is_analyst and user.id_perfil):
         return "", {}
@@ -27,6 +35,7 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
         AND EXISTS (SELECT 1 FROM RUTA_PROGRAMACION rp_a
             JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
             WHERE rp_a.id_punto_interes = {alias}.identificador_pdv
+              AND rp_a.id_cliente = {alias}.id_cliente
               AND rp_a.activa = 1 AND ar_a.id_analista = :analista_id)
     """
     return frag, {"analista_id": int(user.id_perfil)}
