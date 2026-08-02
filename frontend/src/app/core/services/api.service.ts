@@ -542,6 +542,20 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/api/merc/finalizar-visita`, { id_visita: idVisita });
   }
 
+  // --- SKU vs SKU ---
+  getSkuCompetenciaMapeos(idCliente: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/sku-competencia/mapeos`, { params: this.params({ id_cliente: idCliente }) });
+  }
+  createSkuCompetencia(idCliente: number, idProductoCliente: number, idProductoCompetencia: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/sku-competencia/mapeos`, { id_cliente: idCliente, id_producto_cliente: idProductoCliente, id_producto_competencia: idProductoCompetencia });
+  }
+  bulkCreateSkuCompetencia(idCliente: number, idProductoCliente: number, competenciaIds: number[]): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/sku-competencia/mapeos/masivo`, { id_cliente: idCliente, id_producto_cliente: idProductoCliente, competencia_ids: competenciaIds });
+  }
+  deleteSkuCompetencia(id: number): Observable<any> {
+    return this.http.delete<any>(`${this.base}/api/sku-competencia/mapeos/${id}`);
+  }
+
   // --- CLIENT CATEGORIES ---
   getClientCategories(clientId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/clients/${clientId}/categorias`);

@@ -58,6 +58,7 @@ export class ShellComponent implements OnInit {
     { label: 'Permisos', icon: 'admin_panel_settings', route: '/permissions', roles: ['admin'] },
     { label: 'Productos', icon: 'inventory_2', route: '/products', roles: ['admin', 'atc'] },
     { label: 'Categorías Cliente', icon: 'category', route: '/client-categories', roles: ['admin'] },
+    { label: 'SKU vs SKU', icon: 'compare_arrows', route: '/sku-competencia', roles: ['admin'] },
     { label: 'Clientes · Rutas', icon: 'alt_route', route: '/clientes-rutas', roles: ['admin', 'analyst'] },
     { label: 'Frecuencias PDVs', icon: 'event_repeat', route: '/frecuencias-pdvs-cliente', roles: ['admin', 'analyst'] },
     { label: 'Horas Promedio Ejecución', icon: 'schedule', route: '/horas-promedio-ejecucion', roles: ['admin'] },

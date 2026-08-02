@@ -72,6 +72,12 @@ export const routes: Routes = [
         data: { roles: ['admin'] },
       },
       {
+        path: 'sku-competencia',
+        loadComponent: () => import('./features/sku-competencia/sku-competencia.component').then((m) => m.SkuCompetenciaComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin'] },
+      },
+      {
         path: 'clientes-rutas',
         loadComponent: () => import('./features/clientes-rutas/clientes-rutas.component').then((m) => m.ClientesRutasComponent),
         canActivate: [roleGuard],
