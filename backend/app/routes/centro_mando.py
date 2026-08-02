@@ -9,10 +9,17 @@ from app.models.user import Usuario
 
 router = APIRouter(prefix="/api/centro-mando", tags=["Centro de Mando"])
 
-def execute_query(db: Session, query: str, params: tuple = ()):
+def execute_query(db: Session, query: str, params: tuple = (), timeout: int = 0):
+    """timeout (segundos, 0 = default del driver): para queries nuevas/no
+    probadas contra el volumen real de datos -- si algo sale mal (plan malo,
+    bloqueo por un DDL corriendo, etc.) falla rápido con un error claro en
+    vez de colgar la conexión (y el thread del pool, con --workers 1) hasta
+    que Cloudflare corta en 100s (524)."""
     try:
         conn = db.connection().connection
         cursor = conn.cursor()
+        if timeout:
+            cursor.timeout = timeout
         cursor.execute(query, params)
         if cursor.description:
             rows = cursor.fetchall()
@@ -131,9 +138,18 @@ def horas_trabajadas(
     (analistas_rutas -> RUTA_PROGRAMACION -> MERCADERISTAS_RUTAS). Con
     cliente_id (mismo filtro "Cliente" de arriba del dashboard) solo cuenta
     las fotos de visitas de ESE cliente -- igual que resumen-dia/activaciones,
-    para que las pestañas queden consistentes entre sí. Todo el cálculo se
-    hace en SQL (una sola query, agregado ya reducido a 1 fila por
-    mercaderista) en vez de traer fotos sueltas a Python fila por fila."""
+    para que las pestañas queden consistentes entre sí.
+
+    Van DOS queries chicas en vez de una sola con la misma subconsulta
+    referenciada 2 veces: la primera versión (CTE "base" reusada por
+    "por_dia" Y "transiciones") recalculaba el join completo dos veces por
+    llamada y terminó en 524 de Cloudflare (>100s) con el volumen real de
+    datos -- no se probó contra ese volumen antes de desplegar. Separarlas
+    es más fácil de razonar y cada una se parece a queries ya probadas de
+    este archivo. Ambas con timeout explícito: si alguna vuelve a salir
+    mal (plan malo, bloqueo por un DDL corriendo, etc.) que falle rápido con
+    un error claro en vez de colgar la conexión -- y el thread del pool, con
+    --workers 1 -- hasta que el proxy corta solo."""
     try:
         hoy = _date.today()
         if not desde:
@@ -160,64 +176,74 @@ def horas_trabajadas(
             """
             params = params + (current_user.id_perfil,)
 
-        rows = execute_query(db, f"""
+        # 1) Horas trabajadas por día (span MIN/MAX), sumadas por mercaderista
+        # -- misma forma que ya funcionaba antes del rediseño con traslado.
+        horas_rows = execute_query(db, f"""
+            SELECT v.id_mercaderista, m.nombre,
+                   CAST(f.fecha_registro AS DATE) AS dia,
+                   MIN(f.fecha_registro), MAX(f.fecha_registro),
+                   COUNT(DISTINCT f.id_visita)
+            FROM FOTOS_TOTALES f
+            JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
+            JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
+            WHERE f.fecha_registro >= CAST(? AS DATE) AND f.fecha_registro < DATEADD(day, 1, CAST(? AS DATE))
+            {cliente_filter}
+            {analyst_filter}
+            GROUP BY v.id_mercaderista, m.nombre, CAST(f.fecha_registro AS DATE)
+        """, params, timeout=20)
+
+        agg: dict = {}
+        for mid, nombre, dia, inicio, fin, n_visitas in horas_rows:
+            if not inicio or not fin:
+                continue
+            a = agg.setdefault(mid, {"id_mercaderista": mid, "mercaderista": nombre, "segundos": 0, "dias": 0, "visitas": 0})
+            a["segundos"] += int((fin - inicio).total_seconds())
+            a["dias"] += 1
+            a["visitas"] += n_visitas
+
+        # 2) Tiempo de traslado: única pasada por el PDV de cada foto, sin
+        # recalcular el join de arriba -- CTE referenciada una sola vez.
+        traslado_rows = execute_query(db, f"""
             WITH base AS (
-                SELECT v.id_mercaderista, m.nombre AS mercaderista,
+                SELECT v.id_mercaderista,
                        v.identificador_punto_interes AS pdv,
                        CAST(f.fecha_registro AS DATE) AS dia,
-                       f.fecha_registro AS ts,
-                       f.id_visita
+                       f.fecha_registro AS ts
                 FROM FOTOS_TOTALES f
                 JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
-                JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
                 WHERE f.fecha_registro >= CAST(? AS DATE) AND f.fecha_registro < DATEADD(day, 1, CAST(? AS DATE))
                 {cliente_filter}
                 {analyst_filter}
             ),
-            por_dia AS (
-                SELECT id_mercaderista, MAX(mercaderista) AS mercaderista, dia,
-                       DATEDIFF(SECOND, MIN(ts), MAX(ts)) AS segundos_dia,
-                       COUNT(DISTINCT id_visita) AS visitas_dia
-                FROM base
-                GROUP BY id_mercaderista, dia
-            ),
             transiciones AS (
-                SELECT id_mercaderista, dia, ts, pdv,
+                SELECT id_mercaderista, pdv, ts,
                        LAG(pdv) OVER (PARTITION BY id_mercaderista, dia ORDER BY ts) AS pdv_prev,
                        LAG(ts)  OVER (PARTITION BY id_mercaderista, dia ORDER BY ts) AS ts_prev
                 FROM base
-            ),
-            traslado_por_merc AS (
-                SELECT id_mercaderista,
-                       SUM(CASE WHEN pdv_prev IS NOT NULL AND pdv_prev <> pdv
-                                THEN DATEDIFF(SECOND, ts_prev, ts) ELSE 0 END) AS segundos_traslado
-                FROM transiciones
-                GROUP BY id_mercaderista
             )
-            SELECT d.id_mercaderista, MAX(d.mercaderista) AS mercaderista,
-                   SUM(d.segundos_dia) AS segundos_trabajados,
-                   COUNT(DISTINCT d.dia) AS dias_trabajados,
-                   SUM(d.visitas_dia) AS visitas,
-                   ISNULL(MAX(t.segundos_traslado), 0) AS segundos_traslado
-            FROM por_dia d
-            LEFT JOIN traslado_por_merc t ON t.id_mercaderista = d.id_mercaderista
-            GROUP BY d.id_mercaderista
-        """, params)
+            SELECT id_mercaderista,
+                   SUM(CASE WHEN pdv_prev IS NOT NULL AND pdv_prev <> pdv
+                            THEN DATEDIFF(SECOND, ts_prev, ts) ELSE 0 END) AS segundos_traslado
+            FROM transiciones
+            GROUP BY id_mercaderista
+        """, params, timeout=20)
+        traslado_map = {mid: int(seg or 0) for mid, seg in traslado_rows}
 
         out = []
-        for mid, nombre, seg_trab, dias, visitas, seg_trasl in rows:
-            dias = dias or 0
-            horas = round((seg_trab or 0) / 3600, 1)
-            trasl_horas = round((seg_trasl or 0) / 3600, 1)
+        for a in agg.values():
+            dias = a["dias"]
+            horas = round(a["segundos"] / 3600, 1)
+            seg_trasl = traslado_map.get(a["id_mercaderista"], 0)
+            trasl_horas = round(seg_trasl / 3600, 1)
             out.append({
-                "id_mercaderista": mid,
-                "mercaderista": nombre,
+                "id_mercaderista": a["id_mercaderista"],
+                "mercaderista": a["mercaderista"],
                 "horas_trabajadas": horas,
                 "horas_promedio_dia": round(horas / dias, 1) if dias else 0,
                 "dias_trabajados": dias,
-                "visitas": visitas or 0,
+                "visitas": a["visitas"],
                 "tiempo_traslado_horas": trasl_horas,
-                "tiempo_traslado_promedio_dia_min": round((seg_trasl or 0) / 60 / dias, 1) if dias else 0,
+                "tiempo_traslado_promedio_dia_min": round(seg_trasl / 60 / dias, 1) if dias else 0,
             })
         out.sort(key=lambda x: x["horas_trabajadas"], reverse=True)
         return {"success": True, "desde": desde, "hasta": hasta, "mercaderistas": out}
