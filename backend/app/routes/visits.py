@@ -291,12 +291,21 @@ def review_mercaderistas(
 
     q = text(f"""
         SELECT DISTINCT mr.id_mercaderista, m.nombre AS mercaderista,
-               rp.id_cliente, c.cliente, rn.ruta
+               rp.id_cliente, c.cliente, rn.ruta, dep.departamentos
         FROM MERCADERISTAS_RUTAS mr
         JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = mr.id_ruta
         JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
         JOIN MERCADERISTAS m ON m.id_mercaderista = mr.id_mercaderista
         JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
+        OUTER APPLY (
+            SELECT STRING_AGG(x.depto, ', ') AS departamentos
+            FROM (
+                SELECT DISTINCT p.departamento AS depto
+                FROM RUTA_PROGRAMACION rp2
+                JOIN PUNTOS_INTERES1 p ON p.identificador = rp2.id_punto_interes
+                WHERE rp2.id_ruta = rp.id_ruta AND rp2.activa = 1 AND p.departamento IS NOT NULL AND p.departamento <> ''
+            ) x
+        ) dep
         {where}
         ORDER BY c.cliente, m.nombre
     """)
@@ -305,6 +314,7 @@ def review_mercaderistas(
         {
             "id_mercaderista": r.id_mercaderista, "mercaderista": r.mercaderista,
             "id_cliente": r.id_cliente, "cliente": r.cliente, "ruta": r.ruta,
+            "departamentos": r.departamentos,
         }
         for r in rows
     ]

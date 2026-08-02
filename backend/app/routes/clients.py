@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
@@ -80,6 +81,34 @@ def delete_client(
 # =======================
 from app.models.cliente import CategoriaCliente
 from app.models.producto import Categoria
+
+@router.get("/categorias/{categoria_id}/clientes")
+def get_clients_by_category(categoria_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    """IDs de clientes que ya tienen asignada esta categoría -- para el
+    filtro "¿qué clientes tienen la categoría X?" en Categorías Cliente."""
+    rows = db.query(CategoriaCliente.id_cliente).filter(CategoriaCliente.id_categoria == categoria_id).all()
+    return [r[0] for r in rows]
+
+
+class AsignacionMasiva(BaseModel):
+    cliente_ids: List[int]
+
+
+@router.post("/categorias/{categoria_id}/asignar-masivo")
+def bulk_assign_category(categoria_id: int, payload: AsignacionMasiva, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+    """Asigna la misma categoría a varios clientes de una sola vez -- salta
+    los que ya la tienen en vez de fallar toda la operación por duplicados."""
+    ya_tienen = {
+        r[0] for r in db.query(CategoriaCliente.id_cliente)
+        .filter(CategoriaCliente.id_categoria == categoria_id, CategoriaCliente.id_cliente.in_(payload.cliente_ids))
+        .all()
+    }
+    nuevos = [CategoriaCliente(id_cliente=cid, id_categoria=categoria_id) for cid in payload.cliente_ids if cid not in ya_tienen]
+    for n in nuevos:
+        db.add(n)
+    db.commit()
+    return {"detail": f"{len(nuevos)} cliente(s) asignados.", "asignados": len(nuevos), "ya_tenian": len(ya_tienen)}
+
 
 @router.get("/{client_id}/categorias", response_model=List[dict])
 def get_client_categories(client_id: int, db: Session = Depends(get_db)):

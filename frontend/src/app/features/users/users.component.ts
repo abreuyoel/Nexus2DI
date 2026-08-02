@@ -39,6 +39,18 @@ export class UsersComponent implements OnInit {
   editingUser = signal<any>(null);
   columns = ['id', 'username', 'email', 'rol', 'perfil', 'activo', 'acciones'];
 
+  searchText = '';
+  get filteredUsers(): any[] {
+    const q = this.searchText.trim().toLowerCase();
+    if (!q) return this.users();
+    return this.users().filter(u =>
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.rol_nombre || u.rol || '').toLowerCase().includes(q) ||
+      (u.perfil_nombre || u.perfil || '').toLowerCase().includes(q)
+    );
+  }
+
   analysts = signal<any[]>([]);
   clients = signal<any[]>([]);
   mercaderistas = signal<any[]>([]);

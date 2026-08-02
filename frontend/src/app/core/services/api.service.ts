@@ -353,7 +353,7 @@ export class ApiService {
   // --- PRODUCTOS / PDV / SOLICITUDES ---
   
   // === PRODUCTOS - Con paginación y búsqueda ===
-  getProductos(opts: { skip?: number; limit?: number; busqueda?: string; id_categoria?: number; id_subcategoria?: number; id_marca?: number; categoria?: string; fabricante?: string; tipo_servicio?: string } = {}): Observable<{ total: number; pagina: number; items: any[] }> {
+  getProductos(opts: { skip?: number; limit?: number; busqueda?: string; id_departamento?: number; id_categoria?: number; id_subcategoria?: number; id_marca?: number; id_productora?: number; id_presentacion?: number; id_clasificacion_tamano?: number; inagotable?: boolean; categoria?: string; fabricante?: string; tipo_servicio?: string } = {}): Observable<{ total: number; pagina: number; items: any[] }> {
     return this.http.get<{ total: number; pagina: number; items: any[] }>(`${this.base}/api/productos-catalogos/productos`, { params: this.params(opts) });
   }
 
@@ -548,6 +548,12 @@ export class ApiService {
 
   removeClientCategory(clientId: number, categoryId: number): Observable<any> {
     return this.http.delete<any>(`${this.base}/api/clients/${clientId}/categorias/${categoryId}`);
+  }
+  getClientsByCategory(categoryId: number): Observable<number[]> {
+    return this.http.get<number[]>(`${this.base}/api/clients/categorias/${categoryId}/clientes`);
+  }
+  bulkAssignCategory(categoryId: number, clienteIds: number[]): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/clients/categorias/${categoryId}/asignar-masivo`, { cliente_ids: clienteIds });
   }
 
   // --- CATALOGOS ---

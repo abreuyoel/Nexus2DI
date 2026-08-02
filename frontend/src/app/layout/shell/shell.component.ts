@@ -21,6 +21,10 @@ interface NavItem {
   route: string;
   roles: string[];
   module?: string;
+  // Estos son la navegación PROPIA de otro rol (mercaderista/cliente) --
+  // como canAccess() da acceso total a admin sin importar `roles`, sin esto
+  // le aparecían igual en el sidebar aunque no tenga sentido para su flujo.
+  hideForAdmin?: boolean;
 }
 
 @Component({
@@ -46,7 +50,7 @@ export class ShellComponent implements OnInit {
 
   private navItems: NavItem[] = [
     { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: [] },
-    { label: 'Centro de Mando', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
+    { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Rutas', icon: 'route', route: '/routes', roles: ['admin', 'analyst'], module: 'rutas' },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['admin', 'supervisor', 'atc'] },
     { label: 'Usuarios', icon: 'people', route: '/users', roles: ['admin'], module: 'users' },
@@ -56,15 +60,15 @@ export class ShellComponent implements OnInit {
     { label: 'Clientes · Rutas', icon: 'alt_route', route: '/clientes-rutas', roles: ['admin', 'analyst'] },
     { label: 'Frecuencias PDVs', icon: 'event_repeat', route: '/frecuencias-pdvs-cliente', roles: ['admin', 'analyst'] },
     { label: 'Horas Promedio Ejecución', icon: 'schedule', route: '/horas-promedio-ejecucion', roles: ['admin'] },
-    { label: 'Mis Rutas', icon: 'route', route: '/mercaderista', roles: ['mercaderista'] },
+    { label: 'Mis Rutas', icon: 'route', route: '/mercaderista', roles: ['mercaderista'], hideForAdmin: true },
     { label: 'Auditoría de Campo', icon: 'fact_check', route: '/auditor-campo', roles: ['auditor_campo', 'admin'] },
     { label: 'Auditoría de Data', icon: 'inventory_2', route: '/auditoria-data', roles: ['auditor', 'admin'] },
     { label: 'Chat', icon: 'chat', route: '/chat', roles: [], module: 'chat' },
     { label: 'Supervisor', icon: 'supervisor_account', route: '/supervisor', roles: ['admin', 'supervisor'] },
     { label: 'Solicitudes', icon: 'support_agent', route: '/atencion-cliente', roles: ['admin', 'atc', 'analyst'] },
     { label: 'Auditoría Logs', icon: 'fact_check', route: '/audit', roles: ['admin'] },
-    { label: 'Mis Fotos', icon: 'photo_library', route: '/client', roles: ['coordinador_exclusivo', 'coordinador_tradex'] },
-    { label: 'Mis Visitas', icon: 'today', route: '/client/visits', roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'] },
+    { label: 'Mis Fotos', icon: 'photo_library', route: '/client', roles: ['coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
+    { label: 'Mis Visitas', icon: 'today', route: '/client/visits', roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
     { label: 'Data', icon: 'table_chart', route: '/data', roles: ['admin', 'analyst', 'client', 'coordinador_exclusivo', 'coordinador_tradex', 'coordinador_general'] },
     { label: 'Encuestador', icon: 'assignment', route: '/encuestador', roles: ['encuestador', 'admin'] },
     { label: 'BI Encuestas', icon: 'pie_chart', route: '/cliente-encuestador', roles: ['cliente_encuestador', 'admin'] },
@@ -74,8 +78,10 @@ export class ShellComponent implements OnInit {
   visibleNavItems = computed(() => {
     const u = this.user();
     if (!u) return [];
+    const isAdmin = !!u.is_admin || u.rol === 'admin';
 
     return this.navItems.filter((item) => {
+      if (isAdmin && item.hideForAdmin) return false;
       // Admin ve todo su set; si el usuario tiene permisos configurados manda el
       // permiso (can_read de la clave del módulo); si no, se cae al rol.
       const clave = AuthService.claveFromRoute(item.route);

@@ -45,6 +45,7 @@ export class RevisionVisitasComponent implements OnInit {
   filtroRutas: string[] = [];          // multi-select
   filtroPunto = '';
   filtroCliente = '';
+  filtroDepartamento = '';
   filtroMercaderistas: string[] = [];  // multi-select
   filtroChat = ''; // '', 'con', 'sin'
   filtroEstado = ''; // '', 'Pendiente', 'Revisado', 'Aprobada'
@@ -173,6 +174,16 @@ export class RevisionVisitasComponent implements OnInit {
     const b = this.rosterDelClienteFiltrado.map(r => r.mercaderista).filter((x): x is string => !!x);
     return Array.from(new Set([...this.distinct('mercaderista', this.visitasDelClienteFiltrado), ...b])).sort();
   }
+  /** El roster trae "departamentos" como un solo string ("Miranda, Distrito
+   * Capital") por ruta -- son los departamentos de los PDV de esa ruta. Acá
+   * se separan para armar la lista de opciones del filtro. */
+  get departamentosOpts(): string[] {
+    const set = new Set<string>();
+    for (const r of this.rosterDelClienteFiltrado) {
+      (r.departamentos || '').split(',').map((d: string) => d.trim()).filter(Boolean).forEach((d: string) => set.add(d));
+    }
+    return Array.from(set).sort();
+  }
 
   /** Al cambiar de cliente, las selecciones de ruta/punto/mercaderista
    * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
@@ -181,7 +192,7 @@ export class RevisionVisitasComponent implements OnInit {
    * repedir el roster escopado a ese cliente (o al global si se limpió el
    * filtro). */
   onClienteFiltroChange(): void {
-    this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
+    this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = []; this.filtroDepartamento = '';
     this.selectedMercaderista.set(null);
     if (!this.filtroCliente) { this.loadRoster(); return; }
     const c = this.clientesCatalogo().find(x => x.cliente === this.filtroCliente);
@@ -200,6 +211,7 @@ export class RevisionVisitasComponent implements OnInit {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
         if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
         if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(r.mercaderista)) return false;
+        if (this.filtroDepartamento && !(r.departamentos || '').split(',').map((d: string) => d.trim()).includes(this.filtroDepartamento)) return false;
         if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
         return true;
       })
@@ -234,7 +246,7 @@ export class RevisionVisitasComponent implements OnInit {
   clearFilters(): void {
     const teniaCliente = !!this.filtroCliente;
     this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
-    this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
+    this.filtroCliente = ''; this.filtroDepartamento = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
     this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
     this.selectedMercaderista.set(null);
     if (teniaCliente) this.loadRoster();

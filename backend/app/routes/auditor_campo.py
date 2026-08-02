@@ -37,7 +37,28 @@ def _auditor_id(db: Session, cedula: str) -> Optional[int]:
 
 # ───────────────── Rutas / PDVs ─────────────────
 @router.get("/rutas/{cedula}")
-def get_rutas(cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    # Admin no tiene cédula de auditor real (el front cae al placeholder
+    # '88880001', ver auditor-campo.component.ts) -- en vez de "0 rutas
+    # asignadas", debe ver TODAS las rutas de auditoría existentes, sin
+    # filtrar por auditor.
+    if current_user.is_admin:
+        rows = db.execute(text("""
+            SELECT DISTINCT rn.id_ruta, rn.ruta,
+                (SELECT COUNT(DISTINCT rp2.id_punto_interes) FROM RUTA_PROGRAMACION rp2
+                 WHERE rp2.id_ruta = rn.id_ruta AND rp2.activa = 1) AS total_puntos,
+                CASE WHEN EXISTS (
+                    SELECT 1 FROM RUTAS_ACTIVADAS ra
+                    WHERE ra.id_ruta = rn.id_ruta AND ra.estado = 'En Progreso'
+                    AND CAST(ra.fecha_hora_activacion AS DATE) = CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END AS activa
+            FROM RUTAS_NUEVAS rn
+            JOIN MERCADERISTAS_RUTAS mr ON rn.id_ruta = mr.id_ruta
+            JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
+            WHERE m.tipo = :tipo
+            ORDER BY rn.ruta
+        """), {"tipo": TIPO}).fetchall()
+        return [{"id": r[0], "nombre": r[1], "total_puntos": r[2] or 0, "esta_activa": bool(r[3])} for r in rows]
+
     if not _es_cedula(cedula):
         return []
     rows = db.execute(text("""

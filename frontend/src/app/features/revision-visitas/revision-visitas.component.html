@@ -93,6 +93,12 @@
         @for (p of puntosOpts; track p) { <option [value]="p">{{ p }}</option> }
       </select>
 
+      <!-- Departamento: los departamentos de los PDV que componen cada ruta -->
+      <select [(ngModel)]="filtroDepartamento" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los departamentos</option>
+        @for (d of departamentosOpts; track d) { <option [value]="d">{{ d }}</option> }
+      </select>
+
       <!-- Mercaderistas: multi-select -->
       <div class="relative flex-1 min-w-[140px]">
         <button type="button" (click)="mercaderistasDropdownOpen.set(!mercaderistasDropdownOpen())"
@@ -159,7 +165,7 @@
               </div>
               <div class="min-w-0">
                 <div class="font-black text-slate-800 dark:text-white text-sm truncate">{{ r.mercaderista }}</div>
-                <div class="text-xs text-slate-400 truncate">{{ r.cliente }} · {{ r.ruta }}</div>
+                <div class="text-xs text-slate-400 truncate" [matTooltip]="r.cliente">{{ r.ruta }} · {{ r.departamentos || 'Sin departamento' }}</div>
               </div>
             </div>
             <div class="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100 dark:border-white/5">

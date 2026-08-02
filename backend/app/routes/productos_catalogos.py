@@ -345,9 +345,14 @@ def _producto_resp(p, sc, cat, m, pr, pres, dep, tam) -> ProductoResponse:
 @router.get("/productos", response_model=ProductoListResponse)
 def list_productos(
     busqueda: Optional[str] = Query(None),
+    id_departamento: Optional[int] = Query(None),
     id_categoria: Optional[int] = Query(None),
     id_subcategoria: Optional[int] = Query(None),
     id_marca: Optional[int] = Query(None),
+    id_productora: Optional[int] = Query(None),
+    id_presentacion: Optional[int] = Query(None),
+    id_clasificacion_tamano: Optional[int] = Query(None),
+    inagotable: Optional[bool] = Query(None),
     skip: int = 0,
     limit: int = 25,
     db: Session = Depends(get_db),
@@ -357,12 +362,22 @@ def list_productos(
     if busqueda:
         like = f"%{busqueda}%"
         q = q.filter((Producto.producto_gu.ilike(like)) | (Producto.cod_prod.ilike(like)))
+    if id_departamento is not None:
+        q = q.filter(Departamento.id_departamento == id_departamento)
     if id_categoria is not None:
         q = q.filter(SubCategoria.id_categoria == id_categoria)
     if id_subcategoria is not None:
         q = q.filter(Producto.id_subcategoria == id_subcategoria)
     if id_marca is not None:
         q = q.filter(Producto.id_marca == id_marca)
+    if id_productora is not None:
+        q = q.filter(Productora.id_productora == id_productora)
+    if id_presentacion is not None:
+        q = q.filter(Producto.id_presentacion == id_presentacion)
+    if id_clasificacion_tamano is not None:
+        q = q.filter(Producto.id_clasificacion_tamano == id_clasificacion_tamano)
+    if inagotable is not None:
+        q = q.filter(Producto.inagotable == inagotable)
     total = q.count()
     limit = max(1, limit)
     rows = q.order_by(Producto.producto_gu).offset(skip).limit(limit).all()
