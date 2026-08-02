@@ -157,6 +157,8 @@ from app.routes import analysts
 app.include_router(analysts.router)
 from app.routes import centro_mando
 app.include_router(centro_mando.router)
+from app.routes import centro_mando_auditoria
+app.include_router(centro_mando_auditoria.router)
 from app.routes import realtime as realtime_routes
 app.include_router(realtime_routes.router)
 from app.routes import supervisor_rutas

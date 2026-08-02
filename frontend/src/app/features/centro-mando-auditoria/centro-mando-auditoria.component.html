@@ -1,0 +1,218 @@
+<div class="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Centro de Mando Auditoría</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Todo lo que se hizo desde Auditoría de Campo: cumplimiento, competencia y actividad por auditor.</p>
+    </div>
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex flex-col">
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Desde</label>
+        <input type="date" [(ngModel)]="desde" (change)="load()"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-primary-500">
+      </div>
+      <div class="flex flex-col">
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Hasta</label>
+        <input type="date" [(ngModel)]="hasta" (change)="load()"
+          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-primary-500">
+      </div>
+      <button (click)="load()" class="flex items-center gap-1.5 px-4 py-2 border border-primary-500/40 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-xl text-sm font-bold transition-all">
+        <mat-icon class="!text-base">refresh</mat-icon> Actualizar
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-3 flex flex-wrap items-center gap-2 shadow-sm">
+    <select [(ngModel)]="idAuditor" (ngModelChange)="load()" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todos los auditores</option>
+      @for (a of filtros().auditores; track a.id) { <option [ngValue]="a.id">{{ a.nombre }}</option> }
+    </select>
+    <select [(ngModel)]="idRuta" (ngModelChange)="load()" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todas las rutas</option>
+      @for (r of filtros().rutas; track r.id) { <option [ngValue]="r.id">{{ r.nombre }}</option> }
+    </select>
+    <select [(ngModel)]="idCliente" (ngModelChange)="load()" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todos los clientes</option>
+      @for (c of filtros().clientes; track c.id) { <option [ngValue]="c.id">{{ c.nombre }}</option> }
+    </select>
+    <select [(ngModel)]="idCategoria" (ngModelChange)="load()" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todas las categorías</option>
+      @for (cat of filtros().categorias; track cat.id) { <option [ngValue]="cat.id">{{ cat.nombre }}</option> }
+    </select>
+    <button (click)="clearFilters()" matTooltip="Limpiar filtros"
+      class="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-300 transition-colors">
+      <mat-icon class="!text-base">close</mat-icon>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando auditoría...</p>
+    </div>
+  } @else {
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-indigo-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ kpis().rutas_auditadas }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Rutas Auditadas</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-blue-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ kpis().pdvs_visitados }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">PDVs Visitados</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-cyan-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ kpis().clientes_auditados }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Clientes Auditados</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-violet-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ kpis().cuestionarios_completados }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Cuestionarios</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-amber-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ kpis().fotos_subidas }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Fotos Subidas</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-emerald-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black" [ngClass]="cumplimientoColor(kpis().cumplimiento_promedio)">{{ kpis().cumplimiento_promedio }}%</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Cumplimiento Prom.</div>
+      </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-emerald-500">checklist</mat-icon> Cumplimiento por indicador (% Sí)
+        </h3>
+        <div class="h-64"><canvas baseChart [data]="indicadoresData" [options]="horizontalBarOptions" [type]="'bar'"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-amber-500">storefront</mat-icon> Actividad de la competencia (% PDVs)
+        </h3>
+        <div class="h-64"><canvas baseChart [data]="competenciaData" [options]="barOptions" [type]="'bar'"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-indigo-500">show_chart</mat-icon> Auditorías por día
+        </h3>
+        <div class="h-64"><canvas baseChart [data]="porDiaData" [options]="lineOptions" [type]="'line'"></canvas></div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-sky-500">leaderboard</mat-icon> Auditorías por auditor (top 10)
+        </h3>
+        <div class="h-64"><canvas baseChart [data]="porAuditorData" [options]="auditorBarOptions" [type]="'bar'"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Ranking cliente/categoría con menor cumplimiento -->
+    @if (porClienteCategoria.length) {
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-rose-500">priority_high</mat-icon> Cliente / categoría con menor cumplimiento
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          @for (cc of porClienteCategoria.slice(0, 9); track cc.cliente + '_' + cc.categoria) {
+            <div class="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5">
+              <div class="min-w-0">
+                <div class="font-bold text-sm text-slate-800 dark:text-white truncate">{{ cc.cliente }}</div>
+                <div class="text-xs text-slate-400 truncate">{{ cc.categoria }} · {{ cc.auditorias }} auditoría(s)</div>
+              </div>
+              <span class="text-lg font-black shrink-0 ml-2" [ngClass]="cumplimientoColor(cc.cumplimiento_promedio)">{{ cc.cumplimiento_promedio }}%</span>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Alertas de vencimiento -->
+    @if (alertasVencimiento().length) {
+      <div class="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-5 shadow-sm">
+        <h3 class="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base">warning</mat-icon> Productos próximos a vencer ({{ alertasVencimiento().length }})
+        </h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
+                <th class="pb-2 pr-3">Fecha</th><th class="pb-2 pr-3">Cliente</th><th class="pb-2 pr-3">PDV</th>
+                <th class="pb-2 pr-3">Categoría</th><th class="pb-2 pr-3">Marca</th><th class="pb-2 pr-3">Cantidad</th><th class="pb-2">Vence</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (v of alertasVencimiento(); track v.id_visita) {
+                <tr class="border-b border-slate-50 dark:border-white/5">
+                  <td class="py-2 pr-3 text-slate-500">{{ v.fecha }}</td>
+                  <td class="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200">{{ v.cliente }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ v.punto_de_interes }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ v.categoria }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ v.marca || '—' }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ v.cantidad || '—' }}</td>
+                  <td class="py-2 text-amber-600 dark:text-amber-400 font-bold">{{ v.fecha1 || v.fecha2 || '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    <!-- Log filtrable -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-slate-400">fact_check</mat-icon> Detalle de auditorías ({{ filteredLog.length }})
+        </h3>
+        <div class="relative w-64">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+          <input [(ngModel)]="search" placeholder="Buscar..."
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold outline-none">
+        </div>
+      </div>
+      @if (!filteredLog.length) {
+        <div class="py-16 text-center opacity-40">
+          <mat-icon class="!text-5xl">fact_check</mat-icon>
+          <p class="font-bold mt-2">Sin auditorías para este período/filtro.</p>
+        </div>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-white/5">
+                <th class="pb-2 pr-3">Fecha</th><th class="pb-2 pr-3">Auditor</th><th class="pb-2 pr-3">Ruta</th>
+                <th class="pb-2 pr-3">Cliente</th><th class="pb-2 pr-3">PDV</th><th class="pb-2 pr-3">Categoría</th>
+                <th class="pb-2 pr-3">Cumplimiento</th><th class="pb-2">Señales</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of filteredLog; track r.id_visita + '_' + r.id_categoria) {
+                <tr class="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5">
+                  <td class="py-2 pr-3 text-slate-500">{{ r.fecha }}</td>
+                  <td class="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200">{{ r.auditor }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ r.ruta }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ r.cliente }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ r.punto_de_interes }}</td>
+                  <td class="py-2 pr-3 text-slate-500">{{ r.categoria }}</td>
+                  <td class="py-2 pr-3 font-black" [ngClass]="cumplimientoColor(r.cumplimiento_pct)">{{ r.cumplimiento_pct }}%</td>
+                  <td class="py-2">
+                    <div class="flex items-center gap-1.5">
+                      @if (r.prox_vencer) { <mat-icon class="!text-base text-amber-500" matTooltip="Producto próximo a vencer">schedule</mat-icon> }
+                      @if (r.competencia_actividad || r.competencia_material_pop || r.competencia_impulsadora) { <mat-icon class="!text-base text-rose-500" matTooltip="Actividad de competencia">storefront</mat-icon> }
+                      @if (r.promo_nuestra) { <mat-icon class="!text-base text-emerald-500" matTooltip="Promoción propia">campaign</mat-icon> }
+                      @if (r.exhibicion_adicional) { <mat-icon class="!text-base text-indigo-500" matTooltip="Exhibición adicional">view_carousel</mat-icon> }
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -30,6 +30,12 @@ export const routes: Routes = [
         data: { roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
       },
       {
+        path: 'centro-mando-auditoria',
+        loadComponent: () => import('./features/centro-mando-auditoria/centro-mando-auditoria.component').then((m) => m.CentroMandoAuditoriaComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst'] },
+      },
+      {
         path: 'visits',
         loadComponent: () => import('./features/visits/visits.component').then((m) => m.VisitsComponent),
       },

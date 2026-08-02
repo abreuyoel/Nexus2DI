@@ -51,6 +51,7 @@ export class ShellComponent implements OnInit {
   private navItems: NavItem[] = [
     { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: [] },
     { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
+    { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
     { label: 'Rutas', icon: 'route', route: '/routes', roles: ['admin', 'analyst'], module: 'rutas' },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['admin', 'supervisor', 'atc'] },
     { label: 'Usuarios', icon: 'people', route: '/users', roles: ['admin'], module: 'users' },

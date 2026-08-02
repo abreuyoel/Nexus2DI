@@ -194,6 +194,8 @@ export class ApiService {
   getCentroMandoResumenDia(opts: any = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/resumen-dia`, { params: this.params(opts) }); }
   getCentroMandoActivaciones(opts: any = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/activaciones`, { params: this.params(opts) }); }
   getCentroMandoHorasTrabajadas(opts: { desde?: string; hasta?: string; cliente_id?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/horas-trabajadas`, { params: this.params(opts) }); }
+  getCentroMandoAuditoriaFiltros(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/filtros`); }
+  getCentroMandoAuditoriaResumen(opts: { desde?: string; hasta?: string; id_auditor?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/resumen`, { params: this.params(opts) }); }
   getMercRutaPdvs(idRuta: number): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/ruta/${idRuta}/pdvs`); }
   deleteMercFoto(fotoId: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/merc/foto/${fotoId}`); }
   
