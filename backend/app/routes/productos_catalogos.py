@@ -342,6 +342,37 @@ def _producto_resp(p, sc, cat, m, pr, pres, dep, tam) -> ProductoResponse:
     )
 
 
+def _apply_producto_filtros(
+    q, *, busqueda=None, id_departamento=None, id_categoria=None, id_subcategoria=None,
+    id_marca=None, id_productora=None, id_presentacion=None, id_clasificacion_tamano=None,
+    inagotable=None, exclude: Optional[str] = None,
+):
+    """Filtros de /productos, reusados también por /productos/filtros-disponibles
+    (que necesita aplicar TODOS los filtros MENOS el de la propia faceta que
+    está calculando -- `exclude` -- para no reducir sus propias opciones a 1
+    apenas se elige un valor)."""
+    if busqueda:
+        like = f"%{busqueda}%"
+        q = q.filter((Producto.producto_gu.ilike(like)) | (Producto.cod_prod.ilike(like)))
+    if exclude != "departamento" and id_departamento is not None:
+        q = q.filter(Departamento.id_departamento == id_departamento)
+    if exclude != "categoria" and id_categoria is not None:
+        q = q.filter(SubCategoria.id_categoria == id_categoria)
+    if exclude != "subcategoria" and id_subcategoria is not None:
+        q = q.filter(Producto.id_subcategoria == id_subcategoria)
+    if exclude != "marca" and id_marca is not None:
+        q = q.filter(Producto.id_marca == id_marca)
+    if exclude != "productora" and id_productora is not None:
+        q = q.filter(Productora.id_productora == id_productora)
+    if exclude != "presentacion" and id_presentacion is not None:
+        q = q.filter(Producto.id_presentacion == id_presentacion)
+    if exclude != "tamano" and id_clasificacion_tamano is not None:
+        q = q.filter(Producto.id_clasificacion_tamano == id_clasificacion_tamano)
+    if inagotable is not None:
+        q = q.filter(Producto.inagotable == inagotable)
+    return q
+
+
 @router.get("/productos", response_model=ProductoListResponse)
 def list_productos(
     busqueda: Optional[str] = Query(None),
@@ -358,26 +389,11 @@ def list_productos(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
-    q = _producto_join(db)
-    if busqueda:
-        like = f"%{busqueda}%"
-        q = q.filter((Producto.producto_gu.ilike(like)) | (Producto.cod_prod.ilike(like)))
-    if id_departamento is not None:
-        q = q.filter(Departamento.id_departamento == id_departamento)
-    if id_categoria is not None:
-        q = q.filter(SubCategoria.id_categoria == id_categoria)
-    if id_subcategoria is not None:
-        q = q.filter(Producto.id_subcategoria == id_subcategoria)
-    if id_marca is not None:
-        q = q.filter(Producto.id_marca == id_marca)
-    if id_productora is not None:
-        q = q.filter(Productora.id_productora == id_productora)
-    if id_presentacion is not None:
-        q = q.filter(Producto.id_presentacion == id_presentacion)
-    if id_clasificacion_tamano is not None:
-        q = q.filter(Producto.id_clasificacion_tamano == id_clasificacion_tamano)
-    if inagotable is not None:
-        q = q.filter(Producto.inagotable == inagotable)
+    q = _apply_producto_filtros(
+        _producto_join(db), busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
+        id_subcategoria=id_subcategoria, id_marca=id_marca, id_productora=id_productora,
+        id_presentacion=id_presentacion, id_clasificacion_tamano=id_clasificacion_tamano, inagotable=inagotable,
+    )
     total = q.count()
     limit = max(1, limit)
     rows = q.order_by(Producto.producto_gu).offset(skip).limit(limit).all()
@@ -385,6 +401,53 @@ def list_productos(
         total=total, pagina=(skip // limit + 1),
         items=[_producto_resp(*r) for r in rows],
     )
+
+
+@router.get("/productos/filtros-disponibles")
+def productos_filtros_disponibles(
+    busqueda: Optional[str] = Query(None),
+    id_departamento: Optional[int] = Query(None),
+    id_categoria: Optional[int] = Query(None),
+    id_subcategoria: Optional[int] = Query(None),
+    id_marca: Optional[int] = Query(None),
+    id_productora: Optional[int] = Query(None),
+    id_presentacion: Optional[int] = Query(None),
+    id_clasificacion_tamano: Optional[int] = Query(None),
+    inagotable: Optional[bool] = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Para que los filtros de Productos cascadeen: dado lo que ya está
+    elegido (ej. una productora), devuelve solo los departamentos/categorías/
+    subcategorías/marcas/productoras/presentaciones/tamaños que EXISTEN entre
+    los productos que matchean esa selección -- en vez de listas fijas de
+    todo el catálogo. Cada faceta se calcula excluyendo su propio filtro
+    (`exclude`) para no colapsarse a una sola opción apenas se la elige."""
+    kwargs = dict(
+        busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
+        id_subcategoria=id_subcategoria, id_marca=id_marca, id_productora=id_productora,
+        id_presentacion=id_presentacion, id_clasificacion_tamano=id_clasificacion_tamano, inagotable=inagotable,
+    )
+
+    def opts(exclude: str, id_col, nombre_col):
+        rows = (
+            _apply_producto_filtros(_producto_join(db), exclude=exclude, **kwargs)
+            .with_entities(id_col, nombre_col).distinct().all()
+        )
+        return sorted(
+            [{"id": r[0], "nombre": r[1]} for r in rows if r[0] is not None and r[1] is not None],
+            key=lambda x: x["nombre"],
+        )
+
+    return {
+        "departamentos": opts("departamento", Departamento.id_departamento, Departamento.nombre),
+        "categorias": opts("categoria", Categoria.id_categoria, Categoria.nombre),
+        "subcategorias": opts("subcategoria", SubCategoria.id_subcategoria, SubCategoria.nombre),
+        "marcas": opts("marca", Marca.id_marca, Marca.nombre),
+        "productoras": opts("productora", Productora.id_productora, Productora.nombre),
+        "presentaciones": opts("presentacion", Presentacion.id_presentacion, Presentacion.nombre),
+        "tamanos": opts("tamano", ClasificacionTamano.id, ClasificacionTamano.nombre),
+    }
 
 
 @router.get("/productos/{producto_id}", response_model=ProductoResponse)

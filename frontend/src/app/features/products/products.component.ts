@@ -69,7 +69,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterDepartamento()" (ngModelChange)="filterDepartamento.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todos los departamentos</option>
-          @for (d of departamentosList(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
+          @for (d of facetOpts().departamentos; track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -77,7 +77,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterCategoria()" (ngModelChange)="filterCategoria.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todas las categorías</option>
-          @for (c of catList(); track c.id_categoria) { <option [ngValue]="c.id_categoria">{{ c.nombre }}</option> }
+          @for (c of facetOpts().categorias; track c.id) { <option [ngValue]="c.id">{{ c.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -85,7 +85,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterSubcategoria()" (ngModelChange)="filterSubcategoria.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todas las subcategorías</option>
-          @for (s of subcatList(); track s.id_subcategoria) { <option [ngValue]="s.id_subcategoria">{{ s.nombre }}</option> }
+          @for (s of facetOpts().subcategorias; track s.id) { <option [ngValue]="s.id">{{ s.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -93,7 +93,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterMarca()" (ngModelChange)="filterMarca.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todas las marcas</option>
-          @for (m of marcasList(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }}</option> }
+          @for (m of facetOpts().marcas; track m.id) { <option [ngValue]="m.id">{{ m.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -101,7 +101,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterProductora()" (ngModelChange)="filterProductora.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todas las productoras</option>
-          @for (p of productorasList(); track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
+          @for (p of facetOpts().productoras; track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -109,7 +109,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterPresentacion()" (ngModelChange)="filterPresentacion.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todas las presentaciones</option>
-          @for (p of presentacionesList(); track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
+          @for (p of facetOpts().presentaciones; track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -117,7 +117,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <select [ngModel]="filterTamano()" (ngModelChange)="filterTamano.set($event); reload()"
           class="bg-slate-800 border border-slate-700 focus:border-violet-500 text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
           <option [ngValue]="null">Todos los tamaños</option>
-          @for (t of tamanosList(); track t.id) { <option [ngValue]="t.id">{{ t.nombre }}</option> }
+          @for (t of facetOpts().tamanos; track t.id) { <option [ngValue]="t.id">{{ t.nombre }}</option> }
         </select>
         <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
       </div>
@@ -413,6 +413,12 @@ export class ProductsComponent implements OnInit {
   filterPresentacion = signal<number | null>(null);
   filterTamano = signal<number | null>(null);
   filterInagotable = signal<'' | 'si' | 'no'>('');
+  // Opciones de los selects de filtro, cascadeadas según lo que ya está
+  // elegido (ej. si filtrás por productora, categoría/marca/etc. solo
+  // muestran lo que esa productora realmente tiene) -- ver loadFacetOpts().
+  facetOpts = signal<{ departamentos: Simple[]; categorias: Simple[]; subcategorias: Simple[]; marcas: Simple[]; productoras: Simple[]; presentaciones: Simple[]; tamanos: Simple[] }>({
+    departamentos: [], categorias: [], subcategorias: [], marcas: [], productoras: [], presentaciones: [], tamanos: [],
+  });
   skipVal = signal(0);
   pageSize = 25;
   private search$ = new Subject<string>();
@@ -436,14 +442,17 @@ export class ProductsComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadProductos();
+    this.loadFacetOpts();
     this.loadCatalogs();
-    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => { this.skipVal.set(0); this.loadProductos(); });
+    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => { this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts(); });
   }
 
-  loadProductos(): void {
-    this.loading.set(true);
-    this.api.getProductos({
-      skip: this.skipVal(), limit: this.pageSize, busqueda: this.searchText() || undefined,
+  /** Filtros activos, compartidos entre loadProductos() y loadFacetOpts()
+   * (que además necesita saber cuál es cada uno para excluirlo de su propia
+   * faceta -- ver comentario del endpoint en el backend). */
+  private currentFilters() {
+    return {
+      busqueda: this.searchText() || undefined,
       id_departamento: this.filterDepartamento() ?? undefined,
       id_categoria: this.filterCategoria() ?? undefined,
       id_subcategoria: this.filterSubcategoria() ?? undefined,
@@ -452,7 +461,18 @@ export class ProductsComponent implements OnInit {
       id_presentacion: this.filterPresentacion() ?? undefined,
       id_clasificacion_tamano: this.filterTamano() ?? undefined,
       inagotable: this.filterInagotable() ? this.filterInagotable() === 'si' : undefined,
-    }).subscribe({ next: (res) => { this.productos.set(res.items); this.total.set(res.total); this.loading.set(false); }, error: () => this.loading.set(false) });
+    };
+  }
+
+  loadProductos(): void {
+    this.loading.set(true);
+    this.api.getProductos({ skip: this.skipVal(), limit: this.pageSize, ...this.currentFilters() })
+      .subscribe({ next: (res) => { this.productos.set(res.items); this.total.set(res.total); this.loading.set(false); }, error: () => this.loading.set(false) });
+  }
+
+  loadFacetOpts(): void {
+    this.api.getProductosFiltrosDisponibles(this.currentFilters())
+      .subscribe({ next: (d) => this.facetOpts.set(d), error: () => {} });
   }
 
   loadCatalogs(): void {
@@ -477,7 +497,7 @@ export class ProductsComponent implements OnInit {
   onCategoriaChange(): void { this.form.patchValue({ id_subcategoria: null }); }
 
   onSearch(val: string): void { this.searchText.set(val); this.search$.next(val); }
-  reload(): void { this.skipVal.set(0); this.loadProductos(); }
+  reload(): void { this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts(); }
   get hasFilters(): boolean {
     return !!(this.searchText() || this.filterDepartamento() || this.filterCategoria() || this.filterSubcategoria() ||
       this.filterMarca() || this.filterProductora() || this.filterPresentacion() || this.filterTamano() || this.filterInagotable());
@@ -485,7 +505,7 @@ export class ProductsComponent implements OnInit {
   clearFilters(): void {
     this.searchText.set(''); this.filterDepartamento.set(null); this.filterCategoria.set(null); this.filterSubcategoria.set(null);
     this.filterMarca.set(null); this.filterProductora.set(null); this.filterPresentacion.set(null); this.filterTamano.set(null);
-    this.filterInagotable.set(''); this.skipVal.set(0); this.loadProductos();
+    this.filterInagotable.set(''); this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts();
   }
   prevPage(): void { this.skipVal.update(v => Math.max(0, v - this.pageSize)); this.loadProductos(); }
   nextPage(): void { this.skipVal.update(v => v + this.pageSize); this.loadProductos(); }

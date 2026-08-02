@@ -41,12 +41,25 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
               <input [(ngModel)]="searchTerm" placeholder="Buscar cliente por nombre o RIF..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-indigo-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-2.5 text-sm font-semibold outline-none transition-colors">
             </div>
             <div class="relative min-w-56">
-              <select [ngModel]="filterCategoryId()" (ngModelChange)="onFilterCategoryChange($event)"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-indigo-500 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none">
-                <option [ngValue]="null">Filtrar por categoría: todas</option>
-                @for (cat of allCategories(); track cat.id_categoria) { <option [ngValue]="cat.id_categoria">{{ cat.nombre }}</option> }
-              </select>
-              <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+              <button type="button" (click)="catDropdownOpen.set(!catDropdownOpen())"
+                class="w-full flex items-center justify-between gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
+                <span class="truncate">{{ filterCategoryName() || 'Filtrar por categoría: todas' }}</span>
+                <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
+              </button>
+              @if (catDropdownOpen()) {
+                <div class="fixed inset-0 z-10" (click)="catDropdownOpen.set(false)"></div>
+                <div class="absolute z-20 mt-1 w-72 max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
+                  <input [(ngModel)]="catSearchTerm" placeholder="Buscar categoría..." class="w-full mb-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-sm outline-none">
+                  <button type="button" (click)="onFilterCategoryChange(null); catDropdownOpen.set(false)" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold text-slate-500">Todas</button>
+                  @for (cat of catOptsFiltered(); track cat.id_categoria) {
+                    <button type="button" (click)="onFilterCategoryChange(cat.id_categoria); catDropdownOpen.set(false)"
+                      class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 truncate"
+                      [class.font-bold]="filterCategoryId() === cat.id_categoria">{{ cat.nombre }}</button>
+                  } @empty {
+                    <p class="text-xs text-slate-400 px-2 py-1">Sin categorías para esta búsqueda.</p>
+                  }
+                </div>
+              }
             </div>
             @if (filterCategoryId()) {
               <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">{{ filteredClients().length }} cliente(s) con esta categoría</span>
@@ -63,12 +76,24 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
         @if (bulkMode()) {
           <div class="mb-6 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 flex flex-wrap items-center gap-3">
             <div class="relative min-w-56">
-              <select [(ngModel)]="bulkCategoryId"
-                class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-indigo-500 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none">
-                <option [ngValue]="null">Elegí la categoría a asignar…</option>
-                @for (cat of allCategories(); track cat.id_categoria) { <option [ngValue]="cat.id_categoria">{{ cat.nombre }}</option> }
-              </select>
-              <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+              <button type="button" (click)="bulkCatDropdownOpen.set(!bulkCatDropdownOpen())"
+                class="w-full flex items-center justify-between gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
+                <span class="truncate">{{ bulkCategoryName() || 'Elegí la categoría a asignar…' }}</span>
+                <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
+              </button>
+              @if (bulkCatDropdownOpen()) {
+                <div class="fixed inset-0 z-10" (click)="bulkCatDropdownOpen.set(false)"></div>
+                <div class="absolute z-20 mt-1 w-72 max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
+                  <input [(ngModel)]="bulkCatSearchTerm" placeholder="Buscar categoría..." class="w-full mb-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-sm outline-none">
+                  @for (cat of bulkCatOptsFiltered(); track cat.id_categoria) {
+                    <button type="button" (click)="bulkCategoryId = cat.id_categoria; bulkCatDropdownOpen.set(false)"
+                      class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 truncate"
+                      [class.font-bold]="bulkCategoryId === cat.id_categoria">{{ cat.nombre }}</button>
+                  } @empty {
+                    <p class="text-xs text-slate-400 px-2 py-1">Sin categorías para esta búsqueda.</p>
+                  }
+                </div>
+              }
             </div>
             <span class="text-sm font-bold text-indigo-700 dark:text-indigo-300">{{ bulkSelected().size }} cliente(s) seleccionados</span>
             <button (click)="bulkAssign()" [disabled]="!bulkCategoryId || bulkSelected().size === 0 || bulkSaving()"
@@ -137,6 +162,15 @@ export class ClientCategoriesComponent implements OnInit {
   filterCategoryId = signal<number | null>(null);
   private categoryClientIds = signal<Set<number> | null>(null);
 
+  // Dropdowns custom (no <select> nativo): con 100+ categorías el <select>
+  // del navegador se corta contra el borde de la ventana y no deja ver/
+  // scrollear el resto de las opciones -- este panel sí tiene su propio
+  // scroll garantizado (max-h + overflow-y-auto).
+  catDropdownOpen = signal(false);
+  catSearchTerm = '';
+  bulkCatDropdownOpen = signal(false);
+  bulkCatSearchTerm = '';
+
   bulkMode = signal(false);
   bulkCategoryId: number | null = null;
   bulkSelected = signal<Set<number>>(new Set());
@@ -150,6 +184,21 @@ export class ClientCategoriesComponent implements OnInit {
       this.loading.set(false);
     });
     this.api.getCatalogosCategorias().subscribe({ next: d => this.allCategories.set(d), error: () => {} });
+  }
+
+  filterCategoryName(): string {
+    return this.allCategories().find(c => c.id_categoria === this.filterCategoryId())?.nombre || '';
+  }
+  bulkCategoryName(): string {
+    return this.allCategories().find(c => c.id_categoria === this.bulkCategoryId)?.nombre || '';
+  }
+  catOptsFiltered() {
+    const q = this.catSearchTerm.trim().toLowerCase();
+    return !q ? this.allCategories() : this.allCategories().filter(c => c.nombre.toLowerCase().includes(q));
+  }
+  bulkCatOptsFiltered() {
+    const q = this.bulkCatSearchTerm.trim().toLowerCase();
+    return !q ? this.allCategories() : this.allCategories().filter(c => c.nombre.toLowerCase().includes(q));
   }
 
   onFilterCategoryChange(id: number | null): void {

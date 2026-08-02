@@ -356,6 +356,9 @@ export class ApiService {
   getProductos(opts: { skip?: number; limit?: number; busqueda?: string; id_departamento?: number; id_categoria?: number; id_subcategoria?: number; id_marca?: number; id_productora?: number; id_presentacion?: number; id_clasificacion_tamano?: number; inagotable?: boolean; categoria?: string; fabricante?: string; tipo_servicio?: string } = {}): Observable<{ total: number; pagina: number; items: any[] }> {
     return this.http.get<{ total: number; pagina: number; items: any[] }>(`${this.base}/api/productos-catalogos/productos`, { params: this.params(opts) });
   }
+  getProductosFiltrosDisponibles(opts: { busqueda?: string; id_departamento?: number; id_categoria?: number; id_subcategoria?: number; id_marca?: number; id_productora?: number; id_presentacion?: number; id_clasificacion_tamano?: number; inagotable?: boolean } = {}): Observable<{ departamentos: any[]; categorias: any[]; subcategorias: any[]; marcas: any[]; productoras: any[]; presentaciones: any[]; tamanos: any[] }> {
+    return this.http.get<any>(`${this.base}/api/productos-catalogos/productos/filtros-disponibles`, { params: this.params(opts) });
+  }
 
   getProducto(id: number): Observable<any> {
     return this.http.get<any>(`${this.base}/api/productos-catalogos/productos/${id}`);
