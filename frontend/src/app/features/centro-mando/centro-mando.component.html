@@ -627,7 +627,7 @@
       @if (activeView === 'horas') {
         <div class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
           <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
-          <span>Horas trabajadas por mercaderista en el período, de <b>mayor a menor</b>. No hay reloj de entrada/salida: se estima con el lapso entre la primera y la última foto que subió cada día, sumado sobre todo el rango.</span>
+          <span>Horas trabajadas por mercaderista en el período, de <b>mayor a menor</b>. No hay reloj de entrada/salida: se estima con el lapso entre la primera y la última foto que subió cada día, sumado sobre todo el rango. El <b>tiempo de traslado</b> es el lapso entre terminar en un PDV y activarse en uno distinto ese mismo día (cambiar de cliente dentro del mismo PDV no cuenta).</span>
         </div>
         @if (loadingHoras()) {
           <div class="cm-loading-center">
@@ -645,6 +645,8 @@
                   <th>Mercaderista</th>
                   <th class="text-right">Horas trabajadas</th>
                   <th class="text-right">Promedio/día</th>
+                  <th class="text-right">Tiempo de traslado</th>
+                  <th class="text-right">Traslado/día</th>
                   <th class="text-right">Días trabajados</th>
                   <th class="text-right">Visitas</th>
                 </tr>
@@ -656,6 +658,8 @@
                     <td class="fw">{{ m.mercaderista }}</td>
                     <td class="text-right mono">{{ m.horas_trabajadas }} h</td>
                     <td class="text-right mono">{{ m.horas_promedio_dia }} h</td>
+                    <td class="text-right mono">{{ m.tiempo_traslado_horas }} h</td>
+                    <td class="text-right mono">{{ m.tiempo_traslado_promedio_dia_min }} min</td>
                     <td class="text-right mono">{{ m.dias_trabajados }}</td>
                     <td class="text-right mono">{{ m.visitas }}</td>
                   </tr>

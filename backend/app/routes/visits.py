@@ -134,7 +134,10 @@ def review_list(
         desde = (hoy - timedelta(days=7)).isoformat()
 
     params = {"d": desde, "h": hasta}
-    where = "WHERE CAST(v.fecha_visita AS DATE) BETWEEN :d AND :h"
+    # >= / < en vez de CAST(v.fecha_visita AS DATE) BETWEEN: el CAST sobre la
+    # columna le impide a SQL Server usar un índice sobre fecha_visita (fuerza
+    # scan) -- esta forma deja la columna "pelada" en la comparación.
+    where = "WHERE v.fecha_visita >= CAST(:d AS DATE) AND v.fecha_visita < DATEADD(day, 1, CAST(:h AS DATE))"
     if cliente_id:
         where += " AND v.id_cliente = :cid"
         params["cid"] = cliente_id

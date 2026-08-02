@@ -4,7 +4,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import maplibregl from 'maplibre-gl';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../../../core/services/api.service';
 import { MercUiService } from '../../services/merc-ui.service';
@@ -205,9 +204,6 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   pdvs = signal<any[]>([]);
   selectedRouteId = signal<number | null>(null);
   routeExecuted = signal(false);
-  
-  private map: maplibregl.Map | null = null;
-  private markers: maplibregl.Marker[] = [];
 
   activatingPdvId = signal<string | null>(null);
   activationGroup = signal<PdvGroup | null>(null);
@@ -273,7 +269,6 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.map) this.map.remove();
     this.chainResolvedSub?.unsubscribe();
   }
 
@@ -317,59 +312,6 @@ export class MercRutaComponent implements OnInit, OnDestroy {
     this.routeExecuted.set(true);
   }
 
-  initMap(): void {
-    const el = document.getElementById('merc-map');
-    if (!el) return;
-    if (this.map) this.map.remove();
-
-    this.map = new maplibregl.Map({
-      container: el,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [-66.90, 10.48],
-      zoom: 12
-    });
-
-    this.markers = [];
-    const bounds = new maplibregl.LngLatBounds();
-    let hasPoints = false;
-
-    this.groupedPdvs().forEach(pdv => {
-      if (pdv.latitud && pdv.longitud) {
-        hasPoints = true;
-        const marker = new maplibregl.Marker({ 
-          color: pdv.hasVisited ? '#10b981' : '#6366f1',
-          scale: 0.8 
-        })
-        .setLngLat([pdv.longitud, pdv.latitud])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`
-          <div style="padding:4px">
-            <div style="font-weight:900;font-size:11px">${pdv.nombre}</div>
-            <div style="font-size:9px;color:#64748b">${pdv.cadena}</div>
-          </div>
-        `))
-        .addTo(this.map!);
-        this.markers.push(marker);
-        bounds.extend([pdv.longitud, pdv.latitud]);
-      }
-    });
-
-    if (hasPoints) {
-      this.map.fitBounds(bounds, { padding: 40, maxZoom: 15 });
-    }
-  }
-
-  centerOnUser(): void {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(pos => {
-      if (this.map) {
-        this.map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 15 });
-        new maplibregl.Marker({ color: '#f43f5e', scale: 0.6 })
-          .setLngLat([pos.coords.longitude, pos.coords.latitude])
-          .addTo(this.map);
-      }
-    });
-  }
-
   triggerActivation(group: PdvGroup): void {
     if (group.hasVisited) {
       this.activatingPdvId.set(group.id_punto);
@@ -395,8 +337,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
   }
 
   /** GPS con timeout corto -- si el mercaderista no tiene señal de ubicación no
-   * debe quedar bloqueado sin poder activar el PDV, solo se guarda sin coordenadas
-   * (mismo criterio que ya usa el resto de este módulo, ver centerOnUser()). */
+   * debe quedar bloqueado sin poder activar el PDV, solo se guarda sin coordenadas. */
   private getPosition(): Promise<{ lat?: number; lon?: number }> {
     return new Promise((resolve) => {
       if (!navigator.geolocation) return resolve({});

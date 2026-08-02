@@ -109,17 +109,31 @@ def horas_trabajadas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
-    """Horas trabajadas por mercaderista en el rango, de mayor a menor.
+    """Horas trabajadas y tiempo de traslado por mercaderista en el rango,
+    de mayor a menor por horas trabajadas.
 
     No existe check-in/check-out para mercaderistas (a diferencia de vendedor/
-    encuestador, que sí tienen tabla de jornada) -- se aproxima con el lapso
-    entre la primera y la última foto que subió cada mercaderista por día
-    (FOTOS_TOTALES.fecha_registro), sumado sobre todos los días del rango.
+    encuestador, que sí tienen tabla de jornada) -- ambas métricas se
+    aproximan con las fotos que cada mercaderista sube (FOTOS_TOTALES.
+    fecha_registro), que es el único rastro con timestamp que existe:
+
+    - Horas trabajadas: lapso entre la primera y la última foto de cada día,
+      sumado sobre todos los días del rango.
+    - Tiempo de traslado: un mismo PDV puede tener más de un cliente (el
+      mercaderista no "termina" el PDV hasta hacer gestión de todos), así que
+      cambiar de cliente en el MISMO PDV no es traslado. Solo cuenta el lapso
+      entre la ÚLTIMA foto en un PDV y la PRIMERA foto en un PDV DISTINTO
+      dentro del mismo día -- se calcula con LAG() ordenando las fotos de
+      cada mercaderista por día y sumando el lapso cada vez que el PDV
+      cambia respecto a la foto anterior.
+
     Admin ve todos; analista solo los mercaderistas de SUS rutas
     (analistas_rutas -> RUTA_PROGRAMACION -> MERCADERISTAS_RUTAS). Con
     cliente_id (mismo filtro "Cliente" de arriba del dashboard) solo cuenta
     las fotos de visitas de ESE cliente -- igual que resumen-dia/activaciones,
-    para que las 3 pestañas queden consistentes entre sí."""
+    para que las pestañas queden consistentes entre sí. Todo el cálculo se
+    hace en SQL (una sola query, agregado ya reducido a 1 fila por
+    mercaderista) en vez de traer fotos sueltas a Python fila por fila."""
     try:
         hoy = _date.today()
         if not desde:
@@ -147,40 +161,63 @@ def horas_trabajadas(
             params = params + (current_user.id_perfil,)
 
         rows = execute_query(db, f"""
-            SELECT v.id_mercaderista, m.nombre,
-                   CAST(f.fecha_registro AS DATE) AS dia,
-                   MIN(f.fecha_registro), MAX(f.fecha_registro),
-                   COUNT(DISTINCT f.id_visita)
-            FROM FOTOS_TOTALES f
-            JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
-            JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
-            WHERE CAST(f.fecha_registro AS DATE) BETWEEN ? AND ?
-            {cliente_filter}
-            {analyst_filter}
-            GROUP BY v.id_mercaderista, m.nombre, CAST(f.fecha_registro AS DATE)
+            WITH base AS (
+                SELECT v.id_mercaderista, m.nombre AS mercaderista,
+                       v.identificador_punto_interes AS pdv,
+                       CAST(f.fecha_registro AS DATE) AS dia,
+                       f.fecha_registro AS ts,
+                       f.id_visita
+                FROM FOTOS_TOTALES f
+                JOIN VISITAS_MERCADERISTA v ON v.id_visita = f.id_visita
+                JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
+                WHERE f.fecha_registro >= CAST(? AS DATE) AND f.fecha_registro < DATEADD(day, 1, CAST(? AS DATE))
+                {cliente_filter}
+                {analyst_filter}
+            ),
+            por_dia AS (
+                SELECT id_mercaderista, MAX(mercaderista) AS mercaderista, dia,
+                       DATEDIFF(SECOND, MIN(ts), MAX(ts)) AS segundos_dia,
+                       COUNT(DISTINCT id_visita) AS visitas_dia
+                FROM base
+                GROUP BY id_mercaderista, dia
+            ),
+            transiciones AS (
+                SELECT id_mercaderista, dia, ts, pdv,
+                       LAG(pdv) OVER (PARTITION BY id_mercaderista, dia ORDER BY ts) AS pdv_prev,
+                       LAG(ts)  OVER (PARTITION BY id_mercaderista, dia ORDER BY ts) AS ts_prev
+                FROM base
+            ),
+            traslado_por_merc AS (
+                SELECT id_mercaderista,
+                       SUM(CASE WHEN pdv_prev IS NOT NULL AND pdv_prev <> pdv
+                                THEN DATEDIFF(SECOND, ts_prev, ts) ELSE 0 END) AS segundos_traslado
+                FROM transiciones
+                GROUP BY id_mercaderista
+            )
+            SELECT d.id_mercaderista, MAX(d.mercaderista) AS mercaderista,
+                   SUM(d.segundos_dia) AS segundos_trabajados,
+                   COUNT(DISTINCT d.dia) AS dias_trabajados,
+                   SUM(d.visitas_dia) AS visitas,
+                   ISNULL(MAX(t.segundos_traslado), 0) AS segundos_traslado
+            FROM por_dia d
+            LEFT JOIN traslado_por_merc t ON t.id_mercaderista = d.id_mercaderista
+            GROUP BY d.id_mercaderista
         """, params)
 
-        agg: dict = {}
-        for mid, nombre, dia, inicio, fin, n_visitas in rows:
-            if not inicio or not fin:
-                continue
-            minutos = max((fin - inicio).total_seconds() / 60, 0)
-            a = agg.setdefault(mid, {"id_mercaderista": mid, "mercaderista": nombre, "minutos": 0.0, "dias": 0, "visitas": 0})
-            a["minutos"] += minutos
-            a["dias"] += 1
-            a["visitas"] += n_visitas
-
         out = []
-        for a in agg.values():
-            horas = round(a["minutos"] / 60, 1)
-            dias = a["dias"]
+        for mid, nombre, seg_trab, dias, visitas, seg_trasl in rows:
+            dias = dias or 0
+            horas = round((seg_trab or 0) / 3600, 1)
+            trasl_horas = round((seg_trasl or 0) / 3600, 1)
             out.append({
-                "id_mercaderista": a["id_mercaderista"],
-                "mercaderista": a["mercaderista"],
+                "id_mercaderista": mid,
+                "mercaderista": nombre,
                 "horas_trabajadas": horas,
-                "dias_trabajados": dias,
                 "horas_promedio_dia": round(horas / dias, 1) if dias else 0,
-                "visitas": a["visitas"],
+                "dias_trabajados": dias,
+                "visitas": visitas or 0,
+                "tiempo_traslado_horas": trasl_horas,
+                "tiempo_traslado_promedio_dia_min": round((seg_trasl or 0) / 60 / dias, 1) if dias else 0,
             })
         out.sort(key=lambda x: x["horas_trabajadas"], reverse=True)
         return {"success": True, "desde": desde, "hasta": hasta, "mercaderistas": out}
@@ -323,7 +360,7 @@ def resumen_dia(
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
                 JOIN RUTAS_NUEVAS rn        ON rn.id_ruta = rp.id_ruta
-                WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
+                WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
                   AND mr.id_mercaderista = ra.id_mercaderista
                   AND rp.id_cliente = ?{serv_filter}
             """
@@ -335,7 +372,7 @@ def resumen_dia(
                 FROM RUTAS_ACTIVADAS ra
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
-                WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
+                WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
                   AND mr.id_mercaderista = ra.id_mercaderista{cli_filter}
             """
             activos_rows = execute_query(db, activos_hoy_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
@@ -418,7 +455,7 @@ def resumen_dia(
         ra_q = """
             SELECT ra.id_ruta, ra.id_mercaderista, ra.estado, CAST(ra.fecha_hora_activacion AS DATE) as fd
             FROM RUTAS_ACTIVADAS ra
-            WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
+            WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
         """
         ra_rows = execute_query(db, ra_q, (d_desde, d_hasta))
 
@@ -505,7 +542,7 @@ def resumen_dia(
                    MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END) AS tiene_des
             FROM VISITAS_MERCADERISTA vm
             LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita AND ft.id_tipo_foto IN (5,6)
-            WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?{real_cli_filter}
+            WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE)){real_cli_filter}
             GROUP BY vm.identificador_punto_interes
         """
         pois_reales_rows = execute_query(db, pois_reales_q, tuple(real_params))
@@ -602,7 +639,7 @@ def resumen_dia(
                        MAX(CASE WHEN ft.id_tipo_foto=6 THEN 1 ELSE 0 END)
                 FROM VISITAS_MERCADERISTA vm
                 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
-                WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
+                WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE))
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             """
             ev_full = execute_query(db, estado_visita_full_q, (d_desde, d_hasta))
@@ -746,10 +783,10 @@ def get_activaciones(
             cliente_id = current_user.id_perfil
 
         if desde and hasta:
-            rango_filter = " AND CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?"
+            rango_filter = " AND vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE))"
             rango_params = [desde, hasta]
         else:
-            rango_filter = " AND CAST(vm.fecha_visita AS DATE) = CAST(GETDATE() AS DATE)"
+            rango_filter = " AND vm.fecha_visita >= CAST(GETDATE() AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(GETDATE() AS DATE))"
             rango_params = []
 
         analista_id = current_user.id_perfil if is_analyst else None
@@ -1193,9 +1230,17 @@ def get_activaciones(
             FROM VISITAS_MERCADERISTA vm4
             JOIN CLIENTES c4 ON vm4.id_cliente = c4.id_cliente
             JOIN PUNTOS_INTERES1 pin4 ON vm4.identificador_punto_interes = pin4.identificador
-            LEFT JOIN (SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES WHERE id_tipo_foto=5 GROUP BY id_visita) act4 ON act4.id_visita=vm4.id_visita
-            LEFT JOIN (SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES WHERE id_tipo_foto=6 GROUP BY id_visita) des4 ON des4.id_visita=vm4.id_visita
-            WHERE CAST(vm4.fecha_visita AS DATE) >= CAST(DATEADD(day,-6,GETDATE()) AS DATE)
+            LEFT JOIN (
+                SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES
+                WHERE id_tipo_foto=5 AND fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
+                GROUP BY id_visita
+            ) act4 ON act4.id_visita=vm4.id_visita
+            LEFT JOIN (
+                SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES
+                WHERE id_tipo_foto=6 AND fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
+                GROUP BY id_visita
+            ) des4 ON des4.id_visita=vm4.id_visita
+            WHERE vm4.fecha_visita >= CAST(DATEADD(day,-6,GETDATE()) AS DATE)
         """ + gpd_af + """
             GROUP BY CAST(vm4.fecha_visita AS DATE), c4.cliente
             ORDER BY fecha DESC, c4.cliente
