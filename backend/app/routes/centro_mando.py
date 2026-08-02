@@ -14,12 +14,25 @@ def execute_query(db: Session, query: str, params: tuple = (), timeout: int = 0)
     probadas contra el volumen real de datos -- si algo sale mal (plan malo,
     bloqueo por un DDL corriendo, etc.) falla rápido con un error claro en
     vez de colgar la conexión (y el thread del pool, con --workers 1) hasta
-    que Cloudflare corta en 100s (524)."""
+    que Cloudflare corta en 100s (524).
+
+    Se pone en la CONEXIÓN (conn.timeout), no en el cursor: esta versión de
+    pyodbc no tiene Cursor.timeout ('pyodbc.Cursor' object has no attribute
+    'timeout') -- eso rompía la llamada ANTES de ejecutar la query, así que
+    nunca llegaba a correr. La conexión es del pool de SQLAlchemy y se
+    reusa entre requests, así que el timeout se restaura al valor previo al
+    salir para no afectar a otras queries que usen esta misma conexión
+    después."""
+    conn = db.connection().connection
+    prev_timeout = 0
+    if timeout:
+        try:
+            prev_timeout = conn.timeout
+            conn.timeout = timeout
+        except Exception:
+            timeout = 0  # no se pudo aplicar -- seguir sin timeout en vez de romper la query
     try:
-        conn = db.connection().connection
         cursor = conn.cursor()
-        if timeout:
-            cursor.timeout = timeout
         cursor.execute(query, params)
         if cursor.description:
             rows = cursor.fetchall()
@@ -28,6 +41,12 @@ def execute_query(db: Session, query: str, params: tuple = (), timeout: int = 0)
     except Exception as e:
         print(f"Error in execute_query: {e}")
         raise
+    finally:
+        if timeout:
+            try:
+                conn.timeout = prev_timeout
+            except Exception:
+                pass
 
 DIAS_ES = {
     'Monday':    'Lunes',
