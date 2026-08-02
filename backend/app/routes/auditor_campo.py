@@ -79,9 +79,9 @@ def get_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario 
 
 
 @router.get("/ruta-puntos/{route_id}")
-def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
-    rows = db.execute(text("""
+    puntos_q = """
         SELECT pin.identificador, pin.punto_de_interes, MAX(rp.prioridad) AS prioridad,
             COUNT(DISTINCT rp.id_cliente) AS total_clientes,
             CASE WHEN EXISTS (
@@ -90,10 +90,19 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _
                 AND CAST(ft.fecha_registro AS DATE) = CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END AS activado
         FROM RUTA_PROGRAMACION rp
         JOIN PUNTOS_INTERES1 pin ON rp.id_punto_interes = pin.identificador
-        WHERE rp.id_ruta = :rid AND rp.activa = 1 AND rp.dia = :dia
+        WHERE rp.id_ruta = :rid AND rp.activa = 1 {dia_filter}
         GROUP BY pin.identificador, pin.punto_de_interes
         ORDER BY pin.punto_de_interes
-    """), {"rid": route_id, "dia": dia}).fetchall()
+    """
+    rows = db.execute(text(puntos_q.format(dia_filter="AND rp.dia = :dia")), {"rid": route_id, "dia": dia}).fetchall()
+    if not rows and current_user.is_admin:
+        # Fallback solo para admin: si hoy no hay nada programado para este
+        # día de la semana (fin de semana, etc.), trae TODOS los PDV de la
+        # ruta en vez de nada -- así puede probar el flujo completo
+        # cualquier día sin tener que tocar la programación real (RUTA_
+        # PROGRAMACION.dia), que sí debe reflejar el cronograma real de los
+        # auditores.
+        rows = db.execute(text(puntos_q.format(dia_filter="")), {"rid": route_id}).fetchall()
     return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media",
              "total_clientes": r[3] or 0, "activado": bool(r[4])} for r in rows]
 
@@ -218,14 +227,19 @@ async def subir_foto_categoria(id_visita: int = Form(...), id_categoria: int = F
 
 # ───────────────── Clientes / categorías ─────────────────
 @router.get("/pdv-clientes/{point_id}/{route_id}")
-def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
-    rows = db.execute(text("""
+    clientes_q = """
         SELECT DISTINCT rp.id_cliente, c.cliente, rp.prioridad
         FROM RUTA_PROGRAMACION rp JOIN CLIENTES c ON rp.id_cliente = c.id_cliente
-        WHERE rp.id_punto_interes = :pid AND rp.id_ruta = :rid AND rp.activa = 1 AND rp.dia = :dia
+        WHERE rp.id_punto_interes = :pid AND rp.id_ruta = :rid AND rp.activa = 1 {dia_filter}
         ORDER BY rp.prioridad DESC, c.cliente
-    """), {"pid": point_id, "rid": route_id, "dia": dia}).fetchall()
+    """
+    rows = db.execute(text(clientes_q.format(dia_filter="AND rp.dia = :dia")), {"pid": point_id, "rid": route_id, "dia": dia}).fetchall()
+    if not rows and current_user.is_admin:
+        # Mismo fallback que get_ruta_puntos: admin puede probar el flujo
+        # cualquier día, sin tocar RUTA_PROGRAMACION.dia.
+        rows = db.execute(text(clientes_q.format(dia_filter="")), {"pid": point_id, "rid": route_id}).fetchall()
     return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media"} for r in rows]
 
 
