@@ -72,12 +72,39 @@ SELECT vm.identificador_punto_interes, vm.id_cliente, vm.fecha_visita,
        MAX(CASE WHEN ft.Estado = 'Rechazada' THEN 1 ELSE 0 END) AS tiene_rechazada
 FROM VISITAS_MERCADERISTA vm
 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
-WHERE vm.fecha_visita >= :inicio_mes
+WHERE vm.fecha_visita >= ?
   AND vm.fecha_visita < DATEADD(day, 1, CAST(GETDATE() AS DATE))
   AND vm.identificador_punto_interes IS NOT NULL
   AND vm.id_cliente IS NOT NULL
 GROUP BY vm.identificador_punto_interes, vm.id_cliente, vm.fecha_visita
 """
+
+
+def _execute_with_timeout(db: Session, query: str, params: tuple = (), timeout: int = 30):
+    """Mismo patrón que app/routes/centro_mando.py::execute_query -- timeout en
+    la CONEXIÓN (conn.timeout), no en el cursor (esta versión de pyodbc no
+    tiene Cursor.timeout). Con --workers 1 en uvicorn, una query colgada
+    bloquea el thread pool entero hasta que Cloudflare corta en 100s (524) --
+    y en el peor caso, mientras la transacción sigue abierta, bloquea también
+    lecturas simples de la misma tabla (por eso GET /pendientes se colgaba
+    detrás de un POST /recalcular que nunca terminaba). Mejor fallar rápido
+    con un error claro."""
+    conn = db.connection().connection
+    prev_timeout = 0
+    try:
+        prev_timeout = conn.timeout
+        conn.timeout = timeout
+    except Exception:
+        pass
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    finally:
+        try:
+            conn.timeout = prev_timeout
+        except Exception:
+            pass
 
 
 def _dias_habiles_restantes_semana(hoy: date) -> int:
@@ -118,25 +145,23 @@ def calcular_pendientes(db: Session) -> list[dict]:
     dias_disp_semana = _dias_habiles_restantes_semana(hoy)
     semanas_disp_mes = _semanas_restantes_mes(hoy)
 
-    universo = db.execute(text(UNIVERSO_QUERY)).fetchall()
-    visitas = db.execute(text(VISITAS_QUERY), {"inicio_mes": inicio_mes}).fetchall()
+    universo = _execute_with_timeout(db, UNIVERSO_QUERY, (), timeout=30)
+    visitas = _execute_with_timeout(db, VISITAS_QUERY, (inicio_mes,), timeout=30)
 
     actividad: dict[tuple, dict] = defaultdict(lambda: {
         "hechas_semana": set(), "hechas_mes": set(),
         "rechazada_semana": False, "rechazada_mes": False,
     })
-    for row in visitas:
-        key = (row.identificador_punto_interes, row.id_cliente)
-        fecha = row.fecha_visita
+    for id_punto, id_cliente, fecha, tiene_act, tiene_des, tiene_rechazada in visitas:
         if fecha is None:
             continue
         # fecha_visita es DATETIME en la base real (el modelo ORM lo declara
         # Date, pero esta query es raw SQL y pyodbc devuelve el tipo real).
         if isinstance(fecha, datetime):
             fecha = fecha.date()
-        completa = bool(row.tiene_act) and bool(row.tiene_des)
-        rechazada = bool(row.tiene_rechazada)
-        info = actividad[key]
+        completa = bool(tiene_act) and bool(tiene_des)
+        rechazada = bool(tiene_rechazada)
+        info = actividad[(id_punto, id_cliente)]
         if fecha >= inicio_mes:
             if completa:
                 info["hechas_mes"].add(fecha)
@@ -149,15 +174,16 @@ def calcular_pendientes(db: Session) -> list[dict]:
                 info["rechazada_semana"] = True
 
     pendientes: list[dict] = []
-    for r in universo:
-        frecuencia = r.frecuencia_semanal
+    for (id_ruta, ruta_nombre, id_punto_interes, punto_de_interes, departamento, ciudad,
+         id_cliente, cliente_nombre, prioridad, dias_programados, frecuencia_semanal) in universo:
+        frecuencia = frecuencia_semanal
         if frecuencia is None:
-            frecuencia = r.dias_programados if r.dias_programados and r.dias_programados > 0 else 1
+            frecuencia = dias_programados if dias_programados and dias_programados > 0 else 1
         frecuencia = _to_float(frecuencia)
         if frecuencia <= 0:
             continue
 
-        info = actividad.get((r.id_punto_interes, r.id_cliente), {
+        info = actividad.get((id_punto_interes, id_cliente), {
             "hechas_semana": set(), "hechas_mes": set(),
             "rechazada_semana": False, "rechazada_mes": False,
         })
@@ -183,20 +209,20 @@ def calcular_pendientes(db: Session) -> list[dict]:
             continue
 
         tipo_pendiente = "fotos_rechazadas" if tiene_rechazada else "nunca_visitado"
-        peso_prioridad = _peso_prioridad(r.prioridad)
+        peso_prioridad = _peso_prioridad(prioridad)
         peso_tipo = PESO_TIPO[tipo_pendiente]
         score = urgencia * peso_prioridad * peso_tipo
 
         pendientes.append({
-            "id_ruta": r.id_ruta,
-            "ruta_nombre": r.ruta_nombre,
-            "id_punto_interes": r.id_punto_interes,
-            "punto_de_interes": r.punto_de_interes,
-            "departamento": r.departamento,
-            "ciudad": r.ciudad,
-            "id_cliente": r.id_cliente,
-            "cliente_nombre": r.cliente_nombre,
-            "prioridad_ruta": r.prioridad,
+            "id_ruta": id_ruta,
+            "ruta_nombre": ruta_nombre,
+            "id_punto_interes": id_punto_interes,
+            "punto_de_interes": punto_de_interes,
+            "departamento": departamento,
+            "ciudad": ciudad,
+            "id_cliente": id_cliente,
+            "cliente_nombre": cliente_nombre,
+            "prioridad_ruta": prioridad,
             "frecuencia_semanal": frecuencia,
             "periodo": periodo,
             "tipo_pendiente": tipo_pendiente,

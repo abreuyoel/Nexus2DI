@@ -2,15 +2,18 @@
 job en background (app/services/plan_accion_service.py) y disparo manual
 del recálculo. Todavía no genera rutas BCK ni asigna backups -- eso es
 Fase 3/4."""
-from fastapi import APIRouter, Depends, Query
+import logging
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
 
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.core.dependencies import require_analyst_or_admin
 from app.models.user import Usuario
 from app.services.plan_accion_service import recalcular_plan_accion
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/plan-accion", tags=["Plan de Acción"])
 
@@ -67,10 +70,26 @@ def listar_pendientes(
     }
 
 
+def _recalcular_background():
+    db = SessionLocal()
+    try:
+        n = recalcular_plan_accion(db)
+        logger.info(f"Plan de Acción recalculado manualmente: {n} pendiente(s)")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando Plan de Acción (manual): {e}")
+    finally:
+        db.close()
+
+
 @router.post("/recalcular")
 def recalcular(
-    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks,
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
-    n = recalcular_plan_accion(db)
-    return {"ok": True, "pendientes": n}
+    # Corre en background (sesión propia, no la del request) -- la query de
+    # arriba puede tardar y con --workers 1 no queremos que el thread del
+    # request se quede esperando hasta el timeout de Cloudflare (524),
+    # bloqueando de paso al resto de la app.
+    background_tasks.add_task(_recalcular_background)
+    return {"ok": True, "started": True}

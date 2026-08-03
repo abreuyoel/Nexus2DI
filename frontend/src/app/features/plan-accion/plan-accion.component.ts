@@ -46,12 +46,13 @@ export class PlanAccionComponent implements OnInit {
   }
 
   recalcular(): void {
+    // El backend corre esto en background (la query puede tardar) -- el POST
+    // vuelve al toque, así que esperamos unos segundos y recargamos solos.
     this.recalculando.set(true);
     this.api.recalcularPlanAccion().subscribe({
-      next: (res) => {
-        this.recalculando.set(false);
-        this.snack.open(`Recalculado: ${res.pendientes} pendiente(s)`, 'OK', { duration: 3000 });
-        this.load();
+      next: () => {
+        this.snack.open('Recalculando en background, actualizando en unos segundos...', 'OK', { duration: 4000 });
+        setTimeout(() => { this.recalculando.set(false); this.load(); }, 12000);
       },
       error: () => { this.recalculando.set(false); this.snack.open('Error al recalcular', 'OK', { duration: 3000 }); },
     });
