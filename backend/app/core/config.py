@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     SCHEDULER_INTERVAL_MINUTES: int = 60
     SCHEDULER_TIMEZONE: str = "America/Caracas"
+    PLAN_ACCION_INTERVAL_HOURS: int = 4
 
     FRONTEND_URL: str = "http://localhost:4200"
 

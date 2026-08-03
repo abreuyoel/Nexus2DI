@@ -161,6 +161,8 @@ from app.routes import centro_mando_auditoria
 app.include_router(centro_mando_auditoria.router)
 from app.routes import sku_competencia
 app.include_router(sku_competencia.router)
+from app.routes import plan_accion
+app.include_router(plan_accion.router)
 from app.routes import realtime as realtime_routes
 app.include_router(realtime_routes.router)
 from app.routes import supervisor_rutas
