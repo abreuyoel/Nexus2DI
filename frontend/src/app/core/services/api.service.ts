@@ -556,6 +556,14 @@ export class ApiService {
     return this.http.delete<any>(`${this.base}/api/sku-competencia/mapeos/${id}`);
   }
 
+  // --- PLAN DE ACCIÓN ---
+  getPlanAccionPendientes(opts: { id_ruta?: number; id_cliente?: number; tipo_pendiente?: string; prioridad_ruta?: string; score_min?: number } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/plan-accion/pendientes`, { params: this.params(opts) });
+  }
+  recalcularPlanAccion(): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/plan-accion/recalcular`, {});
+  }
+
   // --- CLIENT CATEGORIES ---
   getClientCategories(clientId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/clients/${clientId}/categorias`);
