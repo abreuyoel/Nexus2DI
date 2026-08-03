@@ -6,10 +6,11 @@
 -- 1) De las visitas del último mes, ¿cuántas tienen cada tipo de foto?
 SELECT
     COUNT(DISTINCT vm.id_visita) AS total_visitas,
-    SUM(CASE WHEN EXISTS (SELECT 1 FROM FOTOS_TOTALES f WHERE f.id_visita = vm.id_visita AND f.id_tipo_foto = 5) THEN 1 ELSE 0 END) AS con_activacion,
-    SUM(CASE WHEN EXISTS (SELECT 1 FROM FOTOS_TOTALES f WHERE f.id_visita = vm.id_visita AND f.id_tipo_foto = 6) THEN 1 ELSE 0 END) AS con_desactivacion,
-    SUM(CASE WHEN EXISTS (SELECT 1 FROM FOTOS_TOTALES f WHERE f.id_visita = vm.id_visita AND f.id_tipo_foto IN (1,2,3,4,7,8,10)) THEN 1 ELSE 0 END) AS con_otras_fotos_gestion
+    COUNT(DISTINCT CASE WHEN f.id_tipo_foto = 5 THEN vm.id_visita END) AS con_activacion,
+    COUNT(DISTINCT CASE WHEN f.id_tipo_foto = 6 THEN vm.id_visita END) AS con_desactivacion,
+    COUNT(DISTINCT CASE WHEN f.id_tipo_foto IN (1,2,3,4,7,8,10) THEN vm.id_visita END) AS con_otras_fotos_gestion
 FROM VISITAS_MERCADERISTA vm
+LEFT JOIN FOTOS_TOTALES f ON f.id_visita = vm.id_visita
 WHERE vm.fecha_visita >= DATEADD(day, -31, CAST(GETDATE() AS DATE));
 
 -- 2) Distribución real de Estado en fotos del último mes (¿existe 'Rechazada' en la práctica?)
