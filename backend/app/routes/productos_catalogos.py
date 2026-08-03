@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.session import get_db
@@ -8,6 +9,7 @@ from app.models.producto import (
     Categoria, SubCategoria, Producto, Marca, Productora, Presentacion, Departamento,
     ClasificacionTamano,
 )
+from app.models.cliente import CategoriaCliente
 from app.schemas.producto_catalogo import (
     CategoriaCreate, CategoriaUpdate, CategoriaResponse,
     SubCategoriaCreate, SubCategoriaUpdate, SubCategoriaResponse,
@@ -312,8 +314,8 @@ def delete_presentacion(id_presentacion: int, db: Session = Depends(get_db), _: 
 # PRODUCTOS (snowflake: tabla PRODUCTOS)
 # =======================
 
-def _producto_join(db: Session):
-    return (
+def _producto_join(db: Session, current_user: Optional[Usuario] = None):
+    q = (
         db.query(Producto, SubCategoria, Categoria, Marca, Productora, Presentacion, Departamento, ClasificacionTamano)
         .outerjoin(SubCategoria, SubCategoria.id_subcategoria == Producto.id_subcategoria)
         .outerjoin(Categoria, Categoria.id_categoria == SubCategoria.id_categoria)
@@ -323,6 +325,29 @@ def _producto_join(db: Session):
         .outerjoin(Departamento, Departamento.id_departamento == Categoria.id_departamento)
         .outerjoin(ClasificacionTamano, ClasificacionTamano.id == Producto.id_clasificacion_tamano)
     )
+    # Un analista solo debe ver productos de las categorías asociadas a SUS
+    # clientes (CATEGORIAS_CLIENTES), mismo criterio de alcance que ya se usa
+    # en centro_mando.py/client_data.py/frecuencias_pdvs_cliente.py -- antes
+    # este endpoint no filtraba nada acá y un analista veía el catálogo
+    # completo de todos los clientes.
+    if current_user is not None and current_user.is_analyst and current_user.id_perfil:
+        ids_cliente = [
+            r[0] for r in db.execute(text("""
+                SELECT DISTINCT rp.id_cliente
+                FROM analistas_rutas ar
+                JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+                WHERE ar.id_analista = :analista_id AND rp.activa = 1
+            """), {"analista_id": int(current_user.id_perfil)}).fetchall()
+            if r[0] is not None
+        ]
+        if not ids_cliente:
+            return q.filter(Producto.id_producto == None)  # noqa: E711 -- sin clientes asignados, sin productos
+        q = q.filter(
+            Categoria.id_categoria.in_(
+                db.query(CategoriaCliente.id_categoria).filter(CategoriaCliente.id_cliente.in_(ids_cliente))
+            )
+        )
+    return q
 
 
 def _producto_resp(p, sc, cat, m, pr, pres, dep, tam) -> ProductoResponse:
@@ -387,10 +412,10 @@ def list_productos(
     skip: int = 0,
     limit: int = 25,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     q = _apply_producto_filtros(
-        _producto_join(db), busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
+        _producto_join(db, current_user), busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
         id_subcategoria=id_subcategoria, id_marca=id_marca, id_productora=id_productora,
         id_presentacion=id_presentacion, id_clasificacion_tamano=id_clasificacion_tamano, inagotable=inagotable,
     )
@@ -415,7 +440,7 @@ def productos_filtros_disponibles(
     id_clasificacion_tamano: Optional[int] = Query(None),
     inagotable: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """Para que los filtros de Productos cascadeen: dado lo que ya está
     elegido (ej. una productora), devuelve solo los departamentos/categorías/
@@ -431,7 +456,7 @@ def productos_filtros_disponibles(
 
     def opts(exclude: str, id_col, nombre_col):
         rows = (
-            _apply_producto_filtros(_producto_join(db), exclude=exclude, **kwargs)
+            _apply_producto_filtros(_producto_join(db, current_user), exclude=exclude, **kwargs)
             .with_entities(id_col, nombre_col).distinct().all()
         )
         return sorted(
