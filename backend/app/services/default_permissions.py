@@ -17,10 +17,22 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "dashboard": {"read": True},
         "chat": {"read": True},
         "centro-mando": {"read": True},
+        "centro-mando-auditoria": {"read": True},
+        "plan-accion": {"read": True},
         "routes": {"read": True, "write": True},
         "routes.asignar_merc": {"read": True, "write": True},
         "clientes-rutas": {"read": True, "write": True},
-        "frecuencias-pdvs-cliente": {"read": True, "write": True},
+        # "frecuencias-pdvs-cliente" pasó a tener acciones propias
+        # (crear/editar/eliminar/carga_masiva) en vez de un solo
+        # read/write en el padre -- si no se conceden acá, un analista
+        # con permisos ya customizados (cualquier fila propia en
+        # usuario_permisos) pierde la capacidad de cargar/editar
+        # frecuencias aunque antes sí podía.
+        "frecuencias-pdvs-cliente": {"read": True},
+        "frecuencias-pdvs-cliente.crear": {"read": True},
+        "frecuencias-pdvs-cliente.editar": {"read": True},
+        "frecuencias-pdvs-cliente.eliminar": {"read": True},
+        "frecuencias-pdvs-cliente.carga_masiva": {"read": True},
         "atencion-cliente": {"read": True, "write": True},
         "data": {"read": True},
     },

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db, SessionLocal
-from app.core.dependencies import require_analyst_or_admin
+from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.ruta import Ruta, RutaProgramacion
 from app.models.mercaderista import MercaderistaRuta
@@ -33,7 +33,7 @@ def listar_pendientes(
     prioridad_ruta: Optional[str] = None,
     score_min: Optional[float] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
 ):
     where = "WHERE 1=1"
     params: list = []
@@ -100,7 +100,7 @@ def _recalcular_background():
 @router.post("/recalcular")
 def recalcular(
     background_tasks: BackgroundTasks,
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('plan-accion.recalcular', 'read')),
 ):
     # Corre en background (sesión propia, no la del request) -- la query de
     # arriba puede tardar y con --workers 1 no queremos que el thread del
@@ -115,7 +115,7 @@ def listar_clusters(
     score_min: float = 1.0,
     radio_km: float = 5.0,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
 ):
     """Fase 3: agrupa por cercanía geográfica los pendientes con score >=
     score_min (críticos por defecto) y arma rutas del tamaño de una jornada
@@ -148,7 +148,7 @@ class ConfirmarRutaRequest(BaseModel):
 def confirmar_ruta_bck(
     data: ConfirmarRutaRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('plan-accion.crear_ruta', 'read')),
 ):
     """Fase 4: toma una propuesta de ruta (los items de una tarjeta de
     /clusters, ya elegidos por el admin) y la vuelve real -- crea la ruta

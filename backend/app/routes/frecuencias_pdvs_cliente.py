@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
-from app.core.dependencies import get_current_user, require_analyst_or_admin
+from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.cliente import Cliente
 from app.models.punto import PuntoInteres
@@ -64,7 +64,7 @@ def list_frecuencias(
     id_punto_interes: Optional[str] = Query(None),
     activo: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
     q = _query_con_joins(db)
     if id_cliente is not None:
@@ -81,7 +81,7 @@ def list_frecuencias(
 def pdvs_disponibles_cliente(
     id_cliente: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
     """PDVs unicos donde aparece el cliente en RUTA_PROGRAMACION, marcando la
     frecuencia ya asignada (si existe) para poder editarla en la carga masiva.
@@ -125,7 +125,7 @@ def pdvs_disponibles_cliente(
 def bulk_upsert_frecuencias(
     data: FrecuenciaBulkCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.carga_masiva', 'read')),
 ):
     """Crea o actualiza (upsert) varias frecuencias de una vez para un mismo
     cliente — pensado para la carga masiva desde los PDVs de su programación."""
@@ -156,7 +156,7 @@ def bulk_upsert_frecuencias(
 
 
 @router.get("/{id_frecuencia}", response_model=FrecuenciaPdvClienteResponse)
-def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read'))):
     row = _query_con_joins(db).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not row:
         raise HTTPException(404, "Registro no encontrado")
@@ -168,7 +168,7 @@ def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario
 def create_frecuencia(
     data: FrecuenciaPdvClienteCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.crear', 'read')),
 ):
     if not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
@@ -190,7 +190,7 @@ def update_frecuencia(
     id_frecuencia: int,
     data: FrecuenciaPdvClienteUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.editar', 'read')),
 ):
     f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not f:
@@ -211,7 +211,7 @@ def update_frecuencia(
 def delete_frecuencia(
     id_frecuencia: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_analyst_or_admin),
+    _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.eliminar', 'read')),
 ):
     f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not f:

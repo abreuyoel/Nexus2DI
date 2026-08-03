@@ -6,6 +6,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-plan-accion',
@@ -35,7 +36,7 @@ export class PlanAccionComponent implements OnInit {
   filtroPrioridad: string | null = null;
   search = '';
 
-  constructor(private api: ApiService, private snack: MatSnackBar) {}
+  constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) {}
 
   ngOnInit(): void {
     this.load();

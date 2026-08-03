@@ -9,7 +9,7 @@ from sqlalchemy import text
 from typing import Optional
 from datetime import date, timedelta
 from app.db.session import get_db
-from app.core.dependencies import require_analyst_or_admin
+from app.core.dependencies import require_permission
 from app.models.user import Usuario
 
 router = APIRouter(prefix="/api/centro-mando-auditoria", tags=["Centro de Mando Auditoría"])
@@ -51,7 +51,7 @@ def _where_comun(desde, hasta, id_auditor, id_ruta, id_cliente, id_categoria):
 
 
 @router.get("/filtros")
-def get_filtros(db: Session = Depends(get_db), _: Usuario = Depends(require_analyst_or_admin)):
+def get_filtros(db: Session = Depends(get_db), _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read'))):
     """Catálogos para los dropdowns -- solo lo que efectivamente aparece en
     auditorías ya hechas (no el catálogo completo de mercaderistas/clientes)."""
     auditores = db.execute(text("""
@@ -102,7 +102,7 @@ def get_resumen(
     id_cliente: Optional[int] = None,
     id_categoria: Optional[int] = None,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_analyst_or_admin),
+    _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read')),
 ):
     """KPIs + datos de gráficos + log filtrable, todo en una sola llamada
     (el volumen de datos de auditoría -- un cuestionario por categoría

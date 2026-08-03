@@ -15,11 +15,13 @@
         <mat-icon class="!text-base">picture_as_pdf</mat-icon>
         Ficha técnica (PDF)
       </a>
-      <button (click)="recalcular()" [disabled]="recalculando()"
-        class="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-all active:scale-95">
-        @if (recalculando()) { <mat-spinner diameter="16" strokeWidth="3" class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-base">refresh</mat-icon> }
-        Recalcular ahora
-      </button>
+      @if (auth.can('plan-accion.recalcular')) {
+        <button (click)="recalcular()" [disabled]="recalculando()"
+          class="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-all active:scale-95">
+          @if (recalculando()) { <mat-spinner diameter="16" strokeWidth="3" class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-base">refresh</mat-icon> }
+          Recalcular ahora
+        </button>
+      }
     </div>
   </div>
 
@@ -147,18 +149,20 @@
                   </div>
                 }
               </div>
-              <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
-                <select [(ngModel)]="seleccionMerc[$index]"
-                  class="flex-1 min-w-0 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-2.5 py-2 text-xs font-semibold outline-none focus:border-primary-500">
-                  <option [ngValue]="null">Elegí mercaderista...</option>
-                  @for (m of mercaderistas(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }} ({{ m.cedula }})</option> }
-                </select>
-                <button (click)="confirmarRuta(g, $index)" [disabled]="confirmandoIdx() === $index"
-                  class="shrink-0 flex items-center gap-1 px-3 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-xs transition-all active:scale-95">
-                  @if (confirmandoIdx() === $index) { <mat-spinner diameter="14" strokeWidth="3" class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-sm">add_road</mat-icon> }
-                  Crear ruta
-                </button>
-              </div>
+              @if (auth.can('plan-accion.crear_ruta')) {
+                <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
+                  <select [(ngModel)]="seleccionMerc[$index]"
+                    class="flex-1 min-w-0 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-2.5 py-2 text-xs font-semibold outline-none focus:border-primary-500">
+                    <option [ngValue]="null">Elegí mercaderista...</option>
+                    @for (m of mercaderistas(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }} ({{ m.cedula }})</option> }
+                  </select>
+                  <button (click)="confirmarRuta(g, $index)" [disabled]="confirmandoIdx() === $index"
+                    class="shrink-0 flex items-center gap-1 px-3 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-xs transition-all active:scale-95">
+                    @if (confirmandoIdx() === $index) { <mat-spinner diameter="14" strokeWidth="3" class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-sm">add_road</mat-icon> }
+                    Crear ruta
+                  </button>
+                </div>
+              }
             </div>
           }
         </div>

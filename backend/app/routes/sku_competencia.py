@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, aliased
 from typing import List
 from pydantic import BaseModel
 from app.db.session import get_db
-from app.core.dependencies import require_admin
+from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.sku_competencia import SkuCompetencia
 from app.models.producto import Producto, Marca
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/sku-competencia", tags=["SKU vs SKU"])
 
 
 @router.get("/mapeos")
-def get_mapeos(id_cliente: int = Query(...), db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+def get_mapeos(id_cliente: int = Query(...), db: Session = Depends(get_db), _: Usuario = Depends(require_permission('sku-competencia', 'read', fallback_roles=('admin',)))):
     """Agrupado por SKU propio del cliente, con la lista de competidores
     que tiene definidos cada uno."""
     ProductoCliente = aliased(Producto)
@@ -55,7 +55,7 @@ class MapeoCreate(BaseModel):
 
 
 @router.post("/mapeos")
-def create_mapeo(data: MapeoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+def create_mapeo(data: MapeoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('sku-competencia.crear', 'read', fallback_roles=('admin',)))):
     if data.id_producto_cliente == data.id_producto_competencia:
         raise HTTPException(400, "Un producto no puede ser su propia competencia")
     existe = db.query(SkuCompetencia).filter_by(
@@ -80,7 +80,7 @@ class MapeoMasivo(BaseModel):
 
 
 @router.post("/mapeos/masivo")
-def bulk_create_mapeo(data: MapeoMasivo, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+def bulk_create_mapeo(data: MapeoMasivo, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('sku-competencia.crear', 'read', fallback_roles=('admin',)))):
     """Asigna varios competidores de una vez al mismo SKU propio -- salta
     los que ya están asignados en vez de fallar toda la operación."""
     ids = [i for i in data.competencia_ids if i != data.id_producto_cliente]
@@ -104,7 +104,7 @@ def bulk_create_mapeo(data: MapeoMasivo, db: Session = Depends(get_db), _: Usuar
 
 
 @router.delete("/mapeos/{id_sku_competencia}")
-def delete_mapeo(id_sku_competencia: int, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+def delete_mapeo(id_sku_competencia: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('sku-competencia.eliminar', 'read', fallback_roles=('admin',)))):
     row = db.query(SkuCompetencia).filter(SkuCompetencia.id == id_sku_competencia).first()
     if not row:
         raise HTTPException(404, "No encontrado")
