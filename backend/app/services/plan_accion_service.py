@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -130,6 +130,10 @@ def calcular_pendientes(db: Session) -> list[dict]:
         fecha = row.fecha_visita
         if fecha is None:
             continue
+        # fecha_visita es DATETIME en la base real (el modelo ORM lo declara
+        # Date, pero esta query es raw SQL y pyodbc devuelve el tipo real).
+        if isinstance(fecha, datetime):
+            fecha = fecha.date()
         completa = bool(row.tiene_act) and bool(row.tiene_des)
         rechazada = bool(row.tiene_rechazada)
         info = actividad[key]
