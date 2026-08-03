@@ -34,7 +34,6 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -238,22 +237,35 @@ def calcular_pendientes(db: Session) -> list[dict]:
     return pendientes
 
 
+_INSERT_COLS = [
+    "id_ruta", "ruta_nombre", "id_punto_interes", "punto_de_interes", "departamento", "ciudad",
+    "id_cliente", "cliente_nombre", "prioridad_ruta", "frecuencia_semanal", "periodo",
+    "tipo_pendiente", "visitas_requeridas", "visitas_hechas", "visitas_faltantes",
+    "dias_disponibles", "urgencia", "score",
+]
+
+_INSERT_SQL = f"""
+    INSERT INTO PLAN_ACCION_PENDIENTES
+        ({", ".join(_INSERT_COLS)}, fecha_calculo)
+    VALUES
+        ({", ".join(["?"] * len(_INSERT_COLS))}, GETDATE())
+"""
+
+
 def recalcular_plan_accion(db: Session) -> int:
     pendientes = calcular_pendientes(db)
 
-    db.execute(text("DELETE FROM PLAN_ACCION_PENDIENTES"))
+    # DELETE sin WHERE + INSERT: la tabla queda bloqueada desde el DELETE
+    # hasta el commit. Con eso, lo único que puede alargar esa ventana (y
+    # bloquear de paso a GET /pendientes) es un INSERT lento -- por eso
+    # fast_executemany=True (sin esto, pyodbc hace un round-trip POR FILA:
+    # unos pocos miles de filas ya alcanzan para tardar más de un minuto).
+    conn = db.connection().connection
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM PLAN_ACCION_PENDIENTES")
     if pendientes:
-        db.execute(text("""
-            INSERT INTO PLAN_ACCION_PENDIENTES
-                (id_ruta, ruta_nombre, id_punto_interes, punto_de_interes, departamento, ciudad,
-                 id_cliente, cliente_nombre, prioridad_ruta, frecuencia_semanal, periodo,
-                 tipo_pendiente, visitas_requeridas, visitas_hechas, visitas_faltantes,
-                 dias_disponibles, urgencia, score, fecha_calculo)
-            VALUES
-                (:id_ruta, :ruta_nombre, :id_punto_interes, :punto_de_interes, :departamento, :ciudad,
-                 :id_cliente, :cliente_nombre, :prioridad_ruta, :frecuencia_semanal, :periodo,
-                 :tipo_pendiente, :visitas_requeridas, :visitas_hechas, :visitas_faltantes,
-                 :dias_disponibles, :urgencia, :score, GETDATE())
-        """), pendientes)
+        cursor.fast_executemany = True
+        rows = [tuple(p[c] for c in _INSERT_COLS) for p in pendientes]
+        cursor.executemany(_INSERT_SQL, rows)
     db.commit()
     return len(pendientes)
