@@ -4,7 +4,7 @@
 
 -- 1) ¿Existe ya un SERVICIOS con prefijo "BCK"? (hace falta para poder
 --    crear rutas nuevas vía POST /api/routes/)
-SELECT id_servicio, nombre, prefijo FROM SERVICIOS ORDER BY nombre;
+SELECT id, nombre, prefijo, activo FROM SERVICIOS ORDER BY nombre;
 
 -- 2) HORAS_PROMEDIO_EJECUCION: ¿el join correcto es contra jerarquia_nivel_2
 --    o jerarquia_nivel_2_2? Compara cuántos PDVs matchean por cada camino.
