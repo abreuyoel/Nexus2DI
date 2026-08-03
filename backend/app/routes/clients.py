@@ -36,7 +36,13 @@ def create_client(
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_admin),
 ):
-    cliente = Cliente(**data.model_dump())
+    # El modelo Cliente solo mapea "nombre" (columna "cliente") -- ClienteBase
+    # declara además "activo", que no existe en CLIENTES, así que
+    # Cliente(**data.model_dump()) tiraba TypeError ("activo" es un keyword
+    # arg inválido) y explotaba en 500 antes de llegar siquiera al INSERT.
+    if not data.nombre or not data.nombre.strip():
+        raise HTTPException(status_code=400, detail="El nombre del cliente es requerido")
+    cliente = Cliente(nombre=data.nombre.strip())
     db.add(cliente)
     db.commit()
     db.refresh(cliente)

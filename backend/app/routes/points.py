@@ -73,7 +73,7 @@ def create_point(
 
 @router.get("/regions/list")
 def get_regions(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(Departamento.nombre).filter(Departamento.activo == True).order_by(Departamento.nombre).all()
+    rows = db.query(DepartamentoGeo.nombre).filter(DepartamentoGeo.activo == True).order_by(DepartamentoGeo.nombre).all()
     return [r[0] for r in rows]
 
 
@@ -87,8 +87,8 @@ def get_cities(
     de ese departamento."""
     q = db.query(Ciudad.nombre).filter(Ciudad.activo == True)
     if departamento:
-        q = q.join(Departamento, Ciudad.departamento_id == Departamento.id).filter(
-            Departamento.nombre == departamento
+        q = q.join(DepartamentoGeo, Ciudad.departamento_id == DepartamentoGeo.id).filter(
+            DepartamentoGeo.nombre == departamento
         )
     rows = q.order_by(Ciudad.nombre).all()
     return [r[0] for r in rows]
@@ -173,6 +173,25 @@ def delete_point(
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
+
+    # Sin este chequeo, el DELETE le pega directo a la restricción de llave
+    # foránea de VISITAS_MERCADERISTA.identificador_punto_interes y SQL
+    # Server lo rechaza -- eso salía como 500 sin manejar. Con historial de
+    # visitas, no se puede borrar (se perdería el rastro real de esas
+    # visitas); hay que desactivarlo en RUTA_PROGRAMACION en vez de borrar
+    # el PDV en sí.
+    from sqlalchemy import text
+    tiene_visitas = db.execute(
+        text("SELECT TOP 1 1 FROM VISITAS_MERCADERISTA WHERE identificador_punto_interes = :pid"),
+        {"pid": point_id},
+    ).first()
+    if tiene_visitas:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar: este punto de venta tiene visitas registradas. "
+                   "Desactivalo en la programación de rutas en vez de borrarlo.",
+        )
+
     nombre = getattr(punto, 'nombre', point_id)
     db.delete(punto)
 

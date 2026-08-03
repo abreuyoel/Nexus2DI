@@ -165,7 +165,7 @@ export class UsersComponent implements OnInit {
     const cliente = this.quickClienteNombre.trim();
     if (!cliente) return;
     this.saving.set(true);
-    this.api.createClient({ cliente, rif: this.quickClienteRif.trim(), id_categoria: 1, id_tipo_cliente: 1 }).subscribe({
+    this.api.createClient({ nombre: cliente }).subscribe({
       next: () => { this.saving.set(false); this.quickClienteNombre = ''; this.quickClienteRif = ''; this.api.getClients().subscribe(d => this.clients.set(d)); this.snack.open('Cliente creado', 'OK', { duration: 2500 }); },
       error: () => { this.saving.set(false); this.snack.open('Error al crear cliente', 'OK', { duration: 3000 }); },
     });
@@ -333,9 +333,14 @@ export class UsersComponent implements OnInit {
     if (this.clientForm.invalid) return;
     this.saving.set(true);
     const c = this.editingClient();
-    const request = c 
-      ? this.api.updateClient(c.id, this.clientForm.value)
-      : this.api.createClient(this.clientForm.value);
+    // El backend (tabla CLIENTES) solo tiene "nombre" -- rif/id_categoria/
+    // id_tipo_cliente no existen como columnas, así que no se mandan (se
+    // ignoraban de todos modos, pero mandar el payload completo rompía la
+    // creación porque el nombre iba bajo la clave "cliente", no "nombre").
+    const payload = { nombre: this.clientForm.value.cliente };
+    const request = c
+      ? this.api.updateClient(c.id, payload)
+      : this.api.createClient(payload);
 
     request.subscribe({
       next: () => {
