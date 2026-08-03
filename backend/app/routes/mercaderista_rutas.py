@@ -7,6 +7,7 @@ from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.models.user import Usuario
 from app.models.mercaderista import Mercaderista, MercaderistaRuta
 from app.models.ruta import Ruta
+from collections import defaultdict
 
 router = APIRouter(prefix="/api/mercaderista-rutas", tags=["Mercaderista Rutas"])
 
@@ -40,6 +41,18 @@ def list_mercaderistas_con_rutas(
         .all()
     )
 
+    # Nombres de ruta por mercaderista -- para poder buscar "quién tiene la
+    # ruta X" desde el mismo cuadro de búsqueda del frontend, sin un N+1 de
+    # una consulta por tarjeta.
+    nombres_por_merc: dict[int, list[str]] = defaultdict(list)
+    for mercaderista_id, ruta_nombre in (
+        db.query(MercaderistaRuta.mercaderista_id, Ruta.nombre)
+        .join(Ruta, Ruta.id == MercaderistaRuta.ruta_id)
+        .all()
+    ):
+        if ruta_nombre:
+            nombres_por_merc[mercaderista_id].append(ruta_nombre)
+
     result = []
     for m, rutas_count in mercs:
         result.append({
@@ -51,6 +64,7 @@ def list_mercaderistas_con_rutas(
             "tipo": m.tipo,
             "activo": m.activo,
             "rutas_count": rutas_count or 0,
+            "rutas_nombres": nombres_por_merc.get(m.id, []),
         })
     return result
 

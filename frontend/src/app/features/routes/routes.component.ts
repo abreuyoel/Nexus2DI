@@ -480,7 +480,8 @@ export class RoutesComponent implements OnInit {
     const s = this.mercSearch.toLowerCase();
     const t = this.mercFilterTipo;
     return this.mercList().filter(m =>
-      (!s || m.nombre?.toLowerCase().includes(s) || m.cedula?.includes(s) || m.email?.toLowerCase().includes(s)) &&
+      (!s || m.nombre?.toLowerCase().includes(s) || m.cedula?.includes(s) || m.email?.toLowerCase().includes(s) ||
+        (m.rutas_nombres || []).some((rn: string) => rn.toLowerCase().includes(s))) &&
       (!t || m.tipo === t)
     );
   }

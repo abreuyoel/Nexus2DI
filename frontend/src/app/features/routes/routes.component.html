@@ -268,7 +268,7 @@
     <div class="flex flex-wrap gap-3">
       <div class="relative flex-1 min-w-52">
         <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
-        <input [(ngModel)]="mercSearch" placeholder="Buscar por nombre, cédula o email..."
+        <input [(ngModel)]="mercSearch" placeholder="Buscar por nombre, cédula, email o número de ruta (ej. E164)..."
           class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
       </div>
       <div class="relative">
@@ -330,10 +330,15 @@
             </div>
 
             <!-- Routes count -->
-            <div class="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 mb-4">
-              <mat-icon class="!text-base text-primary-500">route</mat-icon>
-              <span class="text-sm font-bold text-slate-700 dark:text-slate-200">Rutas Asignadas:</span>
-              <span class="ml-auto text-sm font-black text-primary-600 dark:text-primary-400">{{ m.rutas_count }}</span>
+            <div class="bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 mb-4">
+              <div class="flex items-center gap-2">
+                <mat-icon class="!text-base text-primary-500">route</mat-icon>
+                <span class="text-sm font-bold text-slate-700 dark:text-slate-200">Rutas Asignadas:</span>
+                <span class="ml-auto text-sm font-black text-primary-600 dark:text-primary-400">{{ m.rutas_count }}</span>
+              </div>
+              @if (m.rutas_nombres?.length) {
+                <div class="text-[11px] text-slate-400 mt-1 pl-6 truncate">{{ m.rutas_nombres.join(' · ') }}</div>
+              }
             </div>
 
             <!-- Action -->
