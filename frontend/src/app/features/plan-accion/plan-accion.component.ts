@@ -23,6 +23,7 @@ export class PlanAccionComponent implements OnInit {
   vista = signal<'lista' | 'clusters'>('lista');
   clusters = signal<any[]>([]);
   loadingClusters = signal(false);
+  totalBackupsSugeridos = signal(0);
 
   filtroRuta: string | null = null;
   filtroCliente: string | null = null;
@@ -57,7 +58,7 @@ export class PlanAccionComponent implements OnInit {
   loadClusters(): void {
     this.loadingClusters.set(true);
     this.api.getPlanAccionClusters().subscribe({
-      next: (res) => { this.loadingClusters.set(false); this.clusters.set(res?.grupos || []); },
+      next: (res) => { this.loadingClusters.set(false); this.clusters.set(res?.grupos || []); this.totalBackupsSugeridos.set(res?.total_backups_sugeridos || 0); },
       error: () => { this.loadingClusters.set(false); this.clusters.set([]); this.snack.open('Error al agrupar por cercanía', 'OK', { duration: 3000 }); },
     });
   }

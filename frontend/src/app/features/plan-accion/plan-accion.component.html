@@ -91,7 +91,12 @@
     </div>
 
     @if (vista() === 'clusters') {
-      <p class="text-xs text-slate-400 -mt-2">Agrupa por cercanía real (GPS de fotos de activación/desactivación, o dirección del PDV si no hay fotos) los pendientes con score ≥ 1 -- propuesta para armar rutas de respaldo, todavía no crea nada.</p>
+      <div class="flex items-center justify-between -mt-2">
+        <p class="text-xs text-slate-400">Cada tarjeta es una propuesta de ruta de un día (GPS real de fotos de activación/desactivación, o dirección del PDV si no hay fotos) -- todavía no crea nada.</p>
+        @if (clusters().length) {
+          <span class="text-xs font-black text-indigo-500 shrink-0 ml-3">{{ totalBackupsSugeridos() }} ruta(s) / backup(s) sugerido(s) en total</span>
+        }
+      </div>
 
       @if (loadingClusters()) {
         <div class="flex flex-col items-center justify-center py-16 gap-3">
@@ -112,8 +117,8 @@
                     <mat-icon class="!text-lg">{{ g.sin_ubicacion ? 'location_off' : 'place' }}</mat-icon>
                   </div>
                   <div>
-                    <div class="font-black text-slate-800 dark:text-white text-sm">{{ g.sin_ubicacion ? 'Sin ubicación GPS' : (g.cantidad_pdvs + ' PDV(s) cercanos') }}</div>
-                    @if (!g.sin_ubicacion) { <div class="text-[10px] text-slate-400">{{ g.centro_lat }}, {{ g.centro_lon }}</div> }
+                    <div class="font-black text-slate-800 dark:text-white text-sm">Ruta propuesta -- {{ g.cantidad_pdvs }} PDV(s)</div>
+                    @if (!g.sin_ubicacion) { <div class="text-[10px] text-slate-400">{{ g.centro_lat }}, {{ g.centro_lon }}</div> } @else { <div class="text-[10px] text-slate-400">Sin ubicación GPS</div> }
                   </div>
                 </div>
                 <div class="text-right">
@@ -122,8 +127,8 @@
                 </div>
               </div>
               <div class="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300">
-                <mat-icon class="!text-base">groups</mat-icon>
-                <span class="text-xs font-bold">{{ g.backups_sugeridos }} backup(s) sugerido(s)</span>
+                <mat-icon class="!text-base">person</mat-icon>
+                <span class="text-xs font-bold">1 backup para el día</span>
                 <span class="text-[10px] text-indigo-400 dark:text-indigo-500 ml-auto">~{{ g.minutos_totales_estimados / 60 | number:'1.1-1' }}h estimadas</span>
               </div>
               <div class="space-y-1.5 max-h-56 overflow-y-auto">

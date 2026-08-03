@@ -422,11 +422,64 @@ def _resolver_minutos_promedio(db: Session, items: list[dict]) -> dict[tuple, in
     return resultado
 
 
-def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RADIO_CLUSTER_KM_DEFAULT) -> list[dict]:
-    """Agrupa por cercanía los pendientes con score >= score_min (críticos
-    por defecto -- son los que de verdad importa cubrir con un backup).
-    Todavía NO crea rutas ni asigna mercaderista -- Fase 4 hace eso a partir
-    de esta propuesta, con confirmación manual del admin."""
+def _dividir_en_rutas(grupo: list[dict], jornada_minutos: int) -> list[list[dict]]:
+    """Parte una zona geográfica (que puede tener cientos de PDVs) en rutas
+    del tamaño de una jornada de un backup (~jornada_minutos): empaqueta por
+    orden de urgencia (score desc) hasta llenar el cupo, arranca una ruta
+    nueva, repite. No es bin-packing óptimo, pero alcanza para que cada
+    resultado sea directamente una propuesta de ruta ejecutable en un día."""
+    ordenado = sorted(grupo, key=lambda p: p["score"], reverse=True)
+    rutas: list[list[dict]] = []
+    actual: list[dict] = []
+    minutos_actual = 0
+    for p in ordenado:
+        m = p["minutos_estimados"]
+        if actual and minutos_actual + m > jornada_minutos:
+            rutas.append(actual)
+            actual = []
+            minutos_actual = 0
+        actual.append(p)
+        minutos_actual += m
+    if actual:
+        rutas.append(actual)
+    return rutas
+
+
+def _empaquetar_ruta(ruta: list[dict], sin_ubicacion: bool = False) -> dict:
+    minutos_totales = sum(p["minutos_estimados"] for p in ruta)
+    resultado = {
+        "cantidad_pdvs": len(ruta),
+        "score_total": round(sum(p["score"] for p in ruta), 4),
+        "score_max": round(max(p["score"] for p in ruta), 4),
+        "minutos_totales_estimados": minutos_totales,
+        "items": ruta,
+    }
+    if sin_ubicacion:
+        resultado["centro_lat"] = None
+        resultado["centro_lon"] = None
+        resultado["sin_ubicacion"] = True
+    else:
+        lats = [p["_ubicacion"][0] for p in ruta]
+        lons = [p["_ubicacion"][1] for p in ruta]
+        resultado["centro_lat"] = round(sum(lats) / len(lats), 6)
+        resultado["centro_lon"] = round(sum(lons) / len(lons), 6)
+    for p in ruta:
+        p.pop("_ubicacion", None)
+    return resultado
+
+
+def calcular_clusters(
+    db: Session,
+    score_min: float = 1.0,
+    radio_km: float = RADIO_CLUSTER_KM_DEFAULT,
+    jornada_minutos: int = JORNADA_MINUTOS_DEFAULT,
+) -> list[dict]:
+    """Propone rutas BCK: agrupa por cercanía real los pendientes con
+    score >= score_min (críticos por defecto), y dentro de cada zona
+    geográfica arma rutas del tamaño de una jornada -- cada resultado ES
+    una propuesta de ruta ejecutable por un backup en un día, no solo "una
+    zona con mucha demanda". Todavía NO crea nada en la base ni asigna
+    mercaderista -- eso es Fase 4, con confirmación manual del admin."""
     pendientes = calcular_pendientes(db)
     criticos = [p for p in pendientes if p["score"] >= score_min]
     if not criticos:
@@ -441,39 +494,14 @@ def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RAD
     sin_ubicacion = [p for p in criticos if not p["_ubicacion"]]
     con_ubicacion = [p for p in criticos if p["_ubicacion"]]
 
-    grupos = _agrupar_por_cercania(con_ubicacion, radio_km)
+    zonas = _agrupar_por_cercania(con_ubicacion, radio_km)
 
     resultado = []
-    for grupo in grupos:
-        lats = [p["_ubicacion"][0] for p in grupo]
-        lons = [p["_ubicacion"][1] for p in grupo]
-        minutos_totales = sum(p["minutos_estimados"] for p in grupo)
-        for p in grupo:
-            p.pop("_ubicacion", None)
-        resultado.append({
-            "centro_lat": round(sum(lats) / len(lats), 6),
-            "centro_lon": round(sum(lons) / len(lons), 6),
-            "cantidad_pdvs": len(grupo),
-            "score_total": round(sum(p["score"] for p in grupo), 4),
-            "score_max": round(max(p["score"] for p in grupo), 4),
-            "minutos_totales_estimados": minutos_totales,
-            "backups_sugeridos": math.ceil(minutos_totales / JORNADA_MINUTOS_DEFAULT),
-            "items": grupo,
-        })
+    for zona in zonas:
+        for ruta in _dividir_en_rutas(zona, jornada_minutos):
+            resultado.append(_empaquetar_ruta(ruta))
+    for ruta in _dividir_en_rutas(sin_ubicacion, jornada_minutos):
+        resultado.append(_empaquetar_ruta(ruta, sin_ubicacion=True))
+
     resultado.sort(key=lambda g: g["score_total"], reverse=True)
-
-    if sin_ubicacion:
-        minutos_totales = sum(p["minutos_estimados"] for p in sin_ubicacion)
-        resultado.append({
-            "centro_lat": None,
-            "centro_lon": None,
-            "cantidad_pdvs": len(sin_ubicacion),
-            "score_total": round(sum(p["score"] for p in sin_ubicacion), 4),
-            "score_max": round(max(p["score"] for p in sin_ubicacion), 4),
-            "minutos_totales_estimados": minutos_totales,
-            "backups_sugeridos": math.ceil(minutos_totales / JORNADA_MINUTOS_DEFAULT),
-            "items": sin_ubicacion,
-            "sin_ubicacion": True,
-        })
-
     return resultado

@@ -110,12 +110,15 @@ def listar_clusters(
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     """Fase 3: agrupa por cercanía geográfica los pendientes con score >=
-    score_min (críticos por defecto). Todavía es solo propuesta -- no crea
-    rutas BCK ni asigna mercaderista, eso es Fase 4."""
+    score_min (críticos por defecto) y arma rutas del tamaño de una jornada
+    -- cada elemento de "grupos" ya es una propuesta de ruta BCK ejecutable
+    por un backup en un día, no una zona entera. Todavía es solo propuesta
+    -- no crea rutas ni asigna mercaderista, eso es Fase 4."""
     grupos = calcular_clusters(db, score_min=score_min, radio_km=radio_km)
     return {
         "grupos": grupos,
         "total_grupos": len(grupos),
+        "total_backups_sugeridos": len(grupos),
         "radio_km": radio_km,
         "score_min": score_min,
     }
