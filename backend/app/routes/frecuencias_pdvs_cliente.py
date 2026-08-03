@@ -29,6 +29,26 @@ def _query_con_joins(db: Session):
     )
 
 
+def _scope_analista(q, current_user: Usuario):
+    """Restringe a las (PDV, cliente) cubiertas por las rutas asignadas al
+    analista via analistas_rutas -> RUTA_PROGRAMACION (activa=1) -- misma
+    fuente de verdad que mk_analyst() (centro_mando.py) y _analyst_filter()
+    (client_data.py). Antes este endpoint no tenía NINGÚN filtro por
+    analista: cualquier analista veía las frecuencias de TODOS los clientes.
+    Admin (y cualquier no-analista) no se restringe."""
+    if not (current_user.is_analyst and current_user.id_perfil):
+        return q
+    return q.filter(text("""
+        EXISTS (
+            SELECT 1 FROM RUTA_PROGRAMACION rp_a
+            JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
+            WHERE rp_a.id_punto_interes = FRECUENCIAS_PDVS_CLIENTE.id_punto_interes
+              AND rp_a.id_cliente = FRECUENCIAS_PDVS_CLIENTE.id_cliente
+              AND rp_a.activa = 1 AND ar_a.id_analista = :analista_id
+        )
+    """)).params(analista_id=int(current_user.id_perfil))
+
+
 def _to_resp(f: FrecuenciaPdvCliente, cliente_nombre=None, pdv_nombre=None, usuario_username=None) -> FrecuenciaPdvClienteResponse:
     return FrecuenciaPdvClienteResponse(
         id=f.id, id_cliente=f.id_cliente, id_punto_interes=f.id_punto_interes,
@@ -44,7 +64,7 @@ def list_frecuencias(
     id_punto_interes: Optional[str] = Query(None),
     activo: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     q = _query_con_joins(db)
     if id_cliente is not None:
@@ -53,6 +73,7 @@ def list_frecuencias(
         q = q.filter(FrecuenciaPdvCliente.id_punto_interes == id_punto_interes)
     if activo is not None:
         q = q.filter(FrecuenciaPdvCliente.activo == activo)
+    q = _scope_analista(q, current_user)
     return [_to_resp(f, cn, pn, un) for f, cn, pn, un in q.order_by(FrecuenciaPdvCliente.id.desc()).all()]
 
 
@@ -60,18 +81,29 @@ def list_frecuencias(
 def pdvs_disponibles_cliente(
     id_cliente: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     """PDVs unicos donde aparece el cliente en RUTA_PROGRAMACION, marcando la
-    frecuencia ya asignada (si existe) para poder editarla en la carga masiva."""
+    frecuencia ya asignada (si existe) para poder editarla en la carga masiva.
+    Si el que pregunta es analista, solo ve los PDVs de ESE cliente que caen
+    dentro de sus propias rutas asignadas (analistas_rutas)."""
     if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
-    rows = db.execute(text("""
+    scope_sql = ""
+    params = {"cid": id_cliente}
+    if current_user.is_analyst and current_user.id_perfil:
+        scope_sql = """
+            AND EXISTS (SELECT 1 FROM analistas_rutas ar_a
+                WHERE ar_a.id_ruta = rp.id_ruta AND ar_a.id_analista = :analista_id)
+        """
+        params["analista_id"] = int(current_user.id_perfil)
+    rows = db.execute(text(f"""
         SELECT DISTINCT rp.id_punto_interes, rp.punto_interes
         FROM RUTA_PROGRAMACION rp
         WHERE rp.id_cliente = :cid AND rp.activa = 1 AND rp.id_punto_interes IS NOT NULL
+        {scope_sql}
         ORDER BY rp.punto_interes
-    """), {"cid": id_cliente}).fetchall()
+    """), params).fetchall()
     existentes = {
         f.id_punto_interes: f
         for f in db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id_cliente == id_cliente).all()
