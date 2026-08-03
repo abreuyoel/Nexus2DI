@@ -74,8 +74,72 @@
       </div>
     </div>
 
+    <!-- Toggle vista -->
+    <div class="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl p-1 shadow-sm">
+      <button (click)="toggleVista('lista')"
+        class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all"
+        [class.bg-primary-600]="vista() === 'lista'" [class.text-white]="vista() === 'lista'"
+        [class.text-slate-500]="vista() !== 'lista'">
+        Lista
+      </button>
+      <button (click)="toggleVista('clusters')"
+        class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all"
+        [class.bg-primary-600]="vista() === 'clusters'" [class.text-white]="vista() === 'clusters'"
+        [class.text-slate-500]="vista() !== 'clusters'">
+        Por zonas (críticos)
+      </button>
+    </div>
+
+    @if (vista() === 'clusters') {
+      <p class="text-xs text-slate-400 -mt-2">Agrupa por cercanía real (GPS de fotos de activación/desactivación, o dirección del PDV si no hay fotos) los pendientes con score ≥ 1 -- propuesta para armar rutas de respaldo, todavía no crea nada.</p>
+
+      @if (loadingClusters()) {
+        <div class="flex flex-col items-center justify-center py-16 gap-3">
+          <mat-spinner diameter="36" strokeWidth="4"></mat-spinner>
+        </div>
+      } @else if (!clusters().length) {
+        <div class="py-16 text-center opacity-40">
+          <mat-icon class="!text-5xl">location_off</mat-icon>
+          <p class="font-bold mt-2">No hay críticos para agrupar.</p>
+        </div>
+      } @else {
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          @for (g of clusters(); track $index) {
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <div class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+                    <mat-icon class="!text-lg">{{ g.sin_ubicacion ? 'location_off' : 'place' }}</mat-icon>
+                  </div>
+                  <div>
+                    <div class="font-black text-slate-800 dark:text-white text-sm">{{ g.sin_ubicacion ? 'Sin ubicación GPS' : (g.cantidad_pdvs + ' PDV(s) cercanos') }}</div>
+                    @if (!g.sin_ubicacion) { <div class="text-[10px] text-slate-400">{{ g.centro_lat }}, {{ g.centro_lon }}</div> }
+                  </div>
+                </div>
+                <div class="text-right">
+                  <div class="text-lg font-black text-rose-500">{{ g.score_total | number:'1.1-1' }}</div>
+                  <div class="text-[9px] text-slate-400 uppercase font-bold">score total</div>
+                </div>
+              </div>
+              <div class="space-y-1.5 max-h-56 overflow-y-auto">
+                @for (i of g.items; track i.id_punto_interes + i.id_cliente) {
+                  <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs">
+                    <div class="min-w-0">
+                      <div class="font-bold text-slate-700 dark:text-slate-200 truncate">{{ i.punto_de_interes || i.id_punto_interes }}</div>
+                      <div class="text-slate-400 truncate">{{ i.cliente_nombre }} · {{ i.ruta_nombre }}</div>
+                    </div>
+                    <span class="shrink-0 font-black" [ngClass]="scoreColor(i.score)">{{ i.score | number:'1.1-1' }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+
     <!-- Tabla -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden" [class.hidden]="vista() !== 'lista'">
       @if (!filteredItems.length) {
         <div class="py-16 text-center opacity-40">
           <mat-icon class="!text-5xl">check_circle</mat-icon>

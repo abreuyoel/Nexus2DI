@@ -294,3 +294,142 @@ def recalcular_plan_accion(db: Session) -> int:
         cursor.executemany(_INSERT_SQL, rows)
     db.commit()
     return len(pendientes)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Fase 3 -- geo-clustering: agrupar pendientes por cercanía real, para
+# proponer rutas BCK. Ubicación de un PDV = promedio de lat/lon de sus
+# fotos de activación/desactivación (tipo 5/6 -- son con cámara en vivo,
+# el GPS viene del EXIF de la foto, confirmado con el usuario que es más
+# confiable que la dirección cargada en PUNTOS_INTERES1). Si un PDV nunca
+# tuvo esas fotos, se usa PUNTOS_INTERES1.latitud/longitud como respaldo
+# (texto con coma decimal -- mismo parseo que ya usa mercaderista_portal.py).
+# ──────────────────────────────────────────────────────────────────────────
+
+RADIO_CLUSTER_KM_DEFAULT = 5.0
+
+
+def _resolver_ubicaciones(db: Session, ids_punto: list[str]) -> dict[str, tuple[float, float]]:
+    ids_punto = list(dict.fromkeys(ids_punto))  # dedup preservando orden
+    if not ids_punto:
+        return {}
+
+    ubicaciones: dict[str, tuple[float, float]] = {}
+
+    placeholders = ", ".join(["?"] * len(ids_punto))
+    rows = _execute_with_timeout(db, f"""
+        SELECT vm.identificador_punto_interes, AVG(f.latitud), AVG(f.longitud)
+        FROM FOTOS_TOTALES f
+        JOIN VISITAS_MERCADERISTA vm ON vm.id_visita = f.id_visita
+        WHERE f.id_tipo_foto IN (5, 6)
+          AND f.latitud IS NOT NULL AND f.longitud IS NOT NULL
+          AND vm.identificador_punto_interes IN ({placeholders})
+        GROUP BY vm.identificador_punto_interes
+    """, tuple(ids_punto), timeout=20)
+    for id_punto, lat, lon in rows:
+        if lat is not None and lon is not None:
+            ubicaciones[id_punto] = (float(lat), float(lon))
+
+    faltantes = [p for p in ids_punto if p not in ubicaciones]
+    if faltantes:
+        placeholders2 = ", ".join(["?"] * len(faltantes))
+        rows2 = _execute_with_timeout(db, f"""
+            SELECT identificador, latitud, longitud
+            FROM PUNTOS_INTERES1
+            WHERE identificador IN ({placeholders2})
+        """, tuple(faltantes), timeout=15)
+        for id_punto, lat_s, lon_s in rows2:
+            if not lat_s or not lon_s:
+                continue
+            try:
+                ubicaciones[id_punto] = (
+                    float(str(lat_s).replace(",", ".")),
+                    float(str(lon_s).replace(",", ".")),
+                )
+            except ValueError:
+                continue
+
+    return ubicaciones
+
+
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lon1 = a
+    lat2, lon2 = b
+    r = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(h))
+
+
+def _agrupar_por_cercania(items: list[dict], radio_km: float) -> list[list[dict]]:
+    """Clustering simple por vecindad (greedy, no es k-means ni jerárquico
+    óptimo): toma el primer punto sin agrupar como semilla y le suma todo lo
+    que esté a <= radio_km, repite con lo que queda. Alcanza para proponer
+    grupos razonables sin la complejidad de un clustering "correcto" -- si
+    en la práctica arma grupos raros, se ajusta después con datos reales."""
+    restantes = list(items)
+    grupos: list[list[dict]] = []
+    while restantes:
+        base = restantes.pop(0)
+        grupo = [base]
+        if base.get("_ubicacion"):
+            i = 0
+            while i < len(restantes):
+                cand = restantes[i]
+                if cand.get("_ubicacion") and _haversine_km(base["_ubicacion"], cand["_ubicacion"]) <= radio_km:
+                    grupo.append(restantes.pop(i))
+                else:
+                    i += 1
+        grupos.append(grupo)
+    return grupos
+
+
+def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RADIO_CLUSTER_KM_DEFAULT) -> list[dict]:
+    """Agrupa por cercanía los pendientes con score >= score_min (críticos
+    por defecto -- son los que de verdad importa cubrir con un backup).
+    Todavía NO crea rutas ni asigna mercaderista -- Fase 4 hace eso a partir
+    de esta propuesta, con confirmación manual del admin."""
+    pendientes = calcular_pendientes(db)
+    criticos = [p for p in pendientes if p["score"] >= score_min]
+    if not criticos:
+        return []
+
+    ubicaciones = _resolver_ubicaciones(db, [p["id_punto_interes"] for p in criticos])
+    for p in criticos:
+        p["_ubicacion"] = ubicaciones.get(p["id_punto_interes"])
+
+    sin_ubicacion = [p for p in criticos if not p["_ubicacion"]]
+    con_ubicacion = [p for p in criticos if p["_ubicacion"]]
+
+    grupos = _agrupar_por_cercania(con_ubicacion, radio_km)
+
+    resultado = []
+    for grupo in grupos:
+        lats = [p["_ubicacion"][0] for p in grupo]
+        lons = [p["_ubicacion"][1] for p in grupo]
+        for p in grupo:
+            p.pop("_ubicacion", None)
+        resultado.append({
+            "centro_lat": round(sum(lats) / len(lats), 6),
+            "centro_lon": round(sum(lons) / len(lons), 6),
+            "cantidad_pdvs": len(grupo),
+            "score_total": round(sum(p["score"] for p in grupo), 4),
+            "score_max": round(max(p["score"] for p in grupo), 4),
+            "items": grupo,
+        })
+    resultado.sort(key=lambda g: g["score_total"], reverse=True)
+
+    if sin_ubicacion:
+        resultado.append({
+            "centro_lat": None,
+            "centro_lon": None,
+            "cantidad_pdvs": len(sin_ubicacion),
+            "score_total": round(sum(p["score"] for p in sin_ubicacion), 4),
+            "score_max": round(max(p["score"] for p in sin_ubicacion), 4),
+            "items": sin_ubicacion,
+            "sin_ubicacion": True,
+        })
+
+    return resultado

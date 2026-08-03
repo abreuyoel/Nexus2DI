@@ -20,6 +20,10 @@ export class PlanAccionComponent implements OnInit {
   fechaCalculo = signal<string | null>(null);
   totalCriticos = signal(0);
 
+  vista = signal<'lista' | 'clusters'>('lista');
+  clusters = signal<any[]>([]);
+  loadingClusters = signal(false);
+
   filtroRuta: string | null = null;
   filtroCliente: string | null = null;
   filtroTipo: string | null = null;
@@ -45,6 +49,19 @@ export class PlanAccionComponent implements OnInit {
     });
   }
 
+  toggleVista(v: 'lista' | 'clusters'): void {
+    this.vista.set(v);
+    if (v === 'clusters' && !this.clusters().length) this.loadClusters();
+  }
+
+  loadClusters(): void {
+    this.loadingClusters.set(true);
+    this.api.getPlanAccionClusters().subscribe({
+      next: (res) => { this.loadingClusters.set(false); this.clusters.set(res?.grupos || []); },
+      error: () => { this.loadingClusters.set(false); this.clusters.set([]); this.snack.open('Error al agrupar por cercanía', 'OK', { duration: 3000 }); },
+    });
+  }
+
   recalcular(): void {
     // El backend corre esto en background (la query puede tardar) -- el POST
     // vuelve al toque, así que esperamos unos segundos y recargamos solos.
@@ -52,7 +69,11 @@ export class PlanAccionComponent implements OnInit {
     this.api.recalcularPlanAccion().subscribe({
       next: () => {
         this.snack.open('Recalculando en background, actualizando en unos segundos...', 'OK', { duration: 4000 });
-        setTimeout(() => { this.recalculando.set(false); this.load(); }, 12000);
+        setTimeout(() => {
+          this.recalculando.set(false);
+          this.load();
+          if (this.vista() === 'clusters') this.loadClusters();
+        }, 12000);
       },
       error: () => { this.recalculando.set(false); this.snack.open('Error al recalcular', 'OK', { duration: 3000 }); },
     });

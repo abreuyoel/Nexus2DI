@@ -563,6 +563,9 @@ export class ApiService {
   recalcularPlanAccion(): Observable<any> {
     return this.http.post<any>(`${this.base}/api/plan-accion/recalcular`, {});
   }
+  getPlanAccionClusters(opts: { score_min?: number; radio_km?: number } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/plan-accion/clusters`, { params: this.params(opts) });
+  }
 
   // --- CLIENT CATEGORIES ---
   getClientCategories(clientId: number): Observable<any[]> {

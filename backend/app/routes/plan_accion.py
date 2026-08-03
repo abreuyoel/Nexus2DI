@@ -10,7 +10,7 @@ from typing import Optional
 from app.db.session import get_db, SessionLocal
 from app.core.dependencies import require_analyst_or_admin
 from app.models.user import Usuario
-from app.services.plan_accion_service import recalcular_plan_accion, _execute_with_timeout
+from app.services.plan_accion_service import recalcular_plan_accion, calcular_clusters, _execute_with_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -100,3 +100,22 @@ def recalcular(
     # bloqueando de paso al resto de la app.
     background_tasks.add_task(_recalcular_background)
     return {"ok": True, "started": True}
+
+
+@router.get("/clusters")
+def listar_clusters(
+    score_min: float = 1.0,
+    radio_km: float = 5.0,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_analyst_or_admin),
+):
+    """Fase 3: agrupa por cercanía geográfica los pendientes con score >=
+    score_min (críticos por defecto). Todavía es solo propuesta -- no crea
+    rutas BCK ni asigna mercaderista, eso es Fase 4."""
+    grupos = calcular_clusters(db, score_min=score_min, radio_km=radio_km)
+    return {
+        "grupos": grupos,
+        "total_grupos": len(grupos),
+        "radio_km": radio_km,
+        "score_min": score_min,
+    }
