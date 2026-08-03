@@ -3,6 +3,13 @@ siguen debiendo visita en el período actual (semana si su frecuencia es
 >=1/semana, mes si es menor) y con qué urgencia, y guarda el resultado
 completo en PLAN_ACCION_PENDIENTES (se reemplaza entero en cada corrida).
 
+El universo son las combinaciones activa=1 en RUTA_PROGRAMACION que YA
+tuvieron al menos una visita alguna vez (EXISTS sin filtro de fecha en
+UNIVERSO_QUERY). Se excluyen las que nunca arrancaron -- con el cliente
+todavía en fase piloto, la mayoría de las programaciones activas no había
+empezado, y sin este filtro Plan de Acción marcaba como "pendiente" a casi
+todo el universo (9281 de 9300) en vez de reflejar atraso real.
+
 Fórmula acordada con el usuario (sesión 2026-08-02):
 
   Frecuencia >= 1 (semanal+):
@@ -63,6 +70,15 @@ LEFT JOIN FRECUENCIAS_PDVS_CLIENTE f
 WHERE rp.activa = 1
   AND rp.id_punto_interes IS NOT NULL
   AND rp.id_cliente IS NOT NULL
+  -- Piloto en curso: muchas programaciones activa=1 todavía no arrancaron
+  -- (nunca tuvieron ni una visita). Esas no están "atrasadas", simplemente
+  -- no empezaron -- se excluyen hasta que tengan su primera visita, ahí ya
+  -- entran solas al cálculo normal de frecuencia.
+  AND EXISTS (
+      SELECT 1 FROM VISITAS_MERCADERISTA vm0
+      WHERE vm0.identificador_punto_interes = rp.id_punto_interes
+        AND vm0.id_cliente = rp.id_cliente
+  )
 GROUP BY rp.id_ruta, rn.ruta, rp.id_punto_interes, pi.punto_de_interes,
          pi.departamento, pi.ciudad, rp.id_cliente, c.cliente
 """
