@@ -18,13 +18,16 @@ Fórmula acordada con el usuario (sesión 2026-08-02):
 
   score = urgencia * peso_prioridad(ruta) * peso_tipo
 
-Una visita cuenta para la cuota solo si está "completa" (foto de
-activación Y desactivación, ambas Estado='Aprobada' -- mismo criterio que
-update_resumen.py). Si el (PDV, cliente) sigue debiendo visita este
-período Y alguna de sus visitas del período tiene una foto Estado=
-'Rechazada' sin resolver, se clasifica como 'fotos_rechazadas' (peso
-0.6); si nunca se intentó, 'nunca_visitado' (peso 1.0) -- misma cola,
-menor peso a la rechazada, tal como lo pidió el usuario.
+Una visita cuenta para la cuota si está "completa" (existe foto de
+activación Y de desactivación, ninguna de las dos Rechazada -- NO exige
+que ya estén Aprobada por un analista, solo que el mercaderista haya
+hecho el trabajo de campo; exigir aprobación inflaba muchísimo el conteo
+porque la revisión administrativa suele ir atrasada respecto al trabajo
+real). Si el (PDV, cliente) sigue debiendo visita este período Y alguna
+de sus visitas del período tiene una foto Estado='Rechazada' sin
+resolver, se clasifica como 'fotos_rechazadas' (peso 0.6); si nunca se
+intentó, 'nunca_visitado' (peso 1.0) -- misma cola, menor peso a la
+rechazada, tal como lo pidió el usuario.
 """
 from __future__ import annotations
 
@@ -66,8 +69,8 @@ GROUP BY rp.id_ruta, rn.ruta, rp.id_punto_interes, pi.punto_de_interes,
 
 VISITAS_QUERY = """
 SELECT vm.identificador_punto_interes, vm.id_cliente, vm.fecha_visita,
-       MAX(CASE WHEN ft.id_tipo_foto = 5 AND ft.Estado = 'Aprobada' THEN 1 ELSE 0 END) AS tiene_act,
-       MAX(CASE WHEN ft.id_tipo_foto = 6 AND ft.Estado = 'Aprobada' THEN 1 ELSE 0 END) AS tiene_des,
+       MAX(CASE WHEN ft.id_tipo_foto = 5 AND (ft.Estado IS NULL OR ft.Estado <> 'Rechazada') THEN 1 ELSE 0 END) AS tiene_act,
+       MAX(CASE WHEN ft.id_tipo_foto = 6 AND (ft.Estado IS NULL OR ft.Estado <> 'Rechazada') THEN 1 ELSE 0 END) AS tiene_des,
        MAX(CASE WHEN ft.Estado = 'Rechazada' THEN 1 ELSE 0 END) AS tiene_rechazada
 FROM VISITAS_MERCADERISTA vm
 LEFT JOIN FOTOS_TOTALES ft ON ft.id_visita = vm.id_visita
