@@ -25,6 +25,10 @@ export class PlanAccionComponent implements OnInit {
   loadingClusters = signal(false);
   totalBackupsSugeridos = signal(0);
 
+  mercaderistas = signal<any[]>([]);
+  seleccionMerc: Record<number, number | null> = {};
+  confirmandoIdx = signal<number | null>(null);
+
   filtroRuta: string | null = null;
   filtroCliente: string | null = null;
   filtroTipo: string | null = null;
@@ -35,6 +39,7 @@ export class PlanAccionComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
+    this.api.getMercaderistas().subscribe({ next: (d) => this.mercaderistas.set(d || []), error: () => {} });
   }
 
   load(): void {
@@ -60,6 +65,20 @@ export class PlanAccionComponent implements OnInit {
     this.api.getPlanAccionClusters().subscribe({
       next: (res) => { this.loadingClusters.set(false); this.clusters.set(res?.grupos || []); this.totalBackupsSugeridos.set(res?.total_backups_sugeridos || 0); },
       error: () => { this.loadingClusters.set(false); this.clusters.set([]); this.snack.open('Error al agrupar por cercanía', 'OK', { duration: 3000 }); },
+    });
+  }
+
+  confirmarRuta(g: any, idx: number): void {
+    const idMerc = this.seleccionMerc[idx];
+    if (!idMerc) { this.snack.open('Elegí un mercaderista primero', 'OK', { duration: 2500 }); return; }
+    this.confirmandoIdx.set(idx);
+    this.api.confirmarRutaBck(g.items, idMerc).subscribe({
+      next: (res) => {
+        this.confirmandoIdx.set(null);
+        this.snack.open(`${res.nombre_ruta} creada con ${res.cantidad_pdvs} PDV(s) para hoy`, 'OK', { duration: 4500 });
+        this.clusters.update((list) => list.filter((x) => x !== g));
+      },
+      error: () => { this.confirmandoIdx.set(null); this.snack.open('Error al crear la ruta', 'OK', { duration: 3000 }); },
     });
   }
 

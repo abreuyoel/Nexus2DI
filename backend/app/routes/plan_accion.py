@@ -1,20 +1,28 @@
 """Plan de Acción -- Fase 2: lectura del último snapshot calculado por el
-job en background (app/services/plan_accion_service.py) y disparo manual
-del recálculo. Todavía no genera rutas BCK ni asigna backups -- eso es
-Fase 3/4."""
+job en background (app/services/plan_accion_service.py). Fase 3: propuesta
+de rutas BCK por cercanía (GET /clusters). Fase 4: POST /clusters/confirmar
+crea la ruta de verdad y la asigna al mercaderista elegido por el admin."""
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import List, Optional
 
 from app.db.session import get_db, SessionLocal
 from app.core.dependencies import require_analyst_or_admin
 from app.models.user import Usuario
+from app.models.ruta import Ruta, RutaProgramacion
+from app.models.mercaderista import MercaderistaRuta
+from app.routes.rutas import _get_servicio_prefijo, _next_route_number
 from app.services.plan_accion_service import recalcular_plan_accion, calcular_clusters, _execute_with_timeout
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/plan-accion", tags=["Plan de Acción"])
+
+SERVICIO_BCK = "Backup"  # SERVICIOS.nombre -- ver sql/2026-08-02_servicio_bck.sql
+DAY_MAP_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
 
 
 @router.get("/pendientes")
@@ -122,3 +130,62 @@ def listar_clusters(
         "radio_km": radio_km,
         "score_min": score_min,
     }
+
+
+class ConfirmarRutaItem(BaseModel):
+    id_punto_interes: str
+    id_cliente: int
+    punto_de_interes: Optional[str] = None
+    prioridad_ruta: Optional[str] = None
+
+
+class ConfirmarRutaRequest(BaseModel):
+    items: List[ConfirmarRutaItem]
+    id_mercaderista: int
+
+
+@router.post("/clusters/confirmar")
+def confirmar_ruta_bck(
+    data: ConfirmarRutaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_analyst_or_admin),
+):
+    """Fase 4: toma una propuesta de ruta (los items de una tarjeta de
+    /clusters, ya elegidos por el admin) y la vuelve real -- crea la ruta
+    en RUTAS_NUEVAS (servicio "Backup"), sus puntos en RUTA_PROGRAMACION
+    para el día de hoy, y la asigna al mercaderista elegido. No toca nada
+    de Plan de Acción en sí -- el próximo recálculo ya va a ver esta visita
+    reflejada normalmente en cuanto el backup suba las fotos."""
+    if not data.items:
+        raise HTTPException(status_code=400, detail="La propuesta no tiene PDVs")
+
+    prefijo = _get_servicio_prefijo(db, SERVICIO_BCK)
+    nombre = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
+    ruta = Ruta(nombre=nombre, servicio=SERVICIO_BCK)
+    db.add(ruta)
+    db.flush()
+
+    hoy = db.execute(text("SELECT CAST(GETDATE() AS DATE)")).scalar()
+    dia = DAY_MAP_ES[hoy.weekday()]
+
+    for item in data.items:
+        db.add(RutaProgramacion(
+            ruta_id=ruta.id,
+            punto_id=item.id_punto_interes,
+            id_cliente=item.id_cliente,
+            dia=dia,
+            prioridad=item.prioridad_ruta or "Media",
+            activo=True,
+            punto_interes_nombre=item.punto_de_interes,
+        ))
+
+    ya_asignado = db.query(MercaderistaRuta).filter(
+        MercaderistaRuta.mercaderista_id == data.id_mercaderista,
+        MercaderistaRuta.ruta_id == ruta.id,
+    ).first()
+    if not ya_asignado:
+        db.add(MercaderistaRuta(mercaderista_id=data.id_mercaderista, ruta_id=ruta.id, tipo_ruta="Backup"))
+
+    db.commit()
+    logger.info(f"Ruta BCK creada: {nombre} (id={ruta.id}), {len(data.items)} PDV(s), mercaderista={data.id_mercaderista}")
+    return {"ok": True, "id_ruta": ruta.id, "nombre_ruta": nombre, "dia": dia, "cantidad_pdvs": len(data.items)}
