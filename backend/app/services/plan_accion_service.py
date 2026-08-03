@@ -386,6 +386,42 @@ def _agrupar_por_cercania(items: list[dict], radio_km: float) -> list[list[dict]
     return grupos
 
 
+MINUTOS_PROMEDIO_DEFAULT = 45  # fallback si el PDV/cliente no tiene fila en HORAS_PROMEDIO_EJECUCION
+JORNADA_MINUTOS_DEFAULT = 8 * 60  # capacidad de un backup en un día completo de trabajo
+
+
+def _resolver_minutos_promedio(db: Session, items: list[dict]) -> dict[tuple, int]:
+    """(id_punto_interes, id_cliente) -> minutos_promedio, cruzando
+    PUNTOS_INTERES1.jerarquia_nivel_2 -> CAT_TIPO_NEGOCIO -> HORAS_PROMEDIO_EJECUCION.
+    jerarquia_nivel_2 (no jerarquia_nivel_2_2, pese a lo que dice el
+    comentario del modelo) es la columna que de verdad matchea contra
+    CAT_TIPO_NEGOCIO.nombre -- confirmado con datos reales (5098/5116 PDVs)."""
+    ids_punto = list(dict.fromkeys(p["id_punto_interes"] for p in items))
+    if not ids_punto:
+        return {}
+
+    placeholders = ", ".join(["?"] * len(ids_punto))
+    punto_tipo_rows = _execute_with_timeout(db, f"""
+        SELECT pi.identificador, ctn.id
+        FROM PUNTOS_INTERES1 pi
+        JOIN CAT_TIPO_NEGOCIO ctn ON ctn.nombre = pi.jerarquia_nivel_2
+        WHERE pi.identificador IN ({placeholders})
+    """, tuple(ids_punto), timeout=15)
+    punto_a_tipo = {id_punto: id_tipo for id_punto, id_tipo in punto_tipo_rows}
+
+    horas_rows = _execute_with_timeout(db, """
+        SELECT id_cliente, id_tipo_negocio, minutos_promedio FROM HORAS_PROMEDIO_EJECUCION
+    """, (), timeout=15)
+    horas_map = {(id_cliente, id_tipo): minutos for id_cliente, id_tipo, minutos in horas_rows}
+
+    resultado: dict[tuple, int] = {}
+    for p in items:
+        id_tipo = punto_a_tipo.get(p["id_punto_interes"])
+        minutos = horas_map.get((p["id_cliente"], id_tipo)) if id_tipo is not None else None
+        resultado[(p["id_punto_interes"], p["id_cliente"])] = minutos if minutos is not None else MINUTOS_PROMEDIO_DEFAULT
+    return resultado
+
+
 def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RADIO_CLUSTER_KM_DEFAULT) -> list[dict]:
     """Agrupa por cercanía los pendientes con score >= score_min (críticos
     por defecto -- son los que de verdad importa cubrir con un backup).
@@ -397,8 +433,10 @@ def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RAD
         return []
 
     ubicaciones = _resolver_ubicaciones(db, [p["id_punto_interes"] for p in criticos])
+    minutos_por_item = _resolver_minutos_promedio(db, criticos)
     for p in criticos:
         p["_ubicacion"] = ubicaciones.get(p["id_punto_interes"])
+        p["minutos_estimados"] = minutos_por_item.get((p["id_punto_interes"], p["id_cliente"]), MINUTOS_PROMEDIO_DEFAULT)
 
     sin_ubicacion = [p for p in criticos if not p["_ubicacion"]]
     con_ubicacion = [p for p in criticos if p["_ubicacion"]]
@@ -409,6 +447,7 @@ def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RAD
     for grupo in grupos:
         lats = [p["_ubicacion"][0] for p in grupo]
         lons = [p["_ubicacion"][1] for p in grupo]
+        minutos_totales = sum(p["minutos_estimados"] for p in grupo)
         for p in grupo:
             p.pop("_ubicacion", None)
         resultado.append({
@@ -417,17 +456,22 @@ def calcular_clusters(db: Session, score_min: float = 1.0, radio_km: float = RAD
             "cantidad_pdvs": len(grupo),
             "score_total": round(sum(p["score"] for p in grupo), 4),
             "score_max": round(max(p["score"] for p in grupo), 4),
+            "minutos_totales_estimados": minutos_totales,
+            "backups_sugeridos": math.ceil(minutos_totales / JORNADA_MINUTOS_DEFAULT),
             "items": grupo,
         })
     resultado.sort(key=lambda g: g["score_total"], reverse=True)
 
     if sin_ubicacion:
+        minutos_totales = sum(p["minutos_estimados"] for p in sin_ubicacion)
         resultado.append({
             "centro_lat": None,
             "centro_lon": None,
             "cantidad_pdvs": len(sin_ubicacion),
             "score_total": round(sum(p["score"] for p in sin_ubicacion), 4),
             "score_max": round(max(p["score"] for p in sin_ubicacion), 4),
+            "minutos_totales_estimados": minutos_totales,
+            "backups_sugeridos": math.ceil(minutos_totales / JORNADA_MINUTOS_DEFAULT),
             "items": sin_ubicacion,
             "sin_ubicacion": True,
         })

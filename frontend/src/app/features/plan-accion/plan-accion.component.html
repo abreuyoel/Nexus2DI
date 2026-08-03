@@ -121,6 +121,11 @@
                   <div class="text-[9px] text-slate-400 uppercase font-bold">score total</div>
                 </div>
               </div>
+              <div class="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300">
+                <mat-icon class="!text-base">groups</mat-icon>
+                <span class="text-xs font-bold">{{ g.backups_sugeridos }} backup(s) sugerido(s)</span>
+                <span class="text-[10px] text-indigo-400 dark:text-indigo-500 ml-auto">~{{ g.minutos_totales_estimados / 60 | number:'1.1-1' }}h estimadas</span>
+              </div>
               <div class="space-y-1.5 max-h-56 overflow-y-auto">
                 @for (i of g.items; track i.id_punto_interes + i.id_cliente) {
                   <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs">
