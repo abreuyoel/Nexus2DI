@@ -138,7 +138,13 @@ def _to_float(val) -> float:
 
 
 def calcular_pendientes(db: Session) -> list[dict]:
-    hoy = date.today()
+    # CAST(GETDATE() AS DATE), no date.today(): el contenedor corre en UTC,
+    # y date.today() ya se adelantaba de día (a partir de las 20:00 hora de
+    # Caracas, UTC-4) frente a la hora real del negocio -- eso rompía
+    # silenciosamente el cálculo de "hoy es domingo, último recurso" y el
+    # conteo de días hábiles restantes. GETDATE() ya es consistente con la
+    # hora local en el resto de la app (columnas fecha_calculo, etc.).
+    hoy = _execute_with_timeout(db, "SELECT CAST(GETDATE() AS DATE)", (), timeout=10)[0][0]
     inicio_semana = hoy - timedelta(days=hoy.weekday())
     inicio_mes = hoy.replace(day=1)
     dias_disp_semana = _dias_habiles_restantes_semana(hoy)
