@@ -11,6 +11,7 @@ import { ApiService } from '../../../core/services/api.service';
 import { PuntoInteres } from '../../../core/models/visita.model';
 import { CatalogosComponent } from './catalogos.component';
 import { HasPermDirective } from '../../../core/directives/has-perm.directive';
+import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
 
 @Component({
   selector: 'app-points',
@@ -434,6 +435,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
   private fb = inject(FormBuilder);
+  private confirmSvc = inject(ConfirmService);
 
   view = signal<'pdvs' | 'catalogos'>('pdvs');
   loading = signal(false);
@@ -658,8 +660,11 @@ export class PointsComponent implements OnInit, OnDestroy {
     if (this.mapInstance) { this.mapInstance.remove(); this.mapInstance = null; this.mapMarker = null; }
   }
 
-  deletePoint(p: PuntoInteres): void {
-    if (!confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`)) return;
+  async deletePoint(p: PuntoInteres): Promise<void> {
+    const ok = await this.confirmSvc.confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`, {
+      title: 'Eliminar punto de venta', confirmText: 'Eliminar', cancelText: 'Cancelar', danger: true,
+    });
+    if (!ok) return;
     this.api.deletePoint(p.id).subscribe({
       next: () => { this.loadAll(); this.snack.open('PDV eliminado', 'OK', { duration: 3000 }); },
       error: (err) => this.snack.open(err?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 })

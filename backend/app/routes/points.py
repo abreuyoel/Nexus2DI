@@ -174,21 +174,30 @@ def delete_point(
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
 
-    # Sin este chequeo, el DELETE le pega directo a la restricción de llave
-    # foránea de VISITAS_MERCADERISTA.identificador_punto_interes y SQL
-    # Server lo rechaza -- eso salía como 500 sin manejar. Con historial de
-    # visitas, no se puede borrar (se perdería el rastro real de esas
-    # visitas); hay que desactivarlo en RUTA_PROGRAMACION en vez de borrar
-    # el PDV en sí.
+    # Sin este chequeo, el DELETE le pega directo a alguna de las 4 llaves
+    # foráneas reales que apuntan a PUNTOS_INTERES1.identificador y SQL
+    # Server lo rechaza -- eso salía como 500 sin manejar. Antes solo se
+    # revisaba VISITAS_MERCADERISTA; RUTA_PROGRAMACION (el PDV programado en
+    # una ruta activa) es la más común y quedaba sin cubrir.
     from sqlalchemy import text
-    tiene_visitas = db.execute(
-        text("SELECT TOP 1 1 FROM VISITAS_MERCADERISTA WHERE identificador_punto_interes = :pid"),
-        {"pid": point_id},
-    ).first()
-    if tiene_visitas:
+    tablas_bloqueantes = [
+        ("VISITAS_MERCADERISTA", "identificador_punto_interes", "visitas registradas"),
+        ("RUTA_PROGRAMACION", "id_punto_interes", "programación de rutas"),
+        ("FRECUENCIAS_PDVS_CLIENTE", "id_punto_interes", "frecuencias de visita configuradas"),
+        ("ACTIVACIONES", "identificador_punto_interes", "activaciones registradas"),
+    ]
+    motivos = []
+    for tabla, columna, etiqueta in tablas_bloqueantes:
+        existe = db.execute(
+            text(f"SELECT TOP 1 1 FROM {tabla} WHERE {columna} = :pid"),
+            {"pid": point_id},
+        ).first()
+        if existe:
+            motivos.append(etiqueta)
+    if motivos:
         raise HTTPException(
             status_code=400,
-            detail="No se puede eliminar: este punto de venta tiene visitas registradas. "
+            detail=f"No se puede eliminar: este punto de venta tiene {', '.join(motivos)}. "
                    "Desactivalo en la programación de rutas en vez de borrarlo.",
         )
 
