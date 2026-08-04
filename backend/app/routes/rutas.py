@@ -152,12 +152,21 @@ def create_route(
 
     db_data = data.model_dump()
     db_data["nombre"] = route_name
+    # id_analista no es columna de RUTAS_NUEVAS -- vive en la tabla
+    # intermedia analistas_rutas (modelo AnalistaRuta). Pasarlo directo a
+    # Ruta(**db_data) rompía con 500 la creación de CUALQUIER ruta, tuviera
+    # o no analista asignado (el constructor de SQLAlchemy rechaza kwargs
+    # que no son columnas mapeadas).
+    id_analista = db_data.pop("id_analista", None)
     # El cliente exclusivo sólo aplica al servicio Exclusivo
     if data.servicio != "Exclusivo":
         db_data["id_cliente_exclusivo"] = None
 
     ruta = Ruta(**db_data)
     db.add(ruta)
+    db.flush()
+    if id_analista is not None:
+        db.add(AnalistaRuta(id_analista=id_analista, id_ruta=ruta.id))
     db.commit()
     db.refresh(ruta)
     return _enrich_routes(db, [ruta])[0]
@@ -190,8 +199,21 @@ def update_route(
     ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
-    for key, value in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    # Igual que en create_route: id_analista no es columna de Ruta, así que
+    # setattr(ruta, "id_analista", ...) no rompía pero tampoco guardaba nada
+    # -- se maneja aparte contra la tabla intermedia analistas_rutas.
+    id_analista = updates.pop("id_analista", None)
+    for key, value in updates.items():
         setattr(ruta, key, value)
+    if id_analista is not None:
+        existente = db.query(AnalistaRuta).filter(AnalistaRuta.id_ruta == route_id).first()
+        if not existente:
+            db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
+        elif existente.id_analista != id_analista:
+            db.delete(existente)
+            db.flush()
+            db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
     db.commit()
     db.refresh(ruta)
     return _enrich_routes(db, [ruta])[0]
