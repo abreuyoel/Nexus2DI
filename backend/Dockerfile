@@ -51,13 +51,9 @@ USER 10001
 
 EXPOSE 8000
 
-# Revertido de 2 a 1 worker (2026-08-04, mismo dia): se probo con
-# workers=2 y empeoro bajo carga real (mas fallos totales y reaparecieron
-# errores de pool) porque k8s/backend-deployment.yaml sigue con
-# limits.cpu: "2" pensado para 1 solo proceso -- con 2 workers, ambos
-# terminan compitiendo por el mismo techo de CPU en vez de tener cada uno
-# margen real. Falta subir ese limite (y volver a probar con calma) antes
-# de reintentar este eje -- no es el momento con la demo del jueves
-# encima. app/services/redis_pubsub.py ya deja el terreno listo (pub/sub
-# sobre Redis en vez de estado en memoria) para cuando se retome esto.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Segundo intento con 2 workers (2026-08-04): el primer intento empeoro
+# porque k8s/backend-deployment.yaml tenia limits.cpu:"2" pensado para 1
+# solo proceso -- ya se subio a "4" (2 cores por worker) antes de
+# reintentar esto. Redis pub/sub (app/services/redis_pubsub.py) ya
+# soporta multiples procesos, validado en Fase A/B/C del plan.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

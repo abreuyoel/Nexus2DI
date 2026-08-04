@@ -6,14 +6,13 @@ data:
   DB_DRIVER: "ODBC Driver 17 for SQL Server"
   DB_SERVER: "172.174.41.110"
   DB_NAME: "epran"
-  # Revertido a 20+30 (2026-08-04, mismo día): se había bajado a 10+15 al
-  # subir --workers a 2, pero ese cambio se revirtió (ver Dockerfile --
-  # empeoró bajo carga real, faltaba subir el límite de CPU del pod antes
-  # de sumar workers). Con 2 réplicas x 1 worker = 2 procesos de nuevo,
-  # 20+30 por proceso = 100 conexiones totales, el valor ya validado en
-  # producción real durante el incidente de hora pico de esta sesión.
-  DB_POOL_SIZE: "20"
-  DB_MAX_OVERFLOW: "30"
+  # Segundo intento con --workers 2 (2026-08-04): vuelve a 10+15 por
+  # proceso -- con 2 réplicas x 2 workers = 4 procesos, eso da 100
+  # conexiones totales a SQL Server (el mismo techo ya validado). Esta vez
+  # además se subió limits.cpu a "4" en backend-deployment.yaml antes de
+  # reintentar, que fue lo que faltó la primera vez.
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "15"
   ENVIRONMENT: "production"
   ACCESS_TOKEN_EXPIRE_MINUTES: "480"
   FRONTEND_URL: "https://www.nexus2di.net"
