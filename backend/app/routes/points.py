@@ -174,17 +174,22 @@ def delete_point(
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
 
-    # Sin este chequeo, el DELETE le pega directo a alguna de las 4 llaves
+    # Sin este chequeo, el DELETE le pega directo a alguna de las llaves
     # foráneas reales que apuntan a PUNTOS_INTERES1.identificador y SQL
     # Server lo rechaza -- eso salía como 500 sin manejar. Antes solo se
     # revisaba VISITAS_MERCADERISTA; RUTA_PROGRAMACION (el PDV programado en
     # una ruta activa) es la más común y quedaba sin cubrir.
+    #
+    # OJO: ACTIVACIONES está en el modelo SQLAlchemy (app/models/activacion.py)
+    # pero la tabla NUNCA se creó en la base real -- confirmado por el error
+    # "Invalid object name 'ACTIVACIONES'" en producción. Por eso NO se
+    # revisa acá aunque tenga FK declarada; si en el futuro se crea la tabla
+    # de verdad, hay que agregarla de nuevo a esta lista.
     from sqlalchemy import text
     tablas_bloqueantes = [
         ("VISITAS_MERCADERISTA", "identificador_punto_interes", "visitas registradas"),
         ("RUTA_PROGRAMACION", "id_punto_interes", "programación de rutas"),
         ("FRECUENCIAS_PDVS_CLIENTE", "id_punto_interes", "frecuencias de visita configuradas"),
-        ("ACTIVACIONES", "identificador_punto_interes", "activaciones registradas"),
     ]
     motivos = []
     for tabla, columna, etiqueta in tablas_bloqueantes:

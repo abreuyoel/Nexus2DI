@@ -24,7 +24,14 @@ class PuntoInteres(Base):
 
     programaciones = relationship("RutaProgramacion", back_populates="punto")
     visitas = relationship("Visita", back_populates="punto")
-    activaciones = relationship("Activacion", back_populates="punto")
+    # OJO: NO relationship hacia Activacion -- la tabla ACTIVACIONES está
+    # declarada en el modelo (app/models/activacion.py) pero nunca se creó
+    # en la base real ("Invalid object name 'ACTIVACIONES'", confirmado en
+    # producción 2026-08-04). Declarar esa relación acá hacía que SQLAlchemy
+    # intentara cargarla automáticamente al borrar CUALQUIER PDV (chequeo de
+    # cascada), rompiendo el DELETE con 500 sin importar qué se validara
+    # antes. app/routes/auditors.py también consulta Activacion directo y
+    # tiene el mismo problema pendiente -- no se toca acá.
 
     @property
     def region(self) -> str | None:

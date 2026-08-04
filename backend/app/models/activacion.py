@@ -19,5 +19,8 @@ class Activacion(Base):
     ruta_id = Column("id_ruta", Integer, ForeignKey("RUTAS_NUEVAS.id_ruta"), nullable=True)
     created_at = Column(DateTime, nullable=True)
 
-    punto = relationship("PuntoInteres", back_populates="activaciones")
+    # Sin back_populates: PuntoInteres ya no declara el lado "activaciones"
+    # (ver comentario en app/models/punto.py -- la tabla ACTIVACIONES no
+    # existe en la base real).
+    punto = relationship("PuntoInteres")
     producto = relationship("Producto")
