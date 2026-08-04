@@ -51,14 +51,13 @@ USER 10001
 
 EXPOSE 8000
 
-# Subido de 1 a 2 workers (2026-08-04): app/services/redis_pubsub.py ya
-# saca el estado de WebSocket de la memoria de un solo proceso (pub/sub
-# sobre Redis, validado en Fase A/B/C del plan de migracion) -- un evento
-# emitido en un worker ahora si le llega a un cliente conectado a otro.
-# Se subio tras confirmar con pruebas de carga reales que el cuello de
-# botella en concurrencia era contencion de GIL/CPU en un solo proceso
-# (no la base de datos, que respondia en milisegundos incluso a 200
-# consultas concurrentes) -- ver k8s/configmap-backend.yaml, el pool de
-# conexiones se bajo por proceso al mismo tiempo para no multiplicar el
-# total de conexiones a SQL Server.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Revertido de 2 a 1 worker (2026-08-04, mismo dia): se probo con
+# workers=2 y empeoro bajo carga real (mas fallos totales y reaparecieron
+# errores de pool) porque k8s/backend-deployment.yaml sigue con
+# limits.cpu: "2" pensado para 1 solo proceso -- con 2 workers, ambos
+# terminan compitiendo por el mismo techo de CPU en vez de tener cada uno
+# margen real. Falta subir ese limite (y volver a probar con calma) antes
+# de reintentar este eje -- no es el momento con la demo del jueves
+# encima. app/services/redis_pubsub.py ya deja el terreno listo (pub/sub
+# sobre Redis en vez de estado en memoria) para cuando se retome esto.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
