@@ -6,10 +6,15 @@ data:
   DB_DRIVER: "ODBC Driver 17 for SQL Server"
   DB_SERVER: "172.174.41.110"
   DB_NAME: "epran"
-  # Conservador para 1 réplica x 1 worker — subir solo si kubectl top pods
-  # muestra margen y hace falta más throughput de BD.
-  DB_POOL_SIZE: "5"
-  DB_MAX_OVERFLOW: "10"
+  # Subido (2026-08-04, incidente en hora pico con 2 réplicas): 5+10=15 por
+  # proceso se agotaba bajo carga real -- "QueuePool limit of size 5
+  # overflow 10 reached, connection timed out" en los dos pods, eso era el
+  # login caído. kubectl top nodes mostraba 6% CPU / 35% memoria -- sobraba
+  # margen de sobra, el cuello de botella era solo este límite artificial.
+  # 20+30=50 por proceso x 2 réplicas = 100 conexiones totales a SQL
+  # Server, muy por debajo de cualquier límite real de la instancia.
+  DB_POOL_SIZE: "20"
+  DB_MAX_OVERFLOW: "30"
   ENVIRONMENT: "production"
   ACCESS_TOKEN_EXPIRE_MINUTES: "480"
   FRONTEND_URL: "https://www.nexus2di.net"
