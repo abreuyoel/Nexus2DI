@@ -51,6 +51,20 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Error pre-calentando pool: {e}")
 
     set_loop(asyncio.get_running_loop())  # para difundir eventos en tiempo real
+
+    # Casi todos los endpoints son "def" sync (348 de 375) -- incluida
+    # get_current_user, que corre en CADA request autenticado -- así que
+    # todos pasan por el threadpool de AnyIO/Starlette. El límite por
+    # defecto (~40 threads) se satura en hora pico con --workers 1, y ahí
+    # se explica que hasta el login (que depende de la misma cola) se
+    # ponga lento o no responda mientras endpoints pesados (resumen-dia,
+    # export a Excel, compresión de fotos) ocupan esos threads. Subir el
+    # límite no soluciona la contención de CPU/GIL de fondo, pero evita que
+    # requests livianos (como login) queden en cola detrás de los pesados
+    # simplemente por falta de threads disponibles.
+    import anyio.to_thread
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+
     start_scheduler()
     yield
     stop_scheduler()

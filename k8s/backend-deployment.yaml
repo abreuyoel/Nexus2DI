@@ -71,8 +71,19 @@ spec:
           resources:
             # Más pesado que un backend Node equivalente: pandas/opencv/
             # scikit-learn quedan cargados en memoria del proceso.
+            #
+            # Límite de CPU subido de 1 a 2 (2026-08-04): con --workers 1,
+            # casi todo el tráfico (348 de 375 endpoints son sync) corre en
+            # threads del mismo proceso -- en hora pico, ese único core se
+            # saturaba y el pod quedaba con CPU throttling (visible como
+            # login lento/caído mientras endpoints pesados como resumen-dia
+            # o export a Excel ocupaban el core). El nodo tenía ~97% de CPU
+            # libre en ese momento, así que hay margen real para esto. No
+            # resuelve la contención de fondo del GIL (eso necesita separar
+            # el estado de WebSocket a Redis para poder correr >1 worker/
+            # réplica), pero reduce el throttling mientras tanto.
             requests: { cpu: "250m", memory: "512Mi" }
-            limits: { cpu: "1", memory: "1Gi" }
+            limits: { cpu: "2", memory: "1Gi" }
 ---
 apiVersion: v1
 kind: Service

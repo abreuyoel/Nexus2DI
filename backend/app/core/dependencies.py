@@ -21,12 +21,20 @@ def get_current_user(
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
+    # Esta dependencia corre en CASI todos los endpoints (son sync, así que
+    # cada llamada ocupa un thread del pool compartido) -- antes hacía 2
+    # queries separadas (sesión, después usuario por su cuenta). Con
+    # joinedload se resuelve en una sola consulta con JOIN, mismo resultado,
+    # la mitad de round-trips por request.
     from app.models.sesion import SesionActiva
-    session = db.query(SesionActiva).filter(
-        SesionActiva.session_token == token,
-        SesionActiva.activa == True,
-    ).first()
-    if not session:
+    from sqlalchemy.orm import joinedload
+    session = (
+        db.query(SesionActiva)
+        .options(joinedload(SesionActiva.usuario))
+        .filter(SesionActiva.session_token == token, SesionActiva.activa == True)
+        .first()
+    )
+    if not session or not session.usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sesión expirada o terminada. Inicia sesión nuevamente.",
@@ -42,10 +50,7 @@ def get_current_user(
         except Exception:
             db.rollback()
 
-    user = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
-    return user
+    return session.usuario
 
 
 def require_roles(*roles: str):
