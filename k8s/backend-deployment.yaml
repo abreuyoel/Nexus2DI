@@ -3,11 +3,15 @@ kind: Deployment
 metadata:
   name: nexus2di-backend
 spec:
-  # 1 sola réplica a propósito: app/websockets/manager.py mantiene las
-  # conexiones WebSocket en memoria de UN proceso — más réplicas causarían
-  # que un evento emitido en un pod nunca llegue a un cliente conectado a
-  # otro. Ver Dockerfile para el mismo razonamiento sobre --workers 1.
-  replicas: 1
+  # Fase C de la migración a Redis pub/sub (2026-08-04): antes esto estaba
+  # fijo en 1 réplica porque app/websockets/manager.py guardaba las
+  # conexiones WebSocket en memoria de un solo proceso -- un evento emitido
+  # en un pod nunca llegaba a un cliente conectado a otro. Ya se validó
+  # (Fase A en producción real, Fase B con 2 procesos contra Redis
+  # desechable) que el pub/sub sobre Redis resuelve eso, así que ahora es
+  # seguro subir réplicas. --workers sigue en 1 por ahora (ver Dockerfile):
+  # se sube un eje por vez y se mide antes del siguiente.
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
