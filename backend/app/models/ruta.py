@@ -82,7 +82,12 @@ class RutaCambioFuturo(Base):
 class RutaActivada(Base):
     __tablename__ = "RUTAS_ACTIVADAS"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # Sin nombre explicito, SQLAlchemy asumia que la columna real se
+    # llamaba "id" -- la tabla real la tiene como "id_ruta_activada"
+    # (confirmado via inspect(engine).get_pk_constraint en produccion,
+    # 2026-08-04). Rompia CUALQUIER query contra este modelo, no solo el
+    # delete_route de rutas.py: "Invalid column name 'id'".
+    id = Column("id_ruta_activada", Integer, primary_key=True, index=True)
     ruta_id = Column("id_ruta", Integer, ForeignKey("RUTAS_NUEVAS.id_ruta"), nullable=False)
     mercaderista_id = Column("id_mercaderista", Integer, ForeignKey("MERCADERISTAS.id_mercaderista"), nullable=True)
     fecha_hora_activacion = Column(DateTime, nullable=True)
