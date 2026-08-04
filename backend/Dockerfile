@@ -51,9 +51,14 @@ USER 10001
 
 EXPOSE 8000
 
-# 1 solo worker: app/websockets/manager.py + app/services/realtime.py
-# mantienen las conexiones WebSocket activas en memoria de UN proceso — con
-# más workers, un evento emitido en el worker A nunca llegaría a un cliente
-# conectado al worker B. Ver plan de despliegue para el camino a escalar
-# (mover ese estado a pub/sub sobre Redis).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Subido de 1 a 2 workers (2026-08-04): app/services/redis_pubsub.py ya
+# saca el estado de WebSocket de la memoria de un solo proceso (pub/sub
+# sobre Redis, validado en Fase A/B/C del plan de migracion) -- un evento
+# emitido en un worker ahora si le llega a un cliente conectado a otro.
+# Se subio tras confirmar con pruebas de carga reales que el cuello de
+# botella en concurrencia era contencion de GIL/CPU en un solo proceso
+# (no la base de datos, que respondia en milisegundos incluso a 200
+# consultas concurrentes) -- ver k8s/configmap-backend.yaml, el pool de
+# conexiones se bajo por proceso al mismo tiempo para no multiplicar el
+# total de conexiones a SQL Server.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
