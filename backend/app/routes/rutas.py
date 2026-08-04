@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import date, datetime
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
+from app.services.realtime import notify_event
 from app.models.user import Usuario, UserPermission
 from app.models.ruta import Ruta, RutaProgramacion, RutaCambioFuturo, RutaActivada, AnalistaRuta
 from app.models.catalogo import Servicio
@@ -169,6 +170,7 @@ def create_route(
         db.add(AnalistaRuta(id_analista=id_analista, id_ruta=ruta.id))
     db.commit()
     db.refresh(ruta)
+    notify_event("route.created", {"id": ruta.id, "nombre": ruta.nombre})
     return _enrich_routes(db, [ruta])[0]
 
 
@@ -216,6 +218,7 @@ def update_route(
             db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
     db.commit()
     db.refresh(ruta)
+    notify_event("route.updated", {"id": ruta.id, "nombre": ruta.nombre})
     return _enrich_routes(db, [ruta])[0]
 
 
@@ -235,6 +238,7 @@ def delete_route(
     # programaciones y cambios_futuros caen por cascade en la relación
     db.delete(ruta)
     db.commit()
+    notify_event("route.deleted", {"id": route_id})
     return None
 
 
@@ -279,6 +283,7 @@ def duplicate_route(
 
     db.commit()
     db.refresh(nueva)
+    notify_event("route.created", {"id": nueva.id, "nombre": nueva.nombre})
     return _enrich_routes(db, [nueva])[0]
 
 

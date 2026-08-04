@@ -14,6 +14,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { RealtimeService } from '../../core/services/realtime.service';
 import { Ruta } from '../../core/models/ruta.model';
 import { RouteDetailDialogComponent } from './route-detail-dialog.component';
 
@@ -115,12 +116,16 @@ export class RoutesComponent implements OnInit {
     private snack: MatSnackBar,
     private dialog: MatDialog,
     public auth: AuthService,
+    private realtime: RealtimeService,
   ) {}
 
   ngOnInit(): void {
     this.loadRoutes();
     this.loadCatalogs();
     this.loadClients();
+    this.realtime.events$.subscribe(ev => {
+      if (ev.tipo.startsWith('route.')) this.loadRoutes();
+    });
   }
 
   // ── Carga ─────────────────────────────────────────────────
