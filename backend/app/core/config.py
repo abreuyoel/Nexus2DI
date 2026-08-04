@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -29,6 +30,10 @@ class Settings(BaseSettings):
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_PASSWORD: Optional[str] = None
+    # DB lógica separada de epran_backend (usa la 0 para socket.io/BullMQ en
+    # la misma instancia) -- aísla el canal de pub/sub de este backend.
+    REDIS_DB: int = 1
 
     AZURE_STORAGE_CONNECTION_STRING: str = ""
     AZURE_CONTAINER_NAME: str = "epran"

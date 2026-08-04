@@ -65,9 +65,18 @@ async def lifespan(app: FastAPI):
     import anyio.to_thread
     anyio.to_thread.current_default_thread_limiter().total_tokens = 200
 
+    # Fase A de la migración a Redis pub/sub: con --workers 1 / replicas 1
+    # (todavía) esto no cambia el comportamiento observable -- cada proceso
+    # se recibe su propio eco de Redis y lo descarta por PROCESS_ID. Valida
+    # que el cableado no rompa nada antes de escalar workers/réplicas.
+    from app.services.redis_pubsub import start_listener, stop_listener
+    from app.websockets.manager import manager
+    start_listener(manager)
+
     start_scheduler()
     yield
     stop_scheduler()
+    await stop_listener()
 
 
 from slowapi import _rate_limit_exceeded_handler
