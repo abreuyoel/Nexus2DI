@@ -58,7 +58,7 @@ def get_pending_visits(
     today = date.today()
     return db.query(Visita).filter(
         Visita.fecha == today,
-        Visita.estado.in_(["Pendiente", "En Progreso"]),
+        Visita.estado.in_(["Pendiente", "En Progreso", "Rechazada"]),
     ).options(joinedload(Visita.punto), joinedload(Visita.mercaderista)).all()
 
 
@@ -572,6 +572,15 @@ async def reject_photo(
         merc = db.query(Mercaderista).filter(Mercaderista.id == visita.mercaderista_id).first()
         if merc:
             merc_cedula = merc.cedula
+        # Reabre la visita para el mercaderista: una foto rechazada significa
+        # que hay que rehacer la gestion, sin importar si la visita ya se
+        # habia dado por terminada/revisada -- es una decision de la
+        # analista, no algo que el mercaderista deba poder ignorar. El
+        # watcher de epran_backend (db-change-watcher.ts) detecta este
+        # cambio -- mismo patron que ya usa para 'Revisado' -- y avisa a la
+        # APK, que vuelve a mostrar el PDV/cliente como pendiente con el
+        # motivo del rechazo.
+        visita.estado = "Rechazada"
 
     # NotificacionRechazoFoto no tiene columna mercaderista_cedula (el modelo
     # real usa id_visita/id_cliente/nombre_cliente/punto_venta/rechazado_por)
