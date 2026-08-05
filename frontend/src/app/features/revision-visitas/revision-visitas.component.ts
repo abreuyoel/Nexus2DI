@@ -1,7 +1,8 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
@@ -22,7 +23,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
   imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule, AuthImgDirective],
   templateUrl: './revision-visitas.component.html',
 })
-export class RevisionVisitasComponent implements OnInit {
+export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
   // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
@@ -37,7 +38,7 @@ export class RevisionVisitasComponent implements OnInit {
   // completo (incluye clientes sin ninguna visita todavía) y resolver el id
   // que necesita /review-mercaderistas a partir del nombre elegido.
   clientesCatalogo = signal<{ id_cliente: number; cliente: string }[]>([]);
-  periodo: Periodo | 'custom' = 'semana';
+  periodo: Periodo | 'custom' = 'hoy';
   desde = '';
   hasta = '';
   search = '';
@@ -81,9 +82,10 @@ export class RevisionVisitasComponent implements OnInit {
   ) {}
 
   private rtDebounce?: any;
+  private rtSubscription?: Subscription;
 
   ngOnInit(): void {
-    const r = this.rangeFor('semana');
+    const r = this.rangeFor('hoy');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
     this.loadRoster();
@@ -92,14 +94,26 @@ export class RevisionVisitasComponent implements OnInit {
       next: (r) => this.clientesCatalogo.set(r?.clientes || []),
       error: () => {},
     });
-    // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos
-    this.realtime.events$.subscribe(ev => {
+    // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos.
+    // Guardar la suscripción y cortarla en ngOnDestroy -- este componente se
+    // monta/desmonta cada vez que se entra/sale de la pestaña (ver @if en
+    // centro-mando.component.html), y RealtimeService.events$ es un Subject
+    // singleton compartido: sin este cleanup, cada visita a la pestaña
+    // sumaba una suscripción más sobre el mismo evento, y el refresco se
+    // disparaba una vez por cada suscripción acumulada (se sentía como
+    // "se actualiza solo todo el tiempo").
+    this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
         if (this.reviewOpen()) return; // no interrumpir una revisión en curso
         clearTimeout(this.rtDebounce);
         this.rtDebounce = setTimeout(() => this.load(), 800);
       }
     });
+  }
+
+  ngOnDestroy(): void {
+    this.rtSubscription?.unsubscribe();
+    clearTimeout(this.rtDebounce);
   }
 
   private rangeFor(p: Periodo): { desde: string; hasta: string } {
