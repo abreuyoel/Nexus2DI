@@ -1,6 +1,7 @@
-import { Component, OnInit, signal, HostListener, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, HostListener, inject } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,7 +28,7 @@ import { AuthImageCacheService } from '../../core/services/auth-image-cache.serv
   templateUrl: './centro-mando.component.html',
   styleUrls: ['./centro-mando.component.scss']
 })
-export class CentroMandoComponent implements OnInit {
+export class CentroMandoComponent implements OnInit, OnDestroy {
 
   // ─── Vista (toggle Activaciones / Visitas) ─────────────────────────────────
   vista = signal<'activaciones' | 'visitas'>('activaciones');
@@ -122,6 +123,7 @@ export class CentroMandoComponent implements OnInit {
   ) {}
 
   private rtDebounce?: any;
+  private rtSubscription?: Subscription;
 
   ngOnInit() {
     this.loadClientes();
@@ -129,12 +131,17 @@ export class CentroMandoComponent implements OnInit {
     this.loadActivaciones();
     this.loadHorasTrabajadas();
     // Tiempo real: refrescar al crear/revisar visitas o decidir fotos (con debounce)
-    this.realtime.events$.subscribe(ev => {
+    this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
         clearTimeout(this.rtDebounce);
         this.rtDebounce = setTimeout(() => { this.loadResumenDia(); this.loadActivaciones(); }, 800);
       }
     });
+  }
+
+  ngOnDestroy() {
+    this.rtSubscription?.unsubscribe();
+    clearTimeout(this.rtDebounce);
   }
 
   private todayStr(): string {
