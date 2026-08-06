@@ -189,6 +189,10 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
 
     dias_data = q.with_entities(pc.c.horarios_json).all()
     dias_count = {d: 0 for d in DIAS_ABREV}
+    # Cobertura por hora: por cada franja activa (desde-hasta) se suma 1 a
+    # cada hora que cubre -- muestra en qué horario hay más consultorios
+    # abiertos, no solo cuántos "abren" a tal hora.
+    horas_count = {h: 0 for h in range(24)}
     for (horarios_str,) in dias_data:
         if not horarios_str:
             continue
@@ -199,9 +203,20 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
         if not isinstance(h, dict):
             continue
         for d in DIAS_ABREV:
-            if h.get(d, {}).get('activo'):
-                dias_count[d] += 1
+            info = h.get(d) or {}
+            if not info.get('activo'):
+                continue
+            dias_count[d] += 1
+            try:
+                desde_h = int(str(info.get('desde', '00:00')).split(':')[0])
+                hasta_h = int(str(info.get('hasta', '00:00')).split(':')[0])
+            except (ValueError, IndexError):
+                continue
+            for hh in range(desde_h, min(hasta_h, 24)):
+                if 0 <= hh < 24:
+                    horas_count[hh] += 1
     dias_chart = [{"name": k, "value": v} for k, v in dias_count.items()]
+    horas_chart = [{"name": f"{h:02d}:00", "value": v} for h, v in horas_count.items()]
     
     return {
         "success": True,
@@ -227,6 +242,7 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
             "valor_consulta": val_chart,
             "pacientes_semana": pac_chart,
             "dias_consulta": dias_chart,
+            "horas_consulta": horas_chart,
             "ranking_encuestadores": enc_ranking
         }
     }

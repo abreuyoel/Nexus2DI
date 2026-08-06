@@ -134,8 +134,12 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   uniChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   cenChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   diasChartData: ChartData<'bar'> = { labels: [], datasets: [] };
+  horasChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   contactData: ChartData<'bar'> = { labels: [], datasets: [] };
   ranking: any[] = [];
+
+  private readonly palette = ['#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#6366f1'];
+  private readonly colorDim = 'rgba(148,163,184,0.15)';
 
   ngOnInit() {
     this.loadData();
@@ -152,7 +156,67 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   onFilterChange() {
     this.filterSubject.next();
   }
-  
+
+  /** Toggle genérico: click en una porción/barra la agrega como filtro (o
+   *  la saca si ya estaba) y dispara el refresco -- así cualquier gráfico
+   *  puede filtrar a los demás, estilo Power BI. `mapper` traduce el label
+   *  del gráfico (lo que se ve) al valor real del filtro cuando difieren
+   *  (ej. centros: el label es el nombre, el filtro guarda el id). */
+  private toggleChartFilter(filterKey: string, chartData: ChartData<any>, event: { active?: any[] }, mapper?: (label: string) => any) {
+    const idx = event?.active?.[0]?.index;
+    if (idx == null) return;
+    const label = chartData.labels?.[idx] as string | undefined;
+    if (label == null || label === 'N/A') return;
+    const value = mapper ? mapper(label) : label;
+    if (value == null) return;
+    const arr = (this.filters as any)[filterKey] as any[];
+    const pos = arr.indexOf(value);
+    if (pos === -1) arr.push(value); else arr.splice(pos, 1);
+    this.onFilterChange();
+  }
+
+  onEspClick(e: any) { this.toggleChartFilter('especialidades', this.espChartData, e); }
+  onValClick(e: any) { this.toggleChartFilter('valor_consulta_rangos', this.valChartData, e); }
+  onPacClick(e: any) { this.toggleChartFilter('promedio_pacientes_rangos', this.pacChartData, e); }
+  onEstClick(e: any) { this.toggleChartFilter('estados', this.estChartData, e); }
+  onUniClick(e: any) { this.toggleChartFilter('universidades', this.uniChartData, e); }
+  onCenClick(e: any) { this.toggleChartFilter('centros', this.cenChartData, e, this.centroIdFor); }
+  onDiasClick(e: any) { this.toggleChartFilter('dias_consulta', this.diasChartData, e); }
+
+  /** Chips de todos los filtros activos (los de los dropdowns Y los que
+   *  vinieron de click en un gráfico -- son el mismo estado) para poder
+   *  verlos y sacarlos de a uno sin tener que abrir cada dropdown. */
+  get activeFilterChips(): { key: string; value: any; label: string }[] {
+    const out: { key: string; value: any; label: string }[] = [];
+    const push = (key: string, labelFn?: (v: any) => string) => {
+      for (const v of ((this.filters as any)[key] as any[])) {
+        out.push({ key, value: v, label: labelFn ? labelFn(v) : String(v) });
+      }
+    };
+    push('estados'); push('ciudades'); push('especialidades'); push('sub_especialidades');
+    push('universidades');
+    push('centros', (id) => this.catalogs.centros.find((c: any) => c.id_centro === id)?.nombre_centro || String(id));
+    push('encuestadores', (id) => this.catalogs.encuestadores.find((u: any) => u.id_usuario === id)?.username || String(id));
+    push('fuentes'); push('valor_consulta_rangos'); push('promedio_pacientes_rangos'); push('dias_consulta');
+    return out;
+  }
+
+  removeChip(chip: { key: string; value: any }) {
+    const arr = (this.filters as any)[chip.key] as any[];
+    const pos = arr.indexOf(chip.value);
+    if (pos !== -1) { arr.splice(pos, 1); this.onFilterChange(); }
+  }
+
+  clearAllFilters() {
+    this.filters = {
+      fecha_desde: this.filters.fecha_desde, fecha_hasta: this.filters.fecha_hasta,
+      estados: [], ciudades: [], especialidades: [], sub_especialidades: [],
+      universidades: [], centros: [], encuestadores: [], fuentes: [],
+      valor_consulta_rangos: [], promedio_pacientes_rangos: [], dias_consulta: []
+    };
+    this.onFilterChange();
+  }
+
   loadFilters() {
     this.http.get<any>(`${environment.apiUrl}/api/cliente-encuestador/filtros`).subscribe((res: any) => {
       if (res.success) {
@@ -191,52 +255,81 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Colores por índice, atenuando (gris) las categorías que NO están
+   *  seleccionadas cuando ya hay un filtro activo en esa dimensión -- así
+   *  se ve cuál gráfico originó el filtro (estilo Power BI). */
+  private colorsFor(labels: string[], activeValues: any[], mapper?: (label: string) => any): string[] {
+    const hasSelection = activeValues && activeValues.length > 0;
+    return labels.map((l, i) => {
+      if (hasSelection) {
+        const v = mapper ? mapper(l) : l;
+        if (!activeValues.includes(v)) return this.colorDim;
+      }
+      return this.palette[i % this.palette.length];
+    });
+  }
+
+  private centroIdFor = (nombre: string) => this.catalogs.centros.find((c: any) => c.nombre_centro === nombre)?.id_centro;
+
   buildCharts(charts: any) {
-    // Helper to generate gradient or colors
-    const bgColors = ['#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#6366f1'];
-    
+    const espLabels = charts.especialidades.map((c: any) => c.name);
     this.espChartData = {
-      labels: charts.especialidades.map((c: any) => c.name),
-      datasets: [{ data: charts.especialidades.map((c: any) => c.value), backgroundColor: bgColors, borderWidth: 0 }]
+      labels: espLabels,
+      datasets: [{ data: charts.especialidades.map((c: any) => c.value), backgroundColor: this.colorsFor(espLabels, this.filters.especialidades), borderWidth: 0 }]
     };
-    
+
+    const valLabels = charts.valor_consulta.map((c: any) => c.name);
     this.valChartData = {
-      labels: charts.valor_consulta.map((c: any) => c.name),
-      datasets: [{ data: charts.valor_consulta.map((c: any) => c.value), backgroundColor: bgColors, borderWidth: 0 }]
+      labels: valLabels,
+      datasets: [{ data: charts.valor_consulta.map((c: any) => c.value), backgroundColor: this.colorsFor(valLabels, this.filters.valor_consulta_rangos), borderWidth: 0 }]
     };
-    
+
+    const pacLabels = charts.pacientes_semana.map((c: any) => c.name);
     this.pacChartData = {
-      labels: charts.pacientes_semana.map((c: any) => c.name),
-      datasets: [{ data: charts.pacientes_semana.map((c: any) => c.value), backgroundColor: bgColors, borderWidth: 0 }]
+      labels: pacLabels,
+      datasets: [{ data: charts.pacientes_semana.map((c: any) => c.value), backgroundColor: this.colorsFor(pacLabels, this.filters.promedio_pacientes_rangos), borderWidth: 0 }]
     };
 
+    const estLabels = charts.estados.map((c: any) => c.name);
     this.estChartData = {
-      labels: charts.estados.map((c: any) => c.name),
-      datasets: [{ data: charts.estados.map((c: any) => c.value), backgroundColor: '#8b5cf6', borderRadius: 4 }]
+      labels: estLabels,
+      datasets: [{ data: charts.estados.map((c: any) => c.value), backgroundColor: this.colorsFor(estLabels, this.filters.estados), borderRadius: 4 }]
     };
 
+    const uniLabels = charts.universidades.map((c: any) => c.name);
     this.uniChartData = {
-      labels: charts.universidades.map((c: any) => c.name),
-      datasets: [{ data: charts.universidades.map((c: any) => c.value), backgroundColor: ['#8b5cf6', '#0ea5e9'], borderRadius: 4 }]
+      labels: uniLabels,
+      datasets: [{ data: charts.universidades.map((c: any) => c.value), backgroundColor: this.colorsFor(uniLabels, this.filters.universidades), borderRadius: 4 }]
     };
 
+    const cenLabels = charts.centros.map((c: any) => c.name);
     this.cenChartData = {
-      labels: charts.centros.map((c: any) => c.name),
-      datasets: [{ data: charts.centros.map((c: any) => c.value), backgroundColor: ['#8b5cf6', '#0ea5e9'], borderRadius: 4 }]
+      labels: cenLabels,
+      datasets: [{ data: charts.centros.map((c: any) => c.value), backgroundColor: this.colorsFor(cenLabels, this.filters.centros, this.centroIdFor), borderRadius: 4 }]
     };
 
+    const diasLabels = charts.dias_consulta.map((c: any) => c.name);
     this.diasChartData = {
-      labels: charts.dias_consulta.map((c: any) => c.name),
-      datasets: [{ data: charts.dias_consulta.map((c: any) => c.value), backgroundColor: bgColors, borderRadius: 4 }]
+      labels: diasLabels,
+      datasets: [{ data: charts.dias_consulta.map((c: any) => c.value), backgroundColor: this.colorsFor(diasLabels, this.filters.dias_consulta), borderRadius: 4 }]
+    };
+
+    // Horas: solo lectura -- no hay dimensión "hora" en los filtros (son
+    // franjas/rangos, no valores discretos como el resto), así que no suma
+    // al cross-filter, pero sí muestra en qué horario hay más consultorios
+    // abiertos a la vez.
+    this.horasChartData = {
+      labels: (charts.horas_consulta || []).map((c: any) => c.name),
+      datasets: [{ data: (charts.horas_consulta || []).map((c: any) => c.value), backgroundColor: '#0ea5e9', borderRadius: 4 }]
     };
 
     this.ranking = charts.ranking_encuestadores || [];
-    
+
     this.contactData = {
       labels: ['WhatsApp', 'Email', 'Teléfono', 'Instagram', 'LinkedIn'],
       datasets: [{
         data: [this.kpis.pct_whatsapp, this.kpis.pct_email, this.kpis.pct_telefono, this.kpis.pct_instagram, this.kpis.pct_linkedin],
-        backgroundColor: bgColors,
+        backgroundColor: this.palette,
         borderRadius: 4
       }]
     };
