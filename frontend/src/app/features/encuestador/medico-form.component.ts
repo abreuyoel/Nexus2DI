@@ -137,90 +137,72 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
             </div>
           </div>
 
-          <!-- SECCIÓN 2: Consultorio 1 -->
+          <!-- SECCIÓN 2: Consultorios -->
           <div class="flex items-center gap-2 mb-6 border-l-4 border-indigo-600 dark:border-indigo-500 pl-3">
-            <h3 class="text-xl font-bold text-indigo-700 dark:text-indigo-400">2. Datos del consultorio 1 (en este centro)</h3>
+            <h3 class="text-xl font-bold text-indigo-700 dark:text-indigo-400">2. Datos de Consultorios</h3>
           </div>
           
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-x-5 gap-y-5 mb-10">
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"># Piso / Consultorio</label>
-              <input type="text" [(ngModel)]="medicoData.piso_consultorio" name="piso_consultorio" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none">
-            </div>
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Horarios de consulta</label>
-              <input type="text" [(ngModel)]="medicoData.horarios_consulta" name="horarios_consulta" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" placeholder="Ej: 8:00 - 12:00">
-            </div>
-            <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Días de consulta</label>
-              <div class="flex flex-wrap gap-3 mt-1">
-                <label *ngFor="let dia of diasList" class="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors">
-                  <input type="checkbox" [(ngModel)]="selectedDias[dia]" [name]="'dia_' + dia" class="rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-500 focus:ring-indigo-500">
-                  {{ dia }}
-                </label>
+          <div *ngFor="let c of consultorios; let i = index" class="mb-8 p-6 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700 relative">
+            <button type="button" *ngIf="consultorios.length > 1" (click)="removerConsultorio(i)" class="absolute top-4 right-4 text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors">
+              <span class="material-icons">delete</span>
+            </button>
+            <h4 class="font-bold mb-4 text-slate-700 dark:text-slate-300">Consultorio {{ i + 1 }}</h4>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-x-5 gap-y-5">
+              <div class="md:col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre de la Clínica/Centro <span class="text-red-500 dark:text-red-400">*</span></label>
+                <input type="text" [(ngModel)]="c.nombre_clinica" [name]="'clinica_' + i" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
+              </div>
+              <div class="md:col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"># Piso / Consultorio</label>
+                <input type="text" [(ngModel)]="c.piso_consultorio" [name]="'piso_' + i" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none">
+              </div>
+              
+              <div class="md:col-span-4">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Dirección específica</label>
+                <textarea [(ngModel)]="c.direccion_especifica" [name]="'dir_' + i" rows="2" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none resize-y"></textarea>
+              </div>
+              
+              <!-- Datos Económicos -->
+              <div class="md:col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Valor de la consulta <span class="text-red-500 dark:text-red-400">*</span></label>
+                <select [(ngModel)]="c.valor_consulta_rango" [name]="'valor_' + i" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
+                  <option value="" disabled selected>Seleccione...</option>
+                  <option *ngFor="let r of catalogos.valor_consulta_rangos" [value]="r">{{r}}</option>
+                </select>
+              </div>
+              <div class="md:col-span-2">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Promedio de pacientes / semana <span class="text-red-500 dark:text-red-400">*</span></label>
+                <select [(ngModel)]="c.promedio_pacientes_semanal_rango" [name]="'pacs_' + i" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
+                  <option value="" disabled selected>Seleccione...</option>
+                  <option *ngFor="let r of catalogos.promedio_pacientes_rangos" [value]="r">{{r}}</option>
+                </select>
+              </div>
+
+              <!-- Horarios JSON estructurado -->
+              <div class="md:col-span-4 mt-2">
+                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Horarios Estructurados</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div *ngFor="let d of diasList" class="flex items-center gap-3 bg-white dark:bg-slate-900 p-3 rounded-lg border border-gray-200 dark:border-slate-700">
+                     <label class="flex items-center gap-2 cursor-pointer w-20">
+                       <input type="checkbox" [(ngModel)]="c.horarios[d].activo" [name]="'d_' + d + i" class="rounded text-indigo-600 focus:ring-indigo-500">
+                       <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{{ d }}</span>
+                     </label>
+                     <div class="flex-1 flex gap-2" *ngIf="c.horarios[d].activo">
+                       <input type="time" [(ngModel)]="c.horarios[d].desde" [name]="'desde_' + d + i" class="w-full bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm text-slate-800 dark:text-white outline-none">
+                       <span class="text-slate-400 pt-1.5">-</span>
+                       <input type="time" [(ngModel)]="c.horarios[d].hasta" [name]="'hasta_' + d + i" class="w-full bg-gray-50 dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm text-slate-800 dark:text-white outline-none">
+                     </div>
+                   </div>
+                </div>
               </div>
             </div>
-
-            <div class="md:col-span-4">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Dirección específica</label>
-              <textarea [(ngModel)]="medicoData.direccion_especifica" name="direccion_especifica" rows="2" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none resize-y"></textarea>
-            </div>
-          </div>
-
-          <!-- SECCIÓN 3: Consultorio 2 -->
-          <div class="flex items-center gap-2 mb-6 border-l-4 border-indigo-600 dark:border-indigo-500 pl-3">
-            <h3 class="text-xl font-bold text-indigo-700 dark:text-indigo-400">3. Consultorio 2 (opcional)</h3>
           </div>
           
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-x-5 gap-y-5 mb-10">
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Clínica 2 (nombre)</label>
-              <input type="text" [(ngModel)]="medicoData.clinica2_nombre" name="clinica2_nombre" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none">
-            </div>
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"># Piso</label>
-              <input type="text" [(ngModel)]="medicoData.piso_consultorio2" name="piso_consultorio2" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none">
-            </div>
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Horarios</label>
-              <input type="text" [(ngModel)]="medicoData.horarios_consulta2" name="horarios_consulta2" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none">
-            </div>
-            <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Días</label>
-              <div class="flex flex-wrap gap-3 mt-1">
-                <label *ngFor="let dia of diasList" class="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors">
-                  <input type="checkbox" [(ngModel)]="selectedDias2[dia]" [name]="'dia2_' + dia" class="rounded border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-500 focus:ring-indigo-500">
-                  {{ dia }}
-                </label>
-              </div>
-            </div>
-
-            <div class="md:col-span-4">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Dirección 2</label>
-              <textarea [(ngModel)]="medicoData.direccion_especifica2" name="direccion_especifica2" rows="2" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none resize-y"></textarea>
-            </div>
-          </div>
-
-          <!-- SECCIÓN 4: Datos Económicos -->
-          <div class="flex items-center gap-2 mb-6 border-l-4 border-indigo-600 dark:border-indigo-500 pl-3">
-            <h3 class="text-xl font-bold text-indigo-700 dark:text-indigo-400">4. Datos económicos</h3>
-          </div>
-          
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-5 mb-8">
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Valor de la consulta <span class="text-red-500 dark:text-red-400">*</span></label>
-              <select [(ngModel)]="medicoData.valor_consulta_rango" name="valor" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
-                <option value="" disabled selected>Seleccione...</option>
-                <option *ngFor="let r of catalogos.valor_consulta_rangos" [value]="r">{{r}}</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Promedio de pacientes / semana <span class="text-red-500 dark:text-red-400">*</span></label>
-              <select [(ngModel)]="medicoData.promedio_pacientes_semanal_rango" name="pacientes" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
-                <option value="" disabled selected>Seleccione...</option>
-                <option *ngFor="let r of catalogos.promedio_pacientes_rangos" [value]="r">{{r}}</option>
-              </select>
-            </div>
+          <div class="mb-10">
+             <button type="button" (click)="agregarConsultorio()" class="w-full border-2 border-dashed border-indigo-300 dark:border-indigo-500/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2">
+               <span class="material-icons">add_business</span> Añadir otro consultorio
+             </button>
           </div>
 
           <div class="flex justify-end gap-4 border-t border-gray-200 dark:border-slate-800 pt-6 mt-4">
@@ -252,9 +234,8 @@ export class MedicoFormComponent implements OnInit {
   medicoExistente = false;
   medicoData: any = this.getEmptyMedico();
 
+  consultorios: any[] = [];
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-  selectedDias: Record<string, boolean> = {};
-  selectedDias2: Record<string, boolean> = {};
 
   ngOnInit() {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
@@ -269,8 +250,7 @@ export class MedicoFormComponent implements OnInit {
   }
   
   getEmptyMedico() {
-    this.selectedDias = {};
-    this.selectedDias2 = {};
+    this.consultorios = [this.getEmptyConsultorio()];
     return {
       id_medico: null,
       id_medico_externo: '',
@@ -289,19 +269,33 @@ export class MedicoFormComponent implements OnInit {
       whatsapp: '',
       email: '',
       linkedin: '',
-      instagram: '',
-      piso_consultorio: '',
-      horarios_consulta: '',
-      dias_consulta: '',
-      direccion_especifica: '',
-      clinica2_nombre: '',
-      piso_consultorio2: '',
-      horarios_consulta2: '',
-      dias_consulta2: '',
-      direccion_especifica2: '',
-      valor_consulta_rango: '',
-      promedio_pacientes_semanal_rango: ''
+      instagram: ''
     };
+  }
+
+  getEmptyConsultorio() {
+    const horarios: any = {};
+    for (const d of this.diasList) {
+      horarios[d] = { activo: false, desde: '08:00', hasta: '12:00' };
+    }
+    return {
+      nombre_clinica: '',
+      piso_consultorio: '',
+      direccion_especifica: '',
+      valor_consulta_rango: '',
+      promedio_pacientes_semanal_rango: '',
+      horarios
+    };
+  }
+
+  agregarConsultorio() {
+    this.consultorios.push(this.getEmptyConsultorio());
+  }
+
+  removerConsultorio(index: number) {
+    if (this.consultorios.length > 1) {
+      this.consultorios.splice(index, 1);
+    }
   }
 
   buscarMedicos() {
@@ -325,8 +319,14 @@ export class MedicoFormComponent implements OnInit {
   }
 
   guardarMedicoCentro() {
-    this.medicoData.dias_consulta = this.diasList.filter(d => this.selectedDias[d]).join(', ');
-    this.medicoData.dias_consulta2 = this.diasList.filter(d => this.selectedDias2[d]).join(', ');
+    this.medicoData.consultorios = this.consultorios.map(c => ({
+       nombre_clinica: c.nombre_clinica,
+       piso_consultorio: c.piso_consultorio,
+       direccion_especifica: c.direccion_especifica,
+       valor_consulta_rango: c.valor_consulta_rango,
+       promedio_pacientes_semanal_rango: c.promedio_pacientes_semanal_rango,
+       horarios_json: JSON.stringify(c.horarios)
+    }));
 
     if (!navigator.onLine) {
       this.offline.enqueue({

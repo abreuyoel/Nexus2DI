@@ -1,8 +1,10 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { environment } from '../../../environments/environment';
 import { ApiService } from '../../core/services/api.service';
 import { EncuestadorOfflineQueueService } from './services/encuestador-offline-queue.service';
@@ -76,7 +78,7 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
         
         <div class="mb-4 relative">
           <span class="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">search</span>
-          <input type="text" [(ngModel)]="searchQuery" (input)="buscarCentros()" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl py-4 pl-12 pr-4 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors shadow-inner" placeholder="Buscar por nombre, ciudad o estado...">
+          <input type="text" [(ngModel)]="searchQuery" (ngModelChange)="onSearchInput($event)" class="w-full bg-slate-800/80 border border-slate-700 rounded-xl py-4 pl-12 pr-4 text-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors shadow-inner" placeholder="Buscar por nombre, ciudad o estado...">
         </div>
         
         <div class="max-h-96 overflow-y-auto mb-6 rounded-xl border border-slate-700 bg-slate-800/30 custom-scrollbar" *ngIf="centrosResult.length">
@@ -159,7 +161,7 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
     </div>
   `
 })
-export class CentroFormComponent implements OnInit {
+export class CentroFormComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
   private router = inject(Router);
   private apiService = inject(ApiService);
@@ -177,10 +179,21 @@ export class CentroFormComponent implements OnInit {
   isOnline = navigator.onLine;
   pendingSync = 0;
   syncError: string | null = null;
+  
+  private searchSubject = new Subject<string>();
+  private searchSubscription!: Subscription;
 
   nuevoCentro = { nombre_centro: '', direccion_completa: '', ciudad: '', estado: '' };
 
   ngOnInit() {
+    this.searchSubscription = this.searchSubject.pipe(
+      debounceTime(400),
+      distinctUntilChanged()
+    ).subscribe(query => {
+      this.searchQuery = query;
+      this.buscarCentros();
+    });
+    
     this.checkEncuesta();
     this.buscarCentros();
     this.apiService.getEstados().subscribe(res => {
@@ -189,6 +202,16 @@ export class CentroFormComponent implements OnInit {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
     this.offline.pendingCount$.subscribe(v => this.pendingSync = v);
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
+  }
+
+  ngOnDestroy() {
+    if (this.searchSubscription) {
+      this.searchSubscription.unsubscribe();
+    }
+  }
+
+  onSearchInput(value: string) {
+    this.searchSubject.next(value);
   }
 
   sincronizar() { this.offline.syncAll(); }

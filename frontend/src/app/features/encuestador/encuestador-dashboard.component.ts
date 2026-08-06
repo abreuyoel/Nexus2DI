@@ -85,12 +85,23 @@ export class EncuestadorDashboardComponent implements OnInit {
   pendingSync = 0;
   syncError: string | null = null;
 
+  cachedLocation: { lat: number | null, lng: number | null } | null = null;
+
   ngOnInit() {
     this.checkJornada();
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
     this.offline.pendingCount$.subscribe(v => this.pendingSync = v);
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
     if (navigator.onLine) this.offline.syncAll();
+    
+    // Precargar geolocalización en background
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { this.cachedLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+        () => { this.cachedLocation = { lat: null, lng: null }; },
+        { timeout: 5000 }
+      );
+    }
   }
 
   sincronizar() { this.offline.syncAll(); }
@@ -121,7 +132,9 @@ export class EncuestadorDashboardComponent implements OnInit {
 
   activarJornada() {
     this.loading = true;
-    if (navigator.geolocation) {
+    if (this.cachedLocation) {
+      this.doActivar(this.cachedLocation.lat, this.cachedLocation.lng);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => this.doActivar(pos.coords.latitude, pos.coords.longitude),
         () => this.doActivar(null, null),

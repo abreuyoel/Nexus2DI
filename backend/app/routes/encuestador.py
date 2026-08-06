@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario as User
-from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta
+from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta, MedicoConsultorio
 from app.schemas.encuestador import JornadaActivarRequest, CentroSaludCreate, EncuestaCentroCreate, MedicoCentroCreate
 
 router = APIRouter(prefix="/api/encuestador", tags=["Encuestador"])
@@ -183,12 +183,28 @@ def api_encuesta_abierta(db: Session = Depends(get_db), current_user: User = Dep
         return {"success": True, "tiene_encuesta": False, "jornada_activa": True, "id_jornada": jornada.id_jornada}
         
     ec, cs = encuesta
-    
     medicos_cargados = db.query(Medico, MedicoCentroEncuesta).join(
         MedicoCentroEncuesta, MedicoCentroEncuesta.id_medico == Medico.id_medico
     ).filter(
         MedicoCentroEncuesta.id_encuesta == ec.id_encuesta
     ).order_by(desc(MedicoCentroEncuesta.id_medico_centro)).all()
+    
+    medicos_resp = []
+    for m, mce in medicos_cargados:
+        first_consultorio = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).first()
+        val = first_consultorio.valor_consulta_rango if first_consultorio else 'N/A'
+        pacs = first_consultorio.promedio_pacientes_semanal_rango if first_consultorio else 'N/A'
+        medicos_resp.append({
+            "id_medico_centro": mce.id_medico_centro,
+            "id_medico_externo": m.id_medico_externo,
+            "apellido1": m.apellido1,
+            "apellido2": m.apellido2,
+            "nombre1": m.nombre1,
+            "nombre2": m.nombre2,
+            "especialidad": m.especialidad,
+            "valor_consulta_rango": val,
+            "promedio_pacientes_semanal_rango": pacs
+        })
     
     return {
         "success": True,
@@ -202,19 +218,7 @@ def api_encuesta_abierta(db: Session = Depends(get_db), current_user: User = Dep
         "estado": cs.estado,
         "fecha_verificacion": ec.fecha_verificacion.isoformat() if ec.fecha_verificacion else None,
         "fuente_informacion": ec.fuente_informacion,
-        "medicos": [
-            {
-                "id_medico_centro": mce.id_medico_centro,
-                "id_medico_externo": m.id_medico_externo,
-                "apellido1": m.apellido1,
-                "apellido2": m.apellido2,
-                "nombre1": m.nombre1,
-                "nombre2": m.nombre2,
-                "especialidad": m.especialidad,
-                "valor_consulta_rango": mce.valor_consulta_rango,
-                "promedio_pacientes_semanal_rango": mce.promedio_pacientes_semanal_rango
-            } for m, mce in medicos_cargados
-        ]
+        "medicos": medicos_resp
     }
 
 @router.post("/encuestas")
@@ -373,20 +377,22 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
         
     m_c_e = MedicoCentroEncuesta(
         id_encuesta=encuesta.id_encuesta,
-        id_medico=id_medico,
-        piso_consultorio=req.piso_consultorio,
-        horarios_consulta=req.horarios_consulta,
-        dias_consulta=req.dias_consulta,
-        direccion_especifica=req.direccion_especifica,
-        clinica2_nombre=req.clinica2_nombre,
-        piso_consultorio2=req.piso_consultorio2,
-        horarios_consulta2=req.horarios_consulta2,
-        dias_consulta2=req.dias_consulta2,
-        direccion_especifica2=req.direccion_especifica2,
-        valor_consulta_rango=req.valor_consulta_rango,
-        promedio_pacientes_semanal_rango=req.promedio_pacientes_semanal_rango
+        id_medico=id_medico
     )
     db.add(m_c_e)
+    
+    for cons in req.consultorios:
+        nuevo_consultorio = MedicoConsultorio(
+            id_medico=id_medico,
+            nombre_clinica=cons.nombre_clinica,
+            piso_consultorio=cons.piso_consultorio,
+            direccion_especifica=cons.direccion_especifica,
+            horarios_json=cons.horarios_json,
+            valor_consulta_rango=cons.valor_consulta_rango,
+            promedio_pacientes_semanal_rango=cons.promedio_pacientes_semanal_rango
+        )
+        db.add(nuevo_consultorio)
+        
     db.commit()
     
     cnt = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(

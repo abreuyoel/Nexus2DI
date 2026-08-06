@@ -62,21 +62,23 @@ class Medico(Base):
     instagram = Column(String(255), nullable=True)
     fecha_registro = Column(DateTime, default=datetime.utcnow)
 
+class MedicoConsultorio(Base):
+    __tablename__ = 'medico_consultorios'
+
+    id_consultorio = Column(Integer, primary_key=True, index=True)
+    id_medico = Column(Integer, ForeignKey('medicos.id_medico'), nullable=False)
+    nombre_clinica = Column(String(255), nullable=False)
+    piso_consultorio = Column(String(50), nullable=True)
+    direccion_especifica = Column(String, nullable=True)
+    horarios_json = Column(Text, nullable=True)
+    valor_consulta_rango = Column(String(30), nullable=False)
+    promedio_pacientes_semanal_rango = Column(String(30), nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
 class MedicoCentroEncuesta(Base):
     __tablename__ = "medico_centro_encuesta"
 
     id_medico_centro = Column(Integer, primary_key=True, index=True)
     id_encuesta = Column(Integer, nullable=False)
     id_medico = Column(Integer, nullable=False)
-    piso_consultorio = Column(String(50), nullable=True)
-    horarios_consulta = Column(String(255), nullable=True)
-    dias_consulta = Column(String(255), nullable=True)
-    direccion_especifica = Column(String, nullable=True)
-    clinica2_nombre = Column(String(255), nullable=True)
-    piso_consultorio2 = Column(String(50), nullable=True)
-    horarios_consulta2 = Column(String(255), nullable=True)
-    dias_consulta2 = Column(String(255), nullable=True)
-    direccion_especifica2 = Column(String, nullable=True)
-    valor_consulta_rango = Column(String(30), nullable=False)
-    promedio_pacientes_semanal_rango = Column(String(30), nullable=False)
     actualizado_en = Column(DateTime, default=datetime.utcnow)

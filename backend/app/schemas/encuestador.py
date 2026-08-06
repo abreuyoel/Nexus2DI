@@ -19,6 +19,14 @@ class EncuestaCentroCreate(BaseModel):
     fuente_informacion: Optional[str] = "Visita presencial"
     notas_generales: Optional[str] = None
 
+class ConsultorioCreate(BaseModel):
+    nombre_clinica: str
+    piso_consultorio: Optional[str] = None
+    direccion_especifica: Optional[str] = None
+    horarios_json: Optional[str] = None
+    valor_consulta_rango: str
+    promedio_pacientes_semanal_rango: str
+
 class MedicoCentroCreate(BaseModel):
     id_medico: Optional[int] = None
     id_medico_externo: Optional[str] = None
@@ -38,15 +46,4 @@ class MedicoCentroCreate(BaseModel):
     email: Optional[str] = None
     linkedin: Optional[str] = None
     instagram: Optional[str] = None
-    
-    piso_consultorio: Optional[str] = None
-    horarios_consulta: Optional[str] = None
-    dias_consulta: Optional[str] = None
-    direccion_especifica: Optional[str] = None
-    clinica2_nombre: Optional[str] = None
-    piso_consultorio2: Optional[str] = None
-    horarios_consulta2: Optional[str] = None
-    dias_consulta2: Optional[str] = None
-    direccion_especifica2: Optional[str] = None
-    valor_consulta_rango: str
-    promedio_pacientes_semanal_rango: str
+    consultorios: List[ConsultorioCreate] = []

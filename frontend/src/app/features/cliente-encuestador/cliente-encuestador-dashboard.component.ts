@@ -8,7 +8,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { environment } from '../../../environments/environment';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration, ChartData, ChartType, ChartOptions } from 'chart.js';
-import * as L from 'leaflet';
+import * as maplibregl from 'maplibre-gl';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
@@ -246,18 +246,23 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     const mapEl = document.getElementById('map');
     if (!mapEl) return;
     
-    // Clear previous map instance if exists
     if ((window as any)._map) {
       (window as any)._map.remove();
     }
     
-    const map = L.map('map').setView([10.4806, -66.9036], 6); // Default Caracas
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/liberty', // O cualquier estilo de tiles
+      center: [-66.9036, 10.4806], // Longitud, Latitud (Caracas)
+      zoom: 5,
+      attributionControl: false
+    });
+    
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    
     (window as any)._map = map;
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap, © CartoDB'
-    }).addTo(map);
 
-    // Simplistic approach: we don't have lat/lng in medicos, we can't accurately map them without geocoding.
-    // Assuming backend will provide lat/lng in future, or we just put a central marker for now.
+    // TODO: When lat/lng are provided for doctors/centers, add markers
+    // new maplibregl.Marker({ color: '#8b5cf6' }).setLngLat([-66.9036, 10.4806]).addTo(map);
   }
 }
