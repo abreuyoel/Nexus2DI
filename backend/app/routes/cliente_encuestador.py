@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func, case, text
@@ -7,15 +8,45 @@ from datetime import datetime, timedelta
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario as User
-from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta
+from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta, MedicoConsultorio
 router = APIRouter(prefix="/api/cliente-encuestador", tags=["Cliente Encuestador"])
+
+# Mismas keys abreviadas que medico-form.component.ts usa en el JSON de
+# horarios (diasList) -- el filtro/gráfico de días tiene que buscar estas
+# mismas keys en horarios_json o nunca va a matchear nada.
+DIAS_ABREV = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
 def check_rol_cliente_encuestador(current_user: User):
     if current_user.id_rol != 13 and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Cliente Encuestador.")
 
+def _dias_activos_str(horarios_json: Optional[str]) -> str:
+    if not horarios_json:
+        return ''
+    try:
+        h = json.loads(horarios_json)
+    except (TypeError, ValueError):
+        return ''
+    return ', '.join(d for d in DIAS_ABREV if isinstance(h, dict) and h.get(d, {}).get('activo'))
+
+def _primer_consultorio_alias(db: Session):
+    """Un MedicoConsultorio por médico (el de menor id) para las métricas y
+    filtros a nivel médico que antes vivían 1:1 en medico_centro_encuesta
+    (valor_consulta_rango, promedio_pacientes_semanal_rango, días de
+    consulta) -- con consultorios dinámicos un médico puede tener N, se usa
+    el primero como representativo (mismo criterio ya usado en
+    /encuesta-abierta para no inflar el conteo de médicos con joins 1:N)."""
+    min_ids = db.query(
+        MedicoConsultorio.id_medico.label('id_medico'),
+        func.min(MedicoConsultorio.id_consultorio).label('min_id')
+    ).group_by(MedicoConsultorio.id_medico).subquery()
+    return db.query(MedicoConsultorio).join(
+        min_ids, MedicoConsultorio.id_consultorio == min_ids.c.min_id
+    ).subquery()
+
 def get_base_query(db: Session):
-    return db.query(MedicoCentroEncuesta, EncuestaCentro, Medico, CentroSalud, User).join(
+    pc = _primer_consultorio_alias(db)
+    query = db.query(MedicoCentroEncuesta, EncuestaCentro, Medico, CentroSalud, User).join(
         EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
     ).join(
         Medico, Medico.id_medico == MedicoCentroEncuesta.id_medico
@@ -23,9 +54,12 @@ def get_base_query(db: Session):
         CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro
     ).join(
         User, User.id == EncuestaCentro.id_usuario
+    ).outerjoin(
+        pc, pc.c.id_medico == Medico.id_medico
     )
+    return query, pc
 
-def apply_filters(query, req: Request):
+def apply_filters(query, req: Request, pc):
     q_params = req.query_params
     
     fdesde = q_params.get("fecha_desde")
@@ -50,19 +84,18 @@ def apply_filters(query, req: Request):
     query = apply_in(CentroSalud.id_centro, "centros")
     query = apply_in(EncuestaCentro.id_usuario, "encuestadores")
     query = apply_in(EncuestaCentro.fuente_informacion, "fuentes")
-    query = apply_in(MedicoCentroEncuesta.valor_consulta_rango, "valor_consulta_rangos")
-    query = apply_in(MedicoCentroEncuesta.promedio_pacientes_semanal_rango, "promedio_pacientes_rangos")
-    
+    query = apply_in(pc.c.valor_consulta_rango, "valor_consulta_rangos")
+    query = apply_in(pc.c.promedio_pacientes_semanal_rango, "promedio_pacientes_rangos")
+
     dias = q_params.getlist("dias_consulta")
     if len(dias) == 1 and ',' in dias[0]: dias = [d.strip() for d in dias[0].split(',')]
     dias = [d for d in dias if d]
     if dias:
-        ors = []
-        for d in dias:
-            ors.append(MedicoCentroEncuesta.dias_consulta.ilike(f"%{d}%"))
-            ors.append(MedicoCentroEncuesta.dias_consulta2.ilike(f"%{d}%"))
+        # horarios_json es {"Lun":{"activo":true,...}, ...} -- basta con
+        # buscar la subcadena literal, sin necesidad de OPENJSON.
+        ors = [pc.c.horarios_json.ilike(f'%"{d}":{{"activo":true%') for d in dias]
         query = query.filter(or_(*ors))
-        
+
     return query
 
 @router.get("/filtros")
@@ -79,9 +112,9 @@ def api_filtros(db: Session = Depends(get_db), current_user: User = Depends(get_
     encuestadores = [{"id_usuario": r.id, "username": r.username} for r in db.query(User.id, User.username).join(EncuestaCentro, EncuestaCentro.id_usuario == User.id).distinct().order_by(User.username).all()]
     
     fuentes = [r[0] for r in db.query(EncuestaCentro.fuente_informacion).distinct().filter(EncuestaCentro.fuente_informacion != None).order_by(EncuestaCentro.fuente_informacion).all()]
-    valor_rangos = [r[0] for r in db.query(MedicoCentroEncuesta.valor_consulta_rango).distinct().order_by(MedicoCentroEncuesta.valor_consulta_rango).all()]
-    pac_rangos = [r[0] for r in db.query(MedicoCentroEncuesta.promedio_pacientes_semanal_rango).distinct().order_by(MedicoCentroEncuesta.promedio_pacientes_semanal_rango).all()]
-    
+    valor_rangos = [r[0] for r in db.query(MedicoConsultorio.valor_consulta_rango).distinct().order_by(MedicoConsultorio.valor_consulta_rango).all()]
+    pac_rangos = [r[0] for r in db.query(MedicoConsultorio.promedio_pacientes_semanal_rango).distinct().order_by(MedicoConsultorio.promedio_pacientes_semanal_rango).all()]
+
     return {
         "success": True,
         "especialidades": especialidades,
@@ -94,25 +127,33 @@ def api_filtros(db: Session = Depends(get_db), current_user: User = Depends(get_
         "fuentes": fuentes,
         "valor_consulta_rangos": valor_rangos,
         "promedio_pacientes_rangos": pac_rangos,
-        "dias_consulta": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        "dias_consulta": DIAS_ABREV
     }
 
 @router.get("/kpis")
 def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_cliente_encuestador(current_user)
-    q = apply_filters(get_base_query(db), request)
-    
+    q, pc = get_base_query(db)
+    q = apply_filters(q, request, pc)
+
     total_medicos = q.with_entities(func.count(func.distinct(Medico.id_medico))).scalar() or 0
     total_centros = q.with_entities(func.count(func.distinct(CentroSalud.id_centro))).scalar() or 0
     total_especialidades = q.with_entities(func.count(func.distinct(Medico.especialidad))).scalar() or 0
     total_estados = q.with_entities(func.count(func.distinct(Medico.estado))).scalar() or 0
     total_ciudades = q.with_entities(func.count(func.distinct(Medico.ciudad))).scalar() or 0
     total_encuestas = q.with_entities(func.count(func.distinct(EncuestaCentro.id_encuesta))).scalar() or 0
-    
+
     thirty_days_ago = datetime.utcnow().date() - timedelta(days=30)
     encuestas_30d = q.filter(EncuestaCentro.fecha_verificacion >= thirty_days_ago).with_entities(func.count(func.distinct(EncuestaCentro.id_encuesta))).scalar() or 0
-    
-    dos_cons = q.filter(MedicoCentroEncuesta.clinica2_nombre != None, MedicoCentroEncuesta.clinica2_nombre != '').with_entities(func.count(func.distinct(Medico.id_medico))).scalar() or 0
+
+    # "Tiene 2do consultorio" ya no es una columna -- es contar cuántos
+    # médicos (del set ya filtrado) tienen más de 1 fila en medico_consultorios.
+    medico_ids = [r[0] for r in q.with_entities(func.distinct(Medico.id_medico)).all()]
+    dos_cons = 0
+    if medico_ids:
+        dos_cons = db.query(MedicoConsultorio.id_medico).filter(
+            MedicoConsultorio.id_medico.in_(medico_ids)
+        ).group_by(MedicoConsultorio.id_medico).having(func.count(MedicoConsultorio.id_consultorio) > 1).count()
     pct_dos = round((dos_cons * 100.0) / total_medicos, 1) if total_medicos else 0.0
     
     # We can do exact calculations for whatsapp, email, etc. by filtering
@@ -137,22 +178,29 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
     cen_data = q.with_entities(CentroSalud.nombre_centro, func.count(func.distinct(Medico.id_medico))).group_by(CentroSalud.nombre_centro).all()
     cen_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in cen_data]
 
-    val_data = q.with_entities(MedicoCentroEncuesta.valor_consulta_rango, func.count(func.distinct(Medico.id_medico))).group_by(MedicoCentroEncuesta.valor_consulta_rango).all()
+    val_data = q.with_entities(pc.c.valor_consulta_rango, func.count(func.distinct(Medico.id_medico))).group_by(pc.c.valor_consulta_rango).all()
     val_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in val_data]
 
-    pac_data = q.with_entities(MedicoCentroEncuesta.promedio_pacientes_semanal_rango, func.count(func.distinct(Medico.id_medico))).group_by(MedicoCentroEncuesta.promedio_pacientes_semanal_rango).all()
+    pac_data = q.with_entities(pc.c.promedio_pacientes_semanal_rango, func.count(func.distinct(Medico.id_medico))).group_by(pc.c.promedio_pacientes_semanal_rango).all()
     pac_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in pac_data]
-    
+
     enc_data = q.with_entities(User.username, func.count(func.distinct(Medico.id_medico)), func.count(func.distinct(CentroSalud.id_centro)), func.count(func.distinct(EncuestaCentro.id_encuesta))).group_by(User.username).all()
     enc_ranking = [{"encuestador": r[0], "medicos": r[1], "centros": r[2], "encuestas": r[3]} for r in enc_data]
 
-    dias_data = q.with_entities(MedicoCentroEncuesta.dias_consulta).all()
-    dias_count = {"Lunes": 0, "Martes": 0, "Miércoles": 0, "Jueves": 0, "Viernes": 0, "Sábado": 0, "Domingo": 0}
-    for (dias_str,) in dias_data:
-        if dias_str:
-            for d in dias_count.keys():
-                if d.lower() in dias_str.lower():
-                    dias_count[d] += 1
+    dias_data = q.with_entities(pc.c.horarios_json).all()
+    dias_count = {d: 0 for d in DIAS_ABREV}
+    for (horarios_str,) in dias_data:
+        if not horarios_str:
+            continue
+        try:
+            h = json.loads(horarios_str)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(h, dict):
+            continue
+        for d in DIAS_ABREV:
+            if h.get(d, {}).get('activo'):
+                dias_count[d] += 1
     dias_chart = [{"name": k, "value": v} for k, v in dias_count.items()]
     
     return {
@@ -186,9 +234,10 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
 @router.get("/medicos")
 def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: int = 25, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_cliente_encuestador(current_user)
-    
-    base_q = apply_filters(get_base_query(db), request)
-    
+
+    base_q, pc = get_base_query(db)
+    base_q = apply_filters(base_q, request, pc)
+
     if q.strip():
         search = f"%{q.strip()}%"
         base_q = base_q.filter(
@@ -207,15 +256,15 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
     offset = (page - 1) * per_page
     
     rows = base_q.with_entities(
-        Medico.id_medico, Medico.id_medico_externo, 
+        Medico.id_medico, Medico.id_medico_externo,
         Medico.apellido1, Medico.apellido2, Medico.nombre1, Medico.nombre2,
         Medico.especialidad, Medico.sub_especialidad, Medico.universidad_graduacion,
         Medico.ciudad, Medico.estado, Medico.telefono, Medico.whatsapp, Medico.email,
-        CentroSalud.nombre_centro, MedicoCentroEncuesta.valor_consulta_rango,
-        MedicoCentroEncuesta.promedio_pacientes_semanal_rango, MedicoCentroEncuesta.dias_consulta,
+        CentroSalud.nombre_centro, pc.c.valor_consulta_rango,
+        pc.c.promedio_pacientes_semanal_rango, pc.c.horarios_json,
         EncuestaCentro.fecha_verificacion, User.username
     ).order_by(desc(EncuestaCentro.fecha_verificacion), Medico.apellido1).offset(offset).limit(per_page).all()
-    
+
     medicos = []
     for r in rows:
         n2 = f" {r.nombre2}" if r.nombre2 else ""
@@ -236,7 +285,7 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
             "centro": r.nombre_centro,
             "valor_consulta_rango": r.valor_consulta_rango,
             "promedio_pacientes": r.promedio_pacientes_semanal_rango,
-            "dias_consulta": r.dias_consulta,
+            "dias_consulta": _dias_activos_str(r.horarios_json),
             "fecha_verificacion": r.fecha_verificacion.isoformat() if r.fecha_verificacion else None,
             "encuestador": r.username
         })
