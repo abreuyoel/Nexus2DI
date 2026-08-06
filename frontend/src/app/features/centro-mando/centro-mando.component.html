@@ -65,9 +65,12 @@
 
       <button class="cm-hoy-btn" [class.active]="isHoy" (click)="irHoy()">Hoy</button>
 
-      <button class="cm-refresh-btn" (click)="refresh()">
-        <mat-icon>refresh</mat-icon>
+      <button class="cm-refresh-btn" [class.has-updates]="hasPendingUpdates()" (click)="dismissAndRefresh()">
+        <mat-icon [class.spin-once]="loadingResumen() || loadingActivaciones()">refresh</mat-icon>
         Actualizar
+        @if (pendingEvents() > 0) {
+          <span class="cm-pending-badge">{{ pendingEvents() }}</span>
+        }
       </button>
 
       <button class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-sm" (click)="openExportModal()" matTooltip="Exportar visitas a Excel">
@@ -89,7 +92,7 @@
     <div class="cm-stats-grid">
 
       <!-- Mercaderistas Asignados -->
-      <div class="cm-stat-card border-blue">
+      <div class="cm-stat-card border-blue" [class.cm-changed]="cardChanged('asignados')">
         <div class="cm-stat-icon blue"><mat-icon>people</mat-icon></div>
         <div class="cm-stat-body">
           <div class="cm-stat-num">{{ resumenDia().mercaderistas.total_asignados }}</div>
@@ -102,7 +105,7 @@
       </div>
 
       <!-- Planificados Hoy -->
-      <div class="cm-stat-card border-purple">
+      <div class="cm-stat-card border-purple" [class.cm-changed]="cardChanged('planificados')">
         <div class="cm-stat-icon purple"><mat-icon>event_available</mat-icon></div>
         <div class="cm-stat-body">
           <div class="cm-stat-num">{{ resumenDia().mercaderistas.planificados_hoy }}</div>
@@ -111,7 +114,7 @@
       </div>
 
       <!-- Activaron Hoy -->
-      <div class="cm-stat-card border-green">
+      <div class="cm-stat-card border-green" [class.cm-changed]="cardChanged('activaron')">
         <div class="cm-stat-icon green"><mat-icon>check_circle</mat-icon></div>
         <div class="cm-stat-body">
           <div class="cm-stat-num">{{ resumenDia().mercaderistas.activos_hoy }}</div>
@@ -123,7 +126,7 @@
       </div>
 
       <!-- Faltaron Hoy -->
-      <div class="cm-stat-card border-red">
+      <div class="cm-stat-card border-red" [class.cm-changed]="cardChanged('faltaron')">
         <div class="cm-stat-icon red"><mat-icon>person_off</mat-icon></div>
         <div class="cm-stat-body">
           <div class="cm-stat-num">{{ resumenDia().mercaderistas.faltantes_hoy }}</div>
@@ -190,7 +193,7 @@
     <div class="cm-secondary-grid mt-2">
 
       <!-- Rutas -->
-      <div class="cm-sec-card">
+      <div class="cm-sec-card" [class.cm-changed]="cardChanged('rutas')">
         <div class="cm-sec-header">
           <mat-icon class="cm-sec-icon">route</mat-icon>
           <span class="cm-sec-title">Rutas</span>
@@ -219,7 +222,7 @@
       </div>
 
       <!-- Puntos -->
-      <div class="cm-sec-card">
+      <div class="cm-sec-card" [class.cm-changed]="cardChanged('puntos')">
         <div class="cm-sec-header">
           <mat-icon class="cm-sec-icon">location_on</mat-icon>
           <span class="cm-sec-title">Puntos</span>
@@ -255,7 +258,7 @@
       </div>
 
       <!-- Clientes Tradex -->
-      <div class="cm-sec-card">
+      <div class="cm-sec-card" [class.cm-changed]="cardChanged('tradex')">
         <div class="cm-sec-header">
           <mat-icon class="cm-sec-icon">groups</mat-icon>
           <span class="cm-sec-title">Clientes (Tradex)</span>

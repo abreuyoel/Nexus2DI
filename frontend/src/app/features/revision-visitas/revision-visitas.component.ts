@@ -26,6 +26,12 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
+
+  // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
+  pendingEvents      = signal(0);
+  hasPendingUpdates  = signal(false);
+  private autoRefreshInterval?: any;
+  private audioCtx?: AudioContext;
   // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
   // RUTA_PROGRAMACION -> CLIENTES): se muestra primero, antes que las
   // tarjetas de visitas -- incluye mercaderistas sin visitas todavía. Sin
@@ -81,7 +87,6 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
     private dialog: MatDialog, private router: Router,
   ) {}
 
-  private rtDebounce?: any;
   private rtSubscription?: Subscription;
 
   ngOnInit(): void {
@@ -94,26 +99,60 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
       next: (r) => this.clientesCatalogo.set(r?.clientes || []),
       error: () => {},
     });
-    // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos.
-    // Guardar la suscripción y cortarla en ngOnDestroy -- este componente se
-    // monta/desmonta cada vez que se entra/sale de la pestaña (ver @if en
-    // centro-mando.component.html), y RealtimeService.events$ es un Subject
-    // singleton compartido: sin este cleanup, cada visita a la pestaña
-    // sumaba una suscripción más sobre el mismo evento, y el refresco se
-    // disparaba una vez por cada suscripción acumulada (se sentía como
-    // "se actualiza solo todo el tiempo").
+    // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
+    // en vez de refrescar agresivamente cada 800ms.
     this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
         if (this.reviewOpen()) return; // no interrumpir una revisión en curso
-        clearTimeout(this.rtDebounce);
-        this.rtDebounce = setTimeout(() => this.load(), 800);
+        const prev = this.pendingEvents();
+        this.pendingEvents.set(prev + 1);
+        if (!this.hasPendingUpdates()) {
+          this.hasPendingUpdates.set(true);
+          this.playNotifSound();
+        }
       }
     });
+
+    // Auto-refresh silencioso cada 60s SI hay eventos pendientes
+    this.autoRefreshInterval = setInterval(() => {
+      if (this.hasPendingUpdates() && !this.reviewOpen()) {
+        this.dismissAndRefresh();
+      }
+    }, 60_000);
   }
 
   ngOnDestroy(): void {
     this.rtSubscription?.unsubscribe();
-    clearTimeout(this.rtDebounce);
+    clearInterval(this.autoRefreshInterval);
+  }
+
+  /** Refresca y resetea el indicador de actualizaciones pendientes. */
+  dismissAndRefresh(): void {
+    this.pendingEvents.set(0);
+    this.hasPendingUpdates.set(false);
+    this.load();
+    this.loadRoster();
+  }
+
+  private playNotifSound(): void {
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = this.audioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {
+      // Silenciar errores de audio (autoplay policy, etc.)
+    }
   }
 
   private rangeFor(p: Periodo): { desde: string; hasta: string } {

@@ -37,6 +37,15 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   loadingResumen      = signal(true);
   loadingActivaciones = signal(false);
 
+  // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
+  pendingEvents      = signal(0);
+  hasPendingUpdates  = signal(false);
+  /** Set de keys de tarjetas que cambiaron en el último refresh. Se limpia
+   *  automáticamente después de la animación (1.5s). */
+  changedCards       = signal<Set<string>>(new Set());
+  private autoRefreshInterval?: any;
+  private notifAudio?: HTMLAudioElement;
+
   // ─── Resumen del Día (top stats) ───────────────────────────────────────────
   resumenDia = signal<any>(null);
 
@@ -122,7 +131,6 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     private dialog: MatDialog, private router: Router,
   ) {}
 
-  private rtDebounce?: any;
   private rtSubscription?: Subscription;
 
   ngOnInit() {
@@ -130,18 +138,34 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     this.loadResumenDia();
     this.loadActivaciones();
     this.loadHorasTrabajadas();
-    // Tiempo real: refrescar al crear/revisar visitas o decidir fotos (con debounce)
+
+    // Preparar audio de notificación (un beep sutil generado por Web Audio API)
+    this.prepareNotifSound();
+
+    // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
+    // en vez de refrescar agresivamente cada 800ms.
     this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
-        clearTimeout(this.rtDebounce);
-        this.rtDebounce = setTimeout(() => { this.loadResumenDia(); this.loadActivaciones(); }, 800);
+        const prev = this.pendingEvents();
+        this.pendingEvents.set(prev + 1);
+        if (!this.hasPendingUpdates()) {
+          this.hasPendingUpdates.set(true);
+          this.playNotifSound();
+        }
       }
     });
+
+    // Auto-refresh silencioso cada 60s SI hay eventos pendientes
+    this.autoRefreshInterval = setInterval(() => {
+      if (this.hasPendingUpdates()) {
+        this.dismissAndRefresh();
+      }
+    }, 60_000);
   }
 
   ngOnDestroy() {
     this.rtSubscription?.unsubscribe();
-    clearTimeout(this.rtDebounce);
+    clearInterval(this.autoRefreshInterval);
   }
 
   private todayStr(): string {
@@ -167,9 +191,15 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     const opts: any = { desde: this.filtroDesde, hasta: this.filtroHasta };
     if (this.filtroCliente) opts.cliente_id = this.filtroCliente;
 
+    const prevResumen = this.resumenDia();
+
     this.api.getCentroMandoResumenDia(opts).subscribe({
       next: (res) => {
         if (res.success) {
+          // Detectar qué tarjetas cambiaron respecto al valor anterior
+          if (prevResumen) {
+            this.detectCardChanges(prevResumen, res);
+          }
           this.resumenDia.set(res);
           // Actualizar detalle si está abierto
           if (this.showDetalle === 'activos') {
@@ -239,6 +269,82 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     this.loadResumenDia();
     this.loadActivaciones();
     this.loadHorasTrabajadas();
+  }
+
+  /** Refresca y resetea el indicador de actualizaciones pendientes. */
+  dismissAndRefresh() {
+    this.pendingEvents.set(0);
+    this.hasPendingUpdates.set(false);
+    this.refresh();
+  }
+
+  /** Compara resumen anterior vs nuevo y marca las tarjetas que cambiaron. */
+  private detectCardChanges(prev: any, next: any): void {
+    const changed = new Set<string>();
+    const pm = prev.mercaderistas || {};
+    const nm = next.mercaderistas || {};
+    if (pm.total_asignados !== nm.total_asignados) changed.add('asignados');
+    if (pm.planificados_hoy !== nm.planificados_hoy) changed.add('planificados');
+    if (pm.activos_hoy !== nm.activos_hoy) changed.add('activaron');
+    if (pm.faltantes_hoy !== nm.faltantes_hoy) changed.add('faltaron');
+
+    const pr = prev.rutas || {};
+    const nr = next.rutas || {};
+    if (pr.planificadas !== nr.planificadas || pr.activas !== nr.activas || pr.completadas !== nr.completadas) {
+      changed.add('rutas');
+    }
+
+    const pp = prev.puntos_interes || {};
+    const np = next.puntos_interes || {};
+    if (pp.planificados !== np.planificados || pp.activos !== np.activos || pp.completados !== np.completados) {
+      changed.add('puntos');
+    }
+
+    const pc = prev.clientes_tradex || {};
+    const nc = next.clientes_tradex || {};
+    if (pc.planificados !== nc.planificados || pc.activos !== nc.activos || pc.completados !== nc.completados) {
+      changed.add('tradex');
+    }
+
+    if (changed.size > 0) {
+      this.changedCards.set(changed);
+      // Limpiar la animación después de 2s
+      setTimeout(() => this.changedCards.set(new Set()), 2000);
+    }
+  }
+
+  /** Helper: ¿esta tarjeta cambió en el último refresh? */
+  cardChanged(key: string): boolean {
+    return this.changedCards().has(key);
+  }
+
+  // ─── Sonido de notificación (Web Audio API – sin archivos externos) ────────
+  private audioCtx?: AudioContext;
+
+  private prepareNotifSound(): void {
+    // Se crea bajo demanda para respetar la política de autoplay del browser
+  }
+
+  private playNotifSound(): void {
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = this.audioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      // Tono suave tipo "ding" – 880Hz (nota A5), corto
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {
+      // Silenciar errores de audio (autoplay policy, etc.)
+    }
   }
 
   onClienteChange() {
