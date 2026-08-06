@@ -234,6 +234,12 @@ export class MedicoFormComponent implements OnInit {
   medicoExistente = false;
   consultorios: any[] = [];
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  // Nombre del centro donde el encuestador ya está parado (viene de la
+  // jornada/encuesta activa) -- se usa para pre-llenar el Consultorio 1,
+  // ya que preguntarlo ahí es redundante: la razón de estar en este
+  // formulario ES ese centro. Se llega a saber recién en ngOnInit (llamada
+  // async), por eso medicoData también se corrige apenas resuelve.
+  centroNombre = '';
   medicoData: any = this.getEmptyMedico();
 
   ngOnInit() {
@@ -242,6 +248,19 @@ export class MedicoFormComponent implements OnInit {
       next: res => { this.catalogos = res; this.loading = false; this.offline.cacheWrite('catalogos', res); },
       error: async () => { this.catalogos = (await this.offline.cacheRead('catalogos')) || this.catalogos; this.loading = false; }
     });
+    this.http.get<any>(`${this.API}/encuesta-abierta`).subscribe({
+      next: res => {
+        if (res?.success && res.tiene_encuesta) {
+          this.centroNombre = res.nombre_centro || '';
+          // Si el consultorio 1 sigue como se generó al construir el
+          // componente (sin tocar), completarlo ahora que ya sabemos el centro.
+          if (this.consultorios.length === 1 && !this.consultorios[0].nombre_clinica) {
+            this.consultorios[0].nombre_clinica = this.centroNombre;
+          }
+        }
+      },
+      error: () => {}
+    });
   }
 
   isDark() {
@@ -249,7 +268,7 @@ export class MedicoFormComponent implements OnInit {
   }
   
   getEmptyMedico() {
-    this.consultorios = [this.getEmptyConsultorio()];
+    this.consultorios = [this.getEmptyConsultorio(true)];
     return {
       id_medico: null,
       id_medico_externo: '',
@@ -272,13 +291,16 @@ export class MedicoFormComponent implements OnInit {
     };
   }
 
-  getEmptyConsultorio() {
+  /** esPrimero: el Consultorio 1 se pre-llena con el centro activo (ver
+   *  centroNombre) -- el campo de texto libre solo tiene sentido a partir
+   *  del 2do consultorio, para cuando el médico atiende en OTRA clínica. */
+  getEmptyConsultorio(esPrimero: boolean = false) {
     const horarios: any = {};
     for (const d of this.diasList) {
       horarios[d] = { activo: false, desde: '08:00', hasta: '12:00' };
     }
     return {
-      nombre_clinica: '',
+      nombre_clinica: esPrimero ? this.centroNombre : '',
       piso_consultorio: '',
       direccion_especifica: '',
       valor_consulta_rango: '',
