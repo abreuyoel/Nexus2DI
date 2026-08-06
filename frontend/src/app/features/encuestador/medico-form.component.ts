@@ -232,10 +232,9 @@ export class MedicoFormComponent implements OnInit {
   isOnline = navigator.onLine;
 
   medicoExistente = false;
-  medicoData: any = this.getEmptyMedico();
-
   consultorios: any[] = [];
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  medicoData: any = this.getEmptyMedico();
 
   ngOnInit() {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
