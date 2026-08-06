@@ -42,6 +42,30 @@ const REQUEST_TIMEOUT_MS = 12_000;
  *  solo sirve si se buscó ese texto exacto estando conectado). */
 const KEY_CENTROS_ALL = 'centros_all';
 
+/**
+ * Umbrales de espacio del dispositivo (fracción de la cuota ya usada por la
+ * app). NO son un límite de la cola: un médico encolado pesa ~2 KB, así que
+ * 1000 médicos son ~2 MB -- irrelevante hasta para un celular viejo. Miden el
+ * espacio REAL que le queda al teléfono (que puede estar lleno de fotos), y
+ * sirven para avisar con tiempo, nunca para impedir seguir cargando: el
+ * encuestador está sin señal justamente porque está adentro del centro de
+ * salud, y bloquearlo perdería más data de la que se evita.
+ */
+const STORAGE_WARN_PCT = 0.80;
+const STORAGE_CRITICAL_PCT = 0.95;
+
+export interface StorageHealth {
+  /** true si el navegador se comprometió a NO borrar los datos solo. */
+  persisted: boolean;
+  usage: number;
+  quota: number;
+  /** Fracción usada (0-1). 0 si el navegador no reporta cuota. */
+  pct: number;
+  nivel: 'ok' | 'warn' | 'critical';
+  /** Soporte real de la API en este navegador (Safari viejo no la tiene). */
+  soportado: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class EncuestadorOfflineQueueService {
   private db: IDBDatabase | null = null;
@@ -110,6 +134,47 @@ export class EncuestadorOfflineQueueService {
     await this.withStore(STORE_CACHE, 'readwrite', s => s.put({ key, data, cachedAt: Date.now() }));
   }
 
+  // ── Salud del almacenamiento del dispositivo ────────────────────────────
+
+  /**
+   * Pide almacenamiento "persistente". Sin esto los datos del sitio son
+   * "best-effort": Android/Chrome los puede desalojar SOLO y SIN AVISAR
+   * cuando al teléfono le falta espacio -- y ahí se perdería la jornada
+   * entera encolada. Es el riesgo real de un dispositivo de gama baja, y
+   * mucho más grave que el tamaño de la cola (que es de KBs).
+   *
+   * El navegador puede conceder o no según heurísticas (PWA instalada, uso
+   * frecuente, permisos). Si lo niega, no rompe nada: se sigue trabajando,
+   * pero conviene sincronizar más seguido -- por eso se refleja en la UI.
+   */
+  async requestPersistence(): Promise<boolean> {
+    try {
+      if (!navigator.storage?.persist) return false;
+      if (await navigator.storage.persisted()) return true;
+      return await navigator.storage.persist();
+    } catch {
+      return false;
+    }
+  }
+
+  /** Espacio real disponible para la app en ESTE dispositivo. */
+  async getStorageHealth(): Promise<StorageHealth> {
+    const vacio: StorageHealth = { persisted: false, usage: 0, quota: 0, pct: 0, nivel: 'ok', soportado: false };
+    try {
+      if (!navigator.storage?.estimate) return vacio;
+      const est = await navigator.storage.estimate();
+      const usage = est.usage ?? 0;
+      const quota = est.quota ?? 0;
+      const pct = quota > 0 ? usage / quota : 0;
+      const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      const nivel: StorageHealth['nivel'] =
+        pct >= STORAGE_CRITICAL_PCT ? 'critical' : pct >= STORAGE_WARN_PCT ? 'warn' : 'ok';
+      return { persisted, usage, quota, pct, nivel, soportado: true };
+    } catch {
+      return vacio;
+    }
+  }
+
   // ── Identificadores locales (placeholder mientras no hay id real del servidor) ──
 
   newLocalId(): string {
@@ -128,7 +193,21 @@ export class EncuestadorOfflineQueueService {
 
   async enqueue(entry: { url: string; jsonBody?: any; label: string; producesLocalId?: string; idField?: string; }): Promise<string> {
     const rec: QueueEntry = { id: crypto.randomUUID(), seq: ++this.seqCounter, status: 'pending', timestamp: Date.now(), ...entry };
-    await this.withStore(STORE_QUEUE, 'readwrite', s => s.put(rec));
+    try {
+      await this.withStore(STORE_QUEUE, 'readwrite', s => s.put(rec));
+    } catch (err: any) {
+      // Único caso donde el dispositivo REALMENTE no puede guardar más. Se
+      // marca para que la UI lo distinga de un error del servidor y le diga
+      // al encuestador qué hacer (liberar espacio / buscar señal y subir),
+      // en vez de un "error al guardar" genérico.
+      if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+        this.seqCounter--; // no se llegó a guardar: no consumir el número de orden
+        const e: any = new Error('SIN_ESPACIO');
+        e.sinEspacio = true;
+        throw e;
+      }
+      throw err;
+    }
     this.refreshCount();
     if (navigator.onLine) this.syncAll();
     return rec.id;

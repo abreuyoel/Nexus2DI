@@ -4,7 +4,7 @@ import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { EncuestadorOfflineQueueService } from './services/encuestador-offline-queue.service';
+import { EncuestadorOfflineQueueService, StorageHealth } from './services/encuestador-offline-queue.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 
 @Component({
@@ -48,6 +48,30 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Espacio del dispositivo: avisa, NUNCA bloquea. Un médico encolado
+           pesa ~2 KB, así que el problema nunca es la cola sino que el
+           teléfono esté lleno (fotos, otras apps). -->
+      <div *ngIf="storage?.nivel === 'critical'" class="mb-4 bg-red-950/60 border border-red-900 rounded-xl px-3 py-2">
+        <p class="text-xs text-red-200 font-semibold">
+          El teléfono está casi sin espacio ({{ storagePct }}% usado).
+          Buscá señal y subí lo pendiente ahora, o liberá espacio: si se llena del todo,
+          los próximos registros no se van a poder guardar.
+        </p>
+      </div>
+      <div *ngIf="storage?.nivel === 'warn'" class="mb-4 bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2">
+        <p class="text-xs text-amber-200/90 font-semibold">
+          Queda poco espacio en el teléfono ({{ storagePct }}% usado).
+          Conviene subir lo pendiente cuando agarres señal; después podés seguir sin conexión normalmente.
+        </p>
+      </div>
+      <div *ngIf="pendingSync > 0 && storage?.soportado && !storage?.persisted" class="mb-4 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+        <p class="text-xs text-slate-300">
+          <span class="material-icons !text-xs align-middle">info</span>
+          Este navegador no garantizó guardar los datos de forma permanente: si el teléfono se queda
+          sin espacio podría borrarlos. Subí lo pendiente en cuanto tengas señal.
+        </p>
       </div>
 
       <div *ngIf="syncError" class="mb-4 bg-red-950/60 border border-red-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
@@ -111,13 +135,16 @@ export class EncuestadorDashboardComponent implements OnInit {
   syncError: string | null = null;
   pendientes: any[] = [];
   mostrandoPendientes = false;
+  storage: StorageHealth | null = null;
+
+  get storagePct(): number { return Math.round((this.storage?.pct || 0) * 100); }
 
   cachedLocation: { lat: number | null, lng: number | null } | null = null;
 
   ngOnInit() {
     this.checkJornada();
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
-    this.offline.pendingCount$.subscribe(v => this.pendingSync = v);
+    this.offline.pendingCount$.subscribe(v => { this.pendingSync = v; this.refrescarStorage(); });
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
     if (navigator.onLine) {
       this.offline.syncAll();
@@ -126,6 +153,10 @@ export class EncuestadorDashboardComponent implements OnInit {
       // de un centro de salud sin cobertura.
       this.offline.prefetchReference(this.API);
     }
+    // Que el navegador no desaloje la cola solo cuando al teléfono le falte
+    // espacio -- es la forma más probable de perder una jornada entera en un
+    // dispositivo de gama baja.
+    this.offline.requestPersistence().then(() => this.refrescarStorage());
     
     // Precargar geolocalización en background
     if (navigator.geolocation) {
@@ -221,9 +252,14 @@ export class EncuestadorDashboardComponent implements OnInit {
     }
   }
 
+  async refrescarStorage() {
+    this.storage = await this.offline.getStorageHealth();
+  }
+
   async verPendientes() {
     this.pendientes = await this.offline.getPendientes();
     this.mostrandoPendientes = !this.mostrandoPendientes;
+    this.refrescarStorage();
   }
 
   async descartarPendiente(e: any) {

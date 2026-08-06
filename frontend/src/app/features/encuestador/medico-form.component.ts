@@ -379,9 +379,21 @@ export class MedicoFormComponent implements OnInit {
       }
       this.router.navigate(['/encuestador/centro']);
     } catch (err: any) {
-      // Solo llega acá si el servidor rechazó el dato (no es falta de señal):
-      // reintentarlo igual fallaría, así que se muestra el motivo real.
       console.error(err);
+      if (err?.sinEspacio) {
+        // El dispositivo no tiene más espacio: NO se perdió lo ya encolado,
+        // pero esto no entra. Hay que decirle qué hacer, no solo que falló.
+        this.confirmDialog.info(
+          'No hay espacio en este dispositivo para guardar más registros sin conexión.\n\n'
+          + 'Este médico NO se guardó. Buscá señal y esperá a que suba todo lo pendiente '
+          + '(el contador del dashboard tiene que llegar a 0), o liberá espacio en el '
+          + 'teléfono. Después podés cargarlo de nuevo y seguir sin conexión.',
+          { title: 'Sin espacio en el dispositivo' },
+        );
+        return;
+      }
+      // Resto: el servidor rechazó el dato (no es falta de señal), reintentarlo
+      // igual fallaría, así que se muestra el motivo real.
       this.confirmDialog.info('Error al guardar: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
   }
