@@ -242,80 +242,97 @@ export class CentroFormComponent implements OnInit, OnDestroy {
   }
 
   buscarCentros() {
-    const key = `centros:${this.searchQuery}`;
+    // Sin señal se busca sobre el listado completo precargado en IndexedDB.
+    // El caché por query (`centros:${q}`) solo servía si se había buscado ese
+    // texto exacto estando online -- inútil justo cuando hace falta.
+    if (!navigator.onLine) {
+      this.offline.buscarCentrosLocal(this.searchQuery).then(r => this.centrosResult = r);
+      return;
+    }
     this.http.get<any>(`${this.API}/centros?q=${this.searchQuery}`).subscribe({
-      next: res => { this.centrosResult = res.centros || []; this.offline.cacheWrite(key, res.centros || []); },
-      error: async () => { this.centrosResult = (await this.offline.cacheRead(key)) || []; }
+      next: res => {
+        this.centrosResult = res.centros || [];
+        // Búsqueda vacía = listado completo: se guarda para el modo offline.
+        if (!this.searchQuery) this.offline.cacheCentrosAll(res.centros || []);
+      },
+      error: async () => { this.centrosResult = await this.offline.buscarCentrosLocal(this.searchQuery); }
     });
   }
 
-  crearCentro() {
+  async crearCentro() {
     this.loading = true;
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/centros`, jsonBody: this.nuevoCentro, label: `Solicitud de centro ${this.nuevoCentro.nombre_centro}` });
-      this.loading = false;
+    try {
+      const { queued } = await this.offline.postOrQueue<any>(
+        `${this.API}/centros`, this.nuevoCentro,
+        { label: `Solicitud de centro ${this.nuevoCentro.nombre_centro}` },
+      );
       this.mostrandoCrearCentro = false;
-      this.confirmDialog.info('Solicitud guardada localmente — se enviará a ATC al reconectar.', { title: 'Guardado sin conexión' });
+      this.confirmDialog.info(
+        queued ? 'Solicitud guardada en este dispositivo — se enviará a ATC cuando haya señal.'
+               : 'Solicitud enviada exitosamente.',
+        { title: queued ? 'Guardado sin conexión' : 'Solicitud enviada' },
+      );
       this.nuevoCentro = { nombre_centro: '', direccion_completa: '', ciudad: '', estado: '' };
-      return;
+    } catch (err: any) {
+      this.confirmDialog.info('Hubo un error al enviar la solicitud: ' + (err.error?.detail || err.message), { title: 'Error' });
+    } finally {
+      this.loading = false;
     }
-    this.http.post<any>(`${this.API}/centros`, this.nuevoCentro).subscribe({
-      next: (res) => {
-        this.loading = false;
-        this.mostrandoCrearCentro = false;
-        this.confirmDialog.info(res.message || 'Solicitud enviada exitosamente.', { title: 'Solicitud enviada' });
-        this.nuevoCentro = { nombre_centro: '', direccion_completa: '', ciudad: '', estado: '' };
-      },
-      error: () => {
-        this.loading = false;
-        this.confirmDialog.info('Hubo un error al enviar la solicitud.', { title: 'Error' });
-      }
-    });
   }
 
   confirmarApertura(centro: any) {
     this.centroAConfirmar = centro;
   }
 
-  abrirEncuesta(centro: any) {
+  async abrirEncuesta(centro: any) {
     this.centroAConfirmar = null;
     this.loading = true;
-    if (!navigator.onLine) {
-      const localId = this.offline.newLocalId();
-      this.offline.enqueue({
-        url: `${this.API}/encuestas`, jsonBody: { id_centro: centro.id_centro, fuente_informacion: 'Visita presencial', notas_generales: null },
-        label: `Abrir encuesta ${centro.nombre_centro}`, producesLocalId: localId, idField: 'id_encuesta',
-      });
-      const optimista = {
-        success: true, tiene_encuesta: true, jornada_activa: true,
-        id_encuesta: localId, id_centro: centro.id_centro, nombre_centro: centro.nombre_centro,
-        ciudad: centro.ciudad, estado: centro.estado, medicos: [],
-      };
-      this.encuestaActiva = optimista;
-      this.offline.cacheWrite('encuesta-abierta', optimista);
+    const localId = this.offline.newLocalId();
+    try {
+      const { queued } = await this.offline.postOrQueue<any>(
+        `${this.API}/encuestas`,
+        { id_centro: centro.id_centro, fuente_informacion: 'Visita presencial', notas_generales: null },
+        { label: `Abrir encuesta ${centro.nombre_centro}`, producesLocalId: localId, idField: 'id_encuesta' },
+      );
+      if (queued) {
+        // Se sigue trabajando contra un id local; la cola lo sustituye por el
+        // real del servidor al sincronizar (producesLocalId/idField).
+        const optimista = {
+          success: true, tiene_encuesta: true, jornada_activa: true,
+          id_encuesta: localId, id_centro: centro.id_centro, nombre_centro: centro.nombre_centro,
+          ciudad: centro.ciudad, estado: centro.estado, medicos: [],
+        };
+        this.encuestaActiva = optimista;
+        await this.offline.cacheWrite('encuesta-abierta', optimista);
+        this.loading = false;
+      } else {
+        this.checkEncuesta();
+      }
+    } catch (err: any) {
       this.loading = false;
-      return;
+      this.confirmDialog.info('No se pudo abrir el centro: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post<any>(`${this.API}/encuestas`, { id_centro: centro.id_centro }).subscribe({
-      next: () => this.checkEncuesta(),
-      error: () => this.loading = false
-    });
   }
 
   async cerrarEncuesta() {
     const ok = await this.confirmDialog.confirm('¿Estás seguro de cerrar este centro?', { title: 'Cerrar centro', confirmText: 'Sí, cerrar' });
     if (!ok) return;
     this.loading = true;
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/encuestas/${this.encuestaActiva.id_encuesta}/cerrar`, jsonBody: {}, label: `Cerrar encuesta ${this.encuestaActiva.nombre_centro}` });
-      this.encuestaActiva = null;
-      this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: true });
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/encuestas/${this.encuestaActiva.id_encuesta}/cerrar`, {},
+        { label: `Cerrar encuesta ${this.encuestaActiva.nombre_centro}` },
+      );
+      if (queued) {
+        this.encuestaActiva = null;
+        await this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: true });
+        this.loading = false;
+      } else {
+        this.checkEncuesta();
+      }
+    } catch (err: any) {
       this.loading = false;
-      return;
+      this.confirmDialog.info('No se pudo cerrar el centro: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post(`${this.API}/encuestas/${this.encuestaActiva.id_encuesta}/cerrar`, {}).subscribe({
-      next: () => this.checkEncuesta(),
-      error: () => this.loading = false
-    });
   }
 }

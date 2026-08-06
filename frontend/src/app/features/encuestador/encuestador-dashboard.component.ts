@@ -20,11 +20,36 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
             <span class="w-1.5 h-1.5 rounded-full" [ngClass]="isOnline ? 'bg-emerald-400' : 'bg-red-400'"></span>
             {{ isOnline ? 'En línea' : 'Sin conexión' }}
           </span>
-          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-950 text-amber-400">
+          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-950 text-amber-400 disabled:opacity-60">
             <span class="material-icons !text-sm">sync</span>{{ pendingSync }} pendientes
+          </button>
+          <button *ngIf="pendingSync > 0" (click)="verPendientes()" class="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-slate-800 text-slate-300">
+            {{ mostrandoPendientes ? 'Ocultar' : 'Ver' }}
           </button>
         </div>
       </div>
+
+      <div *ngIf="pendingSync > 0" class="mb-4 bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2">
+        <p class="text-xs text-amber-200/90 font-semibold">
+          {{ pendingSync }} registro(s) guardados en este dispositivo, esperando señal para subir.
+          No cierres sesión ni borres los datos del navegador hasta que se sincronicen.
+        </p>
+        <div *ngIf="mostrandoPendientes" class="mt-2 space-y-1 border-t border-amber-900/50 pt-2">
+          <div *ngFor="let e of pendientes" class="flex items-center justify-between gap-2 text-xs">
+            <span class="text-amber-100/80 truncate">
+              <span class="material-icons !text-xs align-middle" [class.text-red-400]="e.status === 'error'">
+                {{ e.status === 'error' ? 'error_outline' : 'schedule' }}
+              </span>
+              {{ e.label }}
+              <span *ngIf="e.error" class="text-red-400/80">— {{ e.error }}</span>
+            </span>
+            <button (click)="descartarPendiente(e)" class="shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-900/60 text-red-200">
+              Descartar
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div *ngIf="syncError" class="mb-4 bg-red-950/60 border border-red-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
         <span class="text-xs text-red-300 font-semibold">No se pudo sincronizar: {{ syncError }}</span>
         <button (click)="sincronizar()" class="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-red-900 text-red-200">Reintentar</button>
@@ -84,6 +109,8 @@ export class EncuestadorDashboardComponent implements OnInit {
   isOnline = navigator.onLine;
   pendingSync = 0;
   syncError: string | null = null;
+  pendientes: any[] = [];
+  mostrandoPendientes = false;
 
   cachedLocation: { lat: number | null, lng: number | null } | null = null;
 
@@ -92,7 +119,13 @@ export class EncuestadorDashboardComponent implements OnInit {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
     this.offline.pendingCount$.subscribe(v => this.pendingSync = v);
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
-    if (navigator.onLine) this.offline.syncAll();
+    if (navigator.onLine) {
+      this.offline.syncAll();
+      // Deja centros y catálogos en IndexedDB mientras todavía hay señal, que
+      // es lo único que hace falta para completar una jornada entera adentro
+      // de un centro de salud sin cobertura.
+      this.offline.prefetchReference(this.API);
+    }
     
     // Precargar geolocalización en background
     if (navigator.geolocation) {
@@ -145,37 +178,61 @@ export class EncuestadorDashboardComponent implements OnInit {
     }
   }
 
-  doActivar(lat: number | null, lng: number | null) {
+  async doActivar(lat: number | null, lng: number | null) {
     const body = { latitud: lat, longitud: lng, ciudad: '', estado_geo: '' };
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/activar-jornada`, jsonBody: body, label: 'Activar jornada' });
-      this.offline.cacheWrite('jornada-activa', { success: true, activa: true, centros_visitados: 0, medicos_registrados: 0 });
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/activar-jornada`, body, { label: 'Activar jornada' },
+      );
+      if (queued) {
+        await this.offline.cacheWrite('jornada-activa', { success: true, activa: true, centros_visitados: 0, medicos_registrados: 0 });
+      }
+      // En lugar de quedarse en el dashboard, redirigir directo a seleccionar centro
       this.router.navigate(['/encuestador/centro']);
-      return;
+    } catch (err: any) {
+      this.loading = false;
+      this.confirmDialog.info('No se pudo activar la jornada: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post<any>(`${this.API}/activar-jornada`, body).subscribe({
-      next: () => {
-        // En lugar de quedarse en el dashboard, redirigir directo a seleccionar centro
-        this.router.navigate(['/encuestador/centro']);
-      },
-      error: () => this.loading = false
-    });
   }
 
   async finalizarJornada() {
-    const ok = await this.confirmDialog.confirm('¿Estás seguro de finalizar la jornada actual?', { title: 'Finalizar jornada', confirmText: 'Sí, finalizar', danger: true });
+    const pend = await this.offline.getPendientes();
+    const aviso = pend.length
+      ? `\n\nOJO: quedan ${pend.length} registro(s) sin subir. No cierres sesión ni borres los datos del navegador hasta que se sincronicen.`
+      : '';
+    const ok = await this.confirmDialog.confirm(
+      '¿Estás seguro de finalizar la jornada actual?' + aviso,
+      { title: 'Finalizar jornada', confirmText: 'Sí, finalizar', danger: true },
+    );
     if (!ok) return;
     this.loading = true;
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/finalizar-jornada`, jsonBody: {}, label: 'Finalizar jornada' });
-      this.offline.cacheWrite('jornada-activa', { success: true, activa: false });
-      this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: false });
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/finalizar-jornada`, {}, { label: 'Finalizar jornada' },
+      );
+      if (queued) {
+        await this.offline.cacheWrite('jornada-activa', { success: true, activa: false });
+        await this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: false });
+      }
       this.checkJornada();
-      return;
+    } catch (err: any) {
+      this.loading = false;
+      this.confirmDialog.info('No se pudo finalizar la jornada: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post(`${this.API}/finalizar-jornada`, {}).subscribe({
-      next: () => this.checkJornada(),
-      error: () => this.loading = false
-    });
+  }
+
+  async verPendientes() {
+    this.pendientes = await this.offline.getPendientes();
+    this.mostrandoPendientes = !this.mostrandoPendientes;
+  }
+
+  async descartarPendiente(e: any) {
+    const ok = await this.confirmDialog.confirm(
+      `Se va a borrar definitivamente "${e.label}" de este dispositivo. Esa carga se pierde y hay que rehacerla. ¿Continuar?`,
+      { title: 'Descartar registro pendiente', confirmText: 'Sí, descartar', danger: true },
+    );
+    if (!ok) return;
+    await this.offline.descartar(e.id);
+    this.pendientes = await this.offline.getPendientes();
   }
 }

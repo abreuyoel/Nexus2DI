@@ -249,18 +249,21 @@ export class MedicoFormComponent implements OnInit {
       error: async () => { this.catalogos = (await this.offline.cacheRead('catalogos')) || this.catalogos; this.loading = false; }
     });
     this.http.get<any>(`${this.API}/encuesta-abierta`).subscribe({
-      next: res => {
-        if (res?.success && res.tiene_encuesta) {
-          this.centroNombre = res.nombre_centro || '';
-          // Si el consultorio 1 sigue como se generó al construir el
-          // componente (sin tocar), completarlo ahora que ya sabemos el centro.
-          if (this.consultorios.length === 1 && !this.consultorios[0].nombre_clinica) {
-            this.consultorios[0].nombre_clinica = this.centroNombre;
-          }
-        }
-      },
-      error: () => {}
+      next: res => { this.aplicarCentroActivo(res); this.offline.cacheWrite('encuesta-abierta', res); },
+      // Sin señal se usa la encuesta cacheada: el nombre del centro tiene que
+      // salir igual, es justamente cuando más molesta tener que tipearlo.
+      error: async () => this.aplicarCentroActivo(await this.offline.cacheRead('encuesta-abierta')),
     });
+  }
+
+  private aplicarCentroActivo(res: any) {
+    if (!res?.tiene_encuesta) return;
+    this.centroNombre = res.nombre_centro || '';
+    // Si el consultorio 1 sigue como se generó al construir el componente
+    // (sin tocar), completarlo ahora que ya sabemos el centro.
+    if (this.consultorios.length === 1 && !this.consultorios[0].nombre_clinica) {
+      this.consultorios[0].nombre_clinica = this.centroNombre;
+    }
   }
 
   isDark() {
@@ -339,7 +342,7 @@ export class MedicoFormComponent implements OnInit {
     this.searchQuery = m.id_medico_externo;
   }
 
-  guardarMedicoCentro() {
+  async guardarMedicoCentro() {
     this.medicoData.consultorios = this.consultorios.map(c => ({
        nombre_clinica: c.nombre_clinica,
        piso_consultorio: c.piso_consultorio,
@@ -349,30 +352,37 @@ export class MedicoFormComponent implements OnInit {
        horarios_json: JSON.stringify(c.horarios)
     }));
 
-    if (!navigator.onLine) {
-      this.offline.enqueue({
-        url: `${this.API}/medico-centro`, jsonBody: this.medicoData,
-        label: `Médico ${this.medicoData.apellido1}, ${this.medicoData.nombre1}`,
-      });
-      this.offline.cacheRead('encuesta-abierta').then(cached => {
-        if (cached) {
-          cached.medicos = [...(cached.medicos || []), { ...this.medicoData }];
-          this.offline.cacheWrite('encuesta-abierta', cached);
-        }
-      });
-      this.confirmDialog.info('Médico guardado localmente — se sincronizará al reconectar.', { title: 'Guardado sin conexión' });
-      this.router.navigate(['/encuestador/centro']);
-      return;
-    }
-    this.http.post<any>(`${this.API}/medico-centro`, this.medicoData).subscribe({
-      next: () => {
-        this.confirmDialog.info('Médico guardado correctamente en el centro.', { title: 'Médico guardado' });
-        this.router.navigate(['/encuestador/centro']);
-      },
-      error: (err) => {
-        console.error(err);
-        this.confirmDialog.info('Error al guardar: ' + (err.error?.detail || err.message), { title: 'Error' });
+    // Se refleja en el caché ANTES de intentar subirlo: si queda encolado, el
+    // encuestador tiene que verlo igual en la lista del centro (si no, parece
+    // que se perdió y lo carga de nuevo, duplicándolo).
+    const reflejarEnCache = async () => {
+      const cached = await this.offline.cacheRead('encuesta-abierta');
+      if (cached) {
+        cached.medicos = [...(cached.medicos || []), { ...this.medicoData }];
+        await this.offline.cacheWrite('encuesta-abierta', cached);
       }
-    });
+    };
+
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/medico-centro`, this.medicoData,
+        { label: `Médico ${this.medicoData.apellido1}, ${this.medicoData.nombre1}` },
+      );
+      if (queued) {
+        await reflejarEnCache();
+        this.confirmDialog.info(
+          'Médico guardado en este dispositivo — se subirá solo cuando haya señal. Podés seguir cargando.',
+          { title: 'Guardado sin conexión' },
+        );
+      } else {
+        this.confirmDialog.info('Médico guardado correctamente en el centro.', { title: 'Médico guardado' });
+      }
+      this.router.navigate(['/encuestador/centro']);
+    } catch (err: any) {
+      // Solo llega acá si el servidor rechazó el dato (no es falta de señal):
+      // reintentarlo igual fallaría, así que se muestra el motivo real.
+      console.error(err);
+      this.confirmDialog.info('Error al guardar: ' + (err.error?.detail || err.message), { title: 'Error' });
+    }
   }
 }
