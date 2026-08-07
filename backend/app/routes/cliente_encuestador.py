@@ -4,7 +4,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc, func, case, text
+from sqlalchemy import or_, desc, func, case, text, over as sql_over
 from typing import List, Any, Optional
 from datetime import date, datetime, timedelta
 
@@ -61,6 +61,25 @@ def _primer_consultorio_alias(db: Session):
     return db.query(MedicoConsultorio).join(
         min_ids, MedicoConsultorio.id_consultorio == min_ids.c.min_id
     ).subquery()
+
+
+def _latest_medico_centro_subq(db: Session):
+    """Subquery con los id_medico_centro de la encuesta más reciente por médico.
+    ROW_NUMBER() particionado por id_medico, ordenado por fecha_verificacion DESC
+    y id_medico_centro DESC como desempate. Evita médicos duplicados en el BI."""
+    rn = db.query(
+        MedicoCentroEncuesta.id_medico_centro,
+        func.row_number().over(
+            partition_by=Medico.id_medico,
+            order_by=[desc(EncuestaCentro.fecha_verificacion), desc(MedicoCentroEncuesta.id_medico_centro)]
+        ).label('rn')
+    ).join(
+        EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
+    ).join(
+        Medico, Medico.id_medico == MedicoCentroEncuesta.id_medico
+    ).subquery()
+    return db.query(rn.c.id_medico_centro).filter(rn.c.rn == 1).subquery()
+
 
 def get_base_query(db: Session):
     pc = _primer_consultorio_alias(db)
@@ -272,6 +291,10 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
     base_q, pc = get_base_query(db)
     base_q = apply_filters(base_q, request, pc)
 
+    # Deduplicar: solo la encuesta más reciente por médico
+    dedup = _latest_medico_centro_subq(db)
+    base_q = base_q.filter(MedicoCentroEncuesta.id_medico_centro.in_(dedup))
+
     if q.strip():
         search = f"%{q.strip()}%"
         base_q = base_q.filter(
@@ -336,6 +359,10 @@ def api_export_excel(request: Request, db: Session = Depends(get_db), current_us
 
     base_q, pc = get_base_query(db)
     base_q = apply_filters(base_q, request, pc)
+
+    # Deduplicar: solo la encuesta más reciente por médico
+    dedup = _latest_medico_centro_subq(db)
+    base_q = base_q.filter(MedicoCentroEncuesta.id_medico_centro.in_(dedup))
 
     rows = base_q.with_entities(
         Medico.id_medico_externo, Medico.apellido1, Medico.apellido2, Medico.nombre1, Medico.nombre2,
