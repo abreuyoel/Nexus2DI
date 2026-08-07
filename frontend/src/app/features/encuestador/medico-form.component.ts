@@ -1,6 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
+import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
@@ -17,7 +17,8 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
       <!-- Header -->
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-          <span class="material-icons text-indigo-600 dark:text-indigo-400">badge</span> Agregar médico al centro
+          <span class="material-icons text-indigo-600 dark:text-indigo-400">badge</span>
+          {{ modoEdicion ? 'Editar médico' : 'Agregar médico al centro' }}
         </h1>
         <div class="flex items-center gap-2">
           <span class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full" [ngClass]="isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'">
@@ -36,8 +37,8 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
 
       <div class="bg-white dark:bg-slate-900 rounded-xl p-8 border border-gray-200 dark:border-white/10 shadow-xl relative" *ngIf="!loading">
         
-        <!-- Búsqueda Superior -->
-        <div class="mb-10 bg-indigo-50 dark:bg-slate-800/50 p-6 rounded-xl border border-indigo-100 dark:border-slate-700 relative">
+        <!-- Búsqueda Superior (no aplica en modo edición: ya se sabe qué médico es) -->
+        <div *ngIf="!modoEdicion" class="mb-10 bg-indigo-50 dark:bg-slate-800/50 p-6 rounded-xl border border-indigo-100 dark:border-slate-700 relative">
           <label class="block text-sm font-semibold text-indigo-800 dark:text-indigo-300 mb-2">¿Ya existe el médico? Búscalo por ID o apellido:</label>
           <div class="relative">
             <span class="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">search</span>
@@ -213,7 +214,7 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
               @if (guardando) {
                 <div class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div> Guardando...
               } @else {
-                <span class="material-icons">check_circle</span> Guardar médico
+                <span class="material-icons">check_circle</span> {{ modoEdicion ? 'Guardar cambios' : 'Guardar médico' }}
               }
             </button>
           </div>
@@ -225,6 +226,7 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
 export class MedicoFormComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private offline = inject(EncuestadorOfflineQueueService);
   private confirmDialog = inject(ConfirmService);
   private API = `${environment.apiUrl}/api/encuestador`;
@@ -234,6 +236,13 @@ export class MedicoFormComponent implements OnInit {
   medicosResult: any[] = [];
   catalogos: any = { valor_consulta_rangos: [], promedio_pacientes_rangos: [] };
   isOnline = navigator.onLine;
+
+  // Modo edición: se llega acá con /encuestador/medico/:idMedico (ej. desde
+  // "Editar" en Gestión de Centro) en vez de /encuestador/medico (alta). El
+  // médico es una entidad global -- edita sus datos y TODOS sus consultorios,
+  // no solo los de la encuesta desde la que se entró a editar.
+  modoEdicion = false;
+  idMedicoEditando: number | null = null;
 
   medicoExistente = false;
   consultorios: any[] = [];
@@ -252,12 +261,68 @@ export class MedicoFormComponent implements OnInit {
       next: res => { this.catalogos = res; this.loading = false; this.offline.cacheWrite('catalogos', res); },
       error: async () => { this.catalogos = (await this.offline.cacheRead('catalogos')) || this.catalogos; this.loading = false; }
     });
+
+    const idParam = this.route.snapshot.paramMap.get('idMedico');
+    if (idParam) {
+      this.modoEdicion = true;
+      this.idMedicoEditando = +idParam;
+      this.cargarParaEditar(this.idMedicoEditando);
+      return; // en edición no hace falta centroNombre/encuesta-abierta
+    }
+
     this.http.get<any>(`${this.API}/encuesta-abierta`).subscribe({
       next: res => { this.aplicarCentroActivo(res); this.offline.cacheWrite('encuesta-abierta', res); },
       // Sin señal se usa la encuesta cacheada: el nombre del centro tiene que
       // salir igual, es justamente cuando más molesta tener que tipearlo.
       error: async () => this.aplicarCentroActivo(await this.offline.cacheRead('encuesta-abierta')),
     });
+  }
+
+  private cargarParaEditar(id: number) {
+    this.http.get<any>(`${this.API}/medico/${id}`).subscribe({
+      next: res => {
+        if (!res?.success) return;
+        this.medicoData = {
+          id_medico: res.id_medico, id_medico_externo: res.id_medico_externo,
+          apellido1: res.apellido1, apellido2: res.apellido2,
+          nombre1: res.nombre1, nombre2: res.nombre2,
+          especialidad: res.especialidad, sub_especialidad: res.sub_especialidad,
+          universidad_graduacion: res.universidad_graduacion,
+          nro_MPPS: res.nro_MPPS, nro_colegiado: res.nro_colegiado,
+          ciudad: res.ciudad, estado: res.estado,
+          telefono: res.telefono, whatsapp: res.whatsapp, email: res.email,
+          linkedin: res.linkedin, instagram: res.instagram,
+        };
+        const cons = (res.consultorios || []).map((c: any) => ({
+          nombre_clinica: c.nombre_clinica,
+          piso_consultorio: c.piso_consultorio,
+          direccion_especifica: c.direccion_especifica,
+          valor_consulta_rango: c.valor_consulta_rango,
+          promedio_pacientes_semanal_rango: c.promedio_pacientes_semanal_rango,
+          horarios: this.parseHorarios(c.horarios_json),
+        }));
+        this.consultorios = cons.length ? cons : [this.getEmptyConsultorio()];
+      },
+      error: () => {
+        this.confirmDialog.info('No se pudo cargar el médico -- revisá la conexión e intentá de nuevo.', { title: 'Error' });
+        this.router.navigate(['/encuestador/centro']);
+      },
+    });
+  }
+
+  /** Inverso de JSON.stringify(c.horarios) al guardar -- si algún día falta
+   *  o viene corrupto (dato viejo migrado, ver backfill_medico_consultorios.sql),
+   *  se cae a "inactivo" para ese día en vez de romper el formulario. */
+  private parseHorarios(horariosJson: string | null | undefined): any {
+    let parsed: any = {};
+    if (horariosJson) {
+      try { parsed = JSON.parse(horariosJson) || {}; } catch { parsed = {}; }
+    }
+    const horarios: any = {};
+    for (const d of this.diasList) {
+      horarios[d] = parsed[d] || { activo: false, desde: '08:00', hasta: '12:00' };
+    }
+    return horarios;
   }
 
   private aplicarCentroActivo(res: any) {
@@ -358,9 +423,47 @@ export class MedicoFormComponent implements OnInit {
     if (this.guardando) return;
     this.guardando = true;
     try {
-      await this._guardarMedicoCentro();
+      if (this.modoEdicion) {
+        await this._guardarEdicion();
+      } else {
+        await this._guardarMedicoCentro();
+      }
     } finally {
       this.guardando = false;
+    }
+  }
+
+  private async _guardarEdicion() {
+    this.medicoData.consultorios = this.consultorios.map(c => ({
+      nombre_clinica: c.nombre_clinica,
+      piso_consultorio: c.piso_consultorio,
+      direccion_especifica: c.direccion_especifica,
+      valor_consulta_rango: c.valor_consulta_rango,
+      promedio_pacientes_semanal_rango: c.promedio_pacientes_semanal_rango,
+      horarios_json: JSON.stringify(c.horarios),
+    }));
+    try {
+      // Igual que el alta: si no hay señal (o el PUT tarda demasiado) queda
+      // encolado y se sube solo al reconectar -- editar también necesita
+      // funcionar sin conexión, es el mismo terreno de campo.
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/medico/${this.idMedicoEditando}/editar`, this.medicoData,
+        { label: `Editar médico ${this.medicoData.apellido1}, ${this.medicoData.nombre1}` },
+      );
+      this.confirmDialog.info(
+        queued ? 'Cambios guardados en este dispositivo -- se subirán cuando haya señal.' : 'Médico actualizado correctamente.',
+        { title: queued ? 'Guardado sin conexión' : 'Médico actualizado' },
+      );
+      this.router.navigate(['/encuestador/centro']);
+    } catch (err: any) {
+      if (err?.sinEspacio) {
+        this.confirmDialog.info(
+          'No hay espacio en este dispositivo para guardar más cambios sin conexión. Este cambio NO se guardó -- buscá señal e intentá de nuevo.',
+          { title: 'Sin espacio en el dispositivo' },
+        );
+        return;
+      }
+      this.confirmDialog.info('Error al guardar: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
   }
 

@@ -200,6 +200,7 @@ def api_encuesta_abierta(db: Session = Depends(get_db), current_user: User = Dep
         pacs = first_consultorio.promedio_pacientes_semanal_rango if first_consultorio else 'N/A'
         medicos_resp.append({
             "id_medico_centro": mce.id_medico_centro,
+            "id_medico": m.id_medico,
             "id_medico_externo": m.id_medico_externo,
             "apellido1": m.apellido1,
             "apellido2": m.apellido2,
@@ -449,6 +450,106 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
         "id_encuesta": encuesta.id_encuesta,
         "medicos_en_centro": cnt
     }
+
+@router.get("/medico/{id_medico}")
+def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Datos completos de un médico ya registrado + todos sus consultorios,
+    para precargar el formulario en modo edición. El médico es una entidad
+    global (compartida entre todos los centros donde se lo haya registrado,
+    matcheada por id_medico_externo) -- por eso acá aparecen TODOS sus
+    consultorios, no solo los de la encuesta/centro desde donde se entró a
+    editar. Es el mismo dato que ya se ve al buscar un médico existente en
+    el formulario de alta, solo que ahora también se puede guardar."""
+    check_rol_encuestador(current_user)
+
+    medico = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    if not medico:
+        raise HTTPException(status_code=404, detail="Médico no encontrado")
+
+    consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).order_by(MedicoConsultorio.id_consultorio).all()
+
+    return {
+        "success": True,
+        "id_medico": medico.id_medico,
+        "id_medico_externo": medico.id_medico_externo,
+        "apellido1": medico.apellido1,
+        "apellido2": medico.apellido2,
+        "nombre1": medico.nombre1,
+        "nombre2": medico.nombre2,
+        "especialidad": medico.especialidad,
+        "sub_especialidad": medico.sub_especialidad,
+        "universidad_graduacion": medico.universidad_graduacion,
+        "nro_MPPS": medico.nro_MPPS,
+        "nro_colegiado": medico.nro_colegiado,
+        "ciudad": medico.ciudad,
+        "estado": medico.estado,
+        "telefono": medico.telefono,
+        "whatsapp": medico.whatsapp,
+        "email": medico.email,
+        "linkedin": medico.linkedin,
+        "instagram": medico.instagram,
+        "consultorios": [
+            {
+                "id_consultorio": c.id_consultorio,
+                "nombre_clinica": c.nombre_clinica,
+                "piso_consultorio": c.piso_consultorio,
+                "direccion_especifica": c.direccion_especifica,
+                "valor_consulta_rango": c.valor_consulta_rango,
+                "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango,
+                "horarios_json": c.horarios_json,
+            } for c in consultorios
+        ],
+    }
+
+@router.post("/medico/{id_medico}/editar")
+def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Edita los datos propios del médico y reemplaza por completo su lista
+    de consultorios (delete-then-insert, mismo shape que el alta) -- más
+    simple y menos propenso a errores que tratar de diffear cuál consultorio
+    es cuál cuando el formulario no manda ids estables por fila."""
+    check_rol_encuestador(current_user)
+
+    medico = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    if not medico:
+        raise HTTPException(status_code=404, detail="Médico no encontrado")
+
+    if not req.apellido1 or not req.nombre1 or not req.especialidad or not req.ciudad or not req.estado:
+        raise HTTPException(status_code=400, detail="Faltan campos obligatorios del médico")
+
+    medico.apellido1 = req.apellido1
+    medico.apellido2 = req.apellido2
+    medico.nombre1 = req.nombre1
+    medico.nombre2 = req.nombre2
+    medico.especialidad = req.especialidad
+    medico.sub_especialidad = req.sub_especialidad
+    medico.universidad_graduacion = req.universidad_graduacion
+    medico.nro_MPPS = req.nro_MPPS
+    medico.nro_colegiado = req.nro_colegiado
+    medico.ciudad = req.ciudad
+    medico.estado = req.estado
+    medico.telefono = req.telefono
+    medico.whatsapp = req.whatsapp
+    medico.email = req.email
+    medico.linkedin = req.linkedin
+    medico.instagram = req.instagram
+    # id_medico_externo (cédula) NO se toca acá -- es la clave con la que se
+    # matchea "¿ya existe este médico?" al buscarlo desde otro centro;
+    # cambiarla desde acá podría duplicarlo en vez de identificarlo.
+
+    db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).delete()
+    for cons in req.consultorios:
+        db.add(MedicoConsultorio(
+            id_medico=id_medico,
+            nombre_clinica=cons.nombre_clinica,
+            piso_consultorio=cons.piso_consultorio,
+            direccion_especifica=cons.direccion_especifica,
+            horarios_json=cons.horarios_json,
+            valor_consulta_rango=cons.valor_consulta_rango,
+            promedio_pacientes_semanal_rango=cons.promedio_pacientes_semanal_rango,
+        ))
+
+    db.commit()
+    return {"success": True, "id_medico": id_medico}
 
 @router.get("/catalogos")
 def api_catalogos(current_user: User = Depends(get_current_user)):
