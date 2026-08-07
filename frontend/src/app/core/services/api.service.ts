@@ -293,6 +293,29 @@ export class ApiService {
   getMiembrosGrupo(idGrupo: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/chat/grupos/${idGrupo}/miembros`);
   }
+
+  // ── Admin: Grupos de Chat ──────────────────────────────────────────────
+  adminListarGruposChat(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos`);
+  }
+  adminListarClientesParaGrupos(q: string = ''): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos/clientes`, { params: this.params({ q }) });
+  }
+  adminAsegurarGruposCliente(idCliente: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/admin/chat-grupos/asegurar/${idCliente}`, {});
+  }
+  adminMiembrosGrupo(idGrupo: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos/${idGrupo}/miembros`);
+  }
+  adminBuscarUsuarios(q: string = ''): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos/usuarios`, { params: this.params({ q }) });
+  }
+  adminAgregarMiembroExtra(idGrupo: number, idUsuario: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/admin/chat-grupos/${idGrupo}/miembros-extra`, { id_usuario: idUsuario });
+  }
+  adminQuitarMiembroExtra(idGrupo: number, idUsuario: number): Observable<any> {
+    return this.http.delete<any>(`${this.base}/api/admin/chat-grupos/${idGrupo}/miembros-extra/${idUsuario}`);
+  }
   marcarLeidoGrupo(idGrupo: number): Observable<any> {
     return this.http.post<any>(`${this.base}/api/chat/grupos/${idGrupo}/marcar-leido`, {});
   }

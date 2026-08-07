@@ -108,6 +108,12 @@ export const routes: Routes = [
         data: { roles: ['admin'] },
       },
       {
+        path: 'admin/chat-grupos',
+        loadComponent: () => import('./features/admin/chat-grupos-admin.component').then((m) => m.ChatGruposAdminComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin'] },
+      },
+      {
         path: 'sessions',
         loadComponent: () => import('./features/admin/sessions/sessions.component').then((m) => m.SessionsComponent),
         canActivate: [roleGuard],

@@ -25,6 +25,11 @@ class GrupoResponse(BaseModel):
 class MiembroGrupoResponse(BaseModel):
     id_usuario: int
     username: Optional[str] = None
+    # Nombre real de la persona cuando se conoce (ENCUESTADORES.nombre para
+    # roles 12/13) -- para el resto de orígenes el username YA es legible
+    # (nombre del mercaderista/analista o username propio), así que queda
+    # None y el frontend cae a mostrar username.
+    nombre: Optional[str] = None
     origen: str
 
 

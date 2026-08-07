@@ -210,6 +210,8 @@ from app.routes import horas_promedio_ejecucion
 app.include_router(horas_promedio_ejecucion.router)
 from app.routes import chat_grupos
 app.include_router(chat_grupos.router)
+from app.routes import admin_chat_grupos
+app.include_router(admin_chat_grupos.router)
 from app.routes import media as media_routes
 app.include_router(media_routes.router)
 
