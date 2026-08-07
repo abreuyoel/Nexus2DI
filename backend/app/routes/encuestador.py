@@ -14,7 +14,10 @@ from app.schemas.encuestador import JornadaActivarRequest, CentroSaludCreate, En
 router = APIRouter(prefix="/api/encuestador", tags=["Encuestador"])
 
 def check_rol_encuestador(current_user: User):
-    if current_user.id_rol != 12 and not current_user.is_admin:
+    # 12 = Encuestador (trabajo de campo). 13 = Cliente Encuestador/IQVIA --
+    # además de ver el BI, puede entrar a activar jornadas y cargar médicos
+    # como cualquier encuestador (decisión explícita, no es un descuido).
+    if current_user.id_rol not in (12, 13) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Encuestadores.")
 
 @router.get("/jornada-activa")

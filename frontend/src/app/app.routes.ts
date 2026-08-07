@@ -203,7 +203,9 @@ export const routes: Routes = [
         path: 'encuestador',
         loadChildren: () => import('./features/encuestador/encuestador.routes').then(m => m.ENCUESTADOR_ROUTES),
         canActivate: [roleGuard],
-        data: { roles: ['encuestador', 'admin'] }
+        // cliente_encuestador (IQVIA) también puede activar jornadas y
+        // cargar médicos -- ver check_rol_encuestador en el backend.
+        data: { roles: ['encuestador', 'cliente_encuestador', 'admin'] }
       },
       {
         path: 'cliente-encuestador',

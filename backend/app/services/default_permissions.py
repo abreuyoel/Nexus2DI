@@ -50,8 +50,13 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         # Sin "dashboard": este rol (IQVIA) entra directo a BI Encuestas
         # (redirectAfterLogin ya apunta ahí) -- el dashboard genérico no le
         # aporta nada y solo confunde en el sidebar.
+        # "encuestador" con write: decisión explícita -- IQVIA puede activar
+        # jornadas y cargar médicos igual que el rol Encuestador (ver
+        # check_rol_encuestador en encuestador.py, que ahora también acepta
+        # id_rol=13, no solo 12).
         "chat": {"read": True},
         "cliente-encuestador": {"read": True},
+        "encuestador": {"read": True, "write": True},
     },
     "client": {
         "dashboard": {"read": True},
