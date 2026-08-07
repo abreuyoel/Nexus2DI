@@ -19,9 +19,24 @@ router = APIRouter(prefix="/api/cliente-encuestador", tags=["Cliente Encuestador
 # mismas keys en horarios_json o nunca va a matchear nada.
 DIAS_ABREV = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 
-def check_rol_cliente_encuestador(current_user: User):
-    if current_user.id_rol != 13 and not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Cliente Encuestador.")
+def check_rol_cliente_encuestador(current_user: User, db: Session):
+    # id_rol=13 (IQVIA) y admin siempre pasan. Además, cualquier usuario con
+    # el permiso 'cliente-encuestador' concedido a mano (Permisos -> por
+    # usuario) también entra, sin importar su rol -- ej. un supervisor del
+    # equipo de encuestadores (rol 12) al que se le da acceso de lectura al
+    # BI sin volverlo IQVIA ni crear un rol nuevo solo para eso.
+    # No se usa current_user.has_permission()/.permisos: esa relación es
+    # lazy="noload" y get_current_user no la carga -- siempre saldría vacía.
+    # Se consulta usuario_permisos directo, mismo patrón que require_permission()
+    # en core/dependencies.py (el único camino que de verdad funciona hoy).
+    if current_user.id_rol == 13 or current_user.is_admin:
+        return
+    perm = db.execute(text("""
+        SELECT can_read FROM usuario_permisos WHERE id_usuario = :uid AND module = 'cliente-encuestador'
+    """), {"uid": current_user.id}).fetchone()
+    if perm and perm[0]:
+        return
+    raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Cliente Encuestador.")
 
 def _dias_activos_str(horarios_json: Optional[str]) -> str:
     if not horarios_json:
@@ -103,7 +118,7 @@ def apply_filters(query, req: Request, pc):
 
 @router.get("/filtros")
 def api_filtros(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    check_rol_cliente_encuestador(current_user)
+    check_rol_cliente_encuestador(current_user, db)
     
     especialidades = [r[0] for r in db.query(Medico.especialidad).distinct().filter(Medico.especialidad != None).order_by(Medico.especialidad).all()]
     sub_especialidades = [r[0] for r in db.query(Medico.sub_especialidad).distinct().filter(Medico.sub_especialidad != None).order_by(Medico.sub_especialidad).all()]
@@ -135,7 +150,7 @@ def api_filtros(db: Session = Depends(get_db), current_user: User = Depends(get_
 
 @router.get("/kpis")
 def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    check_rol_cliente_encuestador(current_user)
+    check_rol_cliente_encuestador(current_user, db)
     q, pc = get_base_query(db)
     q = apply_filters(q, request, pc)
 
@@ -252,7 +267,7 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
 
 @router.get("/medicos")
 def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: int = 25, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    check_rol_cliente_encuestador(current_user)
+    check_rol_cliente_encuestador(current_user, db)
 
     base_q, pc = get_base_query(db)
     base_q = apply_filters(base_q, request, pc)
@@ -317,7 +332,7 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
 
 @router.get("/export")
 def api_export_excel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    check_rol_cliente_encuestador(current_user)
+    check_rol_cliente_encuestador(current_user, db)
 
     base_q, pc = get_base_query(db)
     base_q = apply_filters(base_q, request, pc)
