@@ -6,6 +6,7 @@ from app.core.dependencies import require_admin, get_current_user, require_permi
 from app.core.security import get_password_hash
 from app.models.mercaderista import Mercaderista
 from app.models.cliente import Cliente
+from app.models.encuestador import Encuestador
 from app.models.user import Usuario, UserPermission
 from app.schemas.user import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UpdatePermissionsRequest, PermissionResponse
 from app.schemas.cliente import ClienteCreate, ClienteResponse
@@ -30,18 +31,22 @@ def list_users(
         Usuario,
         Cliente.nombre.label('cliente_nombre'),
         Analista.nombre.label('analista_nombre'),
-        Mercaderista.nombre.label('mercaderista_nombre')
+        Mercaderista.nombre.label('mercaderista_nombre'),
+        Encuestador.nombre.label('encuestador_nombre'),
     ).outerjoin(
         Cliente, (Usuario.id_perfil == Cliente.id) & (Usuario.id_rol == 1)
     ).outerjoin(
         Analista, (Usuario.id_perfil == Analista.id) & (Usuario.id_rol == 2)
     ).outerjoin(
         Mercaderista, (Usuario.id_perfil == Mercaderista.id) & (Usuario.id_rol == 5)
+    ).outerjoin(
+        # 12 = Encuestador, 13 = IQVIA (también puede activar jornadas propias)
+        Encuestador, (Usuario.id_perfil == Encuestador.id) & (Usuario.id_rol.in_((12, 13)))
     ).order_by(Usuario.id).offset(skip).limit(limit).all()
 
     result = []
-    for u, c_nombre, a_nombre, m_nombre in users:
-        u.perfil_nombre = c_nombre or a_nombre or m_nombre
+    for u, c_nombre, a_nombre, m_nombre, e_nombre in users:
+        u.perfil_nombre = c_nombre or a_nombre or m_nombre or e_nombre
         result.append(u)
     return result
 

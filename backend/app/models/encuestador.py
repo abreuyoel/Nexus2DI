@@ -1,7 +1,19 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
+
+class Encuestador(Base):
+    """Catálogo de encuestadores (rol 12/13) por cédula -- USUARIOS.id_perfil
+    referencia a esta tabla cuando id_rol está en (12, 13), mismo patrón que
+    Cliente/Analista/Mercaderista (ver outerjoin en routes/users.py)."""
+    __tablename__ = "ENCUESTADORES"
+
+    id = Column("id_encuestador", Integer, primary_key=True, index=True)
+    cedula = Column(Integer, unique=True, nullable=False, index=True)
+    nombre = Column(String(200), nullable=False)
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
 
 class JornadaEncuestador(Base):
     __tablename__ = "JORNADAS_ENCUESTADOR"
