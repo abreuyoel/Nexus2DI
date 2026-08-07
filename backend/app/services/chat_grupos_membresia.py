@@ -36,20 +36,40 @@ Fuentes de verdad del vínculo persona ↔ cliente:
 
 Tipos de grupo:
   • 'operativo'          → solo personal epran
-  • 'operativo_cliente'  → lo anterior + usuarios rol cliente del cliente
+  • 'operativo_cliente'  → lo anterior + usuarios rol cliente
+  • 'encuestador'        → equipo de encuestadores (id_rol=12) + IQVIA
+                            (id_rol=13). Es UN solo grupo global, no por
+                            cliente -- no existe un "cliente" real para
+                            encuestas médicas. CHAT_GRUPOS.id_cliente es
+                            NOT NULL y está compartida con AppWeb v1/APK
+                            (no se puede tocar el esquema), así que este
+                            tipo usa ID_CLIENTE_ENCUESTADORES como sentinel
+                            reservado en vez de NULL.
 """
 from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-TIPOS_VALIDOS = ("operativo", "operativo_cliente")
+TIPOS_VALIDOS = ("operativo", "operativo_cliente", "encuestador")
 ROLES_COORDINADOR = (3, 4, 8, 11)  # 8 = admin (Usuario.is_admin)
+ROLES_ENCUESTADOR = (12, 13)  # 12 = Encuestador, 13 = IQVIA
+# 0 nunca es un id_cliente real (IDENTITY arranca en 1) -- reservado para
+# el único grupo 'encuestador'.
+ID_CLIENTE_ENCUESTADORES = 0
+NOMBRE_GRUPO_ENCUESTADORES = "Equipo Encuestadores · IQVIA"
 
 
 def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[dict]:
     """Lista de miembros de un grupo: [{'id_usuario', 'username', 'origen'}]."""
     if tipo_grupo not in TIPOS_VALIDOS:
         raise ValueError(f"tipo_grupo inválido: {tipo_grupo}")
+
+    if tipo_grupo == "encuestador":
+        rows = db.execute(text("""
+            SELECT id_usuario, username FROM USUARIOS
+            WHERE id_rol IN (12, 13) AND activo = 1
+        """)).fetchall()
+        return [{"id_usuario": int(r[0]), "username": r[1], "origen": "encuestador"} for r in rows]
 
     bloques: list[tuple[str, dict]] = [
         ("""
@@ -143,6 +163,22 @@ def asegurar_grupos_cliente(db: Session, id_cliente: int, cliente_nombre: Option
     return creados
 
 
+def asegurar_grupo_encuestadores(db: Session) -> Optional[int]:
+    """Crea (idempotente) el único grupo 'encuestador' global. Devuelve su id_grupo."""
+    row = db.execute(text("""
+        SELECT id_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND tipo_grupo = 'encuestador'
+    """), {"cid": ID_CLIENTE_ENCUESTADORES}).fetchone()
+    if row:
+        return int(row[0])
+    row = db.execute(text("""
+        INSERT INTO CHAT_GRUPOS (id_cliente, tipo_grupo, nombre, activa, fecha_creacion)
+        OUTPUT INSERTED.id_grupo
+        VALUES (:cid, 'encuestador', :nombre, 1, GETDATE())
+    """), {"cid": ID_CLIENTE_ENCUESTADORES, "nombre": NOMBRE_GRUPO_ENCUESTADORES}).fetchone()
+    db.commit()
+    return int(row[0]) if row else None
+
+
 def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
     """Grupos (ya provisionados y activos) a los que pertenece un usuario.
 
@@ -158,6 +194,18 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
         return []
 
     id_perfil, id_rol = u[1], u[2]
+
+    # Encuestador (12) / IQVIA (13): completamente aparte del sistema por
+    # cliente -- un solo grupo global, sin rutas/clientes de por medio.
+    if id_rol in ROLES_ENCUESTADOR:
+        id_grupo_enc = asegurar_grupo_encuestadores(db)
+        if not id_grupo_enc:
+            return []
+        return [{
+            "id_grupo": id_grupo_enc, "id_cliente": ID_CLIENTE_ENCUESTADORES,
+            "tipo_grupo": "encuestador", "nombre": NOMBRE_GRUPO_ENCUESTADORES,
+        }]
+
     id_merc = id_perfil if id_rol == 5 else None
     id_analista = id_perfil if id_rol == 2 else None
     id_cliente_user = id_perfil if id_rol == 1 else None
