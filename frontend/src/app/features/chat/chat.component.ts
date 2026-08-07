@@ -109,6 +109,21 @@ export class ChatComponent implements OnInit, OnDestroy {
   // Los grupos 'operativo_cliente' incluyen usuarios del cliente -- por eso
   // viven en la pestaña Cliente, no en Equipo Operativo.
   activeChatTab = signal<'cliente' | 'equipo'>('cliente');
+  // Roles que representan a un cliente final (dueño/comprador de la data,
+  // no personal interno): no tienen que ver la pestaña "Cliente" -- esos
+  // chats son justamente CON el cliente, y ellos SON el cliente. Se computa
+  // acá (no se reutiliza el is_client del backend) porque ese flag agrupa
+  // también coordinadores/vendedor/encuestador por otros motivos de permisos
+  // que no tienen que ver con esta pestaña -- tocarlo habría cambiado su
+  // comportamiento sin que nadie lo pidiera.
+  soloEquipoOperativo = computed(() => {
+    const r = this.auth.currentUser()?.id_rol;
+    return r === 1 || r === 13; // 1 = Cliente, 13 = Cliente Encuestador (IQVIA)
+  });
+  // Nunca renderiza contenido de la pestaña Cliente para esos roles, sin
+  // importar cómo haya quedado activeChatTab -- defensa en profundidad además
+  // de ocultar el botón y forzar el default en ngOnInit.
+  tabEfectivo = computed<'cliente' | 'equipo'>(() => this.soloEquipoOperativo() ? 'equipo' : this.activeChatTab());
   gruposOperativo = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo'));
   gruposCliente = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo_cliente'));
   clienteCount = computed(() => this.inbox().filter(i => i.kind === 'visit').length + this.gruposCliente().length);
@@ -159,6 +174,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     const u = this.auth.currentUser();
+    if (this.soloEquipoOperativo()) this.activeChatTab.set('equipo');
     if (u?.is_coordinador_exclusivo) {
       this.isCoordinadorExclusivo.set(true);
       this.loadExclusiveClients();

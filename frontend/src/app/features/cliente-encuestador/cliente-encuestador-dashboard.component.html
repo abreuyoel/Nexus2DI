@@ -13,11 +13,16 @@
           </div>
           <span class="text-xs font-black text-indigo-400 uppercase tracking-[.2em] bg-indigo-500/10 px-3 py-1 rounded-full">Business Intelligence</span>
         </div>
-        <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight">MedInsights Dashboard</h1>
+        <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight">IQVIA Dashboard</h1>
         <p class="text-slate-400 mt-2 text-sm max-w-md">Análisis integral de médicos, centros de salud y encuestas.</p>
       </div>
-      
-      
+
+      <button (click)="exportarExcel()" [disabled]="exportando"
+              class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait text-white font-bold text-sm px-5 py-3 rounded-xl transition-colors shadow-lg shadow-emerald-600/20 self-start md:self-center">
+        <mat-icon class="!text-lg" *ngIf="!exportando">description</mat-icon>
+        <div *ngIf="exportando" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+        {{ exportando ? 'Generando...' : 'Exportar a Excel' }}
+      </button>
     </div>
 
     <!-- ════ FILTROS ROW ════ -->
@@ -290,15 +295,25 @@
     </div>
 
 
-    <!-- ═══════════════════════════════════ CHARTS ROW 1: DOUGHNUTS ═══ -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-indigo-500/20 transition-all">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4">
-          <mat-icon class="!text-base text-indigo-400">donut_large</mat-icon> Médicos por especialidad
-          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
-        </h3>
-        <div class="h-52 cursor-pointer"><canvas baseChart [data]="espChartData" [options]="doughnutOptions" [type]="'doughnut'" (chartClick)="onEspClick($event)"></canvas></div>
+    <!-- ═══════════════════════════════════ ESPECIALIDADES: ancho completo ═══
+         Barras horizontales, no anillo -- puede haber 100+ especialidades y
+         un doughnut se vuelve ilegible mucho antes que eso. El contenedor
+         scrollea verticalmente y el canvas crece con la cantidad real de
+         categorías, para que cada barra tenga alto legible sea cual sea el total. -->
+    <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-indigo-500/20 transition-all">
+      <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4">
+        <mat-icon class="!text-base text-indigo-400">bar_chart</mat-icon> Médicos por especialidad
+        <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
+      </h3>
+      <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+        <div [style.height.px]="espChartHeightPx()" class="cursor-pointer">
+          <canvas baseChart [data]="espChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onEspClick($event)"></canvas>
+        </div>
       </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ CHARTS ROW 1: DOUGHNUTS ═══ -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-emerald-500/20 transition-all">
         <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-emerald-400">payments</mat-icon> Distribución valor consulta

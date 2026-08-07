@@ -1,9 +1,12 @@
 import json
+import io
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func, case, text
 from typing import List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
@@ -310,3 +313,84 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
         "success": True, "total": total, "page": page, "per_page": per_page,
         "medicos": medicos
     }
+
+
+@router.get("/export")
+def api_export_excel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_cliente_encuestador(current_user)
+
+    base_q, pc = get_base_query(db)
+    base_q = apply_filters(base_q, request, pc)
+
+    rows = base_q.with_entities(
+        Medico.id_medico_externo, Medico.apellido1, Medico.apellido2, Medico.nombre1, Medico.nombre2,
+        Medico.especialidad, Medico.sub_especialidad, Medico.universidad_graduacion,
+        Medico.ciudad, Medico.estado, Medico.telefono, Medico.whatsapp, Medico.email,
+        Medico.linkedin, Medico.instagram,
+        CentroSalud.nombre_centro, pc.c.nombre_clinica, pc.c.piso_consultorio, pc.c.direccion_especifica,
+        pc.c.valor_consulta_rango, pc.c.promedio_pacientes_semanal_rango, pc.c.horarios_json,
+        EncuestaCentro.fecha_verificacion, EncuestaCentro.fuente_informacion, User.username,
+    ).order_by(desc(EncuestaCentro.fecha_verificacion), Medico.apellido1).all()
+
+    columnas = [
+        "ID Externo", "Apellidos", "Nombres", "Especialidad", "Sub-especialidad", "Universidad",
+        "Ciudad", "Estado", "Teléfono", "WhatsApp", "Email", "LinkedIn", "Instagram",
+        "Centro de Salud", "Consultorio", "Piso/Consultorio", "Dirección",
+        "Valor Consulta", "Pacientes/Semana", "Días de Consulta",
+        "Fecha Verificación", "Fuente", "Encuestador",
+    ]
+    data = []
+    for r in rows:
+        data.append({
+            "ID Externo": r.id_medico_externo,
+            "Apellidos": f"{r.apellido1} {r.apellido2 or ''}".strip(),
+            "Nombres": f"{r.nombre1} {r.nombre2 or ''}".strip(),
+            "Especialidad": r.especialidad,
+            "Sub-especialidad": r.sub_especialidad,
+            "Universidad": r.universidad_graduacion,
+            "Ciudad": r.ciudad,
+            "Estado": r.estado,
+            "Teléfono": r.telefono,
+            "WhatsApp": r.whatsapp,
+            "Email": r.email,
+            "LinkedIn": r.linkedin,
+            "Instagram": r.instagram,
+            "Centro de Salud": r.nombre_centro,
+            "Consultorio": r.nombre_clinica,
+            "Piso/Consultorio": r.piso_consultorio,
+            "Dirección": r.direccion_especifica,
+            "Valor Consulta": r.valor_consulta_rango,
+            "Pacientes/Semana": r.promedio_pacientes_semanal_rango,
+            "Días de Consulta": _dias_activos_str(r.horarios_json),
+            "Fecha Verificación": r.fecha_verificacion.isoformat() if r.fecha_verificacion else None,
+            "Fuente": r.fuente_informacion,
+            "Encuestador": r.username,
+        })
+
+    df = pd.DataFrame(data, columns=columnas) if data else pd.DataFrame(columns=columnas)
+
+    # engine='openpyxl' -- es el que está declarado en requirements.txt.
+    # xlsxwriter (usado en reporteria.py) no lo está; ese endpoint probablemente
+    # ya falla en producción con ModuleNotFoundError, pero no es parte de este cambio.
+    from openpyxl.styles import Font, PatternFill
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Médicos')
+        worksheet = writer.sheets['Médicos']
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='21262D', end_color='21262D', fill_type='solid')
+        for col_num, value in enumerate(df.columns.values, start=1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.font = header_font
+            cell.fill = header_fill
+            max_len = max(df[value].astype(str).map(len).max() if not df.empty else 0, len(str(value))) + 2
+            worksheet.column_dimensions[cell.column_letter].width = min(max_len, 45)
+    output.seek(0)
+
+    filename = f"IQVIA_Medicos_{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        output,
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )

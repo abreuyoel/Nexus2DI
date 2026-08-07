@@ -80,7 +80,7 @@
         }
       </div>
       <!-- Pestañas: Cliente / Equipo Operativo -->
-      @if (!auth.currentUser()?.is_client) {
+      @if (!auth.currentUser()?.is_client && !soloEquipoOperativo()) {
         <div class="flex gap-1 mt-3 bg-slate-100 dark:bg-slate-950/40 rounded-xl p-1">
           <button (click)="setChatTab('cliente')"
                   [class]="activeChatTab() === 'cliente' ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'"
@@ -134,7 +134,7 @@
             </div>
           </div>
         }
-      } @else if (activeChatTab() === 'cliente') {
+      } @else if (tabEfectivo() === 'cliente') {
         <!-- Cliente: chats de visita legacy + grupos "Equipo + Cliente"
              (tipo_grupo='operativo_cliente' -- incluyen usuarios del
              cliente, por eso viven acá y no en Equipo Operativo). -->

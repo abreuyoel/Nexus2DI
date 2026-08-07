@@ -47,7 +47,9 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "encuestador": {"read": True, "write": True},
     },
     "cliente_encuestador": {
-        "dashboard": {"read": True},
+        # Sin "dashboard": este rol (IQVIA) entra directo a BI Encuestas
+        # (redirectAfterLogin ya apunta ahí) -- el dashboard genérico no le
+        # aporta nada y solo confunde en el sidebar.
         "chat": {"read": True},
         "cliente-encuestador": {"read": True},
     },

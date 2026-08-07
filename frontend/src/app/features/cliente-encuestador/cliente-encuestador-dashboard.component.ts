@@ -81,6 +81,7 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   private filterSub!: Subscription;
   
   loading = true;
+  exportando = false;
   kpis: any = null;
   medicos: any[] = [];
   
@@ -127,7 +128,7 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   };
 
   // Chart Data
-  espChartData: ChartData<'doughnut'> = { labels: [], datasets: [] };
+  espChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   valChartData: ChartData<'doughnut'> = { labels: [], datasets: [] };
   pacChartData: ChartData<'doughnut'> = { labels: [], datasets: [] };
   estChartData: ChartData<'bar'> = { labels: [], datasets: [] };
@@ -225,10 +226,10 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  loadData() {
-    this.loading = true;
-    
-    let params = new URLSearchParams();
+  /** Mismo query string para /kpis, /medicos y /export -- los tres tienen que
+   *  respetar exactamente los filtros activos (dropdowns + clicks en gráficos). */
+  private buildFilterParams(): URLSearchParams {
+    const params = new URLSearchParams();
     Object.keys(this.filters).forEach(k => {
       const v = (this.filters as any)[k];
       if (Array.isArray(v)) {
@@ -237,7 +238,13 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
         params.append(k, v);
       }
     });
-    
+    return params;
+  }
+
+  loadData() {
+    this.loading = true;
+    const params = this.buildFilterParams();
+
     this.http.get<any>(`${environment.apiUrl}/api/cliente-encuestador/kpis?${params.toString()}`).subscribe({
       next: (res: any) => {
         this.kpis = res;
@@ -271,11 +278,36 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
 
   private centroIdFor = (nombre: string) => this.catalogs.centros.find((c: any) => c.nombre_centro === nombre)?.id_centro;
 
+  /** Alto del canvas de especialidades en base a la cantidad real de
+   *  categorías (28px por barra, mínimo 320) -- el contenedor scrollea, así
+   *  que da igual si son 5 o 150: cada barra queda con alto legible. */
+  espChartHeightPx(): number {
+    const n = this.espChartData.labels?.length || 0;
+    return Math.max(320, n * 28);
+  }
+
+  exportarExcel() {
+    this.exportando = true;
+    const params = this.buildFilterParams();
+    this.http.get(`${environment.apiUrl}/api/cliente-encuestador/export?${params.toString()}`, { responseType: 'blob' }).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `IQVIA_Medicos_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        this.exportando = false;
+      },
+      error: () => { this.exportando = false; },
+    });
+  }
+
   buildCharts(charts: any) {
     const espLabels = charts.especialidades.map((c: any) => c.name);
     this.espChartData = {
       labels: espLabels,
-      datasets: [{ data: charts.especialidades.map((c: any) => c.value), backgroundColor: this.colorsFor(espLabels, this.filters.especialidades), borderWidth: 0 }]
+      datasets: [{ data: charts.especialidades.map((c: any) => c.value), backgroundColor: this.colorsFor(espLabels, this.filters.especialidades), borderRadius: 4 }]
     };
 
     const valLabels = charts.valor_consulta.map((c: any) => c.name);
