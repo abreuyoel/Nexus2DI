@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
+from sqlalchemy.exc import IntegrityError
 from typing import List, Any
 from datetime import datetime
 from pydantic import BaseModel
@@ -243,7 +244,7 @@ def api_encuestas_crear(req: EncuestaCentroCreate, db: Session = Depends(get_db)
     
     if existente:
         raise HTTPException(status_code=409, detail=f"Ya tienes una encuesta abierta. Ciérrala antes de iniciar otra (ID {existente.id_encuesta}).")
-        
+
     nueva_encuesta = EncuestaCentro(
         id_usuario=current_user.id,
         id_centro=req.id_centro,
@@ -254,9 +255,24 @@ def api_encuestas_crear(req: EncuestaCentroCreate, db: Session = Depends(get_db)
         estado='Abierta'
     )
     db.add(nueva_encuesta)
-    db.commit()
+    # Mismo riesgo de carrera que medico-centro (ver comentario ahí): el
+    # SELECT de "existente" de arriba no es atómico con el INSERT. El índice
+    # único filtrado UQ_encuesta_abierta_por_jornada (solo WHERE estado=
+    # 'Abierta') es la protección real -- si se pierde la carrera, se
+    # devuelve la encuesta que sí ganó en vez de un 500.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        ganadora = db.query(EncuestaCentro).filter(
+            EncuestaCentro.id_jornada == jornada.id_jornada,
+            EncuestaCentro.estado == 'Abierta'
+        ).first()
+        if ganadora:
+            return {"success": True, "id_encuesta": ganadora.id_encuesta, "id_jornada": jornada.id_jornada}
+        raise HTTPException(status_code=409, detail="Ya tienes una encuesta abierta.")
     db.refresh(nueva_encuesta)
-    
+
     return {"success": True, "id_encuesta": nueva_encuesta.id_encuesta, "id_jornada": jornada.id_jornada}
 
 @router.post("/encuestas/{id_encuesta}/cerrar")
@@ -374,16 +390,16 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
         MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta,
         MedicoCentroEncuesta.id_medico == id_medico
     ).first()
-    
+
     if dup:
         raise HTTPException(status_code=409, detail="Este médico ya fue registrado en esta encuesta del centro.")
-        
+
     m_c_e = MedicoCentroEncuesta(
         id_encuesta=encuesta.id_encuesta,
         id_medico=id_medico
     )
     db.add(m_c_e)
-    
+
     for cons in req.consultorios:
         nuevo_consultorio = MedicoConsultorio(
             id_medico=id_medico,
@@ -395,15 +411,40 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
             promedio_pacientes_semanal_rango=cons.promedio_pacientes_semanal_rango
         )
         db.add(nuevo_consultorio)
-        
-    db.commit()
-    
+
+    # El SELECT de arriba (dup) NO alcanza solo: con 2 réplicas del backend
+    # corriendo en paralelo, dos requests casi simultáneas -- doble tap del
+    # encuestador, o el reintento automático de la cola offline mientras el
+    # primer intento seguía en vuelo con mala señal -- pueden pasar el
+    # chequeo las dos antes de que ninguna haga commit. Es la causa
+    # confirmada de médicos duplicados reportada en campo. El índice único
+    # UQ_medico_centro_encuesta (ver migración SQL) es la protección real:
+    # si se pierde la carrera acá, el commit falla con IntegrityError y se
+    # trata como éxito (ya quedó registrado por el otro intento), en vez de
+    # tirarle un 500 al encuestador -- y al ser una sola transacción, los
+    # MedicoConsultorio de arriba se revierten con el rollback, así que
+    # tampoco quedan consultorios duplicados sueltos.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        cnt = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
+            MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
+        ).scalar() or 0
+        return {
+            "success": True,
+            "id_medico": id_medico,
+            "id_encuesta": encuesta.id_encuesta,
+            "medicos_en_centro": cnt,
+            "ya_registrado": True,
+        }
+
     cnt = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
         MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
     ).scalar() or 0
-    
+
     return {
-        "success": True, 
+        "success": True,
         "id_medico": id_medico,
         "id_encuesta": encuesta.id_encuesta,
         "medicos_en_centro": cnt

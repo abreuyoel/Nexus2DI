@@ -209,8 +209,12 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
             <button type="button" routerLink="/encuestador/centro" class="bg-gray-100 hover:bg-gray-200 text-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white font-semibold py-3 px-8 rounded-lg transition-colors shadow-sm dark:shadow-lg">
               Cancelar
             </button>
-            <button type="submit" [disabled]="!f.valid" class="bg-indigo-600 hover:bg-indigo-700 dark:hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-indigo-600/30 dark:shadow-indigo-500/25">
-              <span class="material-icons">check_circle</span> Guardar médico
+            <button type="submit" [disabled]="!f.valid || guardando" class="bg-indigo-600 hover:bg-indigo-700 dark:hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center gap-2 shadow-lg shadow-indigo-600/30 dark:shadow-indigo-500/25">
+              @if (guardando) {
+                <div class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div> Guardando...
+              } @else {
+                <span class="material-icons">check_circle</span> Guardar médico
+              }
             </button>
           </div>
         </form>
@@ -342,7 +346,25 @@ export class MedicoFormComponent implements OnInit {
     this.searchQuery = m.id_medico_externo;
   }
 
+  guardando = false;
+
   async guardarMedicoCentro() {
+    // Con mala señal el POST puede tardar hasta los 12s del timeout sin
+    // ningún feedback visible -- eso invita a tocar "Guardar" de nuevo, y
+    // ESE doble tap (más el reintento automático de la cola offline) es la
+    // causa confirmada de médicos duplicados reportada en campo. El índice
+    // único en el backend ya lo protege a nivel de datos, pero esto evita
+    // generar el segundo request en primer lugar.
+    if (this.guardando) return;
+    this.guardando = true;
+    try {
+      await this._guardarMedicoCentro();
+    } finally {
+      this.guardando = false;
+    }
+  }
+
+  private async _guardarMedicoCentro() {
     this.medicoData.consultorios = this.consultorios.map(c => ({
        nombre_clinica: c.nombre_clinica,
        piso_consultorio: c.piso_consultorio,
