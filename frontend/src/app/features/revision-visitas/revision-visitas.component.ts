@@ -581,11 +581,22 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get comparePairs(): { antes: any; despues: any }[] {
     const ph = this.photosByGrupo();
     const byId = (a: any, b: any) => (a.id || 0) - (b.id || 0);
-    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
-    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
+    // El filtro de estado se aplica DESPUÉS de emparejar, no antes. Filtrar
+    // cada lista por separado (como estaba) rompía los pares: al elegir
+    // "Aprobadas", un Antes aprobado cuyo Después seguía pendiente quedaba
+    // emparejado contra el Después de OTRA pareja, o mostraba "Sin foto"
+    // aunque la foto sí existiera -- de ahí los reportes de "solo salen
+    // fotos de antes y no de después" en la pantalla de revisión.
+    // Se conserva el par completo si CUALQUIERA de las dos matchea el filtro.
+    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto)).sort(byId);
+    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto)).sort(byId);
     const n = Math.max(antes.length, despues.length);
     const pairs: { antes: any; despues: any }[] = [];
-    for (let i = 0; i < n; i++) pairs.push({ antes: antes[i] || null, despues: despues[i] || null });
+    for (let i = 0; i < n; i++) {
+      const par = { antes: antes[i] || null, despues: despues[i] || null };
+      const matchea = (par.antes && this.estadoMatch(par.antes)) || (par.despues && this.estadoMatch(par.despues));
+      if (matchea) pairs.push(par);
+    }
     return pairs;
   }
 
