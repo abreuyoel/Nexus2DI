@@ -257,9 +257,34 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
    * sus stats (visitas/fotos/sin_revisar) ya calculadas contra el rango de
    * fechas activo, y quedan ordenadas por quién tiene más fotos sin revisar
    * primero -- así se ve de un vistazo a quién hay que atender. */
+  /** Roster + mercaderistas que TIENEN visitas en el período pero no salen en
+   *  el roster (sin ruta activa asignada, ruta dada de baja, etc.). Sin esto
+   *  sus visitas quedaban inalcanzables: contaban en las tarjetas de arriba
+   *  (VISITAS/FOTOS salen de review-list) pero no había ninguna tarjeta que
+   *  abrir, y la pantalla decía "No hay mercaderistas asignados con estos
+   *  filtros" con el contador en 1. Reportado en campo como "busqué esa visita
+   *  y no me sale la tarjeta". */
+  private get rosterConVisitasHuerfanas(): any[] {
+    const roster = this.mercaderistasRoster();
+    const vistos = new Set(roster.map(r => `${r.id_mercaderista}_${r.cliente}`));
+    const extra: any[] = [];
+    for (const v of this.visitas()) {
+      const k = `${v.id_mercaderista}_${v.cliente}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      extra.push({
+        id_mercaderista: v.id_mercaderista, mercaderista: v.mercaderista,
+        id_cliente: v.id_cliente, cliente: v.cliente,
+        ruta: v.ruta, departamentos: v.ciudad || '',
+        _sinRuta: true,   // se marca en la tarjeta: tiene visitas pero no ruta activa
+      });
+    }
+    return [...roster, ...extra];
+  }
+
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
-    return this.mercaderistasRoster()
+    return this.rosterConVisitasHuerfanas
       .filter(r => {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
         if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
