@@ -148,6 +148,22 @@ def api_centros_create(req: CentroSaludCreate, db: Session = Depends(get_db), cu
         "estado": req.estado.strip() if req.estado else None
     }
     
+    # Prevenir duplicados si la cola offline reintenta el POST por timeout
+    search_str = f'%"nombre_centro": "{req.nombre_centro.strip()}"%'
+    existente = db.query(Solicitud).filter(
+        Solicitud.user_id == current_user.id,
+        Solicitud.tipo == "creacion_centro_salud",
+        Solicitud.estado == "pendiente",
+        Solicitud.descripcion.like(search_str)
+    ).first()
+    
+    if existente:
+        return {
+            "success": True,
+            "solicitud_id": existente.id,
+            "message": "Solicitud ya estaba registrada (reintento de cola offline)."
+        }
+
     nueva_solicitud = Solicitud(
         user_id=current_user.id,
         tipo="creacion_centro_salud",

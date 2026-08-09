@@ -26,6 +26,14 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
           <button *ngIf="pendingSync > 0" (click)="verPendientes()" class="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-slate-800 text-slate-300">
             {{ mostrandoPendientes ? 'Ocultar' : 'Ver' }}
           </button>
+          
+          <button (click)="exportarBackup()" *ngIf="pendingSync > 0" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-blue-950 text-blue-400" title="Descargar Respaldo">
+            <span class="material-icons !text-sm">download</span>
+          </button>
+          <label class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-purple-950 text-purple-400 cursor-pointer" title="Importar Respaldo">
+            <span class="material-icons !text-sm">upload</span>
+            <input type="file" class="hidden" accept=".json" (change)="importarBackup($event)">
+          </label>
         </div>
       </div>
 
@@ -284,5 +292,42 @@ export class EncuestadorDashboardComponent implements OnInit {
     } catch {
       return '';
     }
+  }
+
+  async exportarBackup() {
+    const jsonStr = await this.offline.exportQueue();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().split('T')[0];
+    a.href = url;
+    a.download = `respaldo_encuestas_${fecha}.json`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    this.confirmDialog.info('Respaldo descargado con éxito. Si cambias de teléfono o la app se queda sin espacio, puedes restaurarlo con el botón de subir.', { title: 'Respaldo Generado' });
+  }
+
+  async importarBackup(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        const { success, count, error } = await this.offline.importQueue(result);
+        if (success) {
+          this.confirmDialog.info(`Se han importado ${count} registros pendientes desde el respaldo.`, { title: 'Respaldo Restaurado' });
+          if (this.mostrandoPendientes) {
+            this.pendientes = await this.offline.getPendientes();
+          }
+        } else {
+          this.confirmDialog.info(`Error al importar: ${error}`, { title: 'Error' });
+        }
+      }
+    };
+    reader.readAsText(file);
+    // Limpiar el input
+    (event.target as HTMLInputElement).value = '';
   }
 }
