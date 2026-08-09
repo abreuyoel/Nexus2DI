@@ -446,6 +446,15 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   setGrupoSel(key: string): void { this.grupoSel = key; this.photoFilter = 'todas'; }
   isReviewable(f: any): boolean { return ![5, 6].includes(f.id_tipo_foto); }
 
+  /** Fila sintética que inserta el auto-cierre de las 7pm cuando el
+   *  mercaderista no desactivó el PDV a mano -- no tiene foto real
+   *  (file_path NULL), así que no debe renderizarse como <img>. Se detecta
+   *  por Estado y también por url vacía, por si alguna quedó con otro
+   *  Estado tras una revisión manual. */
+  esAutoCierre(f: any): boolean {
+    return this.estadoDe(f) === 'Auto-cierre' || (f?.id_tipo_foto === 6 && !f?.url);
+  }
+
   estadoDe(f: any): string { return f?.estado ?? 'pendiente'; }
   isAprobada(f: any): boolean { return this.estadoDe(f) === 'Aprobada'; }
   isRechazada(f: any): boolean { return this.estadoDe(f) === 'Rechazada'; }

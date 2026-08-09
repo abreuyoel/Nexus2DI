@@ -367,7 +367,20 @@
           <div class="rounded-2xl overflow-hidden border-2 transition-all"
             [ngClass]="isAprobada(f) ? 'border-emerald-500' : isRechazada(f) ? 'border-rose-500' : 'border-slate-200 dark:border-white/10'">
             <div class="relative">
-              <img [appAuthSrc]="f.url" (click)="openLightbox(f.url)" class="w-full h-52 object-cover cursor-pointer bg-slate-100 dark:bg-slate-800" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.opacity=0.3">
+              <!-- Las filas de "Auto-cierre" no son fotos: el backend las inserta
+                   a las 7pm cuando el mercaderista no desactivó el PDV a mano
+                   (file_path NULL). Renderizarlas como <img> daba un recuadro
+                   vacío indistinguible de una foto que no carga -- reportado
+                   como "fotos de desactivación en blanco". -->
+              @if (esAutoCierre(f)) {
+                <div class="w-full h-52 flex flex-col items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-4 text-center">
+                  <mat-icon class="!text-3xl">schedule</mat-icon>
+                  <span class="text-xs font-bold">Cierre automático (sin foto)</span>
+                  <span class="text-[10px] leading-tight">El mercaderista no tomó la foto de desactivación; el sistema cerró la visita a las 7:00 pm.</span>
+                </div>
+              } @else {
+                <img [appAuthSrc]="f.url" (click)="openLightbox(f.url)" class="w-full h-52 object-cover cursor-pointer bg-slate-100 dark:bg-slate-800" loading="lazy" decoding="async" fetchpriority="low" onerror="this.style.opacity=0.3">
+              }
               <span class="absolute top-2 left-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-black/60 text-white">{{ tipoLabel(f.id_tipo_foto) }}</span>
               @if (isAprobada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-500 text-white">APROBADA</span> }
               @else if (isRechazada(f)) { <span class="absolute top-2 right-2 text-[10px] font-black px-2 py-0.5 rounded-md bg-rose-500 text-white">RECHAZADA</span> }
