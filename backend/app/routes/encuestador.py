@@ -244,6 +244,10 @@ def api_encuestas_crear(req: EncuestaCentroCreate, db: Session = Depends(get_db)
     ).first()
     
     if existente:
+        if existente.id_centro == req.id_centro:
+            # Si es el mismo centro, es un reintento de la cola offline que falló por timeout
+            # pero sí llegó a crearse en el backend. Devolver éxito para destrabar la cola.
+            return {"success": True, "id_encuesta": existente.id_encuesta, "id_jornada": jornada.id_jornada}
         raise HTTPException(status_code=409, detail=f"Ya tienes una encuesta abierta. Ciérrala antes de iniciar otra (ID {existente.id_encuesta}).")
 
     nueva_encuesta = EncuestaCentro(
@@ -356,10 +360,21 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
     id_medico = req.id_medico
     if not id_medico:
         # Create or find medico
-        if not req.id_medico_externo or not req.apellido1 or not req.nombre1 or not req.especialidad or not req.ciudad or not req.estado:
+        if not req.apellido1 or not req.apellido2 or not req.nombre1 or not req.especialidad or not req.ciudad or not req.estado:
             raise HTTPException(status_code=400, detail="Faltan campos obligatorios del médico")
             
-        existente = db.query(Medico).filter(Medico.id_medico_externo == req.id_medico_externo).first()
+        existente = None
+        if req.id_medico_externo and req.id_medico_externo != "000000" and req.id_medico_externo.strip() != "":
+            existente = db.query(Medico).filter(Medico.id_medico_externo == req.id_medico_externo).first()
+        else:
+            # Si no hay cédula, intentamos evitar duplicar el mismo médico en reintentos offline de la cola
+            # matcheando por nombre exacto.
+            existente = db.query(Medico).filter(
+                func.lower(Medico.nombre1) == req.nombre1.lower(),
+                func.lower(Medico.apellido1) == req.apellido1.lower(),
+                func.lower(Medico.especialidad) == req.especialidad.lower()
+            ).order_by(desc(Medico.id_medico)).first()
+            
         if existente:
             id_medico = existente.id_medico
         else:
@@ -513,7 +528,7 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
     if not medico:
         raise HTTPException(status_code=404, detail="Médico no encontrado")
 
-    if not req.apellido1 or not req.nombre1 or not req.especialidad or not req.ciudad or not req.estado:
+    if not req.apellido1 or not req.apellido2 or not req.nombre1 or not req.especialidad or not req.ciudad or not req.estado:
         raise HTTPException(status_code=400, detail="Faltan campos obligatorios del médico")
 
     medico.apellido1 = req.apellido1

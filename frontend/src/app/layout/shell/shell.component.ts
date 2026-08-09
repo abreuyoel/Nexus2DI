@@ -14,6 +14,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { EncuestadorOfflineQueueService } from '../../features/encuestador/services/encuestador-offline-queue.service';
 
 interface NavItem {
   label: string;
@@ -49,7 +51,7 @@ export class ShellComponent implements OnInit {
   hasClientDashboard = signal(false);
 
   private navItems: NavItem[] = [
-    { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: [] },
+    { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: ['admin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
     { label: 'Plan de Acción', icon: 'assignment_late', route: '/plan-accion', roles: ['admin', 'analyst'] },
@@ -97,7 +99,9 @@ export class ShellComponent implements OnInit {
     private auth: AuthService,
     private api: ApiService,
     private router: Router,
-    private realtime: RealtimeService
+    private realtime: RealtimeService,
+    private confirmDialog: ConfirmService,
+    private offline: EncuestadorOfflineQueueService
   ) {
     this.loadNotifications();
   }
@@ -171,7 +175,19 @@ export class ShellComponent implements OnInit {
     }
   }
 
-  logout(): void { this.auth.logout(); }
+  async intentarLogout(): Promise<void> {
+    if (this.user()?.rol === 'encuestador') {
+      const pendientes = await this.offline.getPendientes();
+      if (pendientes.length > 0) {
+        const ok = await this.confirmDialog.confirm(
+          `Tienes ${pendientes.length} registros pendientes por subir o sincronizar porque estabas sin conexión. Si cierras sesión sin sincronizar, podrías causar problemas si otro usuario ingresa en este dispositivo. ¿Estás seguro de cerrar sesión?`,
+          { title: 'Sincronización pendiente', confirmText: 'Sí, cerrar sesión', danger: true }
+        );
+        if (!ok) return;
+      }
+    }
+    this.auth.logout();
+  }
 
   private loadNotifications(): void {
     this.api.getRejectionNotifications().subscribe({

@@ -35,17 +35,22 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
           No cierres sesión ni borres los datos del navegador hasta que se sincronicen.
         </p>
         <div *ngIf="mostrandoPendientes" class="mt-2 space-y-1 border-t border-amber-900/50 pt-2">
-          <div *ngFor="let e of pendientes" class="flex items-center justify-between gap-2 text-xs">
-            <span class="text-amber-100/80 truncate">
-              <span class="material-icons !text-xs align-middle" [class.text-red-400]="e.status === 'error'">
-                {{ e.status === 'error' ? 'error_outline' : 'schedule' }}
+          <div *ngFor="let e of pendientes" class="flex flex-col gap-2 text-xs border-b border-amber-900/50 pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
+            <div class="flex items-center justify-between">
+              <span class="text-amber-100/80 font-bold truncate">
+                <span class="material-icons !text-xs align-middle" [class.text-red-400]="e.status === 'error'">
+                  {{ e.status === 'error' ? 'error_outline' : 'schedule' }}
+                </span>
+                {{ e.label }}
+                <span *ngIf="e.error" class="text-red-400/80">— {{ e.error }}</span>
               </span>
-              {{ e.label }}
-              <span *ngIf="e.error" class="text-red-400/80">— {{ e.error }}</span>
-            </span>
-            <button (click)="descartarPendiente(e)" class="shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-900/60 text-red-200">
-              Descartar
-            </button>
+              <button (click)="descartarPendiente(e)" class="shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-900/60 text-red-200 hover:bg-red-900 transition-colors">
+                Descartar
+              </button>
+            </div>
+            <div *ngIf="e.jsonBody" class="bg-black/30 p-2 rounded text-amber-200/60 whitespace-pre-wrap font-mono text-[10px] max-h-32 overflow-y-auto">
+              {{ formatJson(e.jsonBody) }}
+            </div>
           </div>
         </div>
       </div>
@@ -270,5 +275,14 @@ export class EncuestadorDashboardComponent implements OnInit {
     if (!ok) return;
     await this.offline.descartar(e.id);
     this.pendientes = await this.offline.getPendientes();
+  }
+
+  formatJson(obj: any): string {
+    if (!obj) return '';
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch {
+      return '';
+    }
   }
 }

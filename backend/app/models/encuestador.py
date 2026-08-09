@@ -55,9 +55,9 @@ class Medico(Base):
     __tablename__ = "medicos"
 
     id_medico = Column(Integer, primary_key=True, index=True)
-    id_medico_externo = Column(String(20), nullable=False)
+    id_medico_externo = Column(String(20), nullable=True)
     apellido1 = Column(String(100), nullable=False)
-    apellido2 = Column(String(100), nullable=True)
+    apellido2 = Column(String(100), nullable=False)
     nombre1 = Column(String(100), nullable=False)
     nombre2 = Column(String(100), nullable=True)
     especialidad = Column(String(100), nullable=False)

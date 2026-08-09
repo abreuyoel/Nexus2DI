@@ -30,9 +30,9 @@ class ConsultorioCreate(BaseModel):
 class MedicoCentroCreate(BaseModel):
     id_medico: Optional[int] = None
     id_medico_externo: Optional[str] = None
-    apellido1: Optional[str] = None
-    apellido2: Optional[str] = None
-    nombre1: Optional[str] = None
+    apellido1: str
+    apellido2: str
+    nombre1: str
     nombre2: Optional[str] = None
     especialidad: Optional[str] = None
     sub_especialidad: Optional[str] = None

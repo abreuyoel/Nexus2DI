@@ -64,16 +64,16 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
           
           <div class="grid grid-cols-1 md:grid-cols-4 gap-x-5 gap-y-5 mb-10">
             <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">ID Médico (cédula/ext.) <span class="text-red-500 dark:text-red-400">*</span></label>
-              <input type="text" [(ngModel)]="medicoData.id_medico_externo" name="id_externo" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">ID Médico (cédula/ext.)</label>
+              <input type="text" [(ngModel)]="medicoData.id_medico_externo" name="id_externo" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
             </div>
             <div class="md:col-span-1">
               <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Apellido 1 <span class="text-red-500 dark:text-red-400">*</span></label>
               <input type="text" [(ngModel)]="medicoData.apellido1" name="apellido1" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
             </div>
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Apellido 2</label>
-              <input type="text" [(ngModel)]="medicoData.apellido2" name="apellido2" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Apellido 2 <span class="text-red-500 dark:text-red-400">*</span></label>
+              <input type="text" [(ngModel)]="medicoData.apellido2" name="apellido2" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
             </div>
 
             <div class="md:col-span-1">

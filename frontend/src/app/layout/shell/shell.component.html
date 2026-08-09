@@ -13,7 +13,7 @@
     [class.w-72]="sidenavOpen()" 
     [class.w-20]="!sidenavOpen()"
     [class.-translate-x-full]="!sidenavOpen()"
-    class="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-300 transition-all duration-500 ease-in-out flex flex-col z-50 fixed h-screen lg:sticky lg:top-0 border-r border-white/5 lg:translate-x-0 overflow-hidden"
+    class="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-300 transition-all duration-500 ease-in-out flex flex-col z-50 fixed h-screen lg:sticky lg:top-0 border-r border-white/5 lg:translate-x-0 overflow-y-auto overflow-x-hidden custom-scrollbar"
   >
     <!-- Sidebar Header -->
     <div class="h-20 flex items-center px-6 gap-4 border-b border-white/5 shrink-0 overflow-hidden">
@@ -30,7 +30,7 @@
     </div>
 
     <!-- Navigation List -->
-    <nav class="flex-1 overflow-y-auto overflow-x-hidden py-8 px-3 space-y-2 custom-scrollbar">
+    <nav class="flex-1 py-8 px-3 space-y-2">
       @for (item of visibleNavItems(); track item.route) {
         <a 
           [routerLink]="item.route" 
@@ -149,7 +149,7 @@
           <button mat-menu-item routerLink="/profile"><mat-icon>person_outline</mat-icon> Mi Perfil</button>
           <button mat-menu-item routerLink="/settings"><mat-icon>settings_outline</mat-icon> Configuración</button>
           <hr class="my-1 border-slate-100">
-          <button mat-menu-item (click)="logout()" class="text-rose-600">
+          <button mat-menu-item (click)="intentarLogout()" class="text-rose-600">
             <mat-icon class="!text-rose-600">logout</mat-icon> Cerrar sesión
           </button>
         </mat-menu>
