@@ -877,11 +877,24 @@ def get_activaciones(
             JOIN PUNTOS_INTERES1 pin ON vm.identificador_punto_interes = pin.identificador
             JOIN MERCADERISTAS  m   ON vm.id_mercaderista             = m.id_mercaderista
 
+            -- Activación/desactivación se resuelven a nivel PDV+mercaderista+día,
+            -- NO por visita. La APK pide esas dos fotos UNA SOLA VEZ por punto
+            -- (la desactivación al terminar el último cliente pendiente ahí --
+            -- ver gestion_provider.dart::esUltimoClientePendienteHoy), así que
+            -- exigirlas por visita hacía que un PDV con N clientes tuviera como
+            -- máximo 1 de N visitas "completa": el % de Completas era
+            -- matemáticamente inalcanzable y se leía como "el mercaderista no
+            -- hizo nada". Todas las visitas hechas ese día en ese punto quedan
+            -- ligadas a la misma activación/desactivación del punto.
             OUTER APPLY (
                 SELECT TOP 1 ft.id_visita, ft.id_foto, ft.file_path,
                        ft.fecha_registro, ft.Estado
                 FROM FOTOS_TOTALES ft
-                WHERE ft.id_visita = vm.id_visita AND ft.id_tipo_foto = 5
+                JOIN VISITAS_MERCADERISTA vm_a ON vm_a.id_visita = ft.id_visita
+                WHERE ft.id_tipo_foto = 5
+                  AND vm_a.identificador_punto_interes = vm.identificador_punto_interes
+                  AND vm_a.id_mercaderista = vm.id_mercaderista
+                  AND CAST(vm_a.fecha_visita AS DATE) = CAST(vm.fecha_visita AS DATE)
                 ORDER BY ft.fecha_registro DESC
             ) act
 
@@ -889,7 +902,11 @@ def get_activaciones(
                 SELECT TOP 1 ft.id_visita, ft.id_foto, ft.file_path,
                        ft.fecha_registro, ft.Estado
                 FROM FOTOS_TOTALES ft
-                WHERE ft.id_visita = vm.id_visita AND ft.id_tipo_foto = 6
+                JOIN VISITAS_MERCADERISTA vm_d ON vm_d.id_visita = ft.id_visita
+                WHERE ft.id_tipo_foto = 6
+                  AND vm_d.identificador_punto_interes = vm.identificador_punto_interes
+                  AND vm_d.id_mercaderista = vm.id_mercaderista
+                  AND CAST(vm_d.fecha_visita AS DATE) = CAST(vm.fecha_visita AS DATE)
                 ORDER BY ft.fecha_registro DESC
             ) des
 
@@ -1275,16 +1292,30 @@ def get_activaciones(
             FROM VISITAS_MERCADERISTA vm4
             JOIN CLIENTES c4 ON vm4.id_cliente = c4.id_cliente
             JOIN PUNTOS_INTERES1 pin4 ON vm4.identificador_punto_interes = pin4.identificador
+            -- Agrupadas por PDV+mercaderista+día (no por visita) -- mismo
+            -- criterio que act/des en /activaciones: la APK toma esas fotos
+            -- una sola vez por punto, así que por visita un PDV multi-cliente
+            -- nunca llegaba a 100% de completas.
             LEFT JOIN (
-                SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES
-                WHERE id_tipo_foto=5 AND fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
-                GROUP BY id_visita
-            ) act4 ON act4.id_visita=vm4.id_visita
+                SELECT vma.identificador_punto_interes AS id_punto, vma.id_mercaderista,
+                       CAST(vma.fecha_visita AS DATE) AS fecha, MIN(ft.id_foto) AS id_foto
+                FROM FOTOS_TOTALES ft
+                JOIN VISITAS_MERCADERISTA vma ON vma.id_visita = ft.id_visita
+                WHERE ft.id_tipo_foto=5 AND ft.fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
+                GROUP BY vma.identificador_punto_interes, vma.id_mercaderista, CAST(vma.fecha_visita AS DATE)
+            ) act4 ON act4.id_punto = vm4.identificador_punto_interes
+                  AND act4.id_mercaderista = vm4.id_mercaderista
+                  AND act4.fecha = CAST(vm4.fecha_visita AS DATE)
             LEFT JOIN (
-                SELECT id_visita, MIN(id_foto) AS id_foto FROM FOTOS_TOTALES
-                WHERE id_tipo_foto=6 AND fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
-                GROUP BY id_visita
-            ) des4 ON des4.id_visita=vm4.id_visita
+                SELECT vmd.identificador_punto_interes AS id_punto, vmd.id_mercaderista,
+                       CAST(vmd.fecha_visita AS DATE) AS fecha, MIN(ft.id_foto) AS id_foto
+                FROM FOTOS_TOTALES ft
+                JOIN VISITAS_MERCADERISTA vmd ON vmd.id_visita = ft.id_visita
+                WHERE ft.id_tipo_foto=6 AND ft.fecha_registro >= DATEADD(day,-8,CAST(GETDATE() AS DATE))
+                GROUP BY vmd.identificador_punto_interes, vmd.id_mercaderista, CAST(vmd.fecha_visita AS DATE)
+            ) des4 ON des4.id_punto = vm4.identificador_punto_interes
+                  AND des4.id_mercaderista = vm4.id_mercaderista
+                  AND des4.fecha = CAST(vm4.fecha_visita AS DATE)
             WHERE vm4.fecha_visita >= CAST(DATEADD(day,-6,GETDATE()) AS DATE)
         """ + gpd_af + """
             GROUP BY CAST(vm4.fecha_visita AS DATE), c4.cliente
