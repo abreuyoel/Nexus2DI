@@ -23,10 +23,18 @@ class JornadaEncuestador(Base):
     fecha_inicio = Column(DateTime, nullable=False, default=datetime.utcnow)
     fecha_fin = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False)
+    # Ubicación de INICIO (donde activó la jornada)
     latitud = Column(Float, nullable=True)
     longitud = Column(Float, nullable=True)
     ciudad = Column(String(100), nullable=True)
     estado_geo = Column(String(100), nullable=True)
+    # Ubicación de CIERRE (donde finalizó) -- columnas separadas porque un
+    # encuestador se mueve de centro en centro durante el día; sin esto no
+    # había forma de saber dónde terminó, solo dónde empezó.
+    latitud_fin = Column(Float, nullable=True)
+    longitud_fin = Column(Float, nullable=True)
+    ciudad_fin = Column(String(100), nullable=True)
+    estado_geo_fin = Column(String(100), nullable=True)
     notas = Column(String, nullable=True)
 
 class CentroSalud(Base):
