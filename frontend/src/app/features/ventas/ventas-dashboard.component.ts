@@ -72,7 +72,9 @@ type DashboardData = {
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
         <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white">Ventas por día</h3>
         @if (porDiaChart.labels?.length) {
-          <canvas baseChart [data]="porDiaChart" [options]="lineOptions" type="line" style="height:220px"></canvas>
+          <div style="position:relative; height:220px; width:100%">
+            <canvas baseChart [data]="porDiaChart" [options]="lineOptions" type="line"></canvas>
+          </div>
         } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
       </div>
 
@@ -80,7 +82,9 @@ type DashboardData = {
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
         <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white">Pedidos por estado</h3>
         @if (porEstadoChart.labels?.length) {
-          <canvas baseChart [data]="porEstadoChart" [options]="doughnutOptions" type="doughnut" style="height:220px"></canvas>
+          <div style="position:relative; height:220px; width:100%">
+            <canvas baseChart [data]="porEstadoChart" [options]="doughnutOptions" type="doughnut"></canvas>
+          </div>
         } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
       </div>
     </div>
