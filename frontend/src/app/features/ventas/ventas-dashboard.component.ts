@@ -35,6 +35,9 @@ type DashboardData = {
         <h1 class="text-xl font-black tracking-tight leading-none">Dashboard de Ventas</h1>
         <p class="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{{ data()?.periodo?.desde }} → {{ data()?.periodo?.hasta }}</p>
       </div>
+      <a routerLink="/pedidos-ventas" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1">
+        <mat-icon class="!text-base">receipt_long</mat-icon> Pedidos
+      </a>
       <div class="flex items-center gap-2">
         <input type="date" [(ngModel)]="desde" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs">
         <span class="text-slate-400 text-xs">a</span>
