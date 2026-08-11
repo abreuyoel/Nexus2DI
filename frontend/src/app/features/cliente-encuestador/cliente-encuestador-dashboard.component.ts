@@ -391,9 +391,9 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     const features = this.medicos
       .filter(m => m.latitud != null && m.longitud != null)
       .map(m => ({
-        type: 'Feature',
+        type: 'Feature' as const,
         geometry: {
-          type: 'Point',
+          type: 'Point' as const,
           coordinates: [Number(m.longitud), Number(m.latitud)]
         },
         properties: {
@@ -405,7 +405,7 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
       }));
 
     const geojson = {
-      type: 'FeatureCollection',
+      type: 'FeatureCollection' as const,
       features: features
     };
 
