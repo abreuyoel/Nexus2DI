@@ -64,6 +64,8 @@ class UsuarioCurrentResponse(BaseModel):
     is_coordinador_exclusivo: bool
     is_coordinador_tradex: bool
     permisos: List[PermissionResponse] = []
+    nombre: Optional[str] = None
+    cedula: Optional[str] = None
 
     class Config:
         from_attributes = True

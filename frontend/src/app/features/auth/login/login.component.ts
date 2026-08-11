@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, HostListener, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators, FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -11,6 +11,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { AuthService } from '../../../core/services/auth.service';
+import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-login',
@@ -19,25 +21,38 @@ import { AuthService } from '../../../core/services/auth.service';
     CommonModule, ReactiveFormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule,
     MatButtonModule, MatIconModule, MatProgressSpinnerModule, 
-    MatSnackBarModule, MatCheckboxModule, FormsModule
+    MatSnackBarModule, MatCheckboxModule, FormsModule,
+    ConfirmDialogComponent
   ],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.scss']
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   loading = signal(false);
   error = signal('');
   showPass = signal(false);
   rememberMe = signal(false);
+
+  private wasMobile = window.innerWidth <= 1024;
 
   form = this.fb.group({
     username: ['', [Validators.required, Validators.minLength(2)]],
     password: ['', [Validators.required, Validators.minLength(4)]],
   });
 
-  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router) {
+  constructor(
+    private fb: FormBuilder,
+    private auth: AuthService,
+    private router: Router,
+    private confirmSvc: ConfirmService
+  ) {
     if (this.auth.isLoggedIn()) {
-      this.router.navigateByUrl('/dashboard');
+      const u = this.auth.currentUser();
+      if (u && (u.rol === 'mercaderista' || u.is_mercaderista)) {
+        this.router.navigateByUrl('/mercaderista');
+      } else {
+        this.router.navigateByUrl('/dashboard');
+      }
     }
     
     // Load remembered user
@@ -46,6 +61,32 @@ export class LoginComponent {
       this.form.patchValue({ username: savedUser });
       this.rememberMe.set(true);
     }
+  }
+
+  ngOnInit(): void {
+    if (this.wasMobile) {
+      this.promptMobileRedirect();
+    }
+  }
+
+  @HostListener('window:resize', ['$event'])
+  onResize(): void {
+    const mobile = window.innerWidth <= 1024;
+    if (mobile && !this.wasMobile) {
+      this.promptMobileRedirect();
+    }
+    this.wasMobile = mobile;
+  }
+
+  private promptMobileRedirect(): void {
+    this.confirmSvc.confirm(
+      'Detectamos que estás utilizando un tamaño de pantalla móvil. ¿Deseas ir al portal de inicio de sesión de mercaderistas?',
+      { title: 'Cambiar de Vista', confirmText: 'Ir a Login Mercaderista', cancelText: 'Permanecer' }
+    ).then(change => {
+      if (change) {
+        this.router.navigateByUrl('/login-mercaderista');
+      }
+    });
   }
 
   onSubmit(): void {

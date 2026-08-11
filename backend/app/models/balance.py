@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date, Boolean
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -12,6 +12,7 @@ class Balance(Base):
     identificador_pdv = Column("identificador_pdv", String(100), nullable=True)
     mercaderista = Column("mercaderista", String(100), nullable=True)
     producto = Column("producto", String(255), nullable=True)
+    id_product = Column("id_product", Integer, nullable=True)
     id_categoria = Column("id_categoria", Integer, nullable=True)
     categoria = Column("categoria", String(100), nullable=True)
     fabricante = Column("fabricante", String(100), nullable=True)
@@ -26,4 +27,9 @@ class Balance(Base):
     fecha_inicio_modificacion = Column("fecha_inicio_modificacion", DateTime, nullable=True)
     fecha_modificacion = Column("fecha_modificacion", DateTime, nullable=True)
 
+    FEFO = Column("FEFO", Date, nullable=True)
+    estado_producto = Column("estado_producto", String(20), nullable=True)
+    no_existe = Column("no_existe", Boolean, default=False)
+
     visita = relationship("Visita", backref="balances")
+

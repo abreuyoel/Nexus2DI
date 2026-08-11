@@ -12,7 +12,11 @@ export class AuthService {
 
   currentUser = signal<User | null>(this.loadUser());
 
-  constructor(private http: HttpClient, private router: Router) {}
+  constructor(private http: HttpClient, private router: Router) {
+    if (this.isLoggedIn()) {
+      this.getMe().subscribe();
+    }
+  }
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials).pipe(

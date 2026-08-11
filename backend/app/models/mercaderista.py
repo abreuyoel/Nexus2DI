@@ -1,6 +1,29 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator, LargeBinary
 from app.db.base import Base
+
+
+class BinaryBoolean(TypeDecorator):
+    impl = LargeBinary(1)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return b'\x01' if value else b'\x00'
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return bool(value)
+        # value is bytes/Buffer (e.g. b'\x01' or b'\x00')
+        return bool(value[0]) if value else False
 
 
 class Mercaderista(Base):
@@ -12,7 +35,7 @@ class Mercaderista(Base):
     email = Column(String(200), nullable=True)
     telefono = Column(String(50), nullable=True)
     tipo = Column(String(50), nullable=False, default="Mercaderista")
-    activo = Column(Boolean, default=True)
+    activo = Column(BinaryBoolean, default=True)
 
     visitas = relationship("Visita", back_populates="mercaderista")
     rutas = relationship("MercaderistaRuta", back_populates="mercaderista")

@@ -1,4 +1,5 @@
 import { Component, computed, signal, HostListener, OnInit } from '@angular/core';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
@@ -43,7 +44,8 @@ export class ShellComponent implements OnInit {
   sidenavOpen = signal(window.innerWidth > 1024);
   isMobile = signal(window.innerWidth <= 1024);
   isDark = signal(false);
-  notifCount = 0;
+  notifCount = signal(0);
+  private wasMobile = window.innerWidth <= 1024;
 
   user = computed(() => this.auth.currentUser());
   hasClientDashboard = signal(false);
@@ -97,12 +99,19 @@ export class ShellComponent implements OnInit {
     private auth: AuthService,
     private api: ApiService,
     private router: Router,
-    private realtime: RealtimeService
+    private realtime: RealtimeService,
+    private confirmSvc: ConfirmService
   ) {
     this.loadNotifications();
   }
 
   ngOnInit(): void {
+    const u = this.user();
+    if (u && (u.rol === 'mercaderista' || u.is_mercaderista)) {
+      this.router.navigateByUrl('/mercaderista');
+      return;
+    }
+
     // Conectar canal de eventos en tiempo real
     this.realtime.connect();
 
@@ -135,11 +144,53 @@ export class ShellComponent implements OnInit {
   @HostListener('window:resize', ['$event'])
   onResize(): void {
     const mobile = window.innerWidth <= 1024;
+    const transitioning = mobile !== this.wasMobile;
     this.isMobile.set(mobile);
     if (mobile && this.sidenavOpen()) {
       this.sidenavOpen.set(false);
     } else if (!mobile && !this.sidenavOpen()) {
       this.sidenavOpen.set(true);
+    }
+    if (transitioning) {
+      this.wasMobile = mobile;
+      this.handleResizeRedirect(mobile);
+    }
+  }
+
+  reloadNotifications(): void {
+    this.loadNotifications();
+  }
+
+  private handleResizeRedirect(mobile: boolean): void {
+    const u = this.user();
+    if (!u) return;
+
+    const isAdmin = !!u.is_admin || u.rol === 'admin';
+    const isMercaderista = u.rol === 'mercaderista';
+    const currentUrl = this.router.url;
+
+    if (mobile) {
+      if (currentUrl !== '/mercaderista' && (isAdmin || isMercaderista)) {
+        this.confirmSvc.confirm(
+          'Detectamos que la pantalla se redujo a tamaño móvil. ¿Deseás continuar al Portal Mercaderista o permanecer en la web normal?',
+          { title: 'Cambiar de Vista', confirmText: 'Ir a Portal Mercaderista', cancelText: 'Permanecer' }
+        ).then(change => {
+          if (change) {
+            this.router.navigateByUrl('/mercaderista');
+          }
+        });
+      }
+    } else {
+      if (currentUrl === '/mercaderista' && (isAdmin || u.rol !== 'mercaderista')) {
+        this.confirmSvc.confirm(
+          'Detectamos que la pantalla se amplió a tamaño escritorio. ¿Deseás volver al Portal de Gestión o permanecer en el de Mercaderistas?',
+          { title: 'Cambiar de Vista', confirmText: 'Ir a Portal de Gestión', cancelText: 'Permanecer' }
+        ).then(change => {
+          if (change) {
+            this.router.navigateByUrl('/dashboard');
+          }
+        });
+      }
     }
   }
 
@@ -158,7 +209,7 @@ export class ShellComponent implements OnInit {
     const savedTheme = localStorage.getItem('theme');
     const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const isDark = savedTheme === 'dark' || (!savedTheme && systemDark);
-    
+
     this.isDark.set(isDark);
     this.applyTheme(isDark);
   }
@@ -171,12 +222,39 @@ export class ShellComponent implements OnInit {
     }
   }
 
-  logout(): void { this.auth.logout(); }
+  async logout(): Promise<void> {
+    const confirmed = await this.confirmSvc.confirm('¿Confirmas cerrar sesión?', {
+      title: 'Cerrar Sesión',
+      confirmText: 'Cerrar Sesión',
+      cancelText: 'Cancelar',
+      danger: true
+    });
+    if (confirmed) {
+      this.auth.logout();
+    }
+  }
 
   private loadNotifications(): void {
-    this.api.getRejectionNotifications().subscribe({
-      next: (notifs: any[]) => { this.notifCount = notifs.length; },
-      error: () => {},
-    });
+    const u = this.user();
+
+    // Admin/analyst notifications: rejection notifications
+    if (!u || u.rol !== 'mercaderista') {
+      this.api.getRejectionNotifications().subscribe({
+        next: (notifs: any[]) => { this.notifCount.set(notifs.length); },
+        error: () => { },
+      });
+    }
+
+    // Mercaderista notifications: chat pendientes + foto rechazos
+    if (u && (u.rol === 'mercaderista' || u.is_mercaderista)) {
+      this.api.get<any>('/api/merc/chat/notificaciones').subscribe({
+        next: (res: any) => {
+          const chatPendientes = res.chat_no_leidos || 0;
+          const rechazos = res.fotos_rechazadas || 0;
+          this.notifCount.set(chatPendientes + rechazos);
+        },
+        error: () => { },
+      });
+    }
   }
 }

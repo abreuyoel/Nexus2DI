@@ -13,6 +13,12 @@ export const routes: Routes = [
     path: 'login-mercaderista',
     loadComponent: () => import('./features/auth/login-mercaderista/login-mercaderista.component').then((m) => m.LoginMercaderistaComponent),
   },
+  {
+    path: 'mercaderista',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['mercaderista', 'admin'] },
+    loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
+  },
 
   {
     path: '',
@@ -175,12 +181,7 @@ export const routes: Routes = [
         canActivate: [roleGuard],
         data: { roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'] },
       },
-      {
-        path: 'mercaderista',
-        canActivate: [roleGuard],
-        data: { roles: ['mercaderista', 'admin'] },
-        loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
-      },
+
       {
         path: 'auditoria-data',
         canActivate: [roleGuard],

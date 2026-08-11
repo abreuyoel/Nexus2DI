@@ -14,6 +14,8 @@ export interface User {
   is_coordinador_exclusivo: boolean;
   is_coordinador_tradex: boolean;
   permisos: Permission[];
+  nombre?: string;
+  cedula?: string;
 }
 
 export interface Permission {

@@ -93,5 +93,7 @@ class RutaActivada(Base):
     fecha_hora_activacion = Column(DateTime, nullable=True)
     estado = Column(String(50), nullable=True)
     tipo_activacion = Column(String(50), nullable=True)
+    id_cliente = Column("id_cliente", Integer, ForeignKey("CLIENTES.id_cliente"), nullable=True)
+    identificador_punto_interes = Column("identificador_punto_interes", String(100), ForeignKey("PUNTOS_INTERES1.identificador"), nullable=True)
 
     ruta = relationship("Ruta", back_populates="activaciones_ruta")

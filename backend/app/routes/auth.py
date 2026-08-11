@@ -42,8 +42,16 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
         username_display = user.username
         token_data = {"sub": str(user.id), "rol": rol}
 
-        if user.is_mercaderista and user.id_perfil:
-            merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first()
+        if user.is_mercaderista:
+            merc = None
+            if user.id_perfil:
+                merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first()
+            if not merc:
+                try:
+                    cedula_val = int(user.username)
+                    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+                except ValueError:
+                    pass
             if merc:
                 username_display = merc.nombre
                 token_data.update({"cedula": user.username, "tipo": merc.tipo})
@@ -85,7 +93,15 @@ def login_mercaderista(data: LoginMercaderistaRequest, request: Request, db: Ses
     if not user or not verify_password(data.password, user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Cédula o contraseña incorrecta")
 
-    merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first() if user.id_perfil else None
+    merc = None
+    if user.id_perfil:
+        merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first()
+    if not merc:
+        try:
+            cedula_val = int(user.username)
+            merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+        except ValueError:
+            pass
 
     token = create_access_token({
         "sub": str(user.id),
@@ -145,6 +161,24 @@ def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depe
     except Exception:
         permisos = []
 
+    nombre = None
+    cedula = None
+    try:
+        merc = None
+        if current_user.id_perfil:
+            merc = db.query(Mercaderista).filter(Mercaderista.id == current_user.id_perfil).first()
+        if not merc:
+            try:
+                cedula_val = int(current_user.username)
+                merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+            except ValueError:
+                pass
+        if merc:
+            nombre = merc.nombre
+            cedula = str(merc.cedula)
+    except Exception as e:
+        logger.error(f"Error fetching mercaderista for {current_user.username}: {str(e)}")
+
     return UsuarioCurrentResponse(
         id=current_user.id,
         username=current_user.username,
@@ -161,6 +195,8 @@ def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depe
         is_coordinador_exclusivo=current_user.is_coordinador_exclusivo,
         is_coordinador_tradex=current_user.is_coordinador_tradex,
         permisos=permisos,
+        nombre=nombre,
+        cedula=cedula,
     )
 
 
