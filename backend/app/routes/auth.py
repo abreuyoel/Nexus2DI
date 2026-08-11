@@ -160,6 +160,7 @@ def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depe
         is_mercaderista=current_user.is_mercaderista,
         is_coordinador_exclusivo=current_user.is_coordinador_exclusivo,
         is_coordinador_tradex=current_user.is_coordinador_tradex,
+        is_ejecutivo_cuenta=current_user.is_ejecutivo_cuenta,
         permisos=permisos,
     )
 

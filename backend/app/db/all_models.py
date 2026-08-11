@@ -24,3 +24,5 @@ from app.models.catalogo import (  # noqa: F401
     Cuadrante, Servicio,
 )
 from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta  # noqa: F401
+from app.models.ejecutivo import Ejecutivo  # noqa: F401
+
