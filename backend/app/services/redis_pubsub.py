@@ -24,11 +24,31 @@ logger = logging.getLogger("app")
 CHANNEL = "nexus2di:ws:broadcast"
 PROCESS_ID = uuid.uuid4().hex[:12]
 
+# Dos clientes separados, NO uno compartido -- este era el bug real
+# (10/ago/2026, ~7.5h de degradación en producción: /health lento
+# intermitente, reinicios periódicos, y una fuga confirmada de +30
+# conexiones colgadas -- ver CLIENT LIST en el pod de Redis, todas
+# cmd=publish, idle entre 48min y 4h, nunca reutilizadas).
+#
+# publish() envolvía la llamada en asyncio.wait_for(timeout=1.5) EXTERNO
+# al cliente -- redis-py no garantiza devolver la conexión al pool
+# limpiamente cuando quien cancela es un wait_for de afuera, no el socket
+# mismo. Cada timeout (y con el pool sin `max_connections`, sin límite)
+# dejaba una conexión abierta y huérfana. Fix: el timeout ahora vive DENTRO
+# del cliente (`socket_timeout`), que sí sabe descartar/reponer una
+# conexión que se cuelga, más un `max_connections` como techo duro.
+#
+# _listen_loop() necesita LO CONTRARIO: pubsub().listen() se queda
+# bloqueado esperando mensajes indefinidamente por diseño -- aplicarle el
+# mismo socket_timeout corto lo desconectaría cada ~1.5s sin mensajes.
+# Por eso son dos clientes, no uno.
 _client: Optional["aioredis.Redis"] = None
+_listener_client: Optional["aioredis.Redis"] = None
 _listener_task: Optional[asyncio.Task] = None
 
 
 def _get_client() -> "aioredis.Redis":
+    """Para publish() -- timeouts cortos, pool acotado."""
     global _client
     if _client is None:
         _client = aioredis.Redis(
@@ -37,25 +57,52 @@ def _get_client() -> "aioredis.Redis":
             password=settings.REDIS_PASSWORD or None,
             db=settings.REDIS_DB,
             decode_responses=True,
+            socket_timeout=1.5,
+            socket_connect_timeout=1.5,
+            max_connections=20,
+            health_check_interval=30,
         )
     return _client
 
 
+def _get_listener_client() -> "aioredis.Redis":
+    """Para el listener -- SIN socket_timeout de lectura: pubsub.listen()
+    tiene que poder bloquear indefinidamente esperando el próximo mensaje,
+    eso es correcto, no un cuelgue."""
+    global _listener_client
+    if _listener_client is None:
+        _listener_client = aioredis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=settings.REDIS_PASSWORD or None,
+            db=settings.REDIS_DB,
+            decode_responses=True,
+            socket_connect_timeout=5,
+        )
+    return _listener_client
+
+
 async def publish(room: str, message: dict) -> None:
     """Best-effort: nunca bloquea ni lanza. La entrega local ya pasó antes de
-    llamar a esto (ver ConnectionManager.broadcast_to_room)."""
+    llamar a esto (ver ConnectionManager.broadcast_to_room). El timeout lo
+    aplica el socket del cliente (socket_timeout=1.5 en _get_client()), no
+    un asyncio.wait_for() externo -- ver comentario arriba de por qué."""
     try:
         payload = json.dumps({"origin": PROCESS_ID, "room": room, "message": message})
-        await asyncio.wait_for(_get_client().publish(CHANNEL, payload), timeout=1.5)
+        await _get_client().publish(CHANNEL, payload)
     except Exception as e:
-        logger.warning(f"[redis_pubsub] publish falló (se ignora, ya se entregó local): {e}")
+        # {e!r} no {e}: asyncio.TimeoutError (y algunas excepciones de
+        # redis-py) tienen str() vacío -- "publish falló: " sin nada
+        # detrás no decía CUÁL era el error real. Costó tiempo de
+        # diagnóstico en producción el 10/ago/2026.
+        logger.warning(f"[redis_pubsub] publish falló (se ignora, ya se entregó local): {e!r}")
 
 
 async def _listen_loop(manager) -> None:
     backoff = 1
     while True:
         try:
-            pubsub = _get_client().pubsub()
+            pubsub = _get_listener_client().pubsub()
             await pubsub.subscribe(CHANNEL)
             logger.info(f"[redis_pubsub] suscrito a '{CHANNEL}' (process={PROCESS_ID})")
             backoff = 1  # se pudo conectar/suscribir: resetear el backoff
@@ -87,7 +134,7 @@ def start_listener(manager) -> None:
 
 
 async def stop_listener() -> None:
-    global _listener_task, _client
+    global _listener_task, _client, _listener_client
     if _listener_task is not None:
         _listener_task.cancel()
         try:
@@ -101,3 +148,9 @@ async def stop_listener() -> None:
         except Exception:
             pass
         _client = None
+    if _listener_client is not None:
+        try:
+            await _listener_client.aclose()
+        except Exception:
+            pass
+        _listener_client = None
