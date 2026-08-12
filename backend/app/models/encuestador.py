@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -50,6 +50,8 @@ class EncuestaCentro(Base):
     creado_en = Column(DateTime, default=datetime.utcnow)
     id_jornada = Column(Integer, nullable=True)
     estado = Column(String(20), nullable=False)
+    observacion_supervisor = Column(Text, nullable=True)
+    requiere_correccion = Column(Boolean, default=False, server_default="0")
 
 class Medico(Base):
     __tablename__ = "medicos"
@@ -94,3 +96,15 @@ class MedicoCentroEncuesta(Base):
     id_encuesta = Column(Integer, nullable=False)
     id_medico = Column(Integer, nullable=False)
     actualizado_en = Column(DateTime, default=datetime.utcnow)
+
+class CatalogoEncuestador(Base):
+    __tablename__ = "CATALOGOS_ENCUESTADOR"
+
+    id = Column("id_catalogo", Integer, primary_key=True, index=True)
+    tipo = Column(String(50), nullable=False, index=True)  # 'especialidad', 'estado', 'ciudad'
+    nombre = Column(String(150), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('tipo', 'nombre', name='uq_tipo_nombre'),
+    )
+

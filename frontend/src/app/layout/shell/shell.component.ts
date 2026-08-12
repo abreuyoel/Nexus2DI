@@ -66,6 +66,7 @@ export class ShellComponent implements OnInit {
     { label: 'Frecuencias PDVs', icon: 'event_repeat', route: '/frecuencias-pdvs-cliente', roles: ['admin', 'analyst'] },
     { label: 'Horas Promedio Ejecución', icon: 'schedule', route: '/horas-promedio-ejecucion', roles: ['admin'] },
     { label: 'Mis Rutas', icon: 'route', route: '/mercaderista', roles: ['mercaderista'], hideForAdmin: true },
+    { label: 'Portal Mercaderista', icon: 'storefront', route: '/portal-mercaderista', roles: ['admin', 'mercaderista', 'supervisor'], hideForAdmin: false },
     { label: 'Auditoría de Campo', icon: 'fact_check', route: '/auditor-campo', roles: ['auditor_campo', 'admin'] },
     { label: 'Auditoría de Data', icon: 'inventory_2', route: '/auditoria-data', roles: ['auditor', 'admin'] },
     { label: 'Chat', icon: 'chat', route: '/chat', roles: [], module: 'chat' },
@@ -77,7 +78,9 @@ export class ShellComponent implements OnInit {
     { label: 'Mis Visitas', icon: 'today', route: '/client/visits', roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
     { label: 'Data', icon: 'table_chart', route: '/data', roles: ['admin', 'analyst', 'client', 'coordinador_exclusivo', 'coordinador_tradex', 'coordinador_general'] },
     { label: 'Encuestador', icon: 'assignment', route: '/encuestador', roles: ['encuestador', 'admin'] },
+    { label: 'Catálogos Encuestador', icon: 'settings', route: '/encuestador/configuracion', roles: ['encuestador', 'admin'] },
     { label: 'BI Encuestas', icon: 'pie_chart', route: '/cliente-encuestador', roles: ['cliente_encuestador', 'admin'] },
+    { label: 'Supervisor Encuestadores', icon: 'supervisor_account', route: '/supervisor-encuestadores', roles: ['admin', 'supervisor'] },
     { label: 'Ventas', icon: 'point_of_sale', route: '/ventas', roles: ['vendedor', 'admin'] },
   ];
 

@@ -221,6 +221,19 @@ export const routes: Routes = [
         data: { roles: ['cliente_encuestador', 'admin'] }
       },
       {
+        path: 'supervisor-encuestadores',
+        // Force recompilation
+        loadComponent: () => import('./features/supervisor-encuestadores/supervisor-encuestadores.component').then(m => m.SupervisorEncuestadoresComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor'] }
+      },
+      {
+        path: 'portal-mercaderista',
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor', 'mercaderista'] },
+        loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
+      },
+      {
         path: 'ventas',
         canActivate: [roleGuard],
         data: { roles: ['vendedor', 'admin'] },

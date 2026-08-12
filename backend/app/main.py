@@ -215,6 +215,8 @@ from app.routes import admin_chat_grupos
 app.include_router(admin_chat_grupos.router)
 from app.routes import media as media_routes
 app.include_router(media_routes.router)
+from app.routes import supervisor_encuestadores
+app.include_router(supervisor_encuestadores.router)
 
 
 
