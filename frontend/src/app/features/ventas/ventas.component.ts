@@ -1,10 +1,11 @@
-import { Component, OnInit, signal, inject } from '@angular/core';
+import { Component, OnInit, signal, inject, viewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
 import { VentasOfflineQueueService } from './services/ventas-offline-queue.service';
@@ -12,11 +13,23 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
 
 type Pdv = { identificador: string; nombre: string; direccion: string; ciudad: string; localidad: string };
 type Cli = { id_cliente: number; nombre: string };
+type ProductoCatalogo = {
+  id_catalogo: number; id_producto: number; nombre: string; categoria: string; marca: string;
+  precio_unitario: number; unidades_por_caja: number | null; presentacion_venta: string;
+  foto_url: string | null; codigo_barras: string | null; descuento_max_pct: number;
+  stock_disponible: number | null;
+};
+type ItemCarrito = { id_producto: number; nombre: string; precio_unitario: number; cantidad: number; descuento_pct: number; stock_disponible: number | null };
+type ProductoOcrPropuesto = {
+  nombre_texto: string; cantidad: number;
+  match: { id_producto: number; nombre: string; precio_unitario: number; similaridad: number } | null;
+  incluido?: boolean;
+};
 
 @Component({
   selector: 'app-ventas',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, RouterLink],
   template: `
 <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white">
   <!-- HEADER -->
@@ -30,6 +43,9 @@ type Cli = { id_cliente: number; nombre: string };
         <p class="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{{ crumb() || cedula }}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
+        <a routerLink="/ventas-dashboard" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white" title="Dashboard de ventas">
+          <mat-icon class="!text-base">bar_chart</mat-icon>
+        </a>
         <span class="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full"
               [ngClass]="isOnline() ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400' : 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400'">
           <span class="w-1.5 h-1.5 rounded-full" [ngClass]="isOnline() ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-red-500 dark:bg-red-400'"></span>
@@ -50,7 +66,7 @@ type Cli = { id_cliente: number; nombre: string };
     }
   </div>
 
-  <div class="px-6 py-6 max-w-3xl mx-auto pb-28">
+  <div class="px-6 py-6 max-w-3xl mx-auto pb-32">
     @if (loading()) {
       <div class="flex justify-center py-24"><mat-spinner diameter="40"></mat-spinner></div>
     } @else if (!jornadaActiva()) {
@@ -59,7 +75,7 @@ type Cli = { id_cliente: number; nombre: string };
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-8 text-center mt-8 shadow-sm">
       <mat-icon class="!text-5xl text-emerald-500 dark:text-emerald-400">place</mat-icon>
       <h2 class="text-lg font-black mt-3 mb-1 text-slate-800 dark:text-white">¿Listo para trabajar?</h2>
-      <p class="text-slate-500 dark:text-slate-400 text-sm mb-6">Activa tu ruta para comenzar a registrar tus visitas y ventas del día.</p>
+      <p class="text-slate-500 dark:text-slate-400 text-sm mb-6">Activa tu ruta para comenzar a registrar tus visitas y pedidos del día.</p>
       <button (click)="activarJornada()" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black flex items-center justify-center gap-2">
         <mat-icon class="!text-base">power_settings_new</mat-icon> Activación de Ruta
       </button>
@@ -150,7 +166,7 @@ type Cli = { id_cliente: number; nombre: string };
       </div>
     }
 
-    <!-- STEP: DECISION (panel inline, en vez de dialogos nativos) -->
+    <!-- STEP: DECISION -->
     @if (step() === 'decision') {
       <div class="flex items-center gap-2 mb-4">
         <button (click)="step.set('clientes')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white"><mat-icon class="!text-base">arrow_back</mat-icon></button>
@@ -160,37 +176,181 @@ type Cli = { id_cliente: number; nombre: string };
         </div>
       </div>
 
-      @if (vendio() === null) {
-        <p class="text-center text-slate-700 dark:text-slate-300 font-semibold mb-4">¿Vendiste en este cliente?</p>
-        <div class="flex gap-3">
-          <button (click)="vendio.set(true)" class="flex-1 py-4 bg-emerald-600 dark:bg-emerald-700 hover:bg-emerald-700 dark:hover:bg-emerald-600 text-white rounded-xl font-black flex items-center justify-center gap-2">
-            <mat-icon>check_circle</mat-icon> Sí, vendí
-          </button>
-          <button (click)="vendio.set(false)" class="flex-1 py-4 bg-red-700 dark:bg-red-800 hover:bg-red-800 dark:hover:bg-red-700 text-white rounded-xl font-black flex items-center justify-center gap-2">
-            <mat-icon>cancel</mat-icon> No vendí
-          </button>
+      @if (creditoCliente()?.bloqueado) {
+        <div class="bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
+          <mat-icon class="text-red-600 dark:text-red-400">block</mat-icon>
+          <span class="text-sm text-red-700 dark:text-red-300 font-semibold">Cliente bloqueado por crédito ({{ creditoCliente()?.dias_mora }} días de mora) — no se pueden tomar pedidos.</span>
         </div>
-      } @else if (vendio() === true) {
-        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Monto de la venta</label>
-        <input type="number" [(ngModel)]="monto" min="0" step="0.01" placeholder="0.00"
-          class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-lg outline-none mb-4 focus:border-emerald-500">
-        <div class="flex gap-2">
-          <button (click)="vendio.set(null)" class="flex-1 py-3 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-500 dark:text-slate-400">Atrás</button>
-          <button (click)="registrarVisita()" [disabled]="registrando()" class="flex-1 py-3 bg-emerald-600 dark:bg-emerald-700 text-white rounded-xl font-black">Registrar venta</button>
+      }
+
+      <div class="grid gap-3">
+        <button (click)="irACatalogo()" [disabled]="creditoCliente()?.bloqueado" class="p-5 bg-white dark:bg-slate-900 border-2 border-emerald-500 dark:border-emerald-700 rounded-2xl text-left flex items-center gap-4 shadow-sm disabled:opacity-40">
+          <div class="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center"><mat-icon class="text-emerald-600 dark:text-emerald-400">shopping_cart</mat-icon></div>
+          <div>
+            <p class="font-black text-slate-800 dark:text-white">Tomar pedido</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Catálogo con precios y stock en vivo</p>
+          </div>
+        </button>
+        <button (click)="abrirOcr()" [disabled]="creditoCliente()?.bloqueado || !isOnline()" class="p-5 bg-white dark:bg-slate-900 border-2 border-violet-500 dark:border-violet-700 rounded-2xl text-left flex items-center gap-4 shadow-sm disabled:opacity-40">
+          <div class="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center"><mat-icon class="text-violet-600 dark:text-violet-400">document_scanner</mat-icon></div>
+          <div>
+            <p class="font-black text-slate-800 dark:text-white">Cargar nota de pedido (foto + IA)</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">{{ isOnline() ? 'La IA lee la nota escrita a mano y arma el pedido' : 'Necesita conexión' }}</p>
+          </div>
+        </button>
+        <button (click)="noHuboVenta()" class="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl text-left flex items-center gap-4 shadow-sm">
+          <div class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="text-slate-500 dark:text-slate-400">cancel</mat-icon></div>
+          <p class="font-bold text-sm text-slate-700 dark:text-slate-300">No hubo venta en este cliente</p>
+        </button>
+      </div>
+    }
+
+    <!-- STEP: CATALOGO -->
+    @if (step() === 'catalogo') {
+      <div class="flex items-center gap-2 mb-3">
+        <button (click)="step.set('decision')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white"><mat-icon class="!text-base">arrow_back</mat-icon></button>
+        <div class="flex-1">
+          <h2 class="text-lg font-black text-slate-800 dark:text-white">Catálogo</h2>
+          <p class="text-slate-500 dark:text-slate-400 text-xs">{{ clienteSel()?.nombre }}</p>
         </div>
+      </div>
+      <div class="flex gap-2 mb-3">
+        <input [(ngModel)]="searchCatalogo" placeholder="Buscar producto, marca, categoría..."
+          class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:border-emerald-500">
+        <button (click)="buscarCodigoBarras()" class="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-800 dark:bg-slate-700 text-white shrink-0" title="Escanear código de barras">
+          <mat-icon>qr_code_scanner</mat-icon>
+        </button>
+      </div>
+      <div class="max-h-[55vh] overflow-y-auto space-y-2">
+        @for (p of filteredCatalogo; track p.id_producto) {
+          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-3 flex items-center gap-3 shadow-sm">
+            <div class="w-11 h-11 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0">
+              @if (p.foto_url) { <img [src]="p.foto_url" class="w-full h-full object-cover"> } @else { <mat-icon class="text-slate-400">liquor</mat-icon> }
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-bold text-sm truncate text-slate-800 dark:text-white">{{ p.nombre }}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">{{ p.categoria }} · \${{ p.precio_unitario.toFixed(2) }}
+                @if (p.stock_disponible !== null) {
+                  <span [ngClass]="p.stock_disponible > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400 font-bold'">
+                    · {{ p.stock_disponible > 0 ? p.stock_disponible + ' disp.' : 'Sin stock' }}
+                  </span>
+                }
+              </p>
+            </div>
+            <button (click)="agregarAlCarrito(p)" [disabled]="p.stock_disponible === 0" class="w-9 h-9 flex items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-700 text-white disabled:opacity-30 shrink-0">
+              <mat-icon class="!text-base">add</mat-icon>
+            </button>
+          </div>
+        }
+        @if (!filteredCatalogo.length) { <p class="text-center text-slate-400 dark:text-slate-600 py-12">Sin productos en el catálogo de este cliente</p> }
+      </div>
+    }
+
+    <!-- STEP: CARRITO -->
+    @if (step() === 'carrito') {
+      <div class="flex items-center gap-2 mb-4">
+        <button (click)="step.set('catalogo')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white"><mat-icon class="!text-base">arrow_back</mat-icon></button>
+        <h2 class="text-lg font-black text-slate-800 dark:text-white">Carrito</h2>
+      </div>
+      @if (!carrito().length) {
+        <p class="text-center text-slate-400 dark:text-slate-600 py-12">Carrito vacío</p>
       } @else {
-        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Motivo de la no venta</label>
-        <textarea [(ngModel)]="razonNoVenta" rows="3" placeholder="Escribe la razón..."
-          class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-sm outline-none mb-4 focus:border-emerald-500"></textarea>
-        <div class="flex gap-2">
-          <button (click)="vendio.set(null)" class="flex-1 py-3 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-500 dark:text-slate-400">Atrás</button>
-          <button (click)="registrarVisita()" [disabled]="registrando()" class="flex-1 py-3 bg-red-700 dark:bg-red-700 text-white rounded-xl font-black">Registrar</button>
+        <div class="space-y-2 mb-4">
+          @for (item of carrito(); track item.id_producto; let i = $index) {
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-3 flex items-center gap-3 shadow-sm">
+              <div class="flex-1 min-w-0">
+                <p class="font-bold text-sm truncate text-slate-800 dark:text-white">{{ item.nombre }}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">\${{ item.precio_unitario.toFixed(2) }} c/u · Subtotal \${{ (item.precio_unitario * item.cantidad).toFixed(2) }}</p>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button (click)="cambiarCantidad(i, -1)" class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="!text-sm">remove</mat-icon></button>
+                <span class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</span>
+                <button (click)="cambiarCantidad(i, 1)" class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="!text-sm">add</mat-icon></button>
+                <button (click)="quitarDelCarrito(i)" class="w-7 h-7 rounded-full bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 flex items-center justify-center ml-1"><mat-icon class="!text-sm">delete</mat-icon></button>
+              </div>
+            </div>
+          }
         </div>
+        <textarea [(ngModel)]="notasPedido" rows="2" placeholder="Notas del pedido (opcional)"
+          class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-2.5 text-sm outline-none mb-4"></textarea>
+        <div class="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 rounded-xl p-4 flex items-center justify-between mb-4">
+          <span class="font-bold text-slate-700 dark:text-slate-300">Total</span>
+          <span class="text-2xl font-black text-emerald-700 dark:text-emerald-400">\${{ totalCarrito().toFixed(2) }}</span>
+        </div>
+        <button (click)="confirmarPedido()" [disabled]="creandoPedido()" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black flex items-center justify-center gap-2">
+          @if (creandoPedido()) { <mat-spinner diameter="18" color="accent"></mat-spinner> } @else { <mat-icon class="!text-base">check_circle</mat-icon> }
+          Confirmar pedido
+        </button>
+      }
+    }
+
+    <!-- STEP: OCR REVISION -->
+    @if (step() === 'ocr-revision') {
+      <div class="flex items-center gap-2 mb-4">
+        <button (click)="step.set('decision')" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white"><mat-icon class="!text-base">arrow_back</mat-icon></button>
+        <div>
+          <h2 class="text-lg font-black text-slate-800 dark:text-white">Revisar nota de pedido</h2>
+          <p class="text-slate-500 dark:text-slate-400 text-xs">La IA propuso esto — revisa antes de confirmar</p>
+        </div>
+      </div>
+      @if (ocrPropuesta()) {
+        <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900 rounded-xl p-3 mb-4 text-xs text-violet-700 dark:text-violet-300">
+          <mat-icon class="!text-sm align-middle">info</mat-icon> Confianza de lectura: {{ (ocrPropuesta()!.confianza * 100).toFixed(0) }}%
+          @if (ocrPropuesta()!.cliente_texto) { <br>Cliente detectado en la nota: "{{ ocrPropuesta()!.cliente_texto }}" }
+        </div>
+        <div class="space-y-2 mb-4">
+          @for (p of ocrPropuesta()!.productos_propuestos; track p) {
+            <div class="bg-white dark:bg-slate-900 border rounded-xl p-3 flex items-center gap-3 shadow-sm"
+                 [ngClass]="p.match ? 'border-slate-200 dark:border-white/8' : 'border-amber-300 dark:border-amber-800'">
+              <input type="checkbox" [checked]="p.incluido !== false" (change)="p.incluido = !(p.incluido !== false)" [disabled]="!p.match" class="w-5 h-5 shrink-0">
+              <div class="flex-1 min-w-0">
+                <p class="text-xs text-slate-400 dark:text-slate-500">Escrito: "{{ p.nombre_texto }}"</p>
+                @if (p.match) {
+                  <p class="font-bold text-sm text-slate-800 dark:text-white">{{ p.match.nombre }} <span class="text-xs font-normal text-slate-500">({{ (p.match.similaridad*100).toFixed(0) }}% match)</span></p>
+                  <p class="text-xs text-emerald-600 dark:text-emerald-400">\${{ p.match.precio_unitario.toFixed(2) }}</p>
+                } @else {
+                  <p class="text-sm text-amber-700 dark:text-amber-400 font-semibold">No se encontró en el catálogo — agrégalo a mano si aplica</p>
+                }
+              </div>
+              @if (p.match) {
+                <div class="flex items-center gap-1 shrink-0">
+                  <button (click)="p.cantidad = Math.max(1, p.cantidad - 1)" class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="!text-sm">remove</mat-icon></button>
+                  <span class="w-6 text-center font-bold text-sm">{{ p.cantidad }}</span>
+                  <button (click)="p.cantidad = p.cantidad + 1" class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center"><mat-icon class="!text-sm">add</mat-icon></button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+        <button (click)="confirmarNotaOcr()" [disabled]="creandoPedido()" class="w-full py-3.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-black flex items-center justify-center gap-2">
+          @if (creandoPedido()) { <mat-spinner diameter="18" color="accent"></mat-spinner> } @else { <mat-icon class="!text-base">check_circle</mat-icon> }
+          Confirmar pedido desde la nota
+        </button>
       }
     }
 
     }
   </div>
+
+  <!-- carrito flotante -->
+  @if (step() === 'catalogo' && carrito().length > 0) {
+    <div class="fixed bottom-0 left-0 right-0 px-6 py-3">
+      <button (click)="step.set('carrito')" class="w-full max-w-3xl mx-auto block py-3.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-black shadow-2xl flex items-center justify-center gap-2">
+        <mat-icon class="!text-base">shopping_cart</mat-icon> Ver carrito ({{ carritoCount() }}) · \${{ totalCarrito().toFixed(2) }}
+      </button>
+    </div>
+  }
+
+  <!-- input oculto de camara para nota OCR -->
+  <input #ocrInputEl type="file" accept="image/*" capture="environment" class="hidden" (change)="onFotoNotaPedido($event)">
+  @if (subiendoOcr()) {
+    <div class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl px-8 py-6 text-center border border-slate-200 dark:border-white/10">
+        <mat-spinner diameter="40" class="mx-auto"></mat-spinner>
+        <p class="mt-3 font-bold text-slate-800 dark:text-white">La IA está leyendo la nota…</p>
+      </div>
+    </div>
+  }
 </div>
   `,
 })
@@ -201,23 +361,31 @@ export class VentasComponent implements OnInit {
   private offline = inject(VentasOfflineQueueService);
   private confirmDialog = inject(ConfirmService);
   private API = `${environment.apiUrl}/api/vendedor`;
+  Math = Math;
 
   cedula = this.auth.currentUser()?.username || '';
 
   loading = signal(true);
   jornadaActiva = signal<any>(null);
-  step = signal<'pdvs' | 'clientes' | 'decision'>('pdvs');
+  step = signal<'pdvs' | 'clientes' | 'decision' | 'catalogo' | 'carrito' | 'ocr-revision'>('pdvs');
   pdvs = signal<Pdv[]>([]);
   clientes = signal<Cli[]>([]);
   pdvSel = signal<Pdv | null>(null);
   clienteSel = signal<Cli | null>(null);
-  vendio = signal<boolean | null>(null);
-  monto = '';
-  razonNoVenta = '';
+  creditoCliente = signal<{ bloqueado: boolean; dias_mora: number } | null>(null);
   registrando = signal(false);
 
   searchPdv = '';
   searchCliente = '';
+  searchCatalogo = '';
+
+  catalogo = signal<ProductoCatalogo[]>([]);
+  carrito = signal<ItemCarrito[]>([]);
+  notasPedido = '';
+  creandoPedido = signal(false);
+
+  ocrPropuesta = signal<{ id_nota_ocr: number; cliente_texto: string | null; confianza: number; productos_propuestos: ProductoOcrPropuesto[] } | null>(null);
+  subiendoOcr = signal(false);
 
   mostrarSolicitarPdv = signal(false);
   nuevoPdv = { nombre: '', rif: '', direccion: '' };
@@ -328,33 +496,151 @@ export class VentasComponent implements OnInit {
     if (!f) return this.clientes();
     return this.clientes().filter(c => (c.nombre || '').toLowerCase().includes(f));
   }
+  get filteredCatalogo(): ProductoCatalogo[] {
+    const f = this.searchCatalogo.trim().toLowerCase();
+    const base = this.catalogo();
+    if (!f) return base;
+    return base.filter(p =>
+      (p.nombre || '').toLowerCase().includes(f) || (p.categoria || '').toLowerCase().includes(f) || (p.marca || '').toLowerCase().includes(f));
+  }
 
   seleccionarPdv(p: Pdv) {
     this.pdvSel.set(p); this.searchCliente = ''; this.step.set('clientes');
   }
   seleccionarCliente(c: Cli) {
-    this.clienteSel.set(c); this.vendio.set(null); this.monto = ''; this.razonNoVenta = ''; this.step.set('decision');
+    this.clienteSel.set(c); this.carrito.set([]); this.notasPedido = ''; this.step.set('decision');
+    this.get<any>(`/credito/${c.id_cliente}`).subscribe({
+      next: r => this.creditoCliente.set({ bloqueado: r.bloqueado, dias_mora: r.dias_mora }),
+      error: () => this.creditoCliente.set(null),
+    });
   }
 
-  registrarVisita() {
+  // ── CATÁLOGO / CARRITO ──────────────────────────────────────────
+  irACatalogo() {
+    this.step.set('catalogo'); this.searchCatalogo = '';
+    this.cachedGet<ProductoCatalogo[]>(`/catalogo?id_cliente=${this.clienteSel()!.id_cliente}`, `catalogo:${this.clienteSel()!.id_cliente}`, c => this.catalogo.set(c || []));
+  }
+
+  agregarAlCarrito(p: ProductoCatalogo) {
+    const items = [...this.carrito()];
+    const existente = items.find(i => i.id_producto === p.id_producto);
+    if (existente) { existente.cantidad++; }
+    else { items.push({ id_producto: p.id_producto, nombre: p.nombre, precio_unitario: p.precio_unitario, cantidad: 1, descuento_pct: 0, stock_disponible: p.stock_disponible }); }
+    this.carrito.set(items);
+    this.snack.open(`${p.nombre} agregado`, '', { duration: 1200 });
+  }
+  cambiarCantidad(i: number, delta: number) {
+    const items = [...this.carrito()];
+    items[i].cantidad = Math.max(1, items[i].cantidad + delta);
+    this.carrito.set(items);
+  }
+  quitarDelCarrito(i: number) {
+    const items = [...this.carrito()]; items.splice(i, 1); this.carrito.set(items);
+  }
+  carritoCount(): number { return this.carrito().reduce((n, i) => n + i.cantidad, 0); }
+  totalCarrito(): number { return this.carrito().reduce((t, i) => t + i.precio_unitario * i.cantidad, 0); }
+
+  buscarCodigoBarras() {
+    const codigo = prompt('Código de barras (o escanea con el lector si tu dispositivo lo soporta):');
+    if (!codigo?.trim()) return;
+    this.get<any>(`/catalogo/buscar-codigo-barras?codigo=${encodeURIComponent(codigo.trim())}&id_cliente=${this.clienteSel()!.id_cliente}`).subscribe({
+      next: r => this.agregarAlCarrito({ id_producto: r.id_producto, nombre: r.nombre, precio_unitario: r.precio_unitario } as ProductoCatalogo),
+      error: () => this.snack.open('Sin resultados para ese código de barras', 'OK', { duration: 2500 }),
+    });
+  }
+
+  confirmarPedido() {
+    const cli = this.clienteSel();
+    if (!cli || !this.carrito().length) return;
+    const payload = {
+      id_cliente: cli.id_cliente,
+      identificador_punto_interes: this.pdvSel()?.identificador,
+      lineas: this.carrito().map(i => ({ id_producto: i.id_producto, cantidad: i.cantidad, descuento_pct: i.descuento_pct })),
+      notas: this.notasPedido.trim() || null,
+    };
+    this.creandoPedido.set(true);
+    if (!navigator.onLine) {
+      this.offline.enqueue({ url: `${this.API}/pedidos`, jsonBody: payload, label: `Pedido ${cli.nombre}` });
+      this.creandoPedido.set(false);
+      this.carrito.set([]); this.notasPedido = '';
+      this.snack.open('Pedido guardado localmente — se sincronizará al reconectar', 'OK', { duration: 3000 });
+      this.step.set('clientes');
+      return;
+    }
+    this.post<any>('/pedidos', payload).subscribe({
+      next: res => {
+        this.creandoPedido.set(false);
+        this.carrito.set([]); this.notasPedido = '';
+        this.snack.open(`¡Pedido ${res.pedido.numero_pedido} registrado! Total $${res.pedido.total.toFixed(2)}`, 'OK', { duration: 3500 });
+        this.step.set('clientes');
+      },
+      error: e => { this.creandoPedido.set(false); this.err(e); },
+    });
+  }
+
+  // ── OCR + IA ─────────────────────────────────────────────────────
+  ocrInputEl = viewChild<ElementRef<HTMLInputElement>>('ocrInputEl');
+  abrirOcr() {
+    this.ocrInputEl()?.nativeElement.click();
+  }
+  onFotoNotaPedido(ev: Event) {
+    const file = (ev.target as HTMLInputElement).files?.[0];
+    (ev.target as HTMLInputElement).value = '';
+    if (!file || !this.clienteSel()) return;
+    const fd = new FormData();
+    fd.append('id_cliente', String(this.clienteSel()!.id_cliente));
+    fd.append('file', file);
+    this.subiendoOcr.set(true);
+    this.http.post<any>(`${this.API}/pedidos/ocr`, fd).subscribe({
+      next: res => {
+        this.subiendoOcr.set(false);
+        const propuestos: ProductoOcrPropuesto[] = (res.productos_propuestos || []).map((p: any) => ({ ...p, incluido: true }));
+        this.ocrPropuesta.set({ id_nota_ocr: res.id_nota_ocr, cliente_texto: res.cliente_texto, confianza: res.confianza || 0, productos_propuestos: propuestos });
+        this.step.set('ocr-revision');
+      },
+      error: e => { this.subiendoOcr.set(false); this.err(e); },
+    });
+  }
+
+  confirmarNotaOcr() {
+    const prop = this.ocrPropuesta();
+    const cli = this.clienteSel();
+    if (!prop || !cli) return;
+    const lineas = prop.productos_propuestos
+      .filter(p => p.match && p.incluido !== false)
+      .map(p => ({ id_producto: p.match!.id_producto, cantidad: p.cantidad, descuento_pct: 0 }));
+    if (!lineas.length) { this.snack.open('No hay productos con match para confirmar', 'OK', { duration: 3000 }); return; }
+    const payload = {
+      id_cliente: cli.id_cliente,
+      identificador_punto_interes: this.pdvSel()?.identificador,
+      lineas, notas: 'Cargado desde nota de pedido (IA)',
+    };
+    this.creandoPedido.set(true);
+    this.post<any>(`/pedidos/ocr/${prop.id_nota_ocr}/confirmar`, payload).subscribe({
+      next: res => {
+        this.creandoPedido.set(false);
+        this.ocrPropuesta.set(null);
+        this.snack.open(`¡Pedido ${res.pedido.numero_pedido} registrado desde la nota! Total $${res.pedido.total.toFixed(2)}`, 'OK', { duration: 3500 });
+        this.step.set('clientes');
+      },
+      error: e => { this.creandoPedido.set(false); this.err(e); },
+    });
+  }
+
+  // ── NO HUBO VENTA (visita sin pedido -- se mantiene el registro histórico) ──
+  async noHuboVenta() {
+    const razon = await this.confirmDialog.promptText('Motivo por el que no hubo venta:', { title: 'No hubo venta', placeholder: 'Escribe el motivo…', required: true, confirmText: 'Registrar' });
+    if (!razon?.trim()) return;
     const pdv = this.pdvSel(), cli = this.clienteSel();
     if (!pdv || !cli) return;
-    const payload: any = { id_punto_interes: pdv.identificador, id_cliente: cli.id_cliente, vendio: this.vendio() };
-    if (this.vendio()) {
-      const m = parseFloat(this.monto);
-      if (!m || m <= 0) { this.snack.open('Ingresa un monto válido mayor que cero', 'OK', { duration: 2500 }); return; }
-      payload.monto = m;
-    } else {
-      if (!this.razonNoVenta.trim()) { this.snack.open('La razón de la no venta es obligatoria', 'OK', { duration: 2500 }); return; }
-      payload.razon_no_venta = this.razonNoVenta.trim();
-    }
+    const payload = { id_punto_interes: pdv.identificador, id_cliente: cli.id_cliente, vendio: false, razon_no_venta: razon.trim() };
     this.registrando.set(true);
     if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/registrar-visita`, jsonBody: payload, label: `Visita ${cli.nombre}` });
+      this.offline.enqueue({ url: `${this.API}/registrar-visita`, jsonBody: payload, label: `No venta ${cli.nombre}` });
       const j = this.jornadaActiva();
       if (j) { j.visitas = (j.visitas || 0) + 1; this.jornadaActiva.set({ ...j }); this.offline.cacheWrite('jornada-activa', j); }
       this.registrando.set(false);
-      this.snack.open(payload.vendio ? 'Venta guardada localmente' : 'No-venta guardada localmente', 'OK', { duration: 2500 });
+      this.snack.open('Registrado localmente', 'OK', { duration: 2500 });
       this.step.set('clientes');
       return;
     }
@@ -362,7 +648,7 @@ export class VentasComponent implements OnInit {
       next: res => {
         this.registrando.set(false);
         const j = this.jornadaActiva(); if (j) this.jornadaActiva.set({ ...j, visitas: res.visitas });
-        this.snack.open(payload.vendio ? '¡Venta registrada!' : 'No venta registrada', 'OK', { duration: 2000 });
+        this.snack.open('No venta registrada', 'OK', { duration: 2000 });
         this.step.set('clientes');
       },
       error: e => { this.registrando.set(false); this.err(e); },

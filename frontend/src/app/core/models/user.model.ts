@@ -13,6 +13,7 @@ export interface User {
   is_mercaderista: boolean;
   is_coordinador_exclusivo: boolean;
   is_coordinador_tradex: boolean;
+  is_ejecutivo_cuenta?: boolean;
   permisos: Permission[];
   nombre?: string;
   cedula?: string;

@@ -19,6 +19,7 @@ router = APIRouter(prefix="/api/users", tags=["Usuarios"])
 
 
 from app.models.analista import Analista
+from app.models.ejecutivo import Ejecutivo
 
 @router.get("/", response_model=List[UsuarioResponse])
 def list_users(
@@ -33,6 +34,7 @@ def list_users(
         Analista.nombre.label('analista_nombre'),
         Mercaderista.nombre.label('mercaderista_nombre'),
         Encuestador.nombre.label('encuestador_nombre'),
+        Ejecutivo.nombre.label('ejecutivo_nombre'),
     ).outerjoin(
         Cliente, (Usuario.id_perfil == Cliente.id) & (Usuario.id_rol == 1)
     ).outerjoin(
@@ -42,11 +44,13 @@ def list_users(
     ).outerjoin(
         # 12 = Encuestador, 13 = IQVIA (también puede activar jornadas propias)
         Encuestador, (Usuario.id_perfil == Encuestador.id) & (Usuario.id_rol.in_((12, 13)))
+    ).outerjoin(
+        Ejecutivo, (Usuario.id_perfil == Ejecutivo.id) & (Usuario.id_rol == 15)
     ).order_by(Usuario.id).offset(skip).limit(limit).all()
 
     result = []
-    for u, c_nombre, a_nombre, m_nombre, e_nombre in users:
-        u.perfil_nombre = c_nombre or a_nombre or m_nombre or e_nombre
+    for u, c_nombre, a_nombre, m_nombre, e_nombre, ej_nombre in users:
+        u.perfil_nombre = c_nombre or a_nombre or m_nombre or e_nombre or ej_nombre
         result.append(u)
     return result
 

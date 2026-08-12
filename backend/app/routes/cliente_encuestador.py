@@ -83,7 +83,7 @@ def _latest_medico_centro_subq(db: Session):
 
 def get_base_query(db: Session):
     pc = _primer_consultorio_alias(db)
-    query = db.query(MedicoCentroEncuesta, EncuestaCentro, Medico, CentroSalud, User).join(
+    query = db.query(MedicoCentroEncuesta, EncuestaCentro, Medico, CentroSalud, User, JornadaEncuestador).join(
         EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
     ).join(
         Medico, Medico.id_medico == MedicoCentroEncuesta.id_medico
@@ -91,6 +91,8 @@ def get_base_query(db: Session):
         CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro
     ).join(
         User, User.id == EncuestaCentro.id_usuario
+    ).outerjoin(
+        JornadaEncuestador, JornadaEncuestador.id_jornada == EncuestaCentro.id_jornada
     ).outerjoin(
         pc, pc.c.id_medico == Medico.id_medico
     )
@@ -319,7 +321,8 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
         Medico.ciudad, Medico.estado, Medico.telefono, Medico.whatsapp, Medico.email,
         CentroSalud.nombre_centro, pc.c.valor_consulta_rango,
         pc.c.promedio_pacientes_semanal_rango, pc.c.horarios_json,
-        EncuestaCentro.fecha_verificacion, User.username
+        EncuestaCentro.fecha_verificacion, User.username,
+        JornadaEncuestador.latitud, JornadaEncuestador.longitud
     ).order_by(desc(EncuestaCentro.fecha_verificacion), Medico.apellido1).offset(offset).limit(per_page).all()
 
     medicos = []
@@ -344,7 +347,9 @@ def api_medicos_tabla(request: Request, q: str = "", page: int = 1, per_page: in
             "promedio_pacientes": r.promedio_pacientes_semanal_rango,
             "dias_consulta": _dias_activos_str(r.horarios_json),
             "fecha_verificacion": r.fecha_verificacion.isoformat() if r.fecha_verificacion else None,
-            "encuestador": r.username
+            "encuestador": r.username,
+            "latitud": r.latitud,
+            "longitud": r.longitud
         })
         
     return {
