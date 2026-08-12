@@ -421,21 +421,9 @@ export class BalanceFormComponent implements OnInit {
   // ─── Estado chip ───
   setEstado(p: ProductBalanceState, estado: 'normal' | 'quiebre' | 'no_existe') {
     p.estado = estado;
-    if (estado === 'quiebre') {
-      p.inv_inicial = 0;
-      p.inv_deposito = 0;
-      p.inv_final = 0;
-      p.caras = 0;
-      p.fifo = null;
-    } else if (estado === 'no_existe') {
-      p.inv_inicial = 0;
-      p.inv_deposito = 0;
-      p.inv_final = 0;
-      p.caras = 0;
-      p.precio_bs = 0;
-      p.precio_ds = 0;
-      p.fifo = null;
-    }
+    // ⚠️ NO limpiar campos al cambiar estado — los valores se conservan en memoria.
+    // Si el usuario vuelve a "Normal" después de pasar por "Quiebre", recupera lo que ya había escrito.
+    // Al guardar, el backend solo persiste los campos que corresponden según estado_producto.
   }
 
   // ─── Search ───

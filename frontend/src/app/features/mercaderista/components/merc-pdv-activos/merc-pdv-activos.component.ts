@@ -4,8 +4,11 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../../core/services/api.service';
 import { MercUiService } from '../../services/merc-ui.service';
+import { ConfirmService } from '../../../../shared/components/confirm-dialog/confirm.service';
+import { ConfirmDialogComponent } from '../../../../shared/components/confirm-dialog/confirm-dialog.component';
 import { SkeletonLoaderComponent } from '../../../../shared/components/skeleton-loader/skeleton-loader.component';
 
 interface PdvActivo {
@@ -24,7 +27,7 @@ interface PdvActivo {
 @Component({
   selector: 'app-merc-pdv-activos',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatProgressSpinnerModule, MatSnackBarModule, SkeletonLoaderComponent],
+  imports: [CommonModule, MatIconModule, MatButtonModule, MatProgressSpinnerModule, MatSnackBarModule, SkeletonLoaderComponent, ConfirmDialogComponent],
   template: `
     <div class="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
       <div class="flex-grow overflow-y-auto p-4 space-y-4">
@@ -66,13 +69,24 @@ interface PdvActivo {
                 </p>
               </div>
 
-              <!-- Action Button -->
+              <!-- Action Buttons -->
               <div class="flex gap-2 pt-1">
                 <button (click)="continuarVisita(p)"
-                        class="w-full py-2.5 bg-primary-500/10 text-primary-600 border border-primary-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 hover:bg-primary-500/20 transition-all active:scale-95">
+                        class="flex-1 py-2.5 bg-primary-500/10 text-primary-600 border border-primary-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 hover:bg-primary-500/20 transition-all active:scale-95">
                   <mat-icon class="!text-sm">arrow_forward</mat-icon>
                   Continuar Visita
                 </button>
+                @if (p.falta_desactivacion) {
+                  <button (click)="desactivarPdv(p)" [disabled]="desactivando() === p.punto_id"
+                          class="flex-1 py-2.5 bg-rose-500/10 text-rose-600 border border-rose-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 hover:bg-rose-500/20 transition-all active:scale-95 disabled:opacity-50">
+                    @if (desactivando() === p.punto_id) {
+                      <mat-spinner diameter="14" color="warn"></mat-spinner>
+                    } @else {
+                      <mat-icon class="!text-sm">power_settings_new</mat-icon>
+                    }
+                    Desactivar PDV
+                  </button>
+                }
               </div>
 
             </div>
@@ -87,9 +101,11 @@ export class MercPdvActivosComponent implements OnInit {
   private api = inject(ApiService);
   private ui = inject(MercUiService);
   private snack = inject(MatSnackBar);
+  private confirmSvc = inject(ConfirmService);
 
   pdvs = signal<PdvActivo[]>([]);
   loading = signal(true);
+  desactivando = signal<string | null>(null);
 
   constructor() {
     effect(() => {
@@ -126,5 +142,26 @@ export class MercPdvActivosComponent implements OnInit {
       id_cliente: p.ultima_visita_cliente_id,
       cliente: p.ultima_visita_cliente_nombre || undefined,
     });
+  }
+
+  async desactivarPdv(p: PdvActivo): Promise<void> {
+    const confirmado = await this.confirmSvc.confirm(
+      `¿Estás seguro de desactivar el PDV "${p.punto_nombre}"? Todos los clientes deben estar visitados.`,
+      { title: 'Desactivar PDV', confirmText: 'Sí, desactivar', cancelText: 'Cancelar', danger: true }
+    );
+    if (!confirmado) return;
+
+    this.desactivando.set(p.punto_id);
+    try {
+      await firstValueFrom(this.api.desactivarPdv(p.punto_id));
+      this.snack.open(`PDV "${p.punto_nombre}" desactivado.`, 'OK', { duration: 3000 });
+      this.cargar();
+    } catch (e: any) {
+      const detail = e?.error?.detail || e?.error?.mensaje || e?.error;
+      const mensaje = typeof detail === 'string' ? detail : 'Error al desactivar PDV';
+      this.snack.open(mensaje, 'OK', { duration: 5000 });
+    } finally {
+      this.desactivando.set(null);
+    }
   }
 }

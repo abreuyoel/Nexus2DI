@@ -537,6 +537,11 @@ class AuditoriaTiempoRequest(BaseModel):
     tiempo_restante_segundos: int
 
 
+class ReabrirVisitaRequest(BaseModel):
+    """Payload para reabrir una visita finalizada."""
+    motivo: str
+
+
 class AuditoriaTiempoResponse(BaseModel):
     """Respuesta al registrar auditoría de tiempo."""
     success: bool

@@ -28,6 +28,8 @@ export class MercUiService {
 
   activeVisit = signal<ActiveVisit | null>(null);
   detailVisitId = signal<number | null>(null);
+  /** ID de la ruta actualmente activa (en_progreso). Se limpia al finalizar la ruta. */
+  activeRouteId = signal<number | null>(null);
 
   // ─── Timer de visita (40 min) ───
   timerSeconds = signal(MAX_VISITA_SECS);
@@ -68,20 +70,21 @@ export class MercUiService {
   }
 
   private checkActiveTimerOnStartup() {
+    // Limpiar claves de timer huérfanas que hayan quedado de sesiones anteriores.
+    // El timer solo debe iniciarse cuando openVisit() abre un panel de visita real;
+    // arrancarlo en frío sin activeVisit solo produce notificaciones falsas.
+    const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('merc_timer_exp_')) {
-        const saved = localStorage.getItem(key);
-        if (saved) {
-          const expTime = parseInt(saved, 10);
-          const now = Date.now();
-          const remaining = Math.max(0, Math.floor((expTime - now) / 1000));
-          this.timerSeconds.set(remaining);
-          const timerId = key.replace('merc_timer_exp_', '');
-          this.iniciarTimer(false, timerId);
-          break;
-        }
+        keysToRemove.push(key);
       }
+    }
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+    if (keysToRemove.length > 0) {
+      console.log('[MercUiService] 🧹 Limpiadas', keysToRemove.length, 'claves de timer huérfanas:', keysToRemove);
     }
   }
 
@@ -149,6 +152,17 @@ export class MercUiService {
       this.reportAudit('CERRAR_PANEL', 'Cerró el panel de visita sin finalizar (pausa de fondo).');
     }
     this.activeVisit.set(null);
+    // ⚠️ NO limpiar activeRouteId aquí — la ruta sigue activa hasta que el usuario la finalice manualmente.
+  }
+
+  /** Marca una ruta como activa (al iniciar PDV nuevo). */
+  setActiveRoute(routeId: number) {
+    this.activeRouteId.set(routeId);
+  }
+
+  /** Limpia la ruta activa (al finalizar ruta). */
+  clearActiveRoute() {
+    this.activeRouteId.set(null);
   }
 
   openDetailVisit(idVisita: number) {

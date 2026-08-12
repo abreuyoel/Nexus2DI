@@ -51,8 +51,8 @@ export class MercaderistaComponent implements OnInit {
   loadingPdvActivos = signal(false);
   todayVisitsCount = signal(0);
 
-  // True si hay un panel de visita abierto O hay PDVs activos con trabajo pendiente
-  hasActivePdv = computed(() => this.ui.activeVisit() !== null || this.pdvActivos().length > 0);
+  // True si hay un panel de visita abierto, PDVs activos pendientes, O una ruta activa en progreso
+  hasActivePdv = computed(() => this.ui.activeVisit() !== null || this.pdvActivos().length > 0 || this.ui.activeRouteId() !== null);
 
   private confirmSvc = inject(ConfirmService);
   ui = inject(MercUiService);
@@ -118,6 +118,9 @@ export class MercaderistaComponent implements OnInit {
     } else if (this.pdvActivos().length > 0) {
       // Hay PDV activo pero sin panel abierto → navegar a pantalla PDV activos
       this.activeScreen.set('pdv-activos');
+    } else if (this.ui.activeRouteId()) {
+      // Ruta activa pero sin visitas ni PDVs pendientes → ir a la pantalla de ruta para finalizarla
+      this.activeScreen.set('ruta');
     }
   }
 

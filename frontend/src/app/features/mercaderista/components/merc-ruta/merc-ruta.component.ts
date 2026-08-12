@@ -88,6 +88,16 @@ const PRIORITY_LABELS: Record<string, string> = {
                 </span>
               </div>
 
+              <!-- Aclaración: ruta activa — solo se pueden visitar PDVs de esta ruta -->
+              @if (ruta.status === 'en_progreso' && ui.activeRouteId() === ruta.id_ruta) {
+                <div class="bg-primary-500/10 border border-primary-500/20 rounded-xl p-3 flex items-start gap-2">
+                  <mat-icon class="!text-base text-primary-500 mt-0.5 shrink-0">info</mat-icon>
+                  <p class="text-[11px] font-medium text-primary-600 dark:text-primary-400 leading-relaxed">
+                    Esta ruta está activa. Solo podés seleccionar PDVs de <strong>Ruta {{ ruta.nombre }}</strong> hasta que la finalices. Las demás rutas permanecen bloqueadas.
+                  </p>
+                </div>
+              }
+
               <!-- Info: ID + Puntos -->
               <div class="flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400">
                 <span><strong class="font-bold text-slate-700 dark:text-slate-300">ID Ruta:</strong> {{ ruta.id_ruta }}</span>
@@ -178,7 +188,7 @@ export class MercRutaComponent implements OnInit, OnDestroy {
 
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
-  private ui = inject(MercUiService);
+  ui = inject(MercUiService);
   private offline = inject(OfflineQueueService);
   private confirmSvc = inject(ConfirmService);
 
@@ -368,6 +378,9 @@ export class MercRutaComponent implements OnInit, OnDestroy {
         return r;
       }));
 
+      // Marcar la ruta como activa en el servicio global (bloquea otras rutas)
+      this.ui.setActiveRoute(ruta.id_ruta);
+
       // Modal de éxito (IDÉNTICO al APK: "¡PDV Nuevo iniciado!")
       await this.confirmSvc.info(
         'Ahora puedes ver los puntos del PDV nuevo',
@@ -405,6 +418,9 @@ export class MercRutaComponent implements OnInit, OnDestroy {
         if (r.id_ruta === ruta.id_ruta) return { ...r, status: 'finalizada' as const };
         return r;
       }));
+
+      // Limpiar la ruta activa global (desbloquea otras rutas)
+      this.ui.clearActiveRoute();
     } catch (e: any) {
       this.showActivationSpinner.set(false);
       // Mostrar mensaje específico del backend si está disponible

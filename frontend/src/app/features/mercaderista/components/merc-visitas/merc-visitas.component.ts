@@ -318,13 +318,28 @@ export class MercVisitasComponent implements OnInit {
   }
 
   async reabrirVisita(v: any): Promise<void> {
+    // 1. Pedir el motivo de reapertura
+    const motivo = await this.confirm.promptText(
+      'Escribe una razón de por qué necesitas reabrir esta visita para completar datos.',
+      {
+        title: '📝 Motivo de reapertura',
+        placeholder: 'Ej: Faltaron fotos del exhibidor, datos de balance incompletos…',
+        required: true,
+        confirmText: 'Reabrir',
+        cancelText: 'Cancelar'
+      }
+    );
+    if (!motivo) return;
+
+    // 2. Confirmar reglas del temporizador
     const confirmed = await this.confirm.confirm(
-      '⏱️ Al reabrir esta visita se reactivará el temporizador de 40 minutos.\n\nDeberás guardar tus datos o fotos dentro de ese límite para evitar que expire.\n\n¿Estás seguro de que deseas reabrir la visita?',
+      '⏱️ Al reabrir esta visita se reactivará el temporizador de 40 minutos.\n\nSolo se abrirá el PDV, no la ruta.\n\nDeberás guardar tus datos o fotos dentro de ese límite para evitar que expire.\n\n¿Estás seguro de que deseas reabrir la visita?',
       { title: '⏰ Reglas del Temporizador', confirmText: 'Reabrir', cancelText: 'Cancelar' }
     );
     if (!confirmed) return;
+
     try {
-      await this.api.post<any>(`/api/merc/visitas/${v.id_visita}/reabrir`, {}).toPromise();
+      await this.api.post<any>(`/api/merc/visitas/${v.id_visita}/reabrir`, { motivo }).toPromise();
       this.ui.openVisit({
         id_visita: v.id_visita,
         pdv_nombre: v.pdv_nombre,

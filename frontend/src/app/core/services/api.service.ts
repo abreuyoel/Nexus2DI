@@ -545,6 +545,9 @@ export class ApiService {
   finalizarRuta(idRuta: number): Observable<{ success: boolean; mensaje?: string }> {
     return this.http.post<{ success: boolean; mensaje?: string }>(`${this.base}/api/merc/ruta/finalizar`, { id_ruta: idRuta });
   }
+  desactivarPdv(idPunto: string): Observable<{ success: boolean; mensaje?: string }> {
+    return this.http.post<{ success: boolean; mensaje?: string }>(`${this.base}/api/merc/pdv/desactivar`, { id_punto: idPunto });
+  }
   getMercMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/merc/visitas`, { params: this.params(opts) });
   }

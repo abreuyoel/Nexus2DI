@@ -722,13 +722,9 @@ class VisitaService:
         self.db.refresh(audit)
         return {"success": True, "id_auditoria_tiempo": audit.id}
 
-    def reabrir_visita(self, current_user, id_visita: int) -> dict:
+    def reabrir_visita(self, current_user, id_visita: int, motivo: str) -> dict:
         """Reabre una visita que estaba Finalizada, cambiándola a Pendiente.
-        También reactiva la ruta asociada si ya estaba finalizada hoy."""
-        from app.models.ruta import RutaProgramacion, RutaActivada
-        from datetime import date
-        from sqlalchemy import cast, Date
-        
+        Solo reabre el PDV, NO reactiva la ruta asociada."""
         merc = self._get_mercaderista(current_user)
         visita = (
             self.db.query(Visita)
@@ -743,37 +739,9 @@ class VisitaService:
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="La visita no está finalizada")
             
-        # Reabrir
+        # Reabrir solo el PDV, sin reactivar la ruta
         visita.estado = "Pendiente"
-        
-        # Encontrar la programación de hoy para reactivar la ruta si es necesario
-        hoy = date.today()
-        dia_numero = hoy.weekday()
-        dia_semana_hoy = DAY_MAP_ES[dia_numero]
-
-        prog = (
-            self.db.query(RutaProgramacion)
-            .filter(
-                RutaProgramacion.punto_id == visita.punto_id,
-                RutaProgramacion.id_cliente == visita.id_cliente,
-                RutaProgramacion.dia == dia_semana_hoy,
-                RutaProgramacion.activo == True
-            )
-            .first()
-        )
-
-        if prog:
-            activacion = (
-                self.db.query(RutaActivada)
-                .filter(
-                    RutaActivada.mercaderista_id == merc.id,
-                    RutaActivada.ruta_id == prog.ruta_id,
-                    cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
-                )
-                .first()
-            )
-            if activacion and activacion.estado == "Finalizado":
-                activacion.estado = "activo"
+        visita.motivo_reabertura = motivo
                 
         self.db.commit()
         return {"success": True, "mensaje": "Visita reabierta con éxito"}

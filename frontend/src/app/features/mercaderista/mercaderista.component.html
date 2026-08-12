@@ -89,9 +89,10 @@
             </div>
           </div>
           @if (todayVisitsCount() > 0) {
-            <span class="bg-primary-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full">{{ todayVisitsCount() }}</span>
+          <span class="bg-primary-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full">{{
+            todayVisitsCount() }}</span>
           } @else {
-            <mat-icon class="text-slate-400 group-hover:text-slate-600">chevron_right</mat-icon>
+          <mat-icon class="text-slate-400 group-hover:text-slate-600">chevron_right</mat-icon>
           }
         </div>
 
@@ -109,9 +110,10 @@
             </div>
           </div>
           @if (pdvActivos().length > 0) {
-            <span class="bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full">{{ pdvActivos().length }}</span>
+          <span class="bg-amber-500 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full">{{ pdvActivos().length
+            }}</span>
           } @else {
-            <mat-icon class="text-slate-400 group-hover:text-slate-600">chevron_right</mat-icon>
+          <mat-icon class="text-slate-400 group-hover:text-slate-600">chevron_right</mat-icon>
           }
         </div>
 
@@ -180,7 +182,7 @@
           <p class="text-xs text-white/70 mt-1 leading-relaxed">
             Cliente: <strong class="text-white">{{ ui.activeVisit()?.cliente || '—' }}</strong>
           </p>
-          } @else {
+          } @else if (pdvActivos().length > 0) {
           <h5 class="text-base font-black text-white tracking-tight">{{ pdvActivos()[0].punto_nombre || 'PDV Activo' }}
           </h5>
           <p class="text-xs text-white/70 mt-1 leading-relaxed">
@@ -189,6 +191,11 @@
             · <strong class="text-white">{{ pdvActivos()[0].clientes_pendientes.length }} cliente(s)
               pendiente(s)</strong>
             }
+          </p>
+          } @else {
+          <h5 class="text-base font-black text-white tracking-tight">Ruta en Progreso</h5>
+          <p class="text-xs text-white/70 mt-1 leading-relaxed">
+            Tenés una ruta activa. Finalizala para poder seleccionar otra.
           </p>
           }
         </div>

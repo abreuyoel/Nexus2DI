@@ -69,6 +69,14 @@ const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string
 
       <!-- PDV List -->
       <div class="flex-grow overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">
+
+        <!-- Aclaración: ruta activa — solo se pueden visitar PDVs de esta ruta -->
+        <div class="bg-primary-500/10 border border-primary-500/20 rounded-xl p-3 flex items-start gap-2">
+          <mat-icon class="!text-base text-primary-500 mt-0.5 shrink-0">info</mat-icon>
+          <p class="text-[11px] font-medium text-primary-600 dark:text-primary-400 leading-relaxed">
+            La ruta <strong>{{ rutaNombre }}</strong> está activa. Solo podés visitar PDVs de esta ruta hasta que la finalices.
+          </p>
+        </div>
         @if (pdvs.length === 0) {
           <div class="py-16 text-center opacity-50">
             <mat-icon class="!text-5xl text-slate-300">wrong_location</mat-icon>

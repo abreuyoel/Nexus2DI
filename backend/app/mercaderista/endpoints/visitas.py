@@ -25,6 +25,7 @@ from app.mercaderista.schemas import (
     ProductoParaBalance,
     VisitaDetalleResponse,
     AuditoriaTiempoRequest, AuditoriaTiempoResponse,
+    ReabrirVisitaRequest,
 )
 
 router = APIRouter(prefix="/api/merc/visitas", tags=["Mercaderista - Visitas"])
@@ -184,9 +185,10 @@ def registrar_auditoria_tiempo(
 @router.post("/{visita_id}/reabrir")
 def reabrir_visita(
     visita_id: int,
+    body: ReabrirVisitaRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    """Reabre una visita finalizada."""
+    """Reabre una visita finalizada. Solo reabre el PDV, no la ruta."""
     service = VisitaService(db)
-    return service.reabrir_visita(current_user, visita_id)
+    return service.reabrir_visita(current_user, visita_id, body.motivo)
