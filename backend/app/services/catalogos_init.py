@@ -46,6 +46,31 @@ def ensure_route_columns() -> None:
     _backfill_exclusive_clients()
 
 
+def ensure_jornada_encuestador_columns() -> None:
+    """Agrega columnas latitud_fin, longitud_fin, ciudad_fin, estado_geo_fin en JORNADAS_ENCUESTADOR si faltan."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("JORNADAS_ENCUESTADOR")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar JORNADAS_ENCUESTADOR: {e}")
+        return
+
+    missing_cols = {
+        "latitud_fin": "FLOAT NULL",
+        "longitud_fin": "FLOAT NULL",
+        "ciudad_fin": "VARCHAR(100) NULL",
+        "estado_geo_fin": "VARCHAR(100) NULL"
+    }
+
+    for col_name, col_type in missing_cols.items():
+        if col_name not in cols:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE JORNADAS_ENCUESTADOR ADD {col_name} {col_type}"))
+                logger.info(f"Columna JORNADAS_ENCUESTADOR.{col_name} creada con éxito")
+            except Exception as e:
+                logger.exception(f"No se pudo crear JORNADAS_ENCUESTADOR.{col_name}: {e}")
+
+
 def _backfill_exclusive_clients() -> None:
     """Rellena id_cliente_exclusivo en rutas Exclusivas (nombre 'Ruta E%') que estén
     en NULL, usando el cliente más frecuente en sus programaciones. Idempotente."""
@@ -123,6 +148,7 @@ def ensure_catalog_tables() -> None:
     """Crea las tablas de catálogo si no existen, y siembra con valores distintos
     de PUNTOS_INTERES1 la primera vez."""
     ensure_route_columns()
+    ensure_jornada_encuestador_columns()
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
     missing = [t for t in CATALOG_TABLES if t not in existing]

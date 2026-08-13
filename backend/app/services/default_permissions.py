@@ -36,6 +36,7 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "atencion-cliente": {"read": True, "write": True},
         "data": {"read": True},
         "supervisor-encuestadores": {"read": True, "write": True, "delete": True},
+        "auditoria-usuarios": {"read": True},
     },
     "auditor_campo": {
         "dashboard": {"read": True},

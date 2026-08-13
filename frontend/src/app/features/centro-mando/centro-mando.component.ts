@@ -126,6 +126,10 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
   }
 
+  get canSeeHorasTrabajadas(): boolean {
+    return this.auth.canAccess('centro-mando.activaciones.horas_trabajadas', ['admin', 'analyst', 'supervisor']);
+  }
+
   constructor(
     private api: ApiService, private auth: AuthService, private realtime: RealtimeService,
     private dialog: MatDialog, private router: Router,

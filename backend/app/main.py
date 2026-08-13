@@ -89,6 +89,7 @@ app = FastAPI(
     description="Sistema de gestión de visitas y merchandising",
     version="2.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.state.limiter = limiter
@@ -219,6 +220,8 @@ from app.routes import media as media_routes
 app.include_router(media_routes.router)
 from app.routes import supervisor_encuestadores
 app.include_router(supervisor_encuestadores.router)
+from app.routes import auditoria_usuarios
+app.include_router(auditoria_usuarios.router)
 
 
 

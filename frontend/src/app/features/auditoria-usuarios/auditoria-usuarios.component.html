@@ -1,0 +1,538 @@
+<div class="p-6 max-w-7xl mx-auto space-y-6">
+  <!-- Header Card -->
+  <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div class="space-y-1">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+          <mat-icon class="!text-2xl">shield</mat-icon>
+        </div>
+        <div>
+          <h1 class="text-2xl font-black tracking-tight">Auditoría de Usuarios y Permisos</h1>
+          <p class="text-xs text-indigo-200/80 font-medium">Control de modificaciones con comparativa de valores anteriores y nuevos.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toggle View Mode Tabs -->
+    <div class="flex items-center bg-white/10 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shrink-0">
+      <button (click)="setViewMode('grouped')"
+        [class]="viewMode() === 'grouped' ? 'bg-white text-slate-900 shadow-md font-black' : 'text-indigo-200 font-semibold hover:text-white'"
+        class="px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5">
+        <mat-icon class="!text-base">groups</mat-icon> Resumen por Usuario
+      </button>
+      <button (click)="setViewMode('all')"
+        [class]="viewMode() === 'all' ? 'bg-white text-slate-900 shadow-md font-black' : 'text-indigo-200 font-semibold hover:text-white'"
+        class="px-4 py-2 rounded-xl text-xs transition-all flex items-center gap-1.5">
+        <mat-icon class="!text-base">list_alt</mat-icon> Historial de Eventos ({{ total() }})
+      </button>
+    </div>
+  </div>
+
+  <!-- Search & Filter Controls -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 p-5 shadow-sm space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Buscar Usuario / Objetivo</label>
+        <div class="relative">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">search</mat-icon>
+          <input type="text" [(ngModel)]="searchText" (input)="onFilterChange()" placeholder="Ej: ysanz, supervisor, admin..."
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Filtrar por Acción</label>
+        <select [(ngModel)]="filterAction" (change)="onFilterChange()"
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500">
+          <option value="">Todas las acciones</option>
+          <option value="CREATE_USER">Creación de Usuario</option>
+          <option value="UPDATE_USER">Edición de Datos</option>
+          <option value="UPDATE_PERMISSIONS">Cambio de Permisos</option>
+          <option value="DELETE_USER">Eliminación de Usuario</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modificado Por (Ejecutor)</label>
+        <input type="text" [(ngModel)]="filterEjecutor" (input)="onFilterChange()" placeholder="Nombre del ejecutor..."
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-indigo-500">
+      </div>
+
+      <div class="flex items-end gap-2">
+        <button (click)="resetFilters()"
+          class="w-full py-2 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors flex items-center justify-center gap-2">
+          <mat-icon class="!text-base">restart_alt</mat-icon> Limpiar Filtros
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="py-16 text-center">
+      <mat-spinner diameter="40" class="mx-auto text-indigo-600"></mat-spinner>
+      <p class="text-slate-500 font-semibold text-sm mt-3">Cargando registros de auditoría...</p>
+    </div>
+  } @else {
+    <!-- MODE 1: Consolidado Por Usuario (Sin filas duplicadas de Dev / ysanz) -->
+    @if (viewMode() === 'grouped' && !searchText && !filterAction && !filterEjecutor) {
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/5 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <th class="py-3.5 px-4">Usuario Afectado</th>
+                <th class="py-3.5 px-4">Última Acción</th>
+                <th class="py-3.5 px-4">Modificado Por (Ejecutor)</th>
+                <th class="py-3.5 px-4">Última Fecha</th>
+                <th class="py-3.5 px-4 text-center">Cambios Registrados</th>
+                <th class="py-3.5 px-4 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-white/5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              @for (userGroup of groupedUserLogs(); track userGroup.targetName) {
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                  <!-- Usuario Afectado (1 sola fila por usuario) -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-sm shrink-0 border border-indigo-200 dark:border-indigo-800/50">
+                        {{ userGroup.targetName.charAt(0).toUpperCase() }}
+                      </div>
+                      <div>
+                        <span class="font-black text-slate-900 dark:text-white text-sm block">{{ userGroup.targetName }}</span>
+                        <span class="text-[10px] text-slate-400 font-normal">ID: #{{ userGroup.targetId }}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Última Acción -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span [class]="getActionBadgeClass(userGroup.lastAction)" class="px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border">
+                      <mat-icon class="!text-sm">{{ getActionIcon(userGroup.lastAction) }}</mat-icon>
+                      {{ getActionLabel(userGroup.lastAction) }}
+                    </span>
+                  </td>
+
+                  <!-- Modificado Por -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                      <mat-icon class="!text-sm text-indigo-500">account_circle</mat-icon>
+                      {{ userGroup.lastModifier }}
+                    </div>
+                    <span class="text-[10px] text-slate-400 block font-normal" *ngIf="userGroup.lastModifierRole !== 'N/A'">Rol: {{ userGroup.lastModifierRole }}</span>
+                  </td>
+
+                  <!-- Última Fecha -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <mat-icon class="!text-sm text-slate-400">schedule</mat-icon>
+                      {{ userGroup.lastTimestamp | date:'dd/MM/yyyy HH:mm:ss' }}
+                    </div>
+                  </td>
+
+                  <!-- Total Cambios Pill -->
+                  <td class="py-3.5 px-4 text-center whitespace-nowrap">
+                    <span class="px-3 py-1 rounded-full text-xs font-black bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                      {{ userGroup.totalEdits }} {{ userGroup.totalEdits === 1 ? 'Evento' : 'Eventos' }}
+                    </span>
+                  </td>
+
+                  <!-- Botones de Acción -->
+                  <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-2">
+                    <button (click)="openUserHistoryModal(userGroup)"
+                      class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors inline-flex items-center gap-1">
+                      <mat-icon class="!text-sm">history</mat-icon> Historial ({{ userGroup.totalEdits }})
+                    </button>
+
+                    <button (click)="openDetailModal(userGroup.latestLog)"
+                      class="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors inline-flex items-center gap-1 border border-indigo-200 dark:border-indigo-800/60">
+                      <mat-icon class="!text-sm">compare</mat-icon> Antes vs Después
+                    </button>
+                  </td>
+                </tr>
+              }
+
+              @if (groupedUserLogs().length === 0) {
+                <tr>
+                  <td colspan="6" class="py-12 text-center text-slate-400">
+                    <mat-icon class="!text-4xl opacity-40">groups</mat-icon>
+                    <p class="font-bold text-sm mt-2">No se encontraron usuarios en la lista de auditoría.</p>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    } @else {
+      <!-- MODE 2: Historial Completo de Eventos (O se activa al buscar/filtrar) -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/5 text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <th class="py-3.5 px-4">Fecha y Hora</th>
+                <th class="py-3.5 px-4">Usuario Afectado</th>
+                <th class="py-3.5 px-4">Acción Realizada</th>
+                <th class="py-3.5 px-4">Modificado Por (Ejecutor)</th>
+                <th class="py-3.5 px-4">Resumen del Cambio</th>
+                <th class="py-3.5 px-4 text-right">Comparativa</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-white/5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              @for (log of auditLogs(); track log.id) {
+                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors">
+                  <!-- Fecha -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <mat-icon class="!text-sm text-slate-400">schedule</mat-icon>
+                      {{ log.timestamp | date:'dd/MM/yyyy HH:mm:ss' }}
+                    </div>
+                    <span class="text-[10px] text-slate-400 block font-normal" *ngIf="log.ip_address">IP: {{ log.ip_address }}</span>
+                  </td>
+
+                  <!-- Usuario Afectado -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="flex items-center gap-2">
+                      <div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-xs shrink-0 border border-indigo-200 dark:border-indigo-800/50">
+                        {{ (log.entity_name || 'U').charAt(0).toUpperCase() }}
+                      </div>
+                      <div>
+                        <button (click)="filterByUser(log.entity_name || log.entity_id)" class="font-black text-slate-900 dark:text-white hover:underline text-left block">
+                          {{ log.entity_name || log.entity_id || 'N/A' }}
+                        </button>
+                        <span class="text-[10px] text-slate-400 font-normal">ID: #{{ log.entity_id || 'N/A' }}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Acción Badge -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span [class]="getActionBadgeClass(log.action)" class="px-2.5 py-1 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 border">
+                      <mat-icon class="!text-sm">{{ getActionIcon(log.action) }}</mat-icon>
+                      {{ getActionLabel(log.action) }}
+                    </span>
+                  </td>
+
+                  <!-- Modificado Por -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="font-bold text-slate-900 dark:text-white flex items-center gap-1">
+                      <mat-icon class="!text-sm text-indigo-500">account_circle</mat-icon>
+                      {{ log.username || 'Sistema' }}
+                    </div>
+                    <span class="text-[10px] text-slate-400 block font-normal" *ngIf="log.rol">Rol: {{ log.rol }}</span>
+                  </td>
+
+                  <!-- Resumen Informativo -->
+                  <td class="py-3.5 px-4 max-w-xs truncate">
+                    <span class="text-slate-600 dark:text-slate-300 font-medium" [matTooltip]="getSummaryLine(log)">
+                      {{ getSummaryLine(log) }}
+                    </span>
+                  </td>
+
+                  <!-- Botón Detalles -->
+                  <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                    <button (click)="openDetailModal(log)"
+                      class="px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 font-bold text-xs transition-colors inline-flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800/60 shadow-xs">
+                      <mat-icon class="!text-sm">compare</mat-icon> Antes vs Después
+                    </button>
+                  </td>
+                </tr>
+              }
+
+              @if (auditLogs().length === 0) {
+                <tr>
+                  <td colspan="6" class="py-12 text-center text-slate-400">
+                    <mat-icon class="!text-4xl opacity-40">policy</mat-icon>
+                    <p class="font-bold text-sm mt-2">No se encontraron eventos de auditoría para los filtros aplicados.</p>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    <!-- Pagination Controls -->
+    <div class="flex items-center justify-between bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-white/5 text-xs text-slate-500 font-semibold shadow-sm">
+      <div>Mostrando {{ skip() + 1 }} - {{ mathMin(skip() + limit, total()) }} de {{ total() }} eventos</div>
+      <div class="flex items-center gap-2">
+        <button (click)="prevPage()" [disabled]="skip() === 0"
+          class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 font-bold">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <button (click)="nextPage()" [disabled]="skip() + limit >= total()"
+          class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 font-bold">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+  }
+</div>
+
+<!-- Modal 1: Detailed Before vs After Comparison Modal -->
+@if (showModal() && selectedLog()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <span [class]="getActionBadgeClass(selectedLog().action)" class="p-2.5 rounded-2xl flex items-center justify-center border">
+            <mat-icon class="!text-xl">{{ getActionIcon(selectedLog().action) }}</mat-icon>
+          </span>
+          <div>
+            <h2 class="text-lg font-black tracking-tight">Detalle de Modificación: {{ selectedLog().entity_name || selectedLog().entity_id }}</h2>
+            <p class="text-xs text-indigo-200/80 font-medium flex items-center gap-2">
+              <span>Evento #{{ selectedLog().id }}</span>
+              <span>•</span>
+              <span>{{ selectedLog().timestamp | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+            </p>
+          </div>
+        </div>
+
+        <button (click)="closeDetailModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar">
+        <!-- Overview Grid Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3 border border-slate-200/60 dark:border-white/5 space-y-1">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Quién lo modificó</span>
+            <div class="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
+              <mat-icon class="!text-base text-indigo-500">account_circle</mat-icon>
+              {{ selectedLog().username || 'Sistema' }}
+            </div>
+            <span class="text-[11px] text-slate-500 block" *ngIf="selectedLog().rol">Rol: {{ selectedLog().rol }}</span>
+          </div>
+
+          <div class="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3 border border-slate-200/60 dark:border-white/5 space-y-1">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Usuario Afectado</span>
+            <div class="font-bold text-indigo-600 dark:text-indigo-400 text-sm flex items-center gap-1.5">
+              <mat-icon class="!text-base text-indigo-500">person</mat-icon>
+              {{ selectedLog().entity_name || selectedLog().entity_id || 'N/A' }}
+            </div>
+            <span class="text-[11px] text-slate-500 block">ID: #{{ selectedLog().entity_id || 'N/A' }}</span>
+          </div>
+
+          <div class="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-3 border border-slate-200/60 dark:border-white/5 space-y-1">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Estado / Origen</span>
+            <div class="font-bold text-emerald-600 dark:text-emerald-400 text-sm flex items-center gap-1.5">
+              <mat-icon class="!text-base text-emerald-500">check_circle</mat-icon>
+              {{ selectedLog().status || 'OK' }}
+            </div>
+            <span class="text-[11px] text-slate-500 block" *ngIf="selectedLog().ip_address">IP: {{ selectedLog().ip_address }}</span>
+          </div>
+        </div>
+
+        <!-- Section: Comparison / Changes -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <mat-icon class="!text-base text-indigo-500">compare</mat-icon>
+              Comparativa de Valores (Antes vs Después)
+            </h3>
+
+            <button (click)="toggleRawJson()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+              <mat-icon class="!text-sm">{{ showRawJsonInModal() ? 'table_chart' : 'code' }}</mat-icon>
+              {{ showRawJsonInModal() ? 'Ver Vista Formateada' : 'Ver JSON Técnico' }}
+            </button>
+          </div>
+
+          @if (!showRawJsonInModal()) {
+            @if (isPermissionChange(selectedLog())) {
+              <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden shadow-xs">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/5 font-black text-slate-400 uppercase tracking-wider text-[10px]">
+                      <th class="py-3 px-4">Módulo del Sistema</th>
+                      <th class="py-3 px-4 text-center">Lectura</th>
+                      <th class="py-3 px-4 text-center">Escritura</th>
+                      <th class="py-3 px-4 text-center">Eliminar</th>
+                      <th class="py-3 px-4 text-right">Estado de Acceso</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 dark:divide-white/5 font-semibold">
+                    @for (perm of extractPermissionsList(selectedLog().changes); track perm.moduleKey) {
+                      <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                        <td class="py-2.5 px-4 font-bold text-slate-900 dark:text-white">
+                          {{ perm.moduleName }}
+                        </td>
+                        <td class="py-2.5 px-4 text-center">
+                          <mat-icon [class]="perm.canRead ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'" class="!text-base">
+                            {{ perm.canRead ? 'check_circle' : 'remove_circle_outline' }}
+                          </mat-icon>
+                        </td>
+                        <td class="py-2.5 px-4 text-center">
+                          <mat-icon [class]="perm.canWrite ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-600'" class="!text-base">
+                            {{ perm.canWrite ? 'check_circle' : 'remove_circle_outline' }}
+                          </mat-icon>
+                        </td>
+                        <td class="py-2.5 px-4 text-center">
+                          <mat-icon [class]="perm.canDelete ? 'text-rose-500' : 'text-slate-300 dark:text-slate-600'" class="!text-base">
+                            {{ perm.canDelete ? 'delete' : 'remove_circle_outline' }}
+                          </mat-icon>
+                        </td>
+                        <td class="py-2.5 px-4 text-right">
+                          @if (perm.canRead) {
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              Permitido
+                            </span>
+                          } @else {
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                              Sin Acceso
+                            </span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else if (selectedLog().action === 'DELETE_USER') {
+              <div class="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-4 flex items-center gap-3 text-xs text-rose-800 dark:text-rose-300">
+                <mat-icon class="!text-2xl text-rose-600 shrink-0">delete_forever</mat-icon>
+                <div>
+                  <span class="font-black text-sm block">El usuario fue eliminado permanentemente</span>
+                  <span>Todos los roles y permisos asociados a este usuario fueron revocados de la base de datos.</span>
+                </div>
+              </div>
+            } @else {
+              <!-- Field Modifications Before vs After Table -->
+              <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden shadow-xs">
+                <table class="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/5 font-black text-slate-400 uppercase tracking-wider text-[10px]">
+                      <th class="py-3 px-4">Campo / Propiedad</th>
+                      <th class="py-3 px-4">Valor Anterior (Viejo)</th>
+                      <th class="py-3 px-4">Valor Nuevo (Actualizado)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 dark:divide-white/5 font-semibold">
+                    @for (diff of extractDiffItems(selectedLog()); track diff.field) {
+                      <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                        <td class="py-3 px-4 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <mat-icon class="!text-base text-indigo-500">{{ diff.icon }}</mat-icon>
+                          {{ diff.field }}
+                        </td>
+                        <td class="py-3 px-4 text-slate-500">
+                          <span class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg font-mono text-xs inline-block border border-slate-200 dark:border-slate-700">
+                            {{ diff.oldVal }}
+                          </span>
+                        </td>
+                        <td class="py-3 px-4 text-slate-900 dark:text-white font-bold">
+                          <span class="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 px-2.5 py-1 rounded-lg font-mono text-xs inline-block">
+                            {{ diff.newVal }}
+                          </span>
+                        </td>
+                      </tr>
+                    }
+
+                    @if (extractDiffItems(selectedLog()).length === 0) {
+                      <tr>
+                        <td colspan="3" class="py-8 text-center text-slate-400">
+                          Sin cambios detallados adicionales.
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          } @else {
+            <div class="bg-slate-900 text-emerald-400 rounded-2xl p-4 border border-white/10 font-mono text-xs overflow-x-auto">
+              <pre class="whitespace-pre-wrap">{{ formatJson(selectedLog().changes) }}</pre>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-white/5 flex justify-end shrink-0">
+        <button (click)="closeDetailModal()"
+          class="px-5 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold text-xs transition-colors">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Modal 2: Full User Event History Modal -->
+@if (showHistoryModal() && selectedUserHistory()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <!-- Modal Header -->
+      <div class="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400 font-black">
+            {{ selectedUserHistory()!.targetName.charAt(0).toUpperCase() }}
+          </div>
+          <div>
+            <h2 class="text-lg font-black tracking-tight">Historial Completo: {{ selectedUserHistory()!.targetName }}</h2>
+            <p class="text-xs text-indigo-200/80 font-medium">Se registran {{ selectedUserHistory()!.totalEdits }} eventos para este usuario.</p>
+          </div>
+        </div>
+
+        <button (click)="closeUserHistoryModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <!-- History Table Body -->
+      <div class="p-6 overflow-y-auto space-y-4 custom-scrollbar">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/5 font-black text-slate-400 uppercase tracking-wider text-[10px]">
+                <th class="py-3 px-4">Fecha y Hora</th>
+                <th class="py-3 px-4">Acción</th>
+                <th class="py-3 px-4">Modificado Por</th>
+                <th class="py-3 px-4">Resumen</th>
+                <th class="py-3 px-4 text-right">Comparativa</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-white/5 font-semibold">
+              @for (item of selectedUserHistory()!.allLogs; track item.id) {
+                <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                  <td class="py-3 px-4 whitespace-nowrap font-bold text-slate-900 dark:text-white">
+                    {{ item.timestamp | date:'dd/MM/yyyy HH:mm:ss' }}
+                  </td>
+                  <td class="py-3 px-4 whitespace-nowrap">
+                    <span [class]="getActionBadgeClass(item.action)" class="px-2 py-0.5 rounded-md text-[10px] font-bold border">
+                      {{ getActionLabel(item.action) }}
+                    </span>
+                  </td>
+                  <td class="py-3 px-4 whitespace-nowrap text-slate-700 dark:text-slate-300 font-bold">
+                    {{ item.username || 'Sistema' }}
+                  </td>
+                  <td class="py-3 px-4 max-w-xs truncate text-slate-500 font-normal">
+                    {{ getSummaryLine(item) }}
+                  </td>
+                  <td class="py-3 px-4 text-right whitespace-nowrap">
+                    <button (click)="openDetailModal(item)"
+                      class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] border border-indigo-200 dark:border-indigo-800/60">
+                      Antes vs Después
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-white/5 flex justify-end shrink-0">
+        <button (click)="closeUserHistoryModal()"
+          class="px-5 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold text-xs transition-colors">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+}

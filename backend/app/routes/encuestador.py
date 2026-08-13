@@ -591,7 +591,7 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
     
     return {
         "valor_consulta_rangos": [
-            "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
+            "Gratuito", "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
             "Entre 60$ a 100$", "Más de 100$"
         ],
         "promedio_pacientes_rangos": [

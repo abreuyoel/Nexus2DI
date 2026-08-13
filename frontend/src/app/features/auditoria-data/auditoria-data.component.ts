@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+D: \proyects\original\Nexus2DI\frontend\src\app\features\auditoria - data\auditoria - data.component.tsimport { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MercaderistaComponent } from '../mercaderista/mercaderista.component';
 import { DataComponent } from '../data/data.component';

@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, effect } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -15,7 +15,6 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
-import { User } from '../../core/models/user.model';
 import { ClientCategoriesDialogComponent } from './client-categories-dialog.component';
 
 @Component({
@@ -69,24 +68,28 @@ export class UsersComponent implements OnInit {
     { id: 1, nombre: 'Cliente' },
     { id: 5, nombre: 'Mercaderista' },
     { id: 7, nombre: 'Auditor' },
+    { id: 14, nombre: 'Auditor de Campo' },
     { id: 12, nombre: 'Encuestador' },
   ];
 
-  // Solo analistas reales (rol 2) en la pestaña Analistas; los supervisores van aparte
   get realAnalysts(): any[] { return this.analysts().filter(a => (a.id_rol ?? 2) === 2); }
   get encuestadorUsers(): any[] { return this.users().filter(u => u.id_rol === 12 || u.id_rol === 13); }
+  get auditorsList(): any[] {
+    return this.mercaderistas().filter(m => {
+      const t = (m.tipo || '').toLowerCase();
+      return t.includes('auditor') || m.is_auditor || t === 'auditor de campo' || t === 'auditor de gestión';
+    });
+  }
 
-  // Descripciones por entidad (estilo Catálogos)
   tabHints: Record<string, string> = {
-    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador (exclusivo / tradex / general), cliente, mercaderista o encuestador.',
+    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador, cliente, mercaderista o auditor.',
     analistas: 'Analistas que revisan y gestionan las cuentas de clientes.',
-    clientes: 'Cuentas / marcas del sistema. El tipo (Exclusiva / Tradex) se define por la ruta a la que se asigna.',
+    clientes: 'Cuentas / marcas del sistema.',
     mercaderistas: 'Personal de campo que ejecuta las visitas en los puntos de venta.',
-    supervisores: 'Supervisores de rutas y clientes.',
-    encuestadores: 'Personal encuestador de campo encargados de la recolección de datos y encuestas.',
+    supervisors: 'Supervisores de rutas y clientes.',
+    auditores: 'Personal auditor de campo y auditor de gestión encargados del control de calidad e inspecciones.',
   };
 
-  // Alta rápida inline (estilo Catálogos)
   quickAnalyst = '';
   quickSupervisor = '';
   quickClienteNombre = '';
@@ -137,6 +140,17 @@ export class UsersComponent implements OnInit {
     nombre: ['', Validators.required],
   });
 
+  // --- Auditores CRUD State ---
+  showAuditorForm = signal(false);
+  editingAuditor = signal<any>(null);
+  auditorForm = this.fb.group({
+    nombre: ['', Validators.required],
+    cedula: ['', Validators.required],
+    telefono: [''],
+    tipo: ['Auditor de Campo', Validators.required],
+    activo: [true]
+  });
+
   constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
 
   ngOnInit(): void {
@@ -146,7 +160,6 @@ export class UsersComponent implements OnInit {
     });
   }
 
-  // --- Alta rápida (estilo Catálogos) ---
   addQuickAnalyst(): void {
     const nombre = this.quickAnalyst.trim();
     if (!nombre) return;
@@ -201,13 +214,14 @@ export class UsersComponent implements OnInit {
     if (rol === 2) return this.realAnalysts;                          // Analista
     if (rol === 6) return this.supervisors();                         // Supervisor
     if (rol === 5) return this.mercaderistas();                       // Mercaderista
+    if (rol === 7 || rol === 14) return this.auditorsList;            // Auditor / Auditor de Campo
     if (rol === 12 || rol === 13) return this.encuestadores();        // Encuestador / IQVIA
     return [];
   }
 
   showProfileSelect() {
     const rol = this.createForm.get('id_rol')?.value;
-    return [1, 2, 3, 4, 5, 6, 12, 13].includes(rol || 0);
+    return [1, 2, 3, 4, 5, 6, 7, 14, 12, 13].includes(rol || 0);
   }
 
   editUser(user: any): void {
@@ -233,12 +247,18 @@ export class UsersComponent implements OnInit {
   }
 
   saveUser(): void {
-    if (this.createForm.invalid) return;
+    if (this.createForm.invalid) {
+      this.createForm.markAllAsTouched();
+      this.snack.open('Por favor completa todos los campos obligatorios del formulario', 'OK', { duration: 3000 });
+      return;
+    }
     this.saving.set(true);
 
     const user = this.editingUser();
-    const data = { ...this.createForm.value };
-    if (!data.password) delete data.password;
+    const data: any = { ...this.createForm.value };
+    if (!data.password || data.password.trim() === '') {
+      delete data.password;
+    }
 
     const request = user
       ? this.api.updateUser(user.id, data)
@@ -247,14 +267,271 @@ export class UsersComponent implements OnInit {
     request.subscribe({
       next: () => {
         this.saving.set(false);
-        this.loadData();
+        this.editingUser.set(null);
         this.showForm.set(false);
-        this.snack.open(user ? 'Usuario modificado' : 'Usuario creado', 'OK', { duration: 3000 });
+        this.loadData();
+        this.snack.open(user ? 'Usuario modificado exitosamente' : 'Usuario creado exitosamente', 'OK', { duration: 3000 });
       },
       error: (err) => {
         this.saving.set(false);
-        this.snack.open(err.error?.detail ?? 'Error al guardar usuario', 'OK', { duration: 3000 });
+        const errorMsg = typeof err.error?.detail === 'string' ? err.error.detail : 'Error al guardar usuario';
+        this.snack.open(errorMsg, 'OK', { duration: 4000 });
       },
+    });
+  }
+
+  // --- Analysts CRUD ---
+  openAnalystForm(): void {
+    this.editingAnalyst.set(null);
+    this.analystForm.reset({ id_rol: 2 });
+    this.showAnalystForm.set(true);
+  }
+
+  editAnalyst(a: any): void {
+    this.editingAnalyst.set(a);
+    this.analystForm.patchValue({ nombre: a.nombre, id_rol: a.id_rol ?? 2 });
+    this.showAnalystForm.set(true);
+  }
+
+  saveAnalyst(): void {
+    if (this.analystForm.invalid) return;
+    this.saving.set(true);
+    const a = this.editingAnalyst();
+    const data: any = { nombre: this.analystForm.value.nombre || '', id_rol: this.analystForm.value.id_rol ?? 2 };
+    const req = a ? this.api.updateAnalyst(a.id, data) : this.api.createAnalyst(data);
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showAnalystForm.set(false);
+        this.api.getAnalystsList().subscribe(d => this.analysts.set(d));
+        this.snack.open('Analista guardado', 'OK', { duration: 2500 });
+      },
+      error: () => {
+        this.saving.set(false);
+        this.snack.open('Error al guardar analista', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteAnalyst(a: any): void {
+    if (confirm(`¿Deseas eliminar al analista ${a.nombre}?`)) {
+      this.api.deleteAnalyst(a.id).subscribe({
+        next: () => {
+          this.api.getAnalystsList().subscribe(d => this.analysts.set(d));
+          this.snack.open('Analista eliminado', 'OK', { duration: 2500 });
+        },
+        error: () => this.snack.open('Error al eliminar analista', 'OK', { duration: 3000 })
+      });
+    }
+  }
+
+  // --- Clients CRUD ---
+  openClientForm(): void {
+    this.editingClient.set(null);
+    this.clientForm.reset({ id_categoria: 1, id_tipo_cliente: 1 });
+    this.showClientForm.set(true);
+  }
+
+  editClient(c: any): void {
+    this.editingClient.set(c);
+    this.clientForm.patchValue({
+      cliente: c.cliente || c.nombre,
+      rif: c.rif || '',
+      id_categoria: c.id_categoria || 1,
+      id_tipo_cliente: c.id_tipo_cliente || 1
+    });
+    this.showClientForm.set(true);
+  }
+
+  saveClient(): void {
+    if (this.clientForm.invalid) return;
+    this.saving.set(true);
+    const c = this.editingClient();
+    const data: any = { ...this.clientForm.value };
+    const req = c ? this.api.updateClient(c.id, data) : this.api.createClient(data);
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showClientForm.set(false);
+        this.api.getClients().subscribe(d => this.clients.set(d));
+        this.snack.open('Cliente guardado', 'OK', { duration: 2500 });
+      },
+      error: () => {
+        this.saving.set(false);
+        this.snack.open('Error al guardar cliente', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteClient(c: any): void {
+    if (confirm(`¿Deseas eliminar al cliente ${c.cliente || c.nombre}?`)) {
+      this.api.deleteClient(c.id).subscribe({
+        next: () => {
+          this.api.getClients().subscribe(d => this.clients.set(d));
+          this.snack.open('Cliente eliminado', 'OK', { duration: 2500 });
+        },
+        error: () => this.snack.open('Error al eliminar cliente', 'OK', { duration: 3000 })
+      });
+    }
+  }
+
+  manageClientCategories(c: any): void {
+    this.dialog.open(ClientCategoriesDialogComponent, { data: { client: c }, width: '600px' });
+  }
+
+  // --- Mercaderistas CRUD ---
+  openMercaderistaForm(): void {
+    this.editingMercaderista.set(null);
+    this.mercaderistaForm.reset({ tipo_mercaderista: 'MERCADERISTA', activo: true });
+    this.showMercaderistaForm.set(true);
+  }
+
+  editMercaderista(m: any): void {
+    this.editingMercaderista.set(m);
+    this.mercaderistaForm.patchValue({
+      nombre: m.nombre,
+      cedula: m.cedula,
+      telefono: m.telefono || '',
+      tipo_mercaderista: m.tipo || 'MERCADERISTA',
+      activo: m.activo ?? true
+    });
+    this.showMercaderistaForm.set(true);
+  }
+
+  saveMercaderista(): void {
+    if (this.mercaderistaForm.invalid) return;
+    this.saving.set(true);
+    const m = this.editingMercaderista();
+    const data: any = { ...this.mercaderistaForm.value };
+    const req = m ? this.api.updateMercaderista(m.id, data) : this.api.createMercaderista(data);
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showMercaderistaForm.set(false);
+        this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
+        this.snack.open('Mercaderista guardado', 'OK', { duration: 2500 });
+      },
+      error: () => {
+        this.saving.set(false);
+        this.snack.open('Error al guardar mercaderista', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteMercaderista(m: any): void {
+    if (confirm(`¿Deseas eliminar al mercaderista ${m.nombre}?`)) {
+      this.api.deleteMercaderista(m.id).subscribe({
+        next: () => {
+          this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
+          this.snack.open('Mercaderista eliminado', 'OK', { duration: 2500 });
+        },
+        error: () => this.snack.open('Error al eliminar mercaderista', 'OK', { duration: 3000 })
+      });
+    }
+  }
+
+  // --- Supervisores CRUD ---
+  openSupervisorForm(): void {
+    this.editingSupervisor.set(null);
+    this.supervisorForm.reset();
+    this.showSupervisorForm.set(true);
+  }
+
+  editSupervisor(s: any): void {
+    this.editingSupervisor.set(s);
+    this.supervisorForm.patchValue({ nombre: s.nombre });
+    this.showSupervisorForm.set(true);
+  }
+
+  saveSupervisor(): void {
+    if (this.supervisorForm.invalid) return;
+    this.saving.set(true);
+    const s = this.editingSupervisor();
+    const data: any = { nombre: this.supervisorForm.value.nombre || '' };
+    const req = s ? this.api.updateSupervisor(s.id, data) : this.api.createSupervisor(data);
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showSupervisorForm.set(false);
+        this.reloadSupervisors();
+        this.snack.open('Supervisor guardado', 'OK', { duration: 2500 });
+      },
+      error: () => {
+        this.saving.set(false);
+        this.snack.open('Error al guardar supervisor', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteSupervisor(s: any): void {
+    if (confirm(`¿Deseas eliminar al supervisor ${s.nombre}?`)) {
+      this.api.deleteSupervisor(s.id).subscribe({
+        next: () => {
+          this.reloadSupervisors();
+          this.snack.open('Supervisor eliminado', 'OK', { duration: 2500 });
+        },
+        error: () => this.snack.open('Error al eliminar supervisor', 'OK', { duration: 3000 })
+      });
+    }
+  }
+
+  // --- Auditores CRUD ---
+  openCreateAuditorForm(): void {
+    this.editingAuditor.set(null);
+    this.auditorForm.reset({ tipo: 'Auditor de Campo', activo: true });
+    this.showAuditorForm.set(true);
+  }
+
+  editAuditor(auditor: any): void {
+    this.editingAuditor.set(auditor);
+    this.auditorForm.patchValue({
+      nombre: auditor.nombre,
+      cedula: auditor.cedula,
+      telefono: auditor.telefono || '',
+      tipo: auditor.tipo || 'Auditor de Campo',
+      activo: auditor.activo ?? true
+    });
+    this.showAuditorForm.set(true);
+  }
+
+  saveAuditor(): void {
+    if (this.auditorForm.invalid) {
+      this.auditorForm.markAllAsTouched();
+      this.snack.open('Por favor completa los campos requeridos', 'OK', { duration: 3000 });
+      return;
+    }
+
+    this.saving.set(true);
+    const auditor = this.editingAuditor();
+    const data = { ...this.auditorForm.value };
+
+    const req = auditor
+      ? this.api.updateMercaderista(auditor.id, data)
+      : this.api.createMercaderista(data);
+
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showAuditorForm.set(false);
+        this.editingAuditor.set(null);
+        this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
+        this.snack.open(auditor ? 'Auditor modificado exitosamente' : 'Auditor creado exitosamente', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.snack.open(err.error?.detail ?? 'Error al guardar auditor', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteAuditor(auditor: any): void {
+    if (!confirm(`¿Deseas eliminar al auditor ${auditor.nombre}?`)) return;
+    this.api.deleteMercaderista(auditor.id).subscribe({
+      next: () => {
+        this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
+        this.snack.open('Auditor eliminado', 'OK', { duration: 2500 });
+      },
+      error: () => this.snack.open('Error al eliminar auditor', 'OK', { duration: 3000 })
     });
   }
 
@@ -265,199 +542,27 @@ export class UsersComponent implements OnInit {
       6: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
       5: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
       7: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+      14: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
       3: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
       4: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
       11: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
-      10: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
-      12: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
-      13: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-      1: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
     };
-    return map[idRol ?? 0] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    return map[idRol || 0] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
   }
 
   deleteUser(user: any): void {
-    if (!confirm(`¿Eliminar al usuario "${user.username}"?`)) return;
-    this.api.deleteUser(user.id).subscribe({
-      next: () => { this.users.update((us) => us.filter((u) => u.id !== user.id)); },
-      error: () => { this.snack.open('Error al eliminar usuario', 'OK', { duration: 3000 }); },
-    });
+    if (confirm(`¿Estás seguro de eliminar el usuario "${user.username}"?`)) {
+      this.api.deleteUser(user.id).subscribe({
+        next: () => {
+          this.loadData();
+          this.snack.open('Usuario eliminado', 'OK', { duration: 2500 });
+        },
+        error: () => this.snack.open('Error al eliminar usuario', 'OK', { duration: 3000 })
+      });
+    }
   }
 
-  // --- Analysts CRUD Methods ---
-  openAnalystForm() {
-    this.editingAnalyst.set(null);
-    this.analystForm.reset({ id_rol: 2 });
-    this.showAnalystForm.set(true);
-  }
-
-  editAnalyst(a: any) {
-    this.editingAnalyst.set(a);
-    this.analystForm.patchValue({ nombre: a.nombre, id_rol: a.id_rol });
-    this.showAnalystForm.set(true);
-  }
-
-  saveAnalyst() {
-    if (this.analystForm.invalid) return;
-    this.saving.set(true);
-    const a = this.editingAnalyst();
-    const request = a
-      ? this.api.updateAnalyst(a.id, this.analystForm.value)
-      : this.api.createAnalyst(this.analystForm.value);
-
-    request.subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
-        this.showAnalystForm.set(false);
-        this.snack.open(a ? 'Analista modificado' : 'Analista creado', 'OK', { duration: 3000 });
-      },
-      error: () => { this.saving.set(false); this.snack.open('Error guardando analista', 'OK', { duration: 3000 }); }
-    });
-  }
-
-  deleteAnalyst(a: any) {
-    if (!confirm(`¿Eliminar analista "${a.nombre}"?`)) return;
-    this.api.deleteAnalyst(a.id).subscribe({
-      next: () => this.api.getAnalystsList().subscribe(data => this.analysts.set(data)),
-      error: () => this.snack.open('Error al eliminar', 'OK', { duration: 3000 })
-    });
-  }
-
-  // --- Clients CRUD Methods ---
-  openClientForm() {
-    this.editingClient.set(null);
-    this.clientForm.reset({ id_categoria: 1, id_tipo_cliente: 1 });
-    this.showClientForm.set(true);
-  }
-
-  editClient(c: any) {
-    this.editingClient.set(c);
-    this.clientForm.patchValue({ cliente: c.cliente || c.nombre, rif: c.rif, id_categoria: c.id_categoria, id_tipo_cliente: c.id_tipo_cliente });
-    this.showClientForm.set(true);
-  }
-
-  saveClient() {
-    if (this.clientForm.invalid) return;
-    this.saving.set(true);
-    const c = this.editingClient();
-    // El backend (tabla CLIENTES) solo tiene "nombre" -- rif/id_categoria/
-    // id_tipo_cliente no existen como columnas, así que no se mandan (se
-    // ignoraban de todos modos, pero mandar el payload completo rompía la
-    // creación porque el nombre iba bajo la clave "cliente", no "nombre").
-    const payload = { nombre: this.clientForm.value.cliente };
-    const request = c
-      ? this.api.updateClient(c.id, payload)
-      : this.api.createClient(payload);
-
-    request.subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.api.getClients().subscribe(data => this.clients.set(data));
-        this.showClientForm.set(false);
-        this.snack.open(c ? 'Cliente modificado' : 'Cliente creado', 'OK', { duration: 3000 });
-      },
-      error: () => { this.saving.set(false); this.snack.open('Error guardando cliente', 'OK', { duration: 3000 }); }
-    });
-  }
-
-  deleteClient(c: any) {
-    if (!confirm(`¿Eliminar cliente "${c.cliente || c.nombre}"?`)) return;
-    this.api.deleteClient(c.id).subscribe({
-      next: () => this.api.getClients().subscribe(data => this.clients.set(data)),
-      error: () => this.snack.open('Error al eliminar', 'OK', { duration: 3000 })
-    });
-  }
-
-  manageClientCategories(c: any) {
-    this.dialog.open(ClientCategoriesDialogComponent, {
-      width: '760px',
-      panelClass: 'premium-dialog-panel',
-      data: { cliente: c }
-    });
-  }
-
-  // --- Mercaderistas CRUD Methods ---
-  openMercaderistaForm() {
-    this.editingMercaderista.set(null);
-    this.mercaderistaForm.reset({ tipo_mercaderista: 'MERCADERISTA', activo: true });
-    this.showMercaderistaForm.set(true);
-  }
-
-  editMercaderista(m: any) {
-    this.editingMercaderista.set(m);
-    this.mercaderistaForm.patchValue({
-      nombre: m.nombre || m.nombre_completo,
-      cedula: m.cedula,
-      telefono: m.telefono,
-      tipo_mercaderista: m.tipo_mercaderista || 'MERCADERISTA',
-      activo: m.activo
-    });
-    this.showMercaderistaForm.set(true);
-  }
-
-  saveMercaderista() {
-    if (this.mercaderistaForm.invalid) return;
-    this.saving.set(true);
-    const m = this.editingMercaderista();
-    const request = m
-      ? this.api.updateMercaderista(m.id, this.mercaderistaForm.value)
-      : this.api.createMercaderista(this.mercaderistaForm.value);
-
-    request.subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
-        this.showMercaderistaForm.set(false);
-        this.snack.open(m ? 'Mercaderista modificado' : 'Mercaderista creado', 'OK', { duration: 3000 });
-      },
-      error: () => { this.saving.set(false); this.snack.open('Error guardando mercaderista', 'OK', { duration: 3000 }); }
-    });
-  }
-
-  deleteMercaderista(m: any) {
-    if (!confirm(`¿Eliminar mercaderista "${m.nombre || m.nombre_completo}"?`)) return;
-    this.api.deleteMercaderista(m.id).subscribe({
-      next: () => this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data)),
-      error: () => this.snack.open('Error al eliminar', 'OK', { duration: 3000 })
-    });
-  }
-
-  // --- Supervisores CRUD Methods ---
-  private reloadSupervisors() {
-    this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
-  }
-  openSupervisorForm() {
-    this.editingSupervisor.set(null);
-    this.supervisorForm.reset({ nombre: '' });
-    this.showSupervisorForm.set(true);
-  }
-  editSupervisor(s: any) {
-    this.editingSupervisor.set(s);
-    this.supervisorForm.patchValue({ nombre: s.nombre });
-    this.showSupervisorForm.set(true);
-  }
-  saveSupervisor() {
-    if (this.supervisorForm.invalid) return;
-    this.saving.set(true);
-    const s = this.editingSupervisor();
-    const payload = { nombre: this.supervisorForm.value.nombre as string };
-    const request = s ? this.api.updateSupervisor(s.id, payload) : this.api.createSupervisor(payload);
-    request.subscribe({
-      next: () => {
-        this.saving.set(false);
-        this.reloadSupervisors();
-        this.showSupervisorForm.set(false);
-        this.snack.open(s ? 'Supervisor modificado' : 'Supervisor creado', 'OK', { duration: 3000 });
-      },
-      error: () => { this.saving.set(false); this.snack.open('Error guardando supervisor', 'OK', { duration: 3000 }); }
-    });
-  }
-  deleteSupervisor(s: any) {
-    if (!confirm(`¿Eliminar supervisor "${s.nombre}"?`)) return;
-    this.api.deleteSupervisor(s.id).subscribe({
-      next: () => this.reloadSupervisors(),
-      error: () => this.snack.open('Error al eliminar', 'OK', { duration: 3000 })
-    });
+  reloadSupervisors(): void {
+    this.api.getSupervisorsWithAssignments().subscribe(d => this.supervisors.set(d));
   }
 }

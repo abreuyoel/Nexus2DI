@@ -295,6 +295,7 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
                   <div>
                     <label class="block text-[9px] font-bold text-slate-400">Valor Consulta</label>
                     <select [(ngModel)]="c.valor_consulta_rango" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-xs text-white">
+                      <option value="Gratuito">Gratuito</option>
                       <option value="Menos de 30$">Menos de 30$</option>
                       <option value="Entre 30$ a 50$">Entre 30$ a 50$</option>
                       <option value="Entre 50$ a 60$">Entre 50$ a 60$</option>

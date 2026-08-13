@@ -78,21 +78,27 @@ def require_analyst_or_admin(current_user: Usuario = Depends(get_current_user)) 
 
 def require_permission(clave: str, action: str = "read", fallback_roles: tuple = ("admin", "analyst")):
     """Dependencia de permiso por módulo (tabla usuario_permisos, module=clave).
-    - Admin: siempre.
-    - Si el usuario TIENE permisos configurados: manda el permiso (read/write/delete de la clave).
-    - Si NO tiene permisos: se cae a los roles indicados (no rompe usuarios sin configurar)."""
+    - Admin (id_rol=8): acceso total sin restricciones.
+    - Si el usuario TIENE permisos configurados: valida la fila correspondiente.
+    - Si no tiene la fila o no tiene permisos: usa los fallback_roles."""
     def _checker(current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)) -> Usuario:
-        if current_user.rol == "admin":
+        if current_user.id_rol == 8 or current_user.is_admin or current_user.rol in ("admin", "superadmin"):
             return current_user
+
         from app.models.user import UserPermission
         perms = db.query(UserPermission).filter(UserPermission.user_id == current_user.id).all()
         if perms:
             p = next((x for x in perms if x.module == clave), None)
-            ok = bool(p and (p.can_write if action == "write" else p.can_delete if action == "delete" else p.can_read))
-            if not ok:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sin permiso: {clave} ({action})")
-            return current_user
-        if current_user.rol in fallback_roles:
+            if p:
+                ok = bool(p.can_write if action == "write" else p.can_delete if action == "delete" else p.can_read)
+                if not ok:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sin permiso: {clave} ({action})")
+                return current_user
+            if current_user.rol in fallback_roles or current_user.id_rol in (2, 7):
+                return current_user
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sin permiso: {clave} ({action})")
+
+        if current_user.rol in fallback_roles or current_user.id_rol in (2, 7):
             return current_user
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
     return _checker
