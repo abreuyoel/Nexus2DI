@@ -1,0 +1,1230 @@
+<div class="min-h-screen bg-slate-950 text-white font-sans pb-12">
+  <div *ngIf="!isStandaloneDetailView">
+    <!-- Header Banner -->
+    <div class="bg-gradient-to-r from-slate-900 to-slate-800 border-b border-white/10 px-8 py-6 shadow-md">
+      <div class="flex items-center justify-between gap-4 flex-wrap max-w-7xl mx-auto">
+        <div class="flex items-center gap-4">
+          <div
+            class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
+            <mat-icon class="text-white">supervisor_account</mat-icon>
+          </div>
+          <div>
+            <h1 class="text-2xl font-black tracking-tight leading-none">Supervisión de Encuestadores</h1>
+            <p class="text-slate-400 text-sm mt-0.5">Control de jornadas, auditoría de encuestas y edición de médicos
+              registrados</p>
+          </div>
+        </div>
+
+        <!-- General Filters & Actions -->
+        <div class="flex items-center gap-3">
+          <!-- Searchable Dropdown for Encuestador Filter -->
+          <div class="flex flex-col relative min-w-64">
+            <label class="text-[10px] uppercase font-black tracking-wider text-slate-500 mb-1">Filtrar por
+              Encuestador</label>
+            <div class="relative">
+              <input type="text" [(ngModel)]="searchEncuestadorQuery" (focus)="onFocusSearch()"
+                (blur)="hideDropdownWithDelay()" placeholder="Buscar encuestador..."
+                class="bg-slate-800 border border-slate-700 focus:border-violet-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-white outline-none w-full shadow-inner transition-colors">
+              <span class="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 cursor-pointer"
+                (click)="showEncuestadorDropdown = !showEncuestadorDropdown">
+                arrow_drop_down
+              </span>
+            </div>
+
+            <!-- Dropdown List -->
+            <div *ngIf="showEncuestadorDropdown"
+              class="absolute top-[62px] left-0 w-full bg-slate-900 border border-white/10 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto backdrop-blur-xl">
+              <div (mousedown)="selectEncuestador(null)"
+                class="px-4 py-2.5 hover:bg-slate-800 cursor-pointer text-sm font-semibold border-b border-white/5"
+                [class.text-violet-400]="selectedUserFilter() === null">
+                Todos los encuestadores
+              </div>
+              <div *ngFor="let u of filteredEncuestadoresForSearch()" (mousedown)="selectEncuestador(u)"
+                class="px-4 py-2.5 hover:bg-slate-800 cursor-pointer text-sm font-semibold flex flex-col border-b border-white/5 last:border-0"
+                [class.text-violet-400]="selectedUserFilter() === u.id">
+                <span class="text-white font-bold">{{ u.nombre }}</span>
+                <span class="text-xs text-slate-400">&#64;{{ u.username }}</span>
+              </div>
+              <div *ngIf="filteredEncuestadoresForSearch().length === 0"
+                class="px-4 py-3 text-xs text-slate-500 italic">
+                No se encontraron encuestadores.
+              </div>
+            </div>
+          </div>
+
+          <button *ngIf="activeTab() === 'jornadas'" (click)="openJornadaModal()"
+            class="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 rounded-xl font-black text-sm shadow-lg shadow-violet-500/20 transition-all self-end h-[42px]">
+            <mat-icon class="!text-base">add</mat-icon> Crear Jornada
+          </button>
+
+          <button *ngIf="activeTab() === 'encuestas'" (click)="openEncuestaModal()"
+            class="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 rounded-xl font-black text-sm shadow-lg shadow-violet-500/20 transition-all self-end h-[42px]">
+            <mat-icon class="!text-base">add</mat-icon> Crear Encuesta
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="max-w-7xl mx-auto px-8 mt-6">
+      <div class="flex gap-2 border-b border-white/5 pb-2">
+        <button (click)="switchTab('jornadas')"
+          [class]="activeTab() === 'jornadas' 
+          ? 'px-6 py-3 font-bold text-violet-400 border-b-2 border-violet-500 bg-slate-900/40 rounded-t-xl transition-all'
+          : 'px-6 py-3 font-semibold text-slate-400 hover:text-white rounded-t-xl hover:bg-slate-900/20 transition-all'">
+          Jornadas
+        </button>
+        <button (click)="switchTab('encuestas')"
+          [class]="activeTab() === 'encuestas' 
+          ? 'px-6 py-3 font-bold text-violet-400 border-b-2 border-violet-500 bg-slate-900/40 rounded-t-xl transition-all'
+          : 'px-6 py-3 font-semibold text-slate-400 hover:text-white rounded-t-xl hover:bg-slate-900/20 transition-all'">
+          Encuestas y Centros
+        </button>
+        <button (click)="switchTab('medicos')"
+          [class]="activeTab() === 'medicos' 
+          ? 'px-6 py-3 font-bold text-violet-400 border-b-2 border-violet-500 bg-slate-900/40 rounded-t-xl transition-all'
+          : 'px-6 py-3 font-semibold text-slate-400 hover:text-white rounded-t-xl hover:bg-slate-900/20 transition-all'">
+          Base de Médicos
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="max-w-7xl mx-auto px-8 mt-6">
+      <div *ngIf="loading()" class="flex justify-center py-24">
+        <div class="flex flex-col items-center gap-3">
+          <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-500"></div>
+          <p class="text-slate-400 text-sm font-semibold">Cargando información...</p>
+        </div>
+      </div>
+
+      <div *ngIf="!loading()">
+        <!-- Sleek Filter Bar -->
+        <div
+          class="bg-slate-900/60 border border-white/5 rounded-2xl p-4 mb-6 flex flex-wrap gap-4 items-center justify-between backdrop-blur-md">
+          <div class="flex flex-wrap gap-4 items-center">
+            <!-- Fecha Inicio -->
+            <div class="flex flex-col">
+              <label class="text-[10px] uppercase font-black tracking-wider text-slate-500 mb-1">Fecha Desde</label>
+              <input type="date" [ngModel]="startDateFilter()" (ngModelChange)="startDateFilter.set($event)"
+                class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white outline-none w-36 focus:border-violet-500 transition-colors">
+            </div>
+            <!-- Fecha Fin -->
+            <div class="flex flex-col">
+              <label class="text-[10px] uppercase font-black tracking-wider text-slate-500 mb-1">Fecha Hasta</label>
+              <input type="date" [ngModel]="endDateFilter()" (ngModelChange)="endDateFilter.set($event)"
+                class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-white outline-none w-36 focus:border-violet-500 transition-colors">
+            </div>
+
+            <!-- Filtro de Estado Jornadas -->
+            <div *ngIf="activeTab() === 'jornadas'" class="flex flex-col">
+              <label class="text-[10px] uppercase font-black tracking-wider text-slate-500 mb-1">Estado de
+                Jornada</label>
+              <select [ngModel]="statusJornadaFilter()" (ngModelChange)="statusJornadaFilter.set($event)"
+                class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs font-semibold text-white outline-none min-w-44 focus:border-violet-500 transition-colors">
+                <option value="all">Todas las jornadas</option>
+                <option value="active">Activas (En Progreso)</option>
+                <option value="finished">Finalizadas</option>
+              </select>
+            </div>
+
+            <!-- Filtro de Estado Encuestas -->
+            <div *ngIf="activeTab() === 'encuestas'" class="flex flex-col">
+              <label class="text-[10px] uppercase font-black tracking-wider text-slate-500 mb-1">Estado de
+                Auditoría</label>
+              <select [ngModel]="statusEncuestaFilter()" (ngModelChange)="statusEncuestaFilter.set($event)"
+                class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs font-semibold text-white outline-none min-w-44 focus:border-violet-500 transition-colors">
+                <option value="all">Todas las encuestas</option>
+                <option value="correction">⚠️ Requiere Corrección</option>
+                <option value="ok">Aprobadas / Sin Observación</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Botón para Limpiar Filtros -->
+          <button (click)="clearFilters()"
+            *ngIf="startDateFilter() || endDateFilter() || statusJornadaFilter() !== 'all' || statusEncuestaFilter() !== 'all'"
+            class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-slate-800 hover:bg-slate-750 text-rose-400 hover:text-rose-300 border border-rose-950/40 px-3 py-2 rounded-xl transition-all shadow shadow-rose-950/20 self-end h-[38px]">
+            <mat-icon class="!text-xs">clear</mat-icon> Limpiar
+          </button>
+        </div>
+
+        <!-- TABS: JORNADAS -->
+        <div *ngIf="activeTab() === 'jornadas'">
+          <div class="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr
+                    class="bg-slate-800/50 border-b border-white/10 text-slate-400 text-[10px] font-black uppercase tracking-wider">
+                    <th class="p-4">Encuestador</th>
+                    <th class="p-4">Fecha Inicio</th>
+                    <th class="p-4">Fecha Fin</th>
+                    <th class="p-4">Estado</th>
+                    <th class="p-4">Encuestas</th>
+                    <th class="p-4">Ubicación</th>
+                    <th class="p-4">Notas</th>
+                    <th class="p-4 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let j of filteredJornadas()"
+                    class="border-b border-white/5 hover:bg-slate-800/20 transition-colors group">
+                    <td class="p-4">
+                      <div class="font-bold text-white">{{ j.username }}</div>
+                    </td>
+                    <td class="p-4 text-sm text-slate-300">{{ j.fecha_inicio | date:'dd/MM/yyyy HH:mm' }}</td>
+                    <td class="p-4 text-sm text-slate-300">{{ j.fecha_fin ? (j.fecha_fin | date:'dd/MM/yyyy HH:mm') :
+                      '—'
+                      }}</td>
+                    <td class="p-4">
+                      <span [ngClass]="{
+                      'bg-emerald-950 text-emerald-400': j.estado === 'En Progreso',
+                      'bg-violet-950 text-violet-400': j.estado === 'Aprobada',
+                      'bg-slate-800 text-slate-300': j.estado !== 'En Progreso' && j.estado !== 'Aprobada'
+                    }" class="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full">
+                        <span [ngClass]="{
+                        'bg-emerald-400': j.estado === 'En Progreso',
+                        'bg-violet-400': j.estado === 'Aprobada',
+                        'bg-slate-400': j.estado !== 'En Progreso' && j.estado !== 'Aprobada'
+                      }" class="w-1.5 h-1.5 rounded-full"></span>
+                        {{ j.estado }}
+                      </span>
+                    </td>
+                    <td class="p-4">
+                      <button (click)="verDetalleJornada(j.id_jornada)"
+                        class="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-violet-400 hover:text-violet-300 transition-all shadow"
+                        title="Ver detalle completo de esta jornada">
+                        {{ j.encuestas_count || 0 }} Encuestas
+                      </button>
+                    </td>
+                    <td class="p-4 text-sm text-slate-300">
+                      <div *ngIf="j.ciudad">{{ j.ciudad }} ({{ j.estado_geo }})</div>
+                      <button *ngIf="j.latitud" (click)="openLocationModal(j)"
+                        class="text-xs text-violet-400 hover:text-violet-300 font-bold underline flex items-center gap-0.5 mt-0.5"
+                        title="Ver ubicación en Google Maps">
+                        <mat-icon class="!text-xs">pin_drop</mat-icon>
+                        {{ j.latitud | number:'1.4-4' }}, {{ j.longitud | number:'1.4-4' }}
+                      </button>
+                      <div *ngIf="!j.ciudad && !j.latitud" class="text-slate-600 italic">Sin GPS</div>
+                    </td>
+                    <td class="p-4 text-sm text-slate-400 max-w-xs truncate" [title]="j.notes || ''">{{ j.notas || '—'
+                      }}
+                    </td>
+                    <td class="p-4 text-right">
+                      <div class="flex justify-end gap-2 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button (click)="verDetalleJornada(j.id_jornada)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-violet-400 hover:text-violet-350 transition-colors"
+                          title="Ver Detalle Completo">
+                          <mat-icon class="!text-lg">visibility</mat-icon>
+                        </button>
+                        <button *ngIf="j.estado !== 'Aprobada'" (click)="openJornadaModal(j)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-indigo-400 hover:text-indigo-300 transition-colors"
+                          title="Editar">
+                          <mat-icon class="!text-lg">edit</mat-icon>
+                        </button>
+                        <button *ngIf="j.estado !== 'Aprobada'" (click)="deleteJornada(j.id_jornada)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-rose-500 hover:text-rose-400 transition-colors"
+                          title="Eliminar">
+                          <mat-icon class="!text-lg">delete</mat-icon>
+                        </button>
+                        <button *ngIf="j.estado !== 'Aprobada'" (click)="aprobarJornada(j.id_jornada)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-emerald-450 hover:text-emerald-400 transition-colors"
+                          title="Aprobar Jornada y Bloquear Cambios">
+                          <mat-icon class="!text-lg">check_circle</mat-icon>
+                        </button>
+                        <span *ngIf="j.estado === 'Aprobada'" class="p-2 text-violet-400 flex items-center"
+                          title="Jornada Aprobada (Bloqueada)">
+                          <mat-icon class="!text-lg">lock</mat-icon>
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr *ngIf="!filteredJornadas().length">
+                    <td colspan="8" class="p-8 text-center text-slate-500 italic">No se encontraron jornadas
+                      registradas.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABS: ENCUESTAS -->
+        <div *ngIf="activeTab() === 'encuestas'">
+          <div class="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr
+                    class="bg-slate-800/50 border-b border-white/10 text-slate-400 text-[10px] font-black uppercase tracking-wider">
+                    <th class="p-4">Centro de Salud</th>
+                    <th class="p-4">Encuestador</th>
+                    <th class="p-4">Fecha</th>
+                    <th class="p-4">Fuente Info</th>
+                    <th class="p-4">Médicos Reg.</th>
+                    <th class="p-4">Revisión / Alertas</th>
+                    <th class="p-4 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let e of filteredEncuestas()"
+                    class="border-b border-white/5 hover:bg-slate-800/20 transition-colors group"
+                    [ngClass]="{ 'bg-amber-950/10': e.requiere_correccion }">
+                    <td class="p-4">
+                      <div class="font-bold text-white">{{ e.nombre_centro }}</div>
+                      <div class="text-xs text-slate-400">{{ e.ciudad }}, {{ e.estado_geo }}</div>
+                    </td>
+                    <td class="p-4 text-sm text-white font-medium">{{ e.username }}</td>
+                    <td class="p-4 text-sm text-slate-300">{{ e.fecha_verificacion | date:'dd/MM/yyyy' }}</td>
+                    <td class="p-4 text-sm text-slate-300">{{ e.fuente_informacion }}</td>
+                    <td class="p-4">
+                      <span class="inline-block px-2.5 py-1 rounded bg-slate-800 text-xs font-bold text-slate-300">
+                        {{ e.medicos?.length || 0 }} Médicos
+                      </span>
+                    </td>
+                    <td class="p-4">
+                      <div class="flex flex-col gap-1">
+                        <span *ngIf="e.estado === 'Aprobada'"
+                          class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-violet-950 text-violet-400 w-fit">
+                          <mat-icon class="!text-xs">check_circle</mat-icon> Aprobada
+                        </span>
+                        <span *ngIf="e.requiere_correccion && e.estado !== 'Aprobada'"
+                          class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 w-fit">
+                          <mat-icon class="!text-xs">warning</mat-icon> Requiere Corrección
+                        </span>
+                        <div *ngIf="e.observacion_supervisor && e.estado !== 'Aprobada'"
+                          class="text-xs text-slate-400 italic max-w-xs truncate" [title]="e.observacion_supervisor">
+                          Obs: {{ e.observacion_supervisor }}
+                        </div>
+                      </div>
+                    </td>
+                    <td class="p-4 text-right">
+                      <div class="flex justify-end gap-2">
+                        <button *ngIf="e.estado !== 'Aprobada'" (click)="openMedicoModal(null, e.id_encuesta)"
+                          class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-violet-400 hover:text-violet-300 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow"
+                          title="Agregar Médico a esta encuesta">
+                          <mat-icon class="!text-xs">add</mat-icon> Médico
+                        </button>
+                        <button *ngIf="e.estado !== 'Aprobada'" (click)="openEncuestaModal(e)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-indigo-400 hover:text-indigo-300 transition-colors"
+                          title="Editar / Agregar Observación">
+                          <mat-icon class="!text-lg">rate_review</mat-icon>
+                        </button>
+                        <button *ngIf="e.estado !== 'Aprobada'" (click)="deleteEncuesta(e.id_encuesta)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-rose-500 hover:text-rose-400 transition-colors"
+                          title="Eliminar">
+                          <mat-icon class="!text-lg">delete</mat-icon>
+                        </button>
+                        <button *ngIf="e.estado !== 'Aprobada'" (click)="aprobarEncuesta(e)"
+                          class="p-2 hover:bg-slate-800 rounded-lg text-emerald-450 hover:text-emerald-400 transition-colors"
+                          title="Aprobar Encuesta y Bloquear Cambios">
+                          <mat-icon class="!text-lg">check_circle</mat-icon>
+                        </button>
+                        <span *ngIf="e.estado === 'Aprobada'" class="p-2 text-violet-400 flex items-center"
+                          title="Encuesta Aprobada (Bloqueada)">
+                          <mat-icon class="!text-lg">lock</mat-icon>
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr *ngIf="!filteredEncuestas().length">
+                    <td colspan="7" class="p-8 text-center text-slate-500 italic">No se encontraron encuestas
+                      registradas.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABS: MEDICOS -->
+        <div *ngIf="activeTab() === 'medicos'">
+          <!-- Medicos Specific Search -->
+          <div class="mb-4 relative max-w-md">
+            <span class="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">search</span>
+            <input type="text" [(ngModel)]="searchQueryMedicos" (ngModelChange)="loadData()"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white focus:border-violet-500 outline-none transition-colors shadow-inner"
+              placeholder="Buscar por cédula, apellido o nombre...">
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div *ngFor="let m of medicos()"
+              class="bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-xl hover:border-slate-700/80 transition-all flex flex-col justify-between">
+              <div>
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <h3
+                      class="font-bold text-lg text-white leading-tight hover:text-violet-400 hover:underline cursor-pointer"
+                      (click)="verDetalleMedico(m)">
+                      {{ m.apellido1 }} {{ m.apellido2 }}, {{ m.nombre1 }} {{ m.nombre2 }}
+                    </h3>
+                    <span class="inline-block text-xs font-black uppercase text-violet-400 mt-1 tracking-wider">{{
+                      m.especialidad }}</span>
+                  </div>
+                  <span class="text-xs font-semibold px-2 py-1 bg-slate-800 rounded text-slate-400">ID: {{
+                    m.id_medico_externo }}</span>
+                </div>
+
+                <!-- Consultorios Info -->
+                <div class="mt-4 border-t border-white/5 pt-3">
+                  <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Consultorios ({{
+                    m.consultorios?.length || 0 }})</h4>
+                  <div *ngFor="let c of m.consultorios"
+                    class="bg-slate-800/40 border border-slate-800 rounded-xl p-3 mb-2 text-xs">
+                    <div class="font-bold text-slate-200">{{ c.nombre_clinica }}</div>
+                    <div class="text-slate-400 mt-1">{{ c.piso_consultorio ? 'Piso ' + c.piso_consultorio + ' — ' : ''
+                      }}
+                      {{ c.direccion_especifica || '' }}</div>
+                    <div class="flex justify-between items-center mt-2 text-[10px] text-slate-500 font-semibold">
+                      <span>Precio: {{ c.valor_consulta_rango }}</span>
+                      <span>Pacientes: {{ c.promedio_pacientes_semanal_rango }}</span>
+                    </div>
+
+                    <!-- Horarios / Días de Consulta (Jornada) -->
+                    <div *ngIf="parseHorarios(c.horarios_json)?.length"
+                      class="mt-2.5 pt-2 border-t border-slate-800/40 text-left">
+                      <span class="block text-[9px] uppercase font-bold text-slate-500 mb-1">Días y Horarios
+                        (Jornada):</span>
+                      <div class="grid grid-cols-2 gap-1">
+                        <div *ngFor="let h of parseHorarios(c.horarios_json)"
+                          class="bg-slate-900/50 px-2 py-0.5 rounded text-[10px] text-slate-400 flex justify-between border border-slate-950">
+                          <span class="font-bold text-slate-350">{{ h.dia }}:</span>
+                          <span>{{ h.inicio }} - {{ h.fin }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div *ngIf="!m.consultorios?.length" class="text-slate-600 italic text-xs">No tiene consultorios
+                    registrados.</div>
+                </div>
+              </div>
+
+              <!-- Acciones Médico -->
+              <div class="flex justify-end gap-2 border-t border-white/5 pt-4 mt-4">
+                <button (click)="verDetalleMedico(m)"
+                  class="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-violet-400 hover:text-violet-300 rounded-lg text-xs font-bold transition-all shadow">
+                  <mat-icon class="!text-sm">visibility</mat-icon> Ver Detalle
+                </button>
+                <button *ngIf="puedeEditarMedico(m)" (click)="openMedicoModal(m)"
+                  class="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 rounded-lg text-xs font-bold transition-all shadow">
+                  <mat-icon class="!text-sm">edit</mat-icon> Editar Datos
+                </button>
+              </div>
+            </div>
+            <div *ngIf="!medicos().length"
+              class="col-span-full py-16 text-center text-slate-500 italic bg-slate-900 border border-white/10 rounded-2xl shadow-inner">
+              No se encontraron médicos registrados.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div> <!-- End !isStandaloneDetailView -->
+
+  <!-- --- MODALES TEMPLATE-BASED --- -->
+
+  <!-- Modal JORNADA -->
+  <div *ngIf="showJornadaModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+    <div class="bg-slate-900 rounded-3xl p-6 max-w-lg w-full border border-slate-700/80 shadow-2xl relative">
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-xl font-bold text-white flex items-center gap-2"><mat-icon
+            class="text-violet-400">route</mat-icon> {{ currentJornada.id_jornada ? 'Editar Jornada' : 'Crear Nueva
+          Jornada' }}</h3>
+        <button (click)="showJornadaModal = false"
+          class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors"><mat-icon
+            class="!text-lg">close</mat-icon></button>
+      </div>
+
+      <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Encuestador Asignado
+            *</label>
+          <div class="relative">
+            <input type="text" [(ngModel)]="searchJornadaUserQuery" (focus)="onFocusSearchJornada()"
+              (blur)="hideJornadaDropdownWithDelay()" placeholder="Buscar encuestador..."
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <span class="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 cursor-pointer"
+              (click)="showJornadaUserDropdown = !showJornadaUserDropdown">
+              arrow_drop_down
+            </span>
+
+            <!-- Dropdown List -->
+            <div *ngIf="showJornadaUserDropdown"
+              class="absolute top-[50px] left-0 w-full bg-slate-900 border border-white/10 rounded-xl shadow-2xl z-50 max-h-40 overflow-y-auto backdrop-blur-xl">
+              <div *ngFor="let u of filteredEncuestadoresForJornada()" (mousedown)="selectEncuestadorForJornada(u)"
+                class="px-4 py-2 hover:bg-slate-800 cursor-pointer text-xs font-semibold flex flex-col border-b border-white/5 last:border-0 text-left">
+                <span class="text-white font-bold">{{ u.nombre }}</span>
+                <span class="text-[10px] text-slate-400">&#64;{{ u.username }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fecha Inicio *</label>
+            <input type="datetime-local" [(ngModel)]="currentJornada.fecha_inicio"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fecha Fin</label>
+            <input type="datetime-local" [(ngModel)]="currentJornada.fecha_fin"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado *</label>
+            <select [(ngModel)]="currentJornada.estado"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+              <option value="En Progreso">En Progreso</option>
+              <option value="Finalizada">Finalizada</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Ciudad</label>
+            <input type="text" [(ngModel)]="currentJornada.ciudad"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado Geográfico
+              (Provincia)</label>
+            <input type="text" [(ngModel)]="currentJornada.estado_geo"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Coordenadas
+              (Lat/Lng)</label>
+            <div class="flex gap-2">
+              <input type="number" [(ngModel)]="currentJornada.latitud" placeholder="Lat"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+              <input type="number" [(ngModel)]="currentJornada.longitud" placeholder="Lng"
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Notas de la
+            Jornada</label>
+          <textarea [(ngModel)]="currentJornada.notas" rows="3"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none resize-none"></textarea>
+        </div>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <button (click)="saveJornada()"
+          class="flex-1 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/20">
+          Guardar Jornada
+        </button>
+        <button (click)="showJornadaModal = false"
+          class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 transition-colors">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ENCUESTA -->
+  <div *ngIf="showEncuestaModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+    <div class="bg-slate-900 rounded-3xl p-6 max-w-lg w-full border border-slate-700/80 shadow-2xl relative">
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-xl font-bold text-white flex items-center gap-2"><mat-icon
+            class="text-violet-400">rate_review</mat-icon> Auditoría de Encuesta</h3>
+        <button (click)="showEncuestaModal = false"
+          class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors"><mat-icon
+            class="!text-lg">close</mat-icon></button>
+      </div>
+
+      <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Encuestador *</label>
+            <div class="relative">
+              <input type="text" [(ngModel)]="searchEncuestaUserQuery" (focus)="onFocusSearchEncuesta()"
+                (blur)="hideEncuestaDropdownWithDelay()" [disabled]="!!currentEncuesta.id_encuesta"
+                placeholder="Buscar encuestador..."
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none disabled:opacity-50">
+              <span *ngIf="!currentEncuesta.id_encuesta"
+                class="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 cursor-pointer"
+                (click)="showEncuestaUserDropdown = !showEncuestaUserDropdown">
+                arrow_drop_down
+              </span>
+
+              <!-- Dropdown List -->
+              <div *ngIf="showEncuestaUserDropdown"
+                class="absolute top-[50px] left-0 w-full bg-slate-900 border border-white/10 rounded-xl shadow-2xl z-50 max-h-40 overflow-y-auto backdrop-blur-xl">
+                <div *ngFor="let u of filteredEncuestadoresForEncuesta()" (mousedown)="selectEncuestadorForEncuesta(u)"
+                  class="px-4 py-2 hover:bg-slate-800 cursor-pointer text-xs font-semibold flex flex-col border-b border-white/5 last:border-0 text-left">
+                  <span class="text-white font-bold">{{ u.nombre }}</span>
+                  <span class="text-[10px] text-slate-400">&#64;{{ u.username }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Centro de Salud
+              *</label>
+            <select [(ngModel)]="currentEncuesta.id_centro" [disabled]="!!currentEncuesta.id_encuesta"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none disabled:opacity-50">
+              <option *ngFor="let c of centros()" [value]="c.id_centro">{{ c.nombre_centro }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fecha Verificación
+              *</label>
+            <input type="date" [(ngModel)]="currentEncuesta.fecha_verificacion"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fuente de Información
+              *</label>
+            <input type="text" [(ngModel)]="currentEncuesta.fuente_informacion"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">ID Jornada
+              (Opcional)</label>
+            <input type="number" [(ngModel)]="currentEncuesta.id_jornada"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado *</label>
+            <select [(ngModel)]="currentEncuesta.estado"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+              <option value="Abierta">Abierta</option>
+              <option value="Cerrada">Cerrada</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Notas Generales del
+            Encuestador</label>
+          <textarea [(ngModel)]="currentEncuesta.notas_generales" rows="2"
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none resize-none"></textarea>
+        </div>
+
+        <!-- Supervisor Notes & Attention Call Section -->
+        <div class="bg-violet-950/20 border border-violet-800/40 rounded-2xl p-4 mt-2">
+          <h4 class="text-xs font-black text-violet-400 uppercase tracking-wider mb-3">Revisión del Supervisor</h4>
+
+          <div class="mb-3">
+            <label class="block text-xs font-bold text-slate-400 mb-1">Notas / Observaciones de Supervisor</label>
+            <textarea [(ngModel)]="currentEncuesta.observacion_supervisor"
+              placeholder="Coloque aquí las notas de revisión o por qué requiere corrección..." rows="2"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none resize-none"></textarea>
+          </div>
+
+          <label class="flex items-center gap-3 cursor-pointer mt-2 text-sm text-slate-300 font-bold select-none">
+            <input type="checkbox" [(ngModel)]="currentEncuesta.requiere_correccion"
+              class="w-5 h-5 accent-violet-600 rounded">
+            <span>⚠️ Llamar la atención del encuestador (Requiere Corrección)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <button (click)="saveEncuesta()"
+          class="flex-1 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/20">
+          Guardar Cambios
+        </button>
+        <button (click)="showEncuestaModal = false"
+          class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 transition-colors">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal MÉDICO -->
+  <div *ngIf="showMedicoModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+    <div class="bg-slate-900 rounded-3xl p-6 max-w-2xl w-full border border-slate-700/80 shadow-2xl relative my-8">
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-xl font-bold text-white flex items-center gap-2"><mat-icon
+            class="text-violet-400">person_add</mat-icon> {{ currentMedico.id_medico ? 'Editar Médico' : 'Registrar
+          Nuevo Médico' }}</h3>
+        <button (click)="showMedicoModal = false"
+          class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors"><mat-icon
+            class="!text-lg">close</mat-icon></button>
+      </div>
+
+      <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+        <!-- Personal Info -->
+        <h4 class="text-xs font-black text-violet-400 uppercase tracking-widest border-b border-white/5 pb-1">
+          Información General</h4>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Cédula / ID Externo
+              *</label>
+            <input type="text" [(ngModel)]="currentMedico.id_medico_externo"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Primer Nombre *</label>
+            <input type="text" [(ngModel)]="currentMedico.nombre1"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Segundo Nombre</label>
+            <input type="text" [(ngModel)]="currentMedico.nombre2"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Primer Apellido
+              *</label>
+            <input type="text" [(ngModel)]="currentMedico.apellido1"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Segundo Apellido</label>
+            <input type="text" [(ngModel)]="currentMedico.apellido2"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Especialidad *</label>
+            <input type="text" [(ngModel)]="currentMedico.especialidad"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Sub-Especialidad</label>
+            <input type="text" [(ngModel)]="currentMedico.sub_especialidad"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Nro MPPS</label>
+            <input type="text" [(ngModel)]="currentMedico.nro_MPPS"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Nro Colegiado</label>
+            <input type="text" [(ngModel)]="currentMedico.nro_colegiado"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Universidad
+              Grad.</label>
+            <input type="text" [(ngModel)]="currentMedico.universidad_graduacion"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Email</label>
+            <input type="email" [(ngModel)]="currentMedico.email"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Teléfono</label>
+            <input type="text" [(ngModel)]="currentMedico.telefono"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">WhatsApp</label>
+            <input type="text" [(ngModel)]="currentMedico.whatsapp"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Ciudad *</label>
+            <input type="text" [(ngModel)]="currentMedico.ciudad"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado *</label>
+            <input type="text" [(ngModel)]="currentMedico.estado"
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+          </div>
+        </div>
+
+        <!-- Consultorios Section -->
+        <div class="mt-6">
+          <div class="flex justify-between items-center border-b border-white/5 pb-2 mb-4">
+            <h4 class="text-xs font-black text-violet-400 uppercase tracking-widest">Consultorios Registrados</h4>
+            <button type="button" (click)="addConsultorio()"
+              class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider bg-violet-950 hover:bg-violet-900 border border-violet-800 text-violet-300 px-3 py-1.5 rounded-lg transition-colors">
+              <mat-icon class="!text-xs">add</mat-icon> Agregar Consultorio
+            </button>
+          </div>
+
+          <div *ngFor="let c of currentMedico.consultorios; let idx = index"
+            class="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 mb-4 relative">
+            <button type="button" (click)="removeConsultorio(idx)"
+              class="absolute top-4 right-4 text-rose-500 hover:text-rose-400"><mat-icon
+                class="!text-lg">delete</mat-icon></button>
+            <h5 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Consultorio #{{ idx + 1 }}</h5>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 mb-1">Nombre Clínica / Hospital *</label>
+                <div class="relative">
+                  <input type="text" [(ngModel)]="c.nombre_clinica" (focus)="c.showDropdown = true"
+                    (blur)="hideClinicaDropdownWithDelay(c)" placeholder="Buscar o escribir nombre..."
+                    class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:border-violet-500 outline-none">
+                  <span class="material-icons absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 cursor-pointer"
+                    (click)="c.showDropdown = !c.showDropdown">
+                    arrow_drop_down
+                  </span>
+
+                  <!-- Dropdown List -->
+                  <div *ngIf="c.showDropdown"
+                    class="absolute top-[42px] left-0 w-full bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 max-h-36 overflow-y-auto backdrop-blur-xl">
+                    <div *ngFor="let item of filterCentrosForClinica(c.nombre_clinica)"
+                      (mousedown)="selectClinicaForConsultorio(c, item)"
+                      class="px-3 py-2 hover:bg-slate-800 cursor-pointer text-[11px] text-white text-left font-semibold border-b border-white/5 last:border-0">
+                      {{ item.nombre_centro }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 mb-1">Piso / Nro Consultorio</label>
+                <input type="text" [(ngModel)]="c.piso_consultorio"
+                  class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:border-violet-500 outline-none">
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="block text-[10px] font-bold text-slate-400 mb-1">Dirección Específica</label>
+              <input type="text" [(ngModel)]="c.direccion_especifica"
+                class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:border-violet-500 outline-none">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 mb-1">Rango Valor Consulta *</label>
+                <select [(ngModel)]="c.valor_consulta_rango"
+                  class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:border-violet-500 outline-none">
+                  <option value="Menos de 30$">Menos de 30$</option>
+                  <option value="Entre 30$ a 50$">Entre 30$ a 50$</option>
+                  <option value="Entre 50$ a 60$">Entre 50$ a 60$</option>
+                  <option value="Entre 60$ a 100$">Entre 60$ a 100$</option>
+                  <option value="Más de 100$">Más de 100$</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[10px] font-bold text-slate-400 mb-1">Promedio Pacientes Semanal *</label>
+                <select [(ngModel)]="c.promedio_pacientes_semanal_rango"
+                  class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:border-violet-500 outline-none">
+                  <option value="1 a 5 pacientes">1 a 5 pacientes</option>
+                  <option value="6 a 10 pacientes">6 a 10 pacientes</option>
+                  <option value="11 a 15 pacientes">11 a 15 pacientes</option>
+                  <option value="16 a 20 pacientes">16 a 20 pacientes</option>
+                  <option value="21 a 30 pacientes">21 a 30 pacientes</option>
+                  <option value="Más de 30 pacientes">Más de 30 pacientes</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mt-4">
+              <div class="flex items-center gap-2 mb-3">
+                <mat-icon class="!text-base text-violet-400">schedule</mat-icon>
+                <span class="text-[11px] font-black text-slate-300 uppercase tracking-wider">Días y Horas de
+                  Atención</span>
+              </div>
+              <div class="space-y-2">
+                <div *ngFor="let d of diasList"
+                  class="flex flex-col sm:flex-row sm:items-center gap-2 bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 transition-colors"
+                  [ngClass]="{ 'border-violet-700/60 bg-violet-950/20': c.horarios[d].activo }">
+                  <label class="flex items-center gap-2.5 cursor-pointer select-none min-w-20">
+                    <input type="checkbox" [(ngModel)]="c.horarios[d].activo" [name]="'dia_' + idx + '_' + d"
+                      class="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 bg-slate-800 border-slate-700">
+                    <span class="text-xs font-bold"
+                      [ngClass]="c.horarios[d].activo ? 'text-white' : 'text-slate-400'">{{ d }}</span>
+                  </label>
+                  <div *ngIf="c.horarios[d].activo" class="flex items-center gap-2 flex-1">
+                    <div class="flex items-center gap-1.5 flex-1">
+                      <span class="text-[10px] font-semibold text-slate-500 uppercase">Desde</span>
+                      <input type="time" [(ngModel)]="c.horarios[d].desde" [name]="'desde_' + idx + '_' + d"
+                        class="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white focus:border-violet-500 outline-none">
+                    </div>
+                    <span class="text-slate-600 font-bold">—</span>
+                    <div class="flex items-center gap-1.5 flex-1">
+                      <span class="text-[10px] font-semibold text-slate-500 uppercase">Hasta</span>
+                      <input type="time" [(ngModel)]="c.horarios[d].hasta" [name]="'hasta_' + idx + '_' + d"
+                        class="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white focus:border-violet-500 outline-none">
+                    </div>
+                  </div>
+                  <span *ngIf="!c.horarios[d].activo" class="text-[10px] text-slate-600 italic">Cerrado</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div *ngIf="!currentMedico.consultorios.length"
+            class="text-center py-6 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl italic">
+            Haga clic en 'Agregar Consultorio' para registrar clínicas u horarios de consulta del médico.
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <button (click)="saveMedico()"
+          class="flex-1 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/20">
+          Guardar Médico
+        </button>
+        <button (click)="showMedicoModal = false"
+          class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 transition-colors">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Mapa / Ubicación Google Maps -->
+  <div *ngIf="showLocationModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+    <div class="bg-slate-900 rounded-3xl p-6 max-w-2xl w-full border border-slate-700/80 shadow-2xl relative text-left">
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <h3 class="text-xl font-bold text-white flex items-center gap-2"><mat-icon
+              class="text-violet-400">pin_drop</mat-icon> Ubicación de Jornada</h3>
+          <p class="text-xs text-slate-400 mt-1">Encuestador: {{ selectedJornadaForLocation?.username }} — Ciudad: {{
+            selectedJornadaForLocation?.ciudad || '—' }} ({{ selectedJornadaForLocation?.estado_geo || '—' }})</p>
+        </div>
+        <button (click)="showLocationModal = false"
+          class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Google Maps Embed Iframe -->
+      <div *ngIf="selectedJornadaForLocation?.latitud"
+        class="w-full h-96 rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 mb-6">
+        <iframe [src]="getGoogleMapsUrl(selectedJornadaForLocation.latitud, selectedJornadaForLocation.longitud)"
+          width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade">
+        </iframe>
+      </div>
+
+      <div class="flex gap-3">
+        <a [href]="'https://www.google.com/maps/search/?api=1&query=' + selectedJornadaForLocation?.latitud + ',' + selectedJornadaForLocation?.longitud"
+          target="_blank"
+          class="flex-1 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/20 text-center flex items-center justify-center gap-1">
+          <mat-icon class="!text-lg">map</mat-icon> Abrir en Google Maps (Nueva Ventana)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Standalone Detail View -->
+  <div *ngIf="isStandaloneDetailView" class="max-w-6xl mx-auto px-6 py-10 text-left">
+    <!-- Clean standalone header -->
+    <div class="flex items-center justify-between border-b border-white/10 pb-6 mb-8">
+      <div class="flex items-center gap-4">
+        <div
+          class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-lg shadow-violet-500/20 shrink-0">
+          <mat-icon class="text-white">route</mat-icon>
+        </div>
+        <div>
+          <h1 class="text-3xl font-black text-white flex items-center gap-2">
+            Detalle de Jornada #{{ currentJornadaDetail?.id_jornada }}
+          </h1>
+          <p class="text-slate-400 text-sm mt-1">
+            Encuestador: <strong class="text-slate-200">{{ currentJornadaDetail?.username }}</strong> |
+            Estado: <span
+              [class]="currentJornadaDetail?.estado === 'En Progreso' ? 'text-emerald-400 font-bold' : 'text-slate-350'">{{
+              currentJornadaDetail?.estado }}</span>
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button *ngIf="currentJornadaDetail?.estado !== 'Aprobada'" (click)="openJornadaModal(currentJornadaDetail)"
+          class="px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-500/20 flex items-center gap-2">
+          <mat-icon class="!text-lg">edit</mat-icon> Editar Jornada
+        </button>
+        <button (click)="closeStandaloneWindow()"
+          class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl border border-slate-700 transition-colors flex items-center gap-2">
+          <mat-icon class="!text-lg">close</mat-icon> Cerrar Ventana
+        </button>
+      </div>
+    </div>
+
+    <div *ngIf="loading()" class="flex justify-center py-24">
+      <div class="flex flex-col items-center gap-3">
+        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-violet-500"></div>
+        <p class="text-slate-400 text-sm font-semibold">Cargando detalles...</p>
+      </div>
+    </div>
+
+    <div *ngIf="!loading() && currentJornadaDetail" class="space-y-6">
+      <!-- Resumen de Jornada -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900 border border-white/5 p-5 rounded-2xl shadow-xl">
+        <div>
+          <span class="block text-[10px] uppercase font-bold text-slate-500 tracking-wider">Inicio</span>
+          <span class="text-sm font-semibold text-slate-200">{{ currentJornadaDetail.fecha_inicio | date:'dd/MM/yyyy
+            HH:mm' }}</span>
+        </div>
+        <div>
+          <span class="block text-[10px] uppercase font-bold text-slate-500 tracking-wider">Fin</span>
+          <span class="text-sm font-semibold text-slate-200">{{ currentJornadaDetail.fecha_fin ?
+            (currentJornadaDetail.fecha_fin | date:'dd/MM/yyyy HH:mm') : '—' }}</span>
+        </div>
+        <div>
+          <span class="block text-[10px] uppercase font-bold text-slate-500 tracking-wider">Ciudad</span>
+          <span class="text-sm font-semibold text-slate-200">{{ currentJornadaDetail.ciudad || '—' }} ({{
+            currentJornadaDetail.estado_geo || '—' }})</span>
+        </div>
+        <div>
+          <span class="block text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Visitas</span>
+          <span class="text-sm font-bold text-violet-400">{{ currentJornadaDetail.encuestas?.length || 0 }}
+            Centros</span>
+        </div>
+      </div>
+
+      <div *ngIf="currentJornadaDetail.notas"
+        class="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl text-sm text-slate-355">
+        <strong class="text-slate-200">Notas de la Jornada:</strong> {{ currentJornadaDetail.notas }}
+      </div>
+
+      <!-- Visitas / Encuestas en la Jornada -->
+      <div>
+        <h4 class="text-lg font-bold text-violet-400 mb-4 flex items-center gap-2">
+          <mat-icon>local_hospital</mat-icon> Centros de Salud Visitados y Médicos Registrados
+        </h4>
+
+        <div *ngIf="!currentJornadaDetail.encuestas?.length"
+          class="text-center py-16 bg-slate-900/20 border border-white/5 rounded-2xl italic text-slate-500 text-sm">
+          No se registraron visitas ni encuestas durante esta jornada.
+        </div>
+
+        <div class="space-y-6">
+          <div *ngFor="let e of currentJornadaDetail.encuestas"
+            class="bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-xl">
+            <!-- Header de la Visita -->
+            <div
+              class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-4 mb-5 text-left">
+              <div>
+                <h5 class="text-xl font-bold text-white flex items-center gap-2">
+                  <span class="material-icons text-emerald-400">local_hospital</span> {{ e.nombre_centro | uppercase }}
+                </h5>
+                <p class="text-sm text-slate-400 mt-1">Ciudad: {{ e.ciudad }} ({{ e.estado }}) | Fuente: {{
+                  e.fuente_informacion }}</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="text-xs font-semibold px-3 py-1 rounded bg-slate-800 text-slate-300">Fecha: {{
+                  e.fecha_verificacion | date:'dd/MM/yyyy' }}</span>
+                <span *ngIf="e.requiere_correccion"
+                  class="text-xs font-black uppercase bg-amber-950 text-amber-400 px-3 py-1 rounded-full">Requiere
+                  Corrección</span>
+              </div>
+            </div>
+
+            <!-- Médicos en esta encuesta -->
+            <div class="space-y-4 text-left">
+              <h6 class="text-xs font-black uppercase text-slate-450 tracking-widest mb-2">Médicos Agregados en este
+                Centro ({{ e.medicos?.length || 0 }})</h6>
+
+              <div *ngIf="!e.medicos?.length" class="text-sm text-slate-500 italic pl-6">
+                No se agregaron médicos en este centro de salud.
+              </div>
+
+              <div *ngFor="let m of e.medicos"
+                class="bg-slate-950/40 border border-slate-850 rounded-2xl p-5 hover:border-violet-500/40 transition-colors">
+                <div class="flex justify-between items-start flex-wrap gap-4">
+                  <div>
+                    <button (click)="verDetalleMedico(m)"
+                      class="font-extrabold text-slate-100 text-base hover:text-violet-400 hover:underline text-left">
+                      {{ m.nombre }}
+                    </button>
+                    <span
+                      class="inline-block text-xs font-black text-violet-450 uppercase tracking-wider ml-3 border border-violet-950 px-2 py-0.5 rounded">{{
+                      m.especialidad }}</span>
+                  </div>
+                  <span
+                    class="text-xs font-semibold px-3 py-1 bg-slate-900 border border-white/5 rounded text-slate-400 font-bold">Cédula:
+                    {{ m.id_medico_externo }}</span>
+                </div>
+
+                <!-- Consultorios del médico -->
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 pl-4 border-l-2 border-slate-800">
+                  <div *ngFor="let c of m.consultorios"
+                    class="text-xs bg-slate-900/50 rounded-xl p-3 text-slate-400 border border-white/5">
+                    <div class="font-bold text-slate-200">{{ c.nombre_clinica }} (Piso {{ c.piso_consultorio || '—' }})
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-2 flex justify-between font-semibold">
+                      <span>Consulta: {{ c.valor_consulta_rango }}</span>
+                      <span>Pacientes/sem: {{ c.promedio_pacientes_semanal_rango }}</span>
+                    </div>
+                    <!-- Horarios / Días de Consulta (Jornada) -->
+                    <div *ngIf="parseHorarios(c.horarios_json)?.length"
+                      class="mt-2.5 pt-2 border-t border-slate-800/20 text-left">
+                      <span class="block text-[9px] uppercase font-bold text-slate-500 mb-1">Días y Horarios
+                        (Jornada):</span>
+                      <div class="grid grid-cols-2 gap-1">
+                        <div *ngFor="let h of parseHorarios(c.horarios_json)"
+                          class="bg-slate-950/60 px-2 py-0.5 rounded text-[10px] text-slate-400 flex justify-between border border-slate-900">
+                          <span class="font-bold text-slate-350">{{ h.dia }}:</span>
+                          <span>{{ h.inicio }} - {{ h.fin }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal DETALLE INDIVIDUAL DE MÉDICO -->
+  <div *ngIf="showMedicoDetailModal"
+    class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+    <div
+      class="bg-slate-900 rounded-3xl p-6 max-w-2xl w-full border border-slate-700/80 shadow-2xl relative my-8 text-left">
+      <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>
+
+      <!-- Header -->
+      <div class="flex justify-between items-start mb-6">
+        <div>
+          <h3 class="text-xl font-bold text-white leading-tight">
+            {{ currentMedicoDetail?.apellido1 }} {{ currentMedicoDetail?.apellido2 || '' }}, {{
+            currentMedicoDetail?.nombre1 }} {{ currentMedicoDetail?.nombre2 || '' }}
+          </h3>
+          <span
+            class="inline-block text-xs font-black uppercase text-violet-400 mt-1 tracking-wider border border-violet-950 px-2 py-0.5 rounded">
+            {{ currentMedicoDetail?.especialidad }} {{ currentMedicoDetail?.sub_especialidad ? ' — ' +
+            currentMedicoDetail.sub_especialidad : '' }}
+          </span>
+        </div>
+        <button (click)="showMedicoDetailModal = false"
+          class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+        <!-- Información General -->
+        <div class="grid grid-cols-2 gap-4 bg-slate-950/30 p-4 border border-white/5 rounded-2xl">
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Cédula / ID Externo</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.id_medico_externo }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Universidad</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.universidad_graduacion || '—'
+              }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Nro MPPS</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.nro_MPPS || '—' }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Nro Colegiado</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.nro_colegiado || '—' }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Teléfono</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.telefono || '—' }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">WhatsApp</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.whatsapp || '—' }}</span>
+          </div>
+          <div class="col-span-2">
+            <span class="block text-[9px] uppercase font-bold text-slate-500">Email</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.email || '—' }}</span>
+          </div>
+        </div>
+
+        <!-- Consultorios, días de consulta y pacientes -->
+        <div>
+          <h4 class="text-xs font-black uppercase text-violet-400 tracking-wider mb-3">Consultorios y Horarios de
+            Jornada</h4>
+          <div *ngIf="!currentMedicoDetail?.consultorios?.length"
+            class="text-center py-6 text-xs text-slate-500 italic bg-slate-950/20 rounded-2xl border border-white/5">
+            No tiene consultorios registrados.
+          </div>
+
+          <div class="space-y-4">
+            <div *ngFor="let c of currentMedicoDetail?.consultorios"
+              class="bg-slate-950/40 border border-slate-800 rounded-2xl p-4">
+              <div class="flex justify-between items-start border-b border-white/5 pb-2 mb-3">
+                <div>
+                  <span class="font-bold text-white text-sm">{{ c.nombre_clinica }}</span>
+                  <span class="text-xs text-slate-400 block mt-0.5">{{ c.piso_consultorio ? 'Piso ' + c.piso_consultorio
+                    + ' — ' : '' }} {{ c.direccion_especifica || '' }}</span>
+                </div>
+              </div>
+
+              <!-- Detalles de Consulta -->
+              <div class="grid grid-cols-2 gap-4 text-xs mb-3">
+                <div class="bg-slate-900/50 p-2.5 rounded-xl border border-white/5">
+                  <span class="block text-[8px] uppercase font-bold text-slate-500">Valor de Consulta</span>
+                  <span class="font-bold text-slate-200">{{ c.valor_consulta_rango }}</span>
+                </div>
+                <div class="bg-slate-900/50 p-2.5 rounded-xl border border-white/5">
+                  <span class="block text-[8px] uppercase font-bold text-slate-500">Promedio Pacientes Semanal</span>
+                  <span class="font-bold text-slate-200">{{ c.promedio_pacientes_semanal_rango }}</span>
+                </div>
+              </div>
+
+              <!-- Horarios / Días de Consulta (Jornada) -->
+              <div>
+                <span class="block text-[9px] uppercase font-bold text-slate-500 mb-1">Días y Horas de Atención</span>
+                <div *ngIf="!parseHorarios(c.horarios_json)?.length" class="text-[10px] text-slate-600 italic pl-2">
+                  No se registraron días de atención específicos.
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <div *ngFor="let h of parseHorarios(c.horarios_json)"
+                    class="bg-slate-900/40 p-2 rounded-lg text-xs flex justify-between border border-slate-850">
+                    <span class="font-black text-slate-300">{{ h.dia }}</span>
+                    <span class="text-slate-400">{{ h.inicio }} - {{ h.fin }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Actions -->
+      <div class="mt-6 border-t border-white/5 pt-4 flex gap-3">
+        <button *ngIf="puedeEditarMedico(currentMedicoDetail)"
+          (click)="showMedicoDetailModal = false; openMedicoModal(currentMedicoDetail)"
+          class="flex-1 bg-gradient-to-r from-violet-750 to-purple-750 hover:from-violet-700 hover:to-purple-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-violet-500/20 text-center flex items-center justify-center gap-1">
+          <mat-icon class="!text-sm">edit</mat-icon> Editar Datos de Médico
+        </button>
+        <button (click)="showMedicoDetailModal = false"
+          class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 transition-colors">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

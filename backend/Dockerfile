@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12-slim-bookworm AS builder
 
 # Driver ODBC de Microsoft + toolchain para compilar pyodbc/dependencias sin
@@ -51,9 +52,9 @@ USER 10001
 
 EXPOSE 8000
 
-# Segundo intento con 2 workers (2026-08-04): el primer intento empeoro
-# porque k8s/backend-deployment.yaml tenia limits.cpu:"2" pensado para 1
-# solo proceso -- ya se subio a "4" (2 cores por worker) antes de
-# reintentar esto. Redis pub/sub (app/services/redis_pubsub.py) ya
-# soporta multiples procesos, validado en Fase A/B/C del plan.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# 1 solo worker: app/websockets/manager.py + app/services/realtime.py
+# mantienen las conexiones WebSocket activas en memoria de UN proceso — con
+# más workers, un evento emitido en el worker A nunca llegaría a un cliente
+# conectado al worker B. Ver plan de despliegue para el camino a escalar
+# (mover ese estado a pub/sub sobre Redis).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

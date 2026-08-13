@@ -65,6 +65,8 @@ class UsuarioCurrentResponse(BaseModel):
     is_coordinador_tradex: bool
     is_ejecutivo_cuenta: bool
     permisos: List[PermissionResponse] = []
+    nombre: Optional[str] = None
+    cedula: Optional[str] = None
 
     class Config:
         from_attributes = True

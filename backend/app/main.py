@@ -194,8 +194,9 @@ from app.routes import client_photos
 app.include_router(client_photos.router)
 from app.routes import client_data
 app.include_router(client_data.router)
-from app.routes import mercaderista_portal
-app.include_router(mercaderista_portal.router)
+# Portal Mercaderista v2 — Arquitectura modular con ORM (reemplaza mercaderista_portal legacy)
+from app.mercaderista.router import router as mercaderista_router
+app.include_router(mercaderista_router)
 from app.routes import cliente_segmentacion
 app.include_router(cliente_segmentacion.router)
 from app.routes import encuestador
@@ -216,6 +217,8 @@ from app.routes import admin_chat_grupos
 app.include_router(admin_chat_grupos.router)
 from app.routes import media as media_routes
 app.include_router(media_routes.router)
+from app.routes import supervisor_encuestadores
+app.include_router(supervisor_encuestadores.router)
 
 
 

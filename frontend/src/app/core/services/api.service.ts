@@ -10,7 +10,7 @@ import { User } from '../models/user.model';
 export class ApiService {
   private base = environment.apiUrl;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) { }
 
   private params(obj: Record<string, string | number | boolean | undefined | null>): HttpParams {
     let p = new HttpParams();
@@ -60,8 +60,8 @@ export class ApiService {
   getJerarquiaN2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2/list`); }
   getJerarquiaN2_2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2_2/list`); }
   getNivelesAlcance(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/nivel_alcance/list`); }
-  getPointsCount(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string } = {}): Observable<{total: number}> {
-    return this.http.get<{total: number}>(`${this.base}/api/points/count`, { params: this.params(opts) });
+  getPointsCount(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string } = {}): Observable<{ total: number }> {
+    return this.http.get<{ total: number }>(`${this.base}/api/points/count`, { params: this.params(opts) });
   }
   getPointPhotos(pointId: number, estado?: string): Observable<object[]> {
     return this.http.get<object[]>(`${this.base}/api/points/${pointId}/photos`, { params: this.params({ estado }) });
@@ -69,17 +69,17 @@ export class ApiService {
 
   // --- CATÁLOGOS PDV ---
   // catalog ∈ 'tipo-negocio' | 'subtipo-negocio' | 'alcance' | 'canal-venta' | 'departamentos'
-  listCatalog(catalog: string, activo?: boolean): Observable<{id:number; nombre:string; activo:boolean}[]> {
-    return this.http.get<{id:number; nombre:string; activo:boolean}[]>(
+  listCatalog(catalog: string, activo?: boolean): Observable<{ id: number; nombre: string; activo: boolean }[]> {
+    return this.http.get<{ id: number; nombre: string; activo: boolean }[]>(
       `${this.base}/api/catalogos/${catalog}/`,
       { params: this.params({ activo }) }
     );
   }
-  createCatalogItem(catalog: string, data: { nombre: string; activo?: boolean }): Observable<{id:number; nombre:string; activo:boolean}> {
-    return this.http.post<{id:number; nombre:string; activo:boolean}>(`${this.base}/api/catalogos/${catalog}/`, data);
+  createCatalogItem(catalog: string, data: { nombre: string; activo?: boolean }): Observable<{ id: number; nombre: string; activo: boolean }> {
+    return this.http.post<{ id: number; nombre: string; activo: boolean }>(`${this.base}/api/catalogos/${catalog}/`, data);
   }
-  updateCatalogItem(catalog: string, id: number, data: { nombre?: string; activo?: boolean }): Observable<{id:number; nombre:string; activo:boolean}> {
-    return this.http.put<{id:number; nombre:string; activo:boolean}>(`${this.base}/api/catalogos/${catalog}/${id}`, data);
+  updateCatalogItem(catalog: string, id: number, data: { nombre?: string; activo?: boolean }): Observable<{ id: number; nombre: string; activo: boolean }> {
+    return this.http.put<{ id: number; nombre: string; activo: boolean }>(`${this.base}/api/catalogos/${catalog}/${id}`, data);
   }
   deleteCatalogItem(catalog: string, id: number, force = false): Observable<object> {
     return this.http.delete<object>(`${this.base}/api/catalogos/${catalog}/${id}`, { params: this.params({ force }) });
@@ -87,7 +87,7 @@ export class ApiService {
 
   // Servicios — endpoints específicos (extienden el genérico con "prefijo",
   // la sigla usada para el correlativo de nombre de ruta)
-  listServicios(activo?: boolean): Observable<{id:number; nombre:string; prefijo:string|null; activo:boolean}[]> {
+  listServicios(activo?: boolean): Observable<{ id: number; nombre: string; prefijo: string | null; activo: boolean }[]> {
     return this.http.get<any[]>(`${this.base}/api/catalogos/servicios/`, { params: this.params({ activo }) });
   }
   createServicio(data: { nombre: string; prefijo: string; activo?: boolean }): Observable<any> {
@@ -101,7 +101,7 @@ export class ApiService {
   }
 
   // Ciudades — endpoints específicos
-  listCiudades(opts: { departamento_id?: number; departamento?: string; activo?: boolean } = {}): Observable<{id:number; nombre:string; activo:boolean; departamento_id:number; departamento_nombre:string|null}[]> {
+  listCiudades(opts: { departamento_id?: number; departamento?: string; activo?: boolean } = {}): Observable<{ id: number; nombre: string; activo: boolean; departamento_id: number; departamento_nombre: string | null }[]> {
     return this.http.get<any[]>(`${this.base}/api/catalogos/ciudades/`, { params: this.params(opts) });
   }
   createCiudad(data: { nombre: string; departamento_id: number; activo?: boolean }): Observable<any> {
@@ -136,9 +136,9 @@ export class ApiService {
   scheduleChange(routeId: number, data: object): Observable<CambioFuturo> { return this.http.post<CambioFuturo>(`${this.base}/api/routes/${routeId}/schedule-change`, data); }
   getFutureChanges(routeId: number): Observable<CambioFuturo[]> { return this.http.get<CambioFuturo[]>(`${this.base}/api/routes/${routeId}/future-changes`); }
   getActivatedRoutes(): Observable<object[]> { return this.http.get<object[]>(`${this.base}/api/routes/activated/today`); }
-  getRouteOptions(): Observable<{servicios: string[]}> { return this.http.get<{servicios: string[]}>(`${this.base}/api/routes/options`); }
-  getNextRouteNumber(servicio: string): Observable<{next_number: number; prefijo: string}> {
-    return this.http.get<{next_number: number; prefijo: string}>(`${this.base}/api/routes/next-number`, { params: { servicio } });
+  getRouteOptions(): Observable<{ servicios: string[] }> { return this.http.get<{ servicios: string[] }>(`${this.base}/api/routes/options`); }
+  getNextRouteNumber(servicio: string): Observable<{ next_number: number; prefijo: string }> {
+    return this.http.get<{ next_number: number; prefijo: string }>(`${this.base}/api/routes/next-number`, { params: { servicio } });
   }
 
   // --- CLIENTES ---
@@ -196,23 +196,22 @@ export class ApiService {
   getCentroMandoHorasTrabajadas(opts: { desde?: string; hasta?: string; cliente_id?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/horas-trabajadas`, { params: this.params(opts) }); }
   getCentroMandoAuditoriaFiltros(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/filtros`); }
   getCentroMandoAuditoriaResumen(opts: { desde?: string; hasta?: string; id_auditor?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/resumen`, { params: this.params(opts) }); }
-  getMercRutaPdvs(idRuta: number): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/ruta/${idRuta}/pdvs`); }
   deleteMercFoto(fotoId: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/merc/foto/${fotoId}`); }
-  
+
   // --- DATA / BALANCES ---
   getVisitsWithBalances(opts: { fecha_inicio?: string; fecha_fin?: string; cliente_id?: number; mercaderista_id?: number; punto_id?: string } = {}): Observable<Visita[]> {
     return this.http.get<Visita[]>(`${this.base}/api/visits/with-balances`, { params: this.params(opts) });
   }
   getVisitBalances(visitId: number): Observable<Balance[]> { return this.http.get<Balance[]>(`${this.base}/api/visits/${visitId}/balances`); }
-  saveBalances(data: { visita_id: number; balances: any[] }): Observable<object> { 
-    return this.http.post<object>(`${this.base}/api/visits/update-balances`, data); 
+  saveBalances(data: { visita_id: number; balances: any[] }): Observable<object> {
+    return this.http.post<object>(`${this.base}/api/visits/update-balances`, data);
   }
 
   // --- CLIENT DATA ---
   getClientDataFilters(): Observable<any> {
     return this.http.get<any>(`${this.base}/api/client-data/filters`);
   }
-  
+
   getClientDataBalances(filters: any): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/client-data/balances`, { params: this.params(filters) });
   }
@@ -282,6 +281,9 @@ export class ApiService {
   // visita) — mismas tablas que AppWeb v1 y la APK del mercaderista ---
   getMisGrupos(): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/chat/grupos/mis-grupos`);
+  }
+  getMercMisGrupos(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/merc/chat/grupos/mis-grupos`);
   }
   getMensajesGrupo(idGrupo: number, beforeId?: number, limit = 50): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/chat/grupos/${idGrupo}/mensajes`,
@@ -354,7 +356,7 @@ export class ApiService {
   // --- MERCADERISTA RUTAS ---
   getMercaderistasConRutas(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/mercaderista-rutas/`); }
   getMercaderistaRoutes(mercaderistaId: number): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/mercaderista-rutas/mercaderista/${mercaderistaId}/routes`); }
-  syncMercaderistaRoutes(mercaderistaId: number, assignments: {ruta_id: number; tipo_ruta: string}[]): Observable<object> {
+  syncMercaderistaRoutes(mercaderistaId: number, assignments: { ruta_id: number; tipo_ruta: string }[]): Observable<object> {
     return this.http.post<object>(`${this.base}/api/mercaderista-rutas/mercaderista/${mercaderistaId}/sync-routes`, assignments);
   }
   assignRoute(mercaderistaId: number, rutaId: number): Observable<object> {
@@ -376,7 +378,7 @@ export class ApiService {
   getAuditEntityTypes(): Observable<object> { return this.http.get<object>(`${this.base}/api/audit/entity-types`); }
 
   // --- PRODUCTOS / PDV / SOLICITUDES ---
-  
+
   // === PRODUCTOS - Con paginación y búsqueda ===
   getProductos(opts: { skip?: number; limit?: number; busqueda?: string; id_departamento?: number; id_categoria?: number; id_subcategoria?: number; id_marca?: number; id_productora?: number; id_presentacion?: number; id_clasificacion_tamano?: number; inagotable?: boolean; categoria?: string; fabricante?: string; tipo_servicio?: string } = {}): Observable<{ total: number; pagina: number; items: any[] }> {
     return this.http.get<{ total: number; pagina: number; items: any[] }>(`${this.base}/api/productos-catalogos/productos`, { params: this.params(opts) });
@@ -422,11 +424,11 @@ export class ApiService {
   createCatTamano(data: any): Observable<any> { return this.http.post<any>(`${this.base}/api/productos-catalogos/tamanos`, data); }
   updateCatTamano(id: number, data: any): Observable<any> { return this.http.put<any>(`${this.base}/api/productos-catalogos/tamanos/${id}`, data); }
   deleteCatTamano(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/tamanos/${id}`); }
-  
+
   getProductosCategorias(): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/atencion-cliente/productos/listado/categorias`);
   }
-  
+
   // --- CATALOGOS DE PRODUCTOS (SNOWFLAKE) ---
   getCatalogosCategorias(): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/productos-catalogos/categorias`);
@@ -456,19 +458,19 @@ export class ApiService {
     return this.http.delete<any>(`${this.base}/api/productos-catalogos/subcategorias/${id}`);
   }
 
-  
+
   getProductosFabricantes(): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/atencion-cliente/productos/listado/fabricantes`);
   }
-  
+
   getProductosTiposServicio(): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/atencion-cliente/productos/listado/tipos-servicio`);
   }
-  
+
   getProductosTiposFabricante(): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/atencion-cliente/productos/listado/tipos-fabricante`);
   }
-  
+
   getCategorias(): Observable<object[]> { return this.http.get<object[]>(`${this.base}/api/atencion-cliente/categorias`); }
   getPDVList(opts: { activo?: boolean; region?: string } = {}): Observable<PuntoInteres[]> {
     return this.http.get<PuntoInteres[]>(`${this.base}/api/atencion-cliente/pdv`, { params: this.params(opts) });
@@ -535,34 +537,48 @@ export class ApiService {
   }
 
   // --- PORTAL MERCADERISTA ---
-  getMercMiPerfil(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/mi-perfil`); }
-  getMercMiRuta(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/mi-ruta`); }
-  getMercMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any[]> { 
-    return this.http.get<any[]>(`${this.base}/api/merc/mis-visitas`, { params: this.params(opts) }); 
+  getMercMiPerfil(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/me`); }
+  getMercMiRuta(): Observable<any> { return this.http.get<any>(`${this.base}/api/merc/rutas`); }
+  activarRuta(idRuta: number): Observable<{ success: boolean; id_activacion?: number; ya_activado?: boolean }> {
+    return this.http.post<{ success: boolean; id_activacion?: number; ya_activado?: boolean }>(`${this.base}/api/merc/ruta/activar`, { id_ruta: idRuta });
   }
-  iniciarVisita(data: { id_punto: string; id_cliente: number }): Observable<any> { 
-    return this.http.post<any>(`${this.base}/api/merc/iniciar-visita`, data); 
+  finalizarRuta(idRuta: number): Observable<{ success: boolean; mensaje?: string }> {
+    return this.http.post<{ success: boolean; mensaje?: string }>(`${this.base}/api/merc/ruta/finalizar`, { id_ruta: idRuta });
   }
-  getFotosVisita(visitaId: number): Observable<any> { 
-    return this.http.get<any>(`${this.base}/api/merc/visita/${visitaId}/fotos`); 
+  desactivarPdv(idPunto: string): Observable<{ success: boolean; mensaje?: string }> {
+    return this.http.post<{ success: boolean; mensaje?: string }>(`${this.base}/api/merc/pdv/desactivar`, { id_punto: idPunto });
   }
-  getMercProductosCliente(idCliente: number): Observable<any[]> { 
-    return this.http.get<any[]>(`${this.base}/api/merc/productos`, { params: { id_cliente: idCliente } }); 
+  getMercMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/merc/visitas`, { params: this.params(opts) });
+  }
+  getMercRutaPdvs(idRuta: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/merc/ruta/${idRuta}/pdvs`);
+  }
+  iniciarVisita(data: { id_punto: string; id_cliente: number }): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/merc/visitas/iniciar`, data);
+  }
+  getFotosVisita(visitaId: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/merc/visitas/${visitaId}/fotos`);
+  }
+  getMercProductosCliente(idCliente: number): Observable<{ categorias: any[]; total_productos: number }> {
+    return this.http.get<{ categorias: any[]; total_productos: number }>(`${this.base}/api/merc/productos`, { params: { id_cliente: idCliente } });
   }
   guardarMercBalances(payload: { visita_id: number; id_cliente: number; productos: any[] }): Observable<any> {
-    return this.http.post<any>(`${this.base}/api/merc/balances`, payload);
+    return this.http.post<any>(`${this.base}/api/merc/visitas/${payload.visita_id}/balances`, payload);
   }
   uploadMercFoto(visitaId: number, tipoFoto: string, file: File | Blob, lat?: number, lon?: number): Observable<any> {
     const fd = new FormData();
-    fd.append('visita_id', String(visitaId));
     fd.append('tipo_foto', tipoFoto);
     fd.append('file', file, (file as File).name || 'foto.jpg');
     if (lat != null) fd.append('lat', String(lat));
     if (lon != null) fd.append('lon', String(lon));
-    return this.http.post<any>(`${this.base}/api/merc/fotos/upload`, fd);
+    return this.http.post<any>(`${this.base}/api/merc/visitas/${visitaId}/fotos`, fd);
   }
   finalizarMercVisita(idVisita: number): Observable<any> {
-    return this.http.post<any>(`${this.base}/api/merc/finalizar-visita`, { id_visita: idVisita });
+    return this.http.post<any>(`${this.base}/api/merc/visitas/${idVisita}/finalizar`, { id_visita: idVisita });
+  }
+  registrarAuditoriaTiempo(payload: { id_visita?: number; identificador_punto_interes?: string; evento: string; detalle?: string; tiempo_restante_segundos: number }): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/merc/visitas/auditoria-tiempo`, payload);
   }
 
   // --- SKU vs SKU ---
@@ -597,7 +613,7 @@ export class ApiService {
   getClientCategories(clientId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/clients/${clientId}/categorias`);
   }
-  
+
   addClientCategory(clientId: number, categoryId: number): Observable<any> {
     return this.http.post<any>(`${this.base}/api/clients/${clientId}/categorias`, { id_categoria: categoryId });
   }
@@ -615,5 +631,26 @@ export class ApiService {
   // --- CATALOGOS ---
   getEstados(): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/catalogos/estados`);
+  }
+
+  // --- GENERIC HTTP METHODS ---
+  get<T>(url: string, opts?: { params?: HttpParams | Record<string, string | number | boolean | undefined | null> }): Observable<T> {
+    const httpParams = opts?.params instanceof HttpParams ? opts.params : (opts?.params ? this.params(opts.params) : undefined);
+    return this.http.get<T>(`${this.base}${url}`, { params: httpParams });
+  }
+
+  post<T>(url: string, body: any, opts?: { params?: HttpParams | Record<string, string | number | boolean | undefined | null> }): Observable<T> {
+    const httpParams = opts?.params instanceof HttpParams ? opts.params : (opts?.params ? this.params(opts.params) : undefined);
+    return this.http.post<T>(`${this.base}${url}`, body, { params: httpParams });
+  }
+
+  put<T>(url: string, body: any, opts?: { params?: HttpParams | Record<string, string | number | boolean | undefined | null> }): Observable<T> {
+    const httpParams = opts?.params instanceof HttpParams ? opts.params : (opts?.params ? this.params(opts.params) : undefined);
+    return this.http.put<T>(`${this.base}${url}`, body, { params: httpParams });
+  }
+
+  delete<T>(url: string, opts?: { params?: HttpParams | Record<string, string | number | boolean | undefined | null> }): Observable<T> {
+    const httpParams = opts?.params instanceof HttpParams ? opts.params : (opts?.params ? this.params(opts.params) : undefined);
+    return this.http.delete<T>(`${this.base}${url}`, { params: httpParams });
   }
 }

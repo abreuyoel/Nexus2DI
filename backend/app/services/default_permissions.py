@@ -35,6 +35,7 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "frecuencias-pdvs-cliente.carga_masiva": {"read": True},
         "atencion-cliente": {"read": True, "write": True},
         "data": {"read": True},
+        "supervisor-encuestadores": {"read": True, "write": True, "delete": True},
     },
     "auditor_campo": {
         "dashboard": {"read": True},
@@ -45,6 +46,7 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "dashboard": {"read": True},
         "chat": {"read": True},
         "encuestador": {"read": True, "write": True},
+        "encuestador-configuracion": {"read": True, "write": True},
     },
     "cliente_encuestador": {
         # Sin "dashboard": este rol (IQVIA) entra directo a BI Encuestas
@@ -57,6 +59,7 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "chat": {"read": True},
         "cliente-encuestador": {"read": True},
         "encuestador": {"read": True, "write": True},
+        "encuestador-configuracion": {"read": True, "write": True},
     },
     "ejecutivo_cuenta": {
         "chat": {"read": True},

@@ -7,6 +7,7 @@ class Cliente(Base):
 
     id = Column("id_cliente", Integer, primary_key=True, index=True)
     nombre = Column("cliente", String(200), nullable=False)
+    id_categoria = Column(Integer, nullable=False)
 
 class CategoriaCliente(Base):
     __tablename__ = "CATEGORIAS_CLIENTES"
