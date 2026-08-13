@@ -1,0 +1,52 @@
+name: Deploy QA
+
+# Se dispara con push a la rama qa
+on:
+  push:
+    branches: [qa]
+
+jobs:
+  deploy-qa:
+    # Corre en el runner instalado en el servidor (no necesita SSH externo)
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout rama qa
+        uses: actions/checkout@v4
+
+      - name: Login a GitHub Container Registry
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # ── Backend ──────────────────────────────────────────────────────────
+      - name: Build backend :qa
+        run: |
+          docker build -t ghcr.io/abreuyoel/nexus2di-backend:qa ./backend
+
+      - name: Push backend :qa
+        run: |
+          docker push ghcr.io/abreuyoel/nexus2di-backend:qa
+
+      - name: Rollout backend QA
+        run: |
+          kubectl -n qa rollout restart deployment/nexus2di-backend
+          kubectl -n qa rollout status deployment/nexus2di-backend --timeout=120s
+
+      # ── Frontend ─────────────────────────────────────────────────────────
+      - name: Build frontend :qa
+        run: |
+          docker build -t ghcr.io/abreuyoel/nexus2di-frontend:qa ./frontend
+
+      - name: Push frontend :qa
+        run: |
+          docker push ghcr.io/abreuyoel/nexus2di-frontend:qa
+
+      - name: Rollout frontend QA
+        run: |
+          kubectl -n qa rollout restart deployment/nexus2di-frontend
+          kubectl -n qa rollout status deployment/nexus2di-frontend --timeout=60s
+
+      - name: Resumen del deploy
+        run: |
+          echo "✅ QA deploy completado"
+          echo "🌐 URL: https://qa.nexus2di.net"
+          kubectl -n qa get pods
