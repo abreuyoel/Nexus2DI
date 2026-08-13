@@ -5,6 +5,7 @@
     <p class="text-slate-500 dark:text-slate-400 mt-1">Por cliente, definí qué SKU propio se enfrenta contra cuáles SKU de la competencia -- para acotar qué productos deben cargar los mercaderistas en vez de toda la categoría.</p>
   </div>
 
+  <!-- Selector de cliente -->
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
     <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Cliente</label>
     <select [(ngModel)]="clienteId" (ngModelChange)="onClienteChange()"
@@ -15,30 +16,86 @@
   </div>
 
   @if (clienteId) {
-    <!-- Agregar SKU propio -->
+    <!-- Panel: Agregar SKU propio con browse por productora/categoría -->
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
-      <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Agregar SKU propio del cliente</label>
-      <div class="relative">
-        <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
-        <input [ngModel]="buscarPropio" (ngModelChange)="buscarPropio = $event; onBuscarPropioChange($event)"
-          placeholder="Buscar producto por nombre o código de barras..."
-          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold outline-none transition-colors">
-      </div>
-      @if (buscandoPropio()) {
-        <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
-      } @else if (resultadosPropio().length) {
-        <div class="mt-2 max-h-64 overflow-y-auto space-y-1 border border-slate-100 dark:border-white/5 rounded-xl p-2">
-          @for (p of resultadosPropio(); track p.id) {
-            <button type="button" (click)="agregarSkuPropio(p)"
-              class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left">
-              <span class="text-sm text-slate-700 dark:text-slate-200 truncate">{{ p.producto_gu }}</span>
-              <span class="text-xs text-slate-400 shrink-0">{{ p.marca || '—' }}</span>
-            </button>
-          }
+      <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-3 block">Agregar SKU propio del cliente</label>
+
+      @if (cargandoFiltros()) {
+        <div class="flex justify-center py-4"><mat-spinner diameter="24"></mat-spinner></div>
+      } @else {
+
+        <!-- Pills de Productora -->
+        @if (todasProductoras().length) {
+          <div class="mb-3">
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Productora</p>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" (click)="selectProductora(null)"
+                [class]="!productoraFiltroId ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-all">
+                Todas
+              </button>
+              @for (p of todasProductoras(); track p.id) {
+                <button type="button" (click)="selectProductora(p.id)"
+                  [class]="productoraFiltroId === p.id ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                  class="px-3 py-1 rounded-full text-xs font-bold transition-all">
+                  {{ p.nombre }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Pills de Categoría (aparecen al seleccionar productora) -->
+        @if (categoriasFiltradas().length) {
+          <div class="mb-3">
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Categoría</p>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" (click)="selectCategoria(null)"
+                [class]="!categoriaFiltroId ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                class="px-3 py-1 rounded-full text-xs font-bold transition-all">
+                Todas
+              </button>
+              @for (c of categoriasFiltradas(); track c.id) {
+                <button type="button" (click)="selectCategoria(c.id)"
+                  [class]="categoriaFiltroId === c.id ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                  class="px-3 py-1 rounded-full text-xs font-bold transition-all">
+                  {{ c.nombre }}
+                </button>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Buscador (complementario) -->
+        <div class="relative">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+          <input [ngModel]="buscarPropio" (ngModelChange)="buscarPropio = $event; onBuscarPropioChange($event)"
+            placeholder="Buscar por nombre o código de barras…"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold outline-none transition-colors">
         </div>
+
+        <!-- Resultados -->
+        @if (buscandoPropio()) {
+          <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
+        } @else if (resultadosPropio().length) {
+          <div class="mt-2 max-h-72 overflow-y-auto space-y-0.5 border border-slate-100 dark:border-white/5 rounded-xl p-2">
+            @for (p of resultadosPropio(); track p.id) {
+              <button type="button" (click)="agregarSkuPropio(p)"
+                class="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors">
+                <span class="text-sm text-slate-700 dark:text-slate-200 truncate">{{ p.producto_gu }}</span>
+                <span class="text-xs text-slate-400 shrink-0">{{ p.marca || '—' }}</span>
+              </button>
+            }
+          </div>
+        } @else if (productoraFiltroId && !buscandoPropio()) {
+          <p class="text-center text-slate-400 text-sm py-4">No se encontraron productos con los filtros seleccionados.</p>
+        } @else if (!productoraFiltroId && !buscarPropio) {
+          <p class="text-center text-slate-400 text-sm py-4 opacity-60">Seleccioná una productora arriba para ver sus productos.</p>
+        }
       }
     </div>
 
+    <!-- Lista de grupos SKU vs SKU ya definidos -->
     @if (loading()) {
       <div class="flex flex-col items-center justify-center py-16 gap-4">
         <mat-spinner diameter="40" strokeWidth="4"></mat-spinner>
@@ -46,7 +103,7 @@
     } @else if (!grupos().length) {
       <div class="py-16 text-center opacity-40">
         <mat-icon class="!text-5xl">compare_arrows</mat-icon>
-        <p class="font-bold mt-2">Este cliente todavía no tiene SKU vs SKU definido. Buscá un producto arriba para empezar.</p>
+        <p class="font-bold mt-2">Este cliente todavía no tiene SKU vs SKU definido. Seleccioná una productora y elegí un producto para empezar.</p>
       </div>
     } @else {
       <div class="space-y-4">
@@ -82,20 +139,66 @@
               </div>
             }
 
+            <!-- Panel de competencia con browse por productora/categoría -->
             @if (grupoCompetenciaAbierto === g.id_producto_cliente) {
               <div class="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10">
+
+                <!-- Pills de productora para competencia -->
+                @if (todasProductoras().length) {
+                  <div class="mb-2">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Productora competencia</p>
+                    <div class="flex flex-wrap gap-1.5">
+                      <button type="button" (click)="selectProductoraComp(null)"
+                        [class]="!productoraCompId ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'"
+                        class="px-3 py-1 rounded-full text-xs font-bold transition-all border border-slate-200 dark:border-white/10">
+                        Todas
+                      </button>
+                      @for (p of todasProductoras(); track p.id) {
+                        <button type="button" (click)="selectProductoraComp(p.id)"
+                          [class]="productoraCompId === p.id ? 'bg-rose-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'"
+                          class="px-3 py-1 rounded-full text-xs font-bold transition-all border border-slate-200 dark:border-white/10">
+                          {{ p.nombre }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Pills de categoría para competencia -->
+                @if (categoriasComp().length) {
+                  <div class="mb-2">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Categoría</p>
+                    <div class="flex flex-wrap gap-1.5">
+                      <button type="button" (click)="selectCategoriaComp(null)"
+                        [class]="!categoriaCompId ? 'bg-orange-500 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'"
+                        class="px-3 py-1 rounded-full text-xs font-bold transition-all border border-slate-200 dark:border-white/10">
+                        Todas
+                      </button>
+                      @for (c of categoriasComp(); track c.id) {
+                        <button type="button" (click)="selectCategoriaComp(c.id)"
+                          [class]="categoriaCompId === c.id ? 'bg-orange-500 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100'"
+                          class="px-3 py-1 rounded-full text-xs font-bold transition-all border border-slate-200 dark:border-white/10">
+                          {{ c.nombre }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+
+                <!-- Buscador de competencia -->
                 <div class="relative mb-2">
                   <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
                   <input [ngModel]="buscarCompetencia" (ngModelChange)="buscarCompetencia = $event; onBuscarCompetenciaChange($event)"
-                    placeholder="Buscar producto de la competencia..."
+                    placeholder="Buscar producto de la competencia…"
                     class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold outline-none transition-colors">
                 </div>
+
                 @if (buscandoCompetencia()) {
                   <div class="flex justify-center py-3"><mat-spinner diameter="22"></mat-spinner></div>
                 } @else if (resultadosCompetencia().length) {
                   <div class="max-h-56 overflow-y-auto space-y-0.5">
                     @for (p of resultadosCompetencia(); track p.id) {
-                      <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-white dark:hover:bg-slate-900"
+                      <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                         [class.opacity-40]="yaEsCompetencia(g, p.id)">
                         <input type="checkbox" [checked]="seleccionCompetencia.has(p.id)" [disabled]="yaEsCompetencia(g, p.id)"
                           (change)="toggleSeleccionCompetencia(p.id)" class="w-4 h-4 accent-primary-600">
@@ -104,7 +207,10 @@
                       </label>
                     }
                   </div>
+                } @else if (!productoraCompId && !buscarCompetencia) {
+                  <p class="text-center text-slate-400 text-sm py-3 opacity-60">Seleccioná una productora o escribí para buscar.</p>
                 }
+
                 <div class="flex items-center justify-end gap-2 mt-2">
                   <button type="button" (click)="cerrarBuscadorCompetencia()" class="px-3 py-1.5 text-sm font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white">Cancelar</button>
                   <button type="button" (click)="guardarCompetenciaSeleccionada(g)" [disabled]="seleccionCompetencia.size === 0"
