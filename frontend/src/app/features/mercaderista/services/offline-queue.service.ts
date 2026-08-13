@@ -108,7 +108,7 @@ export class OfflineQueueService {
 
   // ── Fotos sueltas (gestión/exhibición/POP de una visita YA con id real) ──
 
-  /** Encola una foto para subir */
+  /** Encola una foto para subir y ESPERA que termine el upload real antes de retornar. */
   async enqueuePhoto(visitaId: number, tipoFoto: string, file: File): Promise<string> {
     const photo: OfflinePhoto = {
       id: crypto.randomUUID(),
@@ -123,9 +123,11 @@ export class OfflineQueueService {
     await this.withStore(STORE_FOTOS, 'readwrite', s => s.put(photo));
     this.refreshCount();
 
-    // Si hay conexión, subir inmediatamente
+    // Si hay conexión, subir inmediatamente y ESPERAR a que termine
+    // para que el caller (TipoCard/DobleCard/PhotoGrid) pueda
+    // emitir fotoSubida → reloadFotos() con datos frescos del backend.
     if (navigator.onLine) {
-      this.uploadPhoto(photo);
+      await this.uploadPhoto(photo);
     }
     return photo.id;
   }
@@ -138,17 +140,18 @@ export class OfflineQueueService {
     await this.withStore(STORE_FOTOS, 'readwrite', s => s.put({ ...photo, status: 'uploading' }));
 
     const fd = new FormData();
-    fd.append('visita_id', String(photo.visitaId));
     fd.append('tipo_foto', photo.tipoFoto);
     fd.append('file', photo.file, photo.fileName);
 
     try {
-      await this.http.post('/api/merc/fotos/upload', fd).toPromise();
+      await this.http.post(`/api/merc/visitas/${photo.visitaId}/fotos`, fd).toPromise();
       await this.withStore(STORE_FOTOS, 'readwrite', s => s.delete(photo.id));
     } catch (err) {
       await this.withStore(STORE_FOTOS, 'readwrite', s => s.put({ ...photo, status: 'error' }));
+      throw err; // Re-lanzar para que el caller (TipoCard/DobleCard) sepa que falló y muestre feedback real
+    } finally {
+      this.refreshCount();
     }
-    this.refreshCount();
   }
 
   // ── Cadenas (activar PDV -> pasos que dependen del id_visita resultante) ──
@@ -176,11 +179,19 @@ export class OfflineQueueService {
   async getChain(chainId: string): Promise<Chain | null> {
     return (await this.withStore<Chain>(STORE_CHAINS, 'readonly', s => s.get(chainId))) || null;
   }
-
-  private async getChains(): Promise<Chain[]> {
-    return (await this.withStore<Chain[]>(STORE_CHAINS, 'readonly', s => s.getAll())) || [];
+  async deleteChainStep(chainId: string, stepIndex: number): Promise<void> {
+    const chain = await this.getChain(chainId);
+    if (!chain) return;
+    chain.steps = chain.steps.filter(s => s.stepIndex !== stepIndex);
+    // Re-index remaining steps
+    chain.steps.forEach((s, idx) => s.stepIndex = idx);
+    await this.withStore(STORE_CHAINS, 'readwrite', s => s.put(chain));
+    this.refreshCount();
   }
 
+  async getChains(): Promise<Chain[]> {
+    return (await this.withStore<Chain[]>(STORE_CHAINS, 'readonly', s => s.getAll())) || [];
+  }
   /** Sustituye el id_visita placeholder por el real en jsonBody/formFields antes de reproducir un paso. */
   private resolveIds<T extends { jsonBody?: any; formFields?: Record<string, string> }>(payload: T, placeholder: string, real: number): T {
     const clone: T = JSON.parse(JSON.stringify(payload ?? {}));
@@ -197,12 +208,27 @@ export class OfflineQueueService {
     return clone;
   }
 
+  /**
+   * Translates any legacy URL still stored in IndexedDB to the modular v2 equivalent.
+   * This ensures offline work queued before this migration syncs correctly.
+   */
+  private resolveStepUrl(url: string, realVisitaId: number): string {
+    if (url === '/api/merc/iniciar-visita') return '/api/merc/visitas/iniciar';
+    if (url === '/api/merc/fotos/upload') return `/api/merc/visitas/${realVisitaId}/fotos`;
+    if (url === '/api/merc/balances') return `/api/merc/visitas/${realVisitaId}/balances`;
+    if (url === '/api/merc/finalizar-visita') return `/api/merc/visitas/${realVisitaId}/finalizar`;
+    // Already v2 — return as-is
+    return url;
+  }
+
   private async syncChain(chain: Chain): Promise<void> {
     chain.status = 'syncing';
     await this.withStore(STORE_CHAINS, 'readwrite', s => s.put(chain));
     try {
       if (chain.realVisitaId == null) {
-        const resp: any = await this.http.post<any>(chain.iniciarUrl, chain.iniciarBody).toPromise();
+        // Translate legacy iniciarUrl if needed
+        const iniciarUrl = this.resolveStepUrl(chain.iniciarUrl, 0).replace('/api/merc/visitas/iniciar', '/api/merc/visitas/iniciar');
+        const resp: any = await this.http.post<any>(iniciarUrl, chain.iniciarBody).toPromise();
         chain.realVisitaId = resp.id_visita;
         await this.withStore(STORE_CHAINS, 'readwrite', s => s.put(chain));
         this.chainResolved$.next({ chainId: chain.chainId, realVisitaId: chain.realVisitaId! });
@@ -210,7 +236,8 @@ export class OfflineQueueService {
       for (const step of chain.steps) {
         if (step.status === 'done') continue;
         const resolved = this.resolveIds(step, chain.placeholderVisitaId, chain.realVisitaId!);
-        await this.send(step.url, step.isMultipart, resolved.jsonBody, resolved.formFields, step.fileBlob, step.fileName);
+        const resolvedUrl = this.resolveStepUrl(step.url, chain.realVisitaId!);
+        await this.send(resolvedUrl, step.isMultipart, resolved.jsonBody, resolved.formFields, step.fileBlob, step.fileName);
         step.status = 'done';
         await this.withStore(STORE_CHAINS, 'readwrite', s => s.put(chain));
       }

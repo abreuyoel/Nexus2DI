@@ -29,6 +29,9 @@
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
           <div class="text-2xl font-black text-white">{{ mercaderistas().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Mercad.</div>
         </div>
+        <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
+          <div class="text-2xl font-black text-white">{{ auditorsList.length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Audit.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -40,6 +43,7 @@
       <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
       <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
       <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
+      <button (click)="activeTab.set('auditores')" [ngClass]="activeTab() === 'auditores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Auditores</button>
     </div>
   </div>
   @if (activeTab() === 'usuarios') {
@@ -573,6 +577,124 @@
             <div class="col-span-3 py-12 text-center text-slate-400">
               <mat-icon class="!text-5xl opacity-40">supervisor_account</mat-icon>
               <p class="font-bold mt-2">No hay supervisores. Crea el primero.</p>
+            </div>
+          }
+        </div>
+      </div>
+  }
+  @if (activeTab() === 'auditores') {
+      <div class="p-6">
+        <!-- Auditores Header -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
+          <div class="flex-1">
+            <h2 class="text-xl font-black text-slate-900 dark:text-white">Auditores</h2>
+            <p class="text-xs text-slate-500 mt-1">{{ tabHints['auditores'] }}</p>
+          </div>
+          <button (click)="showAuditorForm() ? showAuditorForm.set(false) : openCreateAuditorForm()"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-sm shadow-lg transition-all active:scale-95 whitespace-nowrap">
+            <mat-icon class="!text-base">{{ showAuditorForm() ? 'close' : 'verified_user' }}</mat-icon>
+            {{ showAuditorForm() ? 'Cerrar' : '+ Agregar Auditor' }}
+          </button>
+        </div>
+
+        <!-- Auditor Form (Create / Edit) -->
+        @if (showAuditorForm()) {
+          <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 p-6 mb-6 animate-in zoom-in-95 duration-300">
+            <div class="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-white/5">
+              <mat-icon class="text-purple-600">badge</mat-icon>
+              <h3 class="text-lg font-black text-slate-900 dark:text-white">
+                {{ editingAuditor() ? 'Editar Auditor' : 'Registrar Nuevo Auditor' }}
+              </h3>
+            </div>
+
+            <form [formGroup]="auditorForm" (ngSubmit)="saveAuditor()" class="space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Nombre y Apellido *</label>
+                  <input type="text" formControlName="nombre" placeholder="Ej: Carlos Pérez"
+                    class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Cédula *</label>
+                  <input type="text" formControlName="cedula" placeholder="Ej: V-18293041"
+                    class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Teléfono</label>
+                  <input type="text" formControlName="telefono" placeholder="Ej: 0414-1234567"
+                    class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Tipo de Auditor *</label>
+                  <select formControlName="tipo"
+                    class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                    <option value="Auditor de Campo">Auditor de Campo</option>
+                    <option value="Auditor de Gestión">Auditor de Gestión</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/5">
+                <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  <input type="checkbox" formControlName="activo" class="rounded text-purple-600 focus:ring-purple-500">
+                  <span>Auditor Activo</span>
+                </label>
+
+                <div class="flex items-center gap-2">
+                  <button type="button" (click)="showAuditorForm.set(false)"
+                    class="px-5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    Cancelar
+                  </button>
+                  <button type="submit" [disabled]="auditorForm.invalid || saving()"
+                    class="flex items-center gap-2 px-6 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black text-xs shadow-md transition-all">
+                    @if (saving()) { <mat-spinner diameter="16"></mat-spinner> } @else { <mat-icon class="!text-sm">save</mat-icon> }
+                    {{ editingAuditor() ? 'Guardar Cambios' : 'Registrar Auditor' }}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        }
+
+        <!-- Auditors Grid List -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @for (a of auditorsList; track a.id) {
+            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-2xl bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300 flex items-center justify-center shrink-0">
+                    <mat-icon>verified_user</mat-icon>
+                  </div>
+                  <div class="overflow-hidden">
+                    <div class="font-bold text-base text-slate-800 dark:text-white truncate">{{ a.nombre }}</div>
+                    <div class="text-xs text-slate-500 dark:text-slate-400 font-medium truncate">Cédula: {{ a.cedula || 'N/A' }}</div>
+                    <div class="text-[11px] text-slate-400 truncate" *ngIf="a.telefono">Tlf: {{ a.telefono }}</div>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5">
+                  <div class="flex items-center gap-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                      {{ a.tipo || 'Auditor de Campo' }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button mat-icon-button color="primary" (click)="editAuditor(a)" matTooltip="Editar auditor"><mat-icon>edit</mat-icon></button>
+                    <button mat-icon-button color="warn" (click)="deleteAuditor(a)" matTooltip="Eliminar auditor"><mat-icon>delete</mat-icon></button>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+
+          @if (auditorsList.length === 0) {
+            <div class="col-span-3 py-12 text-center text-slate-400">
+              <mat-icon class="!text-5xl opacity-40">verified_user</mat-icon>
+              <p class="font-bold mt-2">No hay auditores registrados. Crea el primero.</p>
             </div>
           }
         </div>

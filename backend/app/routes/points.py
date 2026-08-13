@@ -240,3 +240,31 @@ def update_point(
     db.commit()
     db.refresh(punto)
     return punto
+
+
+@router.post("/merge-and-delete")
+def merge_and_delete_point_endpoint(
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permission('points', 'delete', fallback_roles=("admin", "analyst"))),
+):
+    pdv_eliminar = payload.get("pdv_id_eliminar")
+    pdv_destino = payload.get("pdv_id_destino")
+
+    if not pdv_eliminar:
+        raise HTTPException(status_code=400, detail="Debe especificar 'pdv_id_eliminar'")
+
+    from app.scripts.merge_and_delete_pdv import reasignar_y_eliminar_pdv
+    try:
+        res = reasignar_y_eliminar_pdv(db, pdv_eliminar, pdv_destino)
+        log_action(db, action="MERGE_DELETE_POINT", entity_type="PuntoInteres",
+                   user_id=current_user.id, username=current_user.username, rol=current_user.rol,
+                   ip_address=get_client_ip(request),
+                   entity_id=pdv_eliminar, entity_name=pdv_eliminar,
+                   changes=res)
+        return res
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al reasignar y eliminar PDV: {str(e)}")

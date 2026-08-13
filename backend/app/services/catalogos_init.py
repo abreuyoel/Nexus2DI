@@ -24,6 +24,7 @@ CATALOG_TABLES = [
     "SERVICIOS",
     "SUPERVISORES_CLIENTES",
     "FOTOS_RAZONES_RECHAZOS",
+    "CATALOGOS_ENCUESTADOR",
 ]
 
 
@@ -43,6 +44,31 @@ def ensure_route_columns() -> None:
         except Exception as e:
             logger.exception(f"No se pudo crear RUTAS_NUEVAS.id_cliente_exclusivo: {e}")
     _backfill_exclusive_clients()
+
+
+def ensure_jornada_encuestador_columns() -> None:
+    """Agrega columnas latitud_fin, longitud_fin, ciudad_fin, estado_geo_fin en JORNADAS_ENCUESTADOR si faltan."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("JORNADAS_ENCUESTADOR")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar JORNADAS_ENCUESTADOR: {e}")
+        return
+
+    missing_cols = {
+        "latitud_fin": "FLOAT NULL",
+        "longitud_fin": "FLOAT NULL",
+        "ciudad_fin": "VARCHAR(100) NULL",
+        "estado_geo_fin": "VARCHAR(100) NULL"
+    }
+
+    for col_name, col_type in missing_cols.items():
+        if col_name not in cols:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE JORNADAS_ENCUESTADOR ADD {col_name} {col_type}"))
+                logger.info(f"Columna JORNADAS_ENCUESTADOR.{col_name} creada con éxito")
+            except Exception as e:
+                logger.exception(f"No se pudo crear JORNADAS_ENCUESTADOR.{col_name}: {e}")
 
 
 def _backfill_exclusive_clients() -> None:
@@ -122,6 +148,7 @@ def ensure_catalog_tables() -> None:
     """Crea las tablas de catálogo si no existen, y siembra con valores distintos
     de PUNTOS_INTERES1 la primera vez."""
     ensure_route_columns()
+    ensure_jornada_encuestador_columns()
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
     missing = [t for t in CATALOG_TABLES if t not in existing]
@@ -140,6 +167,7 @@ def ensure_catalog_tables() -> None:
     # Después de sembrar SERVICIOS (arriba) para que el backfill de prefijo
     # tenga filas que actualizar en un ambiente recién creado (epran-qa).
     ensure_servicio_prefijo_column()
+    _seed_encuestador_catalogs()
 
 
 def _seed_from_existing_routes() -> None:
@@ -245,3 +273,46 @@ def _seed_from_existing_pdv() -> None:
         db.rollback()
     finally:
         db.close()
+
+
+def _seed_encuestador_catalogs() -> None:
+    """Siembra CATALOGOS_ENCUESTADOR con especialidades, estados y ciudades
+    existentes en la tabla MEDICOS, o con defaults si está vacía."""
+    db = SessionLocal()
+    try:
+        from app.models.encuestador import CatalogoEncuestador, Medico
+        if db.query(CatalogoEncuestador).count() > 0:
+            return
+
+        # 1. Especialidades
+        esps = db.query(Medico.especialidad).filter(Medico.especialidad.isnot(None)).distinct().all()
+        esps_list = [e[0].strip() for e in esps if e[0] and e[0].strip()]
+        if not esps_list:
+            esps_list = ["Pediatría", "Ginecología", "Medicina General", "Cardiología", "Traumatología", "Medicina Interna", "Dermatología", "Oftalmología", "Urología", "Gastroenterología"]
+        for esp in set(esps_list):
+            db.add(CatalogoEncuestador(tipo="especialidad", nombre=esp))
+
+        # 2. Estados
+        ests = db.query(Medico.estado).filter(Medico.estado.isnot(None)).distinct().all()
+        ests_list = [e[0].strip() for e in ests if e[0] and e[0].strip()]
+        if not ests_list:
+            ests_list = ["Distrito Capital", "Miranda", "Aragua", "Carabobo", "Zulia", "Lara", "Anzoátegui", "Bolívar", "Táchira", "Mérida"]
+        for est in set(ests_list):
+            db.add(CatalogoEncuestador(tipo="estado", nombre=est))
+
+        # 3. Ciudades
+        cius = db.query(Medico.ciudad).filter(Medico.ciudad.isnot(None)).distinct().all()
+        cius_list = [c[0].strip() for c in cius if c[0] and c[0].strip()]
+        if not cius_list:
+            cius_list = ["Caracas", "Maracay", "Valencia", "Maracaibo", "Barquisimeto", "Barcelona", "Puerto Ordaz", "San Cristóbal", "Mérida", "Los Teques"]
+        for ciu in set(cius_list):
+            db.add(CatalogoEncuestador(tipo="ciudad", nombre=ciu))
+
+        db.commit()
+        logger.info("CATALOGOS_ENCUESTADOR sembrado correctamente con valores iniciales.")
+    except Exception as e:
+        logger.exception(f"Error sembrando catálogos de encuestador: {e}")
+        db.rollback()
+    finally:
+        db.close()
+

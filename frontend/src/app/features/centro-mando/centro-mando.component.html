@@ -308,10 +308,12 @@
       <mat-icon>list_alt</mat-icon> Todas las visitas
       <span class="cm-badge">{{ activaciones().length }}</span>
     </button>
-    <button class="cm-tab" [class.active]="activeView === 'horas'" (click)="activeView = 'horas'">
-      <mat-icon>schedule</mat-icon> Horas Trabajadas
-      <span class="cm-badge">{{ horasTrabajadas().length }}</span>
-    </button>
+    @if (canSeeHorasTrabajadas) {
+      <button class="cm-tab" [class.active]="activeView === 'horas'" (click)="activeView = 'horas'">
+        <mat-icon>schedule</mat-icon> Horas Trabajadas
+        <span class="cm-badge">{{ horasTrabajadas().length }}</span>
+      </button>
+    }
   </div>
 
   <div class="cm-dash-filters">

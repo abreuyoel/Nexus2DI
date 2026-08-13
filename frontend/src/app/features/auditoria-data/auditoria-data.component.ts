@@ -1,18 +1,28 @@
 import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
 import { MercaderistaComponent } from '../mercaderista/mercaderista.component';
+import { DataComponent } from '../data/data.component';
+import { AuthService } from '../../core/services/auth.service';
 
 /**
- * Portal de Auditoría de Data: mismo flujo del portal Mercaderista
- * (jornada -> rutas asignadas vía MERCADERISTAS_RUTAS -> PDV -> cliente ->
- * carga de data por categoría) reutilizado tal cual, para el rol Auditor.
- * El backend (/api/merc/*) ya resuelve por cedula = username sin filtrar por
- * rol, así que un usuario Auditor cuya USUARIOS.username coincida con una fila
- * MERCADERISTAS.cedula (tipo='Auditor') usa exactamente los mismos endpoints.
+ * Portal de Auditoría de Data:
+ * - Para el rol Admin/Analista, muestra el panel de control y revisión de data (DataComponent).
+ * - Para el rol Auditor (de campo), muestra el flujo móvil de carga de mercaderista (MercaderistaComponent).
  */
 @Component({
   selector: 'app-auditoria-data',
   standalone: true,
-  imports: [MercaderistaComponent],
-  template: `<app-mercaderista titulo="Portal Auditoría de Data"></app-mercaderista>`,
+  imports: [CommonModule, MercaderistaComponent, DataComponent],
+  template: `
+    <app-data *ngIf="isAdmin"></app-data>
+    <app-mercaderista *ngIf="!isAdmin" titulo="Portal Auditoría de Data"></app-mercaderista>
+  `,
 })
-export class AuditoriaDataComponent {}
+export class AuditoriaDataComponent {
+  get isAdmin(): boolean {
+    const user = this.auth.currentUser();
+    return user ? (user.is_admin || user.rol === 'admin' || user.rol === 'analyst') : false;
+  }
+
+  constructor(private auth: AuthService) {}
+}
