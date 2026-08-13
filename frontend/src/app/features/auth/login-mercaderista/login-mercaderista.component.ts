@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, HostListener, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -9,6 +9,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../../core/services/auth.service';
+import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
+import { ConfirmDialogComponent } from '../../../shared/components/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-login-mercaderista',
@@ -17,21 +19,64 @@ import { AuthService } from '../../../core/services/auth.service';
     CommonModule, ReactiveFormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule,
     MatButtonModule, MatIconModule, MatProgressSpinnerModule,
+    ConfirmDialogComponent
   ],
   templateUrl: './login-mercaderista.component.html',
   styleUrls: ['./login-mercaderista.component.scss']
 })
-export class LoginMercaderistaComponent {
+export class LoginMercaderistaComponent implements OnInit {
   loading = signal(false);
   error = signal('');
   showPass = signal(false);
+
+  private wasMobile = window.innerWidth <= 1024;
 
   form = this.fb.group({
     cedula: ['', Validators.required],
     password: ['', Validators.required],
   });
 
-  constructor(private fb: FormBuilder, private auth: AuthService, private router: Router) {}
+  constructor(
+    private fb: FormBuilder,
+    private auth: AuthService,
+    private router: Router,
+    private confirmSvc: ConfirmService
+  ) {
+    if (this.auth.isLoggedIn()) {
+      const u = this.auth.currentUser();
+      if (u) {
+        this.auth.redirectAfterLogin(u.rol);
+      } else {
+        this.router.navigateByUrl('/mercaderista');
+      }
+    }
+  }
+
+  ngOnInit(): void {
+    if (!this.wasMobile) {
+      this.promptDesktopRedirect();
+    }
+  }
+
+  @HostListener('window:resize', ['$event'])
+  onResize(): void {
+    const mobile = window.innerWidth <= 1024;
+    if (!mobile && this.wasMobile) {
+      this.promptDesktopRedirect();
+    }
+    this.wasMobile = mobile;
+  }
+
+  private promptDesktopRedirect(): void {
+    this.confirmSvc.confirm(
+      'Detectamos que estás utilizando un tamaño de pantalla de escritorio. ¿Deseas ir al portal de inicio de sesión general?',
+      { title: 'Cambiar de Vista', confirmText: 'Ir a Login General', cancelText: 'Permanecer' }
+    ).then(change => {
+      if (change) {
+        this.router.navigateByUrl('/login');
+      }
+    });
+  }
 
   onSubmit(): void {
     if (this.form.invalid) return;
@@ -40,7 +85,7 @@ export class LoginMercaderistaComponent {
     this.auth.loginMercaderista(this.form.value as any).subscribe({
       next: () => {
         this.loading.set(false);
-        this.router.navigateByUrl('/mercaderista');
+        // Redirect is handled inside handleAuthSuccess -> getMe().subscribe(user => redirect)
       },
       error: (err) => {
         this.loading.set(false);
