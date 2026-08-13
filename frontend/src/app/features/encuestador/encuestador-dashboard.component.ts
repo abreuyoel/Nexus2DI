@@ -559,4 +559,10 @@ export class EncuestadorDashboardComponent implements OnInit {
       }
     });
   }
+
+  exportarBackup() {}
+  importarBackup(event: any) {}
+  formatJson(obj: any): string {
+    return JSON.stringify(obj, null, 2);
+  }
 }
