@@ -31,6 +31,7 @@ export class ApiService {
   deleteUser(id: number): Observable<object> { return this.http.delete<object>(`${this.base}/api/users/${id}`); }
   getAnalysts(): Observable<User[]> { return this.http.get<User[]>(`${this.base}/api/users/analysts`); }
   getSupervisors(): Observable<User[]> { return this.http.get<User[]>(`${this.base}/api/users/supervisors`); }
+  getEncuestadores(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/supervisor-encuestadores/encuestadores`); }
   getModulos(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/modulos`); }
   getUserPermissions(userId: number): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/users/${userId}/permissions`); }
   updateUserPermissions(userId: number, permissions: any[]): Observable<any> { return this.http.post<any>(`${this.base}/api/users/${userId}/permissions`, { permissions }); }

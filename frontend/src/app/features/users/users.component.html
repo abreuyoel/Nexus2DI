@@ -29,6 +29,9 @@
         <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
           <div class="text-2xl font-black text-white">{{ mercaderistas().length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Mercad.</div>
         </div>
+        <div class="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3 text-center min-w-[64px]">
+          <div class="text-2xl font-black text-white">{{ encuestadorUsers.length }}</div><div class="text-[10px] font-bold text-primary-100 uppercase tracking-wider">Encuest.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -40,6 +43,7 @@
       <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
       <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
       <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
+      <button (click)="activeTab.set('encuestadores')" [ngClass]="activeTab() === 'encuestadores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Encuestadores</button>
     </div>
   </div>
   @if (activeTab() === 'usuarios') {
@@ -573,6 +577,64 @@
             <div class="col-span-3 py-12 text-center text-slate-400">
               <mat-icon class="!text-5xl opacity-40">supervisor_account</mat-icon>
               <p class="font-bold mt-2">No hay supervisores. Crea el primero.</p>
+            </div>
+          }
+        </div>
+      </div>
+  }
+  @if (activeTab() === 'encuestadores') {
+      <div class="p-6">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col lg:flex-row lg:items-end gap-4">
+          <div class="flex-1">
+            <h2 class="text-xl font-black text-slate-900 dark:text-white">Encuestadores</h2>
+            <p class="text-xs text-slate-500 mt-1">{{ tabHints['encuestadores'] }}</p>
+          </div>
+          <button (click)="openCreateForm(); createForm.patchValue({ id_rol: 12 })"
+            class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-black text-sm shadow-lg transition-all active:scale-95 whitespace-nowrap">
+            <mat-icon class="!text-base">person_add</mat-icon> Nuevo Encuestador
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          @for (u of encuestadorUsers; track u.id) {
+            <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+              <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-2xl bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-300 flex items-center justify-center shrink-0">
+                    <mat-icon>assignment_ind</mat-icon>
+                  </div>
+                  <div class="overflow-hidden">
+                    <div class="font-bold text-base text-slate-800 dark:text-white truncate">{{ u.username }}</div>
+                    @if (u.perfil_nombre && u.perfil_nombre !== u.username) {
+                      <div class="text-xs text-slate-500 dark:text-slate-400 font-medium truncate">{{ u.perfil_nombre }}</div>
+                    }
+                    <div class="text-[11px] text-slate-400 truncate">{{ u.email || 'Sin correo registrado' }}</div>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5">
+                  <div class="flex items-center gap-2">
+                    <span [class]="getRoleClasses(u.id_rol)" class="px-2.5 py-0.5 rounded-full text-xs font-bold">
+                      {{ u.rol_nombre || u.rol || 'Encuestador' }}
+                    </span>
+                    <button (click)="toggleActivo(u)" class="flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+                      <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
+                      <span [class]="u.activo ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'">{{ u.activo ? 'Activo' : 'Inactivo' }}</span>
+                    </button>
+                  </div>
+
+                  <div class="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button mat-icon-button color="primary" (click)="editUser(u)" matTooltip="Editar usuario"><mat-icon>edit</mat-icon></button>
+                    <button mat-icon-button color="warn" (click)="deleteUser(u)" matTooltip="Eliminar usuario"><mat-icon>delete</mat-icon></button>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+          @if (encuestadorUsers.length === 0) {
+            <div class="col-span-3 py-12 text-center text-slate-400">
+              <mat-icon class="!text-5xl opacity-40">assignment_ind</mat-icon>
+              <p class="font-bold mt-2">No se encontraron usuarios con rol Encuestador.</p>
             </div>
           }
         </div>

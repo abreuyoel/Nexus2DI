@@ -55,6 +55,7 @@ export class UsersComponent implements OnInit {
   clients = signal<any[]>([]);
   mercaderistas = signal<any[]>([]);
   supervisors = signal<any[]>([]);
+  encuestadores = signal<any[]>([]);
 
   rolesDisponibles = [
     { id: 8, nombre: 'Administrador' },
@@ -68,18 +69,21 @@ export class UsersComponent implements OnInit {
     { id: 1, nombre: 'Cliente' },
     { id: 5, nombre: 'Mercaderista' },
     { id: 7, nombre: 'Auditor' },
+    { id: 12, nombre: 'Encuestador' },
   ];
 
   // Solo analistas reales (rol 2) en la pestaña Analistas; los supervisores van aparte
   get realAnalysts(): any[] { return this.analysts().filter(a => (a.id_rol ?? 2) === 2); }
+  get encuestadorUsers(): any[] { return this.users().filter(u => u.id_rol === 12 || u.id_rol === 13); }
 
   // Descripciones por entidad (estilo Catálogos)
   tabHints: Record<string, string> = {
-    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador (exclusivo / tradex / general), cliente o mercaderista.',
+    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador (exclusivo / tradex / general), cliente, mercaderista o encuestador.',
     analistas: 'Analistas que revisan y gestionan las cuentas de clientes.',
     clientes: 'Cuentas / marcas del sistema. El tipo (Exclusiva / Tradex) se define por la ruta a la que se asigna.',
     mercaderistas: 'Personal de campo que ejecuta las visitas en los puntos de venta.',
     supervisores: 'Supervisores de rutas y clientes.',
+    encuestadores: 'Personal encuestador de campo encargados de la recolección de datos y encuestas.',
   };
 
   // Alta rápida inline (estilo Catálogos)
@@ -133,7 +137,7 @@ export class UsersComponent implements OnInit {
     nombre: ['', Validators.required],
   });
 
-  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) {}
+  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
 
   ngOnInit(): void {
     this.loadData();
@@ -188,6 +192,7 @@ export class UsersComponent implements OnInit {
     this.api.getClients().subscribe(data => this.clients.set(data));
     this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
     this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
+    this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => {} });
   }
 
   getProfilesForSelectedRole() {
@@ -196,12 +201,13 @@ export class UsersComponent implements OnInit {
     if (rol === 2) return this.realAnalysts;                          // Analista
     if (rol === 6) return this.supervisors();                         // Supervisor
     if (rol === 5) return this.mercaderistas();                       // Mercaderista
+    if (rol === 12 || rol === 13) return this.encuestadores();        // Encuestador / IQVIA
     return [];
   }
 
   showProfileSelect() {
     const rol = this.createForm.get('id_rol')?.value;
-    return [1, 2, 3, 4, 5, 6].includes(rol || 0);
+    return [1, 2, 3, 4, 5, 6, 12, 13].includes(rol || 0);
   }
 
   editUser(user: any): void {
@@ -229,12 +235,12 @@ export class UsersComponent implements OnInit {
   saveUser(): void {
     if (this.createForm.invalid) return;
     this.saving.set(true);
-    
+
     const user = this.editingUser();
     const data = { ...this.createForm.value };
     if (!data.password) delete data.password;
 
-    const request = user 
+    const request = user
       ? this.api.updateUser(user.id, data)
       : this.api.createUser(data);
 
@@ -254,16 +260,18 @@ export class UsersComponent implements OnInit {
 
   getRoleClasses(idRol: number | undefined): string {
     const map: Record<number, string> = {
-      8:  'bg-primary-500 text-white',
-      2:  'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-      6:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-      5:  'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-      7:  'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-      3:  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-      4:  'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+      8: 'bg-primary-500 text-white',
+      2: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+      6: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+      5: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+      7: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+      3: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+      4: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
       11: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
       10: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
-      1:  'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+      12: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+      13: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+      1: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
     };
     return map[idRol ?? 0] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
   }
@@ -293,7 +301,7 @@ export class UsersComponent implements OnInit {
     if (this.analystForm.invalid) return;
     this.saving.set(true);
     const a = this.editingAnalyst();
-    const request = a 
+    const request = a
       ? this.api.updateAnalyst(a.id, this.analystForm.value)
       : this.api.createAnalyst(this.analystForm.value);
 
@@ -392,7 +400,7 @@ export class UsersComponent implements OnInit {
     if (this.mercaderistaForm.invalid) return;
     this.saving.set(true);
     const m = this.editingMercaderista();
-    const request = m 
+    const request = m
       ? this.api.updateMercaderista(m.id, this.mercaderistaForm.value)
       : this.api.createMercaderista(this.mercaderistaForm.value);
 
