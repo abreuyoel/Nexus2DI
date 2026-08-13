@@ -46,8 +46,8 @@ export class ApiService {
   getFotoMetadatos(fotoId: number): Observable<object> { return this.http.get<object>(`${this.base}/api/merchandisers/foto/${fotoId}/metadatos`); }
 
   // --- PUNTOS DE INTERÉS ---
-  getPoints(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string; skip?: number; limit?: number } = {}): Observable<PuntoInteres[]> {
-    return this.http.get<PuntoInteres[]>(`${this.base}/api/points/`, { params: this.params(opts) });
+  getPoints(opts: { region?: string; ciudad?: string; jerarquia_n2?: string; jerarquia_n2_2?: string; nivel_de_alcance?: string; cadena?: string; search?: string; skip?: number; limit?: number } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/points/`, { params: this.params(opts) });
   }
   createPoint(data: object): Observable<PuntoInteres> { return this.http.post<PuntoInteres>(`${this.base}/api/points/`, data); }
   updatePoint(id: string, data: object): Observable<PuntoInteres> { return this.http.put<PuntoInteres>(`${this.base}/api/points/${id}`, data); }
@@ -172,8 +172,8 @@ export class ApiService {
   syncSupervisorClients(id: number, ids: number[]): Observable<object> { return this.http.post<object>(`${this.base}/api/supervisores/${id}/sync-clients`, { ids }); }
 
   // --- VISITAS ---
-  getVisits(opts: { estado?: string; ruta_id?: number; fecha?: string } = {}): Observable<Visita[]> {
-    return this.http.get<Visita[]>(`${this.base}/api/visits/`, { params: this.params(opts) });
+  getVisits(opts: { estado?: string; ruta_id?: number; fecha?: string; page?: number; per_page?: number } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/visits/`, { params: this.params(opts) });
   }
   createVisit(data: object): Observable<Visita> { return this.http.post<Visita>(`${this.base}/api/visits/`, data); }
   updateVisit(id: number, data: object): Observable<Visita> { return this.http.patch<Visita>(`${this.base}/api/visits/${id}`, data); }
@@ -350,7 +350,13 @@ export class ApiService {
   }
 
   // --- SUPERVISOR ---
-  getRejectedPhotos(): Observable<Foto[]> { return this.http.get<Foto[]>(`${this.base}/api/supervisor/rejected-photos`); }
+  getRejectedPhotos(page?: number, perPage?: number, filters?: Record<string, string>): Observable<any> {
+    const p: Record<string, any> = { ...filters };
+    if (page != null) p['page'] = page;
+    if (perPage != null) p['per_page'] = perPage;
+    return this.http.get<any>(`${this.base}/api/supervisor/rejected-photos`, { params: this.params(p) });
+  }
+  getRejectedPhotoFilters(): Observable<any> { return this.http.get<any>(`${this.base}/api/supervisor/rejected-photos/filters`); }
   replacePhoto(formData: FormData): Observable<object> { return this.http.post<object>(`${this.base}/api/supervisor/replace-photo`, formData); }
 
   // --- MERCADERISTA RUTAS ---

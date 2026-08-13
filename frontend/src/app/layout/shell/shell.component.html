@@ -8,7 +8,7 @@
 
   <!-- Modern Sidebar -->
   <aside [class.w-72]="sidenavOpen()" [class.w-20]="!sidenavOpen()" [class.-translate-x-full]="!sidenavOpen()"
-    class="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-300 transition-all duration-500 ease-in-out flex flex-col z-50 fixed h-screen lg:sticky lg:top-0 border-r border-white/5 lg:translate-x-0 overflow-hidden">
+    class="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-300 transition-all duration-500 ease-in-out flex flex-col z-50 fixed h-screen lg:sticky lg:top-0 border-r border-white/5 lg:translate-x-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
     <!-- Sidebar Header -->
     <div class="h-20 flex items-center px-6 gap-4 border-b border-white/5 shrink-0 overflow-hidden">
       <div
@@ -22,7 +22,7 @@
     </div>
 
     <!-- Navigation List -->
-    <nav class="flex-1 overflow-y-auto overflow-x-hidden py-8 px-3 space-y-2 custom-scrollbar">
+    <nav class="flex-1 py-8 px-3 space-y-2">
       @for (item of visibleNavItems(); track item.route) {
       <a [routerLink]="item.route" routerLinkActive="bg-white/5 text-white !border-primary-500/30 shadow-inner"
         class="flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-transparent transition-all duration-300 hover:bg-white/5 hover:text-white group relative overflow-hidden h-[52px]"
@@ -131,9 +131,10 @@
           <button mat-menu-item routerLink="/profile"><mat-icon>person_outline</mat-icon> Mi Perfil</button>
           <button mat-menu-item routerLink="/settings"><mat-icon>settings_outline</mat-icon> Configuración</button>
           <hr class="my-1 border-slate-100">
-          <button mat-menu-item (click)="logout()" class="text-rose-600">
+          <button mat-menu-item (click)="intentarLogout()" class="text-rose-600">
             <mat-icon class="!text-rose-600">logout</mat-icon> Cerrar sesión
           </button>
+
         </mat-menu>
       </div>
     </header>
@@ -143,27 +144,6 @@
       <div class="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
         <router-outlet />
       </div>
-
-      <!-- Floating Chat Button (Admin/Analyst) -->
-      @if (user()?.rol === 'admin' || user()?.rol === 'analyst' || user()?.rol === 'superadmin') {
-      <button [matMenuTriggerFor]="chatFabMenu" matTooltip="Opciones de Chat" matTooltipPosition="left"
-        class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-primary-600 hover:bg-primary-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-primary-500/30 transition-all hover:scale-110 active:scale-95 group">
-        <mat-icon class="!text-3xl transition-transform group-hover:-rotate-12">chat</mat-icon>
-      </button>
-      <mat-menu #chatFabMenu="matMenu" xPosition="before" class="modern-menu">
-        <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-          <p class="font-semibold text-slate-800 dark:text-slate-200">Nuevo Mensaje</p>
-        </div>
-        <a mat-menu-item routerLink="/chat" [queryParams]="{ mode: 'equipo_cliente' }">
-          <mat-icon class="text-primary-500">groups</mat-icon>
-          <span>Equipo + Cliente</span>
-        </a>
-        <a mat-menu-item routerLink="/chat" [queryParams]="{ mode: 'solo_equipo' }">
-          <mat-icon class="text-indigo-500">shield_person</mat-icon>
-          <span>Solo Equipo</span>
-        </a>
-      </mat-menu>
-      }
     </main>
   </div>
 </div>

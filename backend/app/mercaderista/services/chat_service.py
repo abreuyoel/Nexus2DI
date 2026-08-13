@@ -10,10 +10,10 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, text
 
-from app.models.mercaderista import Mercaderista
-from app.models.visita import Visita
-from app.models.chat import ChatMensaje
-from app.models.foto import Foto
+from app.modules.merchandisers.entities import Mercaderista
+from app.modules.visits.entities import Visita, Foto, NotificacionRechazoFoto
+from app.modules.chat.entities import ChatMensaje
+
 
 
 class ChatService:
@@ -175,7 +175,7 @@ class ChatService:
         merc = self._get_mercaderista(current_user)
 
         # ── Rechazos ──────────────────────────────────────────────────────
-        from app.models.foto import NotificacionRechazoFoto
+
 
         rechazos_raw = (
             self.db.query(NotificacionRechazoFoto, Foto, Visita)

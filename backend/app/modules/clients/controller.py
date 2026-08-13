@@ -10,7 +10,7 @@ from app.modules.clients.entities import Cliente, CategoriaCliente, ClienteRuta
 from app.modules.catalogues.entities import Categoria
 from app.modules.routes.entities import Ruta, RutaProgramacion
 from app.modules.clients.dto import (
-    ClienteCreate, ClienteUpdate, ClienteResponse, AsignacionCategoria,
+    ClienteCreate, ClienteUpdate, ClienteResponse, AsignacionCategoria, AsignacionMasiva,
     CategoriaClienteCreate, CategoriaClienteResponse,
     ClienteRutaCreate, ClienteRutaUpdate, ClienteRutaResponse,
     UsuarioClienteRutaItem, RutaDisponibleItem, RutasDisponiblesClienteResponse
@@ -43,7 +43,13 @@ def create_client(
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_admin),
 ):
-    cliente = Cliente(**data.model_dump())
+    # El modelo Cliente solo mapea "nombre" (columna "cliente") -- ClienteBase
+    # declara además "activo", que no existe en CLIENTES, así que
+    # Cliente(**data.model_dump()) tiraba TypeError ("activo" es un keyword
+    # arg inválido) y explotaba en 500 antes de llegar siquiera al INSERT.
+    if not data.nombre or not data.nombre.strip():
+        raise HTTPException(status_code=400, detail="El nombre del cliente es requerido")
+    cliente = Cliente(nombre=data.nombre.strip())
     db.add(cliente)
     db.commit()
     db.refresh(cliente)
@@ -83,6 +89,30 @@ def delete_client(
     db.delete(cliente)
     db.commit()
     return {"detail": "Cliente eliminado"}
+
+
+@router.get("/api/clients/categorias/{categoria_id}/clientes")
+def get_clients_by_category(categoria_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    """IDs de clientes que ya tienen asignada esta categoría -- para el
+    filtro "¿qué clientes tienen la categoría X?" en Categorías Cliente."""
+    rows = db.query(CategoriaCliente.id_cliente).filter(CategoriaCliente.id_categoria == categoria_id).all()
+    return [r[0] for r in rows]
+
+
+@router.post("/api/clients/categorias/{categoria_id}/asignar-masivo")
+def bulk_assign_category(categoria_id: int, payload: AsignacionMasiva, db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
+    """Asigna la misma categoría a varios clientes de una sola vez -- salta
+    los que ya la tienen en vez de fallar toda la operación por duplicados."""
+    ya_tienen = {
+        r[0] for r in db.query(CategoriaCliente.id_cliente)
+        .filter(CategoriaCliente.id_categoria == categoria_id, CategoriaCliente.id_cliente.in_(payload.cliente_ids))
+        .all()
+    }
+    nuevos = [CategoriaCliente(id_cliente=cid, id_categoria=categoria_id) for cid in payload.cliente_ids if cid not in ya_tienen]
+    for n in nuevos:
+        db.add(n)
+    db.commit()
+    return {"detail": f"{len(nuevos)} cliente(s) asignados.", "asignados": len(nuevos), "ya_tenian": len(ya_tienen)}
 
 
 @router.get("/api/clients/{client_id}/categorias", response_model=List[dict])

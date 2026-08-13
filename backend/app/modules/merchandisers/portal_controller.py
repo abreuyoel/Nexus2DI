@@ -351,9 +351,14 @@ def iniciar_visita(
     id_cliente = payload.id_cliente
 
     today = date.today()
+    # OJO: un mismo PDV puede tener varios clientes programados el mismo día --
+    # sin filtrar por id_cliente acá, la visita del segundo cliente reutilizaba
+    # por error la fila del primero y sus fotos/balance quedaban mezclados bajo
+    # el id_visita equivocado.
     existing = db.query(Visita).filter(
         Visita.mercaderista_id == merc.id,
         Visita.punto_id == id_punto,
+        Visita.id_cliente == id_cliente,
         Visita.fecha == today
     ).first()
 
@@ -504,6 +509,8 @@ async def upload_foto(
     visita_id: int = Form(...),
     tipo_foto: str = Form(...),
     file: UploadFile = File(...),
+    lat: Optional[float] = Form(None),
+    lon: Optional[float] = Form(None),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -541,7 +548,9 @@ async def upload_foto(
         id_tipo_foto=id_tipo,
         blob_path=blob_path,
         fecha_registro=ahora,
-        estado="pendiente"
+        estado="pendiente",
+        latitud=lat,
+        longitud=lon
     )
     db.add(foto)
     db.commit()
@@ -662,6 +671,35 @@ def guardar_balances(
     vis.estado_data = "Cargado"
     db.commit()
     return {"success": True, "productos_guardados": len(productos)}
+
+
+@router.post("/finalizar-visita")
+def finalizar_visita(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Cierra el ciclo de vida de la visita -- sin esto VISITAS_MERCADERISTA.estado
+    se quedaba en 'Pendiente' para siempre. Se valida que la visita sea del
+    mercaderista autenticado antes de cerrarla."""
+    merc = _get_mercaderista(current_user, db)
+    id_visita = payload.get("id_visita")
+    if not id_visita:
+        raise HTTPException(status_code=400, detail="id_visita es requerido")
+
+    visita = db.query(Visita).filter(
+        Visita.id == id_visita,
+        Visita.mercaderista_id == merc.id
+    ).first()
+    if not visita:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+
+    visita.estado = "Finalizada"
+    db.commit()
+
+    notify_event("visit.finished", {"id_visita": id_visita})
+
+    return {"success": True, "id_visita": id_visita}
 
 
 @router.get("/chat/inbox", response_model=List[ChatInboxItemResponse])

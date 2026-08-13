@@ -8,6 +8,8 @@ from app.core.security import get_password_hash
 from app.modules.merchandisers.entities import Mercaderista
 from app.modules.clients.entities import Cliente
 from app.modules.analysts.entities import Analista
+from app.modules.surveyors.entities import Encuestador
+from app.modules.executives.entities import Ejecutivo
 from app.modules.auth.entities import Usuario, UserPermission
 from app.modules.users.dto import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UpdatePermissionsRequest, PermissionResponse
 from app.shared.audit_service import log_action
@@ -30,18 +32,24 @@ def list_users(
         Usuario,
         Cliente.nombre.label('cliente_nombre'),
         Analista.nombre.label('analista_nombre'),
-        Mercaderista.nombre.label('mercaderista_nombre')
+        Mercaderista.nombre.label('mercaderista_nombre'),
+        Encuestador.nombre.label('encuestador_nombre'),
+        Ejecutivo.nombre.label('ejecutivo_nombre')
     ).outerjoin(
         Cliente, (Usuario.id_perfil == Cliente.id) & (Usuario.id_rol == 1)
     ).outerjoin(
         Analista, (Usuario.id_perfil == Analista.id) & (Usuario.id_rol == 2)
     ).outerjoin(
         Mercaderista, (Usuario.id_perfil == Mercaderista.id) & (Usuario.id_rol == 5)
+    ).outerjoin(
+        Encuestador, (Usuario.id_perfil == Encuestador.id) & (Usuario.id_rol.in_((12, 13)))
+    ).outerjoin(
+        Ejecutivo, (Usuario.id_perfil == Ejecutivo.id) & (Usuario.id_rol == 15)
     ).order_by(Usuario.id).offset(skip).limit(limit).all()
 
     result = []
-    for u, c_nombre, a_nombre, m_nombre in users:
-        u.perfil_nombre = c_nombre or a_nombre or m_nombre
+    for u, c_nombre, a_nombre, m_nombre, e_nombre, ej_nombre in users:
+        u.perfil_nombre = c_nombre or a_nombre or m_nombre or e_nombre or ej_nombre
         result.append(u)
     return result
 

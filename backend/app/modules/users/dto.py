@@ -63,6 +63,7 @@ class UsuarioCurrentResponse(BaseModel):
     is_mercaderista: bool
     is_coordinador_exclusivo: bool
     is_coordinador_tradex: bool
+    is_ejecutivo_cuenta: bool
     permisos: List[PermissionResponse] = []
 
     class Config:

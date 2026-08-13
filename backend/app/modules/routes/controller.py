@@ -5,8 +5,10 @@ from typing import List, Optional
 from datetime import date, datetime
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
+from app.shared.realtime import notify_event
 from app.modules.auth.entities import Usuario
 from app.modules.routes.entities import Ruta, RutaProgramacion, RutaCambioFuturo, RutaActivada, AnalistaRuta, PuntoInteres
+from app.modules.catalogues.entities import Servicio
 from app.modules.clients.entities import Cliente
 from app.modules.merchandisers.entities import MercaderistaRuta
 from app.modules.routes.dto import (
@@ -20,8 +22,27 @@ from app.modules.routes.dto import (
 router = APIRouter(prefix="/api/routes", tags=["Rutas"])
 
 
-def _next_route_number(db: Session, tipo: str) -> int:
-    prefix = f"Ruta {tipo}"
+def _get_servicio_prefijo(db: Session, servicio_nombre: Optional[str]) -> str:
+    """Prefijo de correlativo (ej. "E", "PR") configurado para ese servicio en
+    el catálogo SERVICIOS -- reemplaza la whitelist hardcodeada E/A/T que
+    tenía esta función antes, para poder agregar servicios nuevos (ej.
+    Promovendedor -> "PR") sin tocar código."""
+    if not servicio_nombre:
+        raise HTTPException(status_code=400, detail="Servicio es requerido")
+    serv = db.query(Servicio).filter(Servicio.nombre == servicio_nombre).first()
+    if not serv:
+        raise HTTPException(status_code=400, detail=f"El servicio '{servicio_nombre}' no existe en el catálogo")
+    if not serv.prefijo:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El servicio '{servicio_nombre}' no tiene un prefijo configurado para numerar rutas -- configuralo en Gestión de Rutas → Servicios",
+        )
+    return serv.prefijo
+
+
+def _next_route_number(db: Session, prefijo: str) -> int:
+    """Mayor sufijo numérico existente para 'Ruta {prefijo}' + 1."""
+    prefix = f"Ruta {prefijo}"
     routes = db.query(Ruta.nombre).filter(Ruta.nombre.like(f"{prefix}%")).all()
     max_num = 0
     for (nombre,) in routes:
@@ -33,11 +54,9 @@ def _next_route_number(db: Session, tipo: str) -> int:
 
 
 @router.get("/next-number")
-def get_next_route_number(tipo: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    tipo = tipo.upper()
-    if tipo not in ["E", "A", "T"]:
-        raise HTTPException(status_code=400, detail="Tipo inválido. Use E, A o T")
-    return {"next_number": _next_route_number(db, tipo)}
+def get_next_route_number(servicio: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+    prefijo = _get_servicio_prefijo(db, servicio)
+    return {"next_number": _next_route_number(db, prefijo), "prefijo": prefijo}
 
 
 @router.get("/options")
@@ -123,23 +142,32 @@ def create_route(
     db: Session = Depends(get_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    tipo = data.tipo.upper()
-    if tipo not in ["E", "A", "T"]:
-        raise HTTPException(status_code=400, detail="Tipo inválido. Use E, A o T")
-    if tipo == "E" and not data.id_cliente_exclusivo:
-        raise HTTPException(status_code=400, detail="Cliente exclusivo es requerido para rutas tipo E (Exclusiva)")
+    prefijo = _get_servicio_prefijo(db, data.servicio)
+    if data.servicio == "Exclusivo" and not data.id_cliente_exclusivo:
+        raise HTTPException(status_code=400, detail="Cliente exclusivo es requerido para rutas de servicio Exclusivo")
 
-    route_name = f"Ruta {tipo}{_next_route_number(db, tipo)}"
+    route_name = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
 
-    db_data = data.model_dump(exclude={"tipo"})
+    db_data = data.model_dump()
     db_data["nombre"] = route_name
-    if tipo != "E":
+    # id_analista no es columna de RUTAS_NUEVAS -- vive en la tabla
+    # intermedia analistas_rutas (modelo AnalistaRuta). Pasarlo directo a
+    # Ruta(**db_data) rompía con 500 la creación de CUALQUIER ruta, tuviera
+    # o no analista asignado (el constructor de SQLAlchemy rechaza kwargs
+    # que no son columnas mapeadas).
+    id_analista = db_data.pop("id_analista", None)
+    # El cliente exclusivo sólo aplica al servicio Exclusivo
+    if data.servicio != "Exclusivo":
         db_data["id_cliente_exclusivo"] = None
 
     ruta = Ruta(**db_data)
     db.add(ruta)
+    db.flush()
+    if id_analista is not None:
+        db.add(AnalistaRuta(id_analista=id_analista, id_ruta=ruta.id))
     db.commit()
     db.refresh(ruta)
+    notify_event("route.created", {"id": ruta.id, "nombre": ruta.nombre})
     return _enrich_routes(db, [ruta])[0]
 
 
@@ -170,10 +198,24 @@ def update_route(
     ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
-    for key, value in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    # Igual que en create_route: id_analista no es columna de Ruta, así que
+    # setattr(ruta, "id_analista", ...) no rompía pero tampoco guardaba nada
+    # -- se maneja aparte contra la tabla intermedia analistas_rutas.
+    id_analista = updates.pop("id_analista", None)
+    for key, value in updates.items():
         setattr(ruta, key, value)
+    if id_analista is not None:
+        existente = db.query(AnalistaRuta).filter(AnalistaRuta.id_ruta == route_id).first()
+        if not existente:
+            db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
+        elif existente.id_analista != id_analista:
+            db.delete(existente)
+            db.flush()
+            db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
     db.commit()
     db.refresh(ruta)
+    notify_event("route.updated", {"id": ruta.id, "nombre": ruta.nombre})
     return _enrich_routes(db, [ruta])[0]
 
 
@@ -191,6 +233,7 @@ def delete_route(
     db.query(RutaActivada).filter(RutaActivada.ruta_id == route_id).delete(synchronize_session=False)
     db.delete(ruta)
     db.commit()
+    notify_event("route.deleted", {"id": route_id})
     return None
 
 
@@ -204,12 +247,11 @@ def duplicate_route(
     if not orig:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
-    tipo = "T"
-    if orig.nombre and orig.nombre.startswith("Ruta ") and len(orig.nombre) > 5:
-        cand = orig.nombre[5]
-        if cand in ("E", "A", "T"):
-            tipo = cand
-    new_name = f"Ruta {tipo}{_next_route_number(db, tipo)}"
+    # Mismo prefijo que el servicio de la ruta original (antes se intentaba
+    # adivinar parseando la letra tras "Ruta " del nombre, que no siempre
+    # coincidía con el servicio real de la ruta).
+    prefijo = _get_servicio_prefijo(db, orig.servicio)
+    new_name = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
 
     nueva = Ruta(
         nombre=new_name,
@@ -236,6 +278,7 @@ def duplicate_route(
 
     db.commit()
     db.refresh(nueva)
+    notify_event("route.created", {"id": nueva.id, "nombre": nueva.nombre})
     return _enrich_routes(db, [nueva])[0]
 
 

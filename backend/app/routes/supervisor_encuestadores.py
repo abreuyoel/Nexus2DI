@@ -7,8 +7,8 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.dependencies import require_permission
-from app.models.user import Usuario as User
-from app.models.encuestador import (
+from app.modules.auth.entities import Usuario as User
+from app.modules.surveyors.entities import (
     JornadaEncuestador,
     CentroSalud,
     EncuestaCentro,
@@ -17,6 +17,7 @@ from app.models.encuestador import (
     MedicoConsultorio,
     Encuestador
 )
+
 
 router = APIRouter(prefix="/api/supervisor-encuestadores", tags=["Supervisor de Encuestadores"])
 

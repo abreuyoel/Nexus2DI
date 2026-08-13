@@ -1,0 +1,250 @@
+<div class="p-4 md:p-6 flex flex-col gap-4 max-w-screen-xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-black text-slate-800 dark:text-white">Plan de Acción</h1>
+      <p class="text-sm text-slate-400 mt-0.5">PDVs que aún deben visita en el período actual, ordenados por urgencia.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-end gap-3">
+      @if (fechaCalculo()) {
+      <div class="text-xs text-slate-400 font-semibold">Último cálculo: {{ fechaCalculo() | date:'dd/MM/yyyy HH:mm' }}
+      </div>
+      }
+      <a href="/assets/docs/Ficha_Tecnica_Plan_de_Accion_Nexus2DI.pdf" download
+        matTooltip="Descargar ficha técnica del módulo"
+        class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-black rounded-xl text-sm transition-all active:scale-95">
+        <mat-icon class="!text-base">picture_as_pdf</mat-icon>
+        Ficha técnica (PDF)
+      </a>
+      @if (auth.can('plan-accion.recalcular')) {
+      <button (click)="recalcular()" [disabled]="recalculando()"
+        class="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-all active:scale-95">
+        @if (recalculando()) { <mat-spinner diameter="16" strokeWidth="3" class="!text-white"></mat-spinner> } @else {
+        <mat-icon class="!text-base">refresh</mat-icon> }
+        Recalcular ahora
+      </button>
+      }
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div
+    class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-3 flex flex-wrap items-center gap-2 shadow-sm">
+    <input [(ngModel)]="search" placeholder="Buscar PDV, cliente, ruta, departamento..."
+      class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+    <select [(ngModel)]="filtroRuta"
+      class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todas las rutas</option>
+      @for (r of rutasOpts(); track r) { <option [ngValue]="r">{{ r }}</option> }
+    </select>
+    <select [(ngModel)]="filtroCliente"
+      class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todos los clientes</option>
+      @for (c of clientesOpts(); track c) { <option [ngValue]="c">{{ c }}</option> }
+    </select>
+    <select [(ngModel)]="filtroTipo"
+      class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todos los tipos</option>
+      <option [ngValue]="'nunca_visitado'">Nunca visitado</option>
+      <option [ngValue]="'fotos_rechazadas'">Fotos rechazadas</option>
+    </select>
+    <select [(ngModel)]="filtroPrioridad"
+      class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Toda prioridad</option>
+      <option [ngValue]="'Alta'">Alta</option>
+      <option [ngValue]="'Media'">Media</option>
+      <option [ngValue]="'Baja'">Baja</option>
+    </select>
+    <button (click)="clearFilters()" matTooltip="Limpiar filtros"
+      class="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-300 transition-colors">
+      <mat-icon class="!text-base">close</mat-icon>
+    </button>
+  </div>
+
+  @if (loading()) {
+  <div class="flex flex-col items-center justify-center py-24 gap-4">
+    <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+    <p class="text-slate-400 font-medium">Cargando plan de acción...</p>
+  </div>
+  } @else {
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-indigo-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ items().length }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Pendientes</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-rose-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalCriticos() }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Críticos (score ≥ 1)</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-orange-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalRechazadas() }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Con fotos rechazadas</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border-t-4 border-cyan-500 rounded-2xl p-4 text-center shadow-sm">
+      <div class="text-2xl font-black text-slate-800 dark:text-white">{{ filteredItems.length }}</div>
+      <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Con filtros aplicados</div>
+    </div>
+  </div>
+
+  <!-- Toggle vista -->
+  <div
+    class="inline-flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl p-1 shadow-sm">
+    <button (click)="toggleVista('lista')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all"
+      [class.bg-primary-600]="vista() === 'lista'" [class.text-white]="vista() === 'lista'"
+      [class.text-slate-500]="vista() !== 'lista'">
+      Lista
+    </button>
+    <button (click)="toggleVista('clusters')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all"
+      [class.bg-primary-600]="vista() === 'clusters'" [class.text-white]="vista() === 'clusters'"
+      [class.text-slate-500]="vista() !== 'clusters'">
+      Por zonas (críticos)
+    </button>
+  </div>
+
+  @if (vista() === 'clusters') {
+  <div class="flex items-center justify-between -mt-2">
+    <p class="text-xs text-slate-400">Cada tarjeta es una propuesta de ruta de un día (GPS real de fotos de
+      activación/desactivación, o dirección del PDV si no hay fotos) -- todavía no crea nada.</p>
+    @if (clusters().length) {
+    <span class="text-xs font-black text-indigo-500 shrink-0 ml-3">{{ totalBackupsSugeridos() }} ruta(s) / backup(s)
+      sugerido(s) en total</span>
+    }
+  </div>
+
+  @if (loadingClusters()) {
+  <div class="flex flex-col items-center justify-center py-16 gap-3">
+    <mat-spinner diameter="36" strokeWidth="4"></mat-spinner>
+  </div>
+  } @else if (!clusters().length) {
+  <div class="py-16 text-center opacity-40">
+    <mat-icon class="!text-5xl">location_off</mat-icon>
+    <p class="font-bold mt-2">No hay críticos para agrupar.</p>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    @for (g of clusters(); track $index) {
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <div
+            class="w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+            <mat-icon class="!text-lg">{{ g.sin_ubicacion ? 'location_off' : 'place' }}</mat-icon>
+          </div>
+          <div>
+            <div class="font-black text-slate-800 dark:text-white text-sm">Ruta propuesta -- {{ g.cantidad_pdvs }}
+              PDV(s)</div>
+            @if (!g.sin_ubicacion) { <div class="text-[10px] text-slate-400">{{ g.centro_lat }}, {{ g.centro_lon }}
+            </div> } @else { <div class="text-[10px] text-slate-400">Sin ubicación GPS</div> }
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-lg font-black text-rose-500">{{ g.score_total | number:'1.1-1' }}</div>
+          <div class="text-[9px] text-slate-400 uppercase font-bold">score total</div>
+        </div>
+      </div>
+      <div
+        class="flex items-center gap-3 mb-3 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300">
+        <mat-icon class="!text-base">person</mat-icon>
+        <span class="text-xs font-bold">1 backup para el día</span>
+        <span class="text-[10px] text-indigo-400 dark:text-indigo-500 ml-auto">~{{ g.minutos_totales_estimados / 60 |
+          number:'1.1-1' }}h estimadas</span>
+      </div>
+      <div class="space-y-1.5 max-h-56 overflow-y-auto mb-3">
+        @for (i of g.items; track i.id_punto_interes + i.id_cliente) {
+        <div
+          class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs">
+          <div class="min-w-0">
+            <div class="font-bold text-slate-700 dark:text-slate-200 truncate">{{ i.punto_de_interes ||
+              i.id_punto_interes }}</div>
+            <div class="text-slate-400 truncate">{{ i.cliente_nombre }} · {{ i.ruta_nombre }}</div>
+          </div>
+          <span class="shrink-0 font-black" [ngClass]="scoreColor(i.score)">{{ i.score | number:'1.1-1' }}</span>
+        </div>
+        }
+      </div>
+      @if (auth.can('plan-accion.crear_ruta')) {
+      <div class="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
+        <select [(ngModel)]="seleccionMerc[$index]"
+          class="flex-1 min-w-0 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-2.5 py-2 text-xs font-semibold outline-none focus:border-primary-500">
+          <option [ngValue]="null">Elegí mercaderista...</option>
+          @for (m of mercaderistas(); track m.id) { <option [ngValue]="m.id">{{ m.nombre }} ({{ m.cedula }})</option> }
+        </select>
+        <button (click)="confirmarRuta(g, $index)" [disabled]="confirmandoIdx() === $index"
+          class="shrink-0 flex items-center gap-1 px-3 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-xs transition-all active:scale-95">
+          @if (confirmandoIdx() === $index) { <mat-spinner diameter="14" strokeWidth="3"
+            class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-sm">add_road</mat-icon> }
+          Crear ruta
+        </button>
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+  }
+
+  <!-- Tabla -->
+  <div
+    class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden"
+    [class.hidden]="vista() !== 'lista'">
+    @if (!filteredItems.length) {
+    <div class="py-16 text-center opacity-40">
+      <mat-icon class="!text-5xl">check_circle</mat-icon>
+      <p class="font-bold mt-2">No hay pendientes con estos filtros.</p>
+    </div>
+    } @else {
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-slate-100 dark:border-white/5 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            <th class="text-left px-4 py-3">Ruta</th>
+            <th class="text-left px-4 py-3">PDV</th>
+            <th class="text-left px-4 py-3">Departamento</th>
+            <th class="text-left px-4 py-3">Cliente</th>
+            <th class="text-center px-4 py-3">Prioridad</th>
+            <th class="text-center px-4 py-3">Período</th>
+            <th class="text-center px-4 py-3">Tipo</th>
+            <th class="text-center px-4 py-3">Faltantes</th>
+            <th class="text-center px-4 py-3">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (i of filteredItems; track i.id_pendiente) {
+          <tr class="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+            <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ i.ruta_nombre || '—' }}</td>
+            <td class="px-4 py-3 font-bold text-slate-800 dark:text-white">{{ i.punto_de_interes || i.id_punto_interes
+              }}</td>
+            <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ i.departamento || '—' }}</td>
+            <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ i.cliente_nombre || '—' }}</td>
+            <td class="px-4 py-3 text-center">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase"
+                [ngClass]="prioridadBadgeClass(i.prioridad_ruta)">
+                {{ i.prioridad_ruta || 'Media' }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-center text-slate-500 dark:text-slate-400 capitalize">{{ i.periodo }}</td>
+            <td class="px-4 py-3 text-center">
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase"
+                [ngClass]="tipoBadgeClass(i.tipo_pendiente)">
+                {{ tipoLabel(i.tipo_pendiente) }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-200">{{ i.visitas_faltantes }} /
+              {{ i.visitas_requeridas }}</td>
+            <td class="px-4 py-3 text-center font-black" [ngClass]="scoreColor(i.score)">{{ i.score | number:'1.2-2' }}
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
+  </div>
+  }
+
+</div>

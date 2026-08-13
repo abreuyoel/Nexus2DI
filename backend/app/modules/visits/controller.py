@@ -11,10 +11,10 @@ from app.modules.visits.entities import (
     Visita, Foto, NotificacionRechazoFoto, FotoRazonRechazo, Balance, RazonRechazo, TipoFoto
 )
 from app.modules.analysts.entities import AnalistaCliente
-from app.modules.routes.entities import PuntoInteres, Ruta, RutaProgramacion
+from app.modules.routes.entities import PuntoInteres, Ruta, RutaProgramacion, AnalistaRuta
 from app.modules.clients.entities import Cliente
-from app.modules.merchandisers.entities import Mercaderista
-from app.modules.chat.entities import ChatMensaje
+from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
+from app.modules.chat.entities import ChatMensaje, ChatGrupo, ChatGrupoMensaje
 from app.modules.visits.dto import (
     VisitaCreate, VisitaUpdate, VisitaResponse, VisitaPaginatedResponse,
     UpdateBalancesRequest, BalanceResponse,
@@ -93,7 +93,7 @@ def get_pending_visits(
     today = date.today()
     return db.query(Visita).filter(
         Visita.fecha == today,
-        Visita.estado.in_(["Pendiente", "En Progreso"]),
+        Visita.estado.in_(["Pendiente", "En Progreso", "Rechazada"]),
     ).options(joinedload(Visita.punto), joinedload(Visita.mercaderista)).all()
 
 
@@ -197,7 +197,8 @@ def review_list(
             func.sum(case((Foto.id_tipo_foto.in_([5, 6]), 1), else_=0)).label("activaciones"),
             func.max(func.coalesce(sub_chat.c.chat_msgs, 0)).label("chat_msgs"),
             func.max(case((Visita.revisada_por.isnot(None) | (Visita.estado == "Revisado"), 1), else_=0)).label("revisada_flag"),
-            func.max(func.coalesce(Visita.estado, "Pendiente")).label("estado_visita")
+            func.max(func.coalesce(Visita.estado, "Pendiente")).label("estado_visita"),
+            Mercaderista.id.label("id_mercaderista")
         )
         .join(Cliente, Visita.id_cliente == Cliente.id)
         .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
@@ -227,7 +228,8 @@ def review_list(
     rows = (
         query.group_by(
             Visita.id, Cliente.nombre, Cliente.id, PuntoInteres.nombre, PuntoInteres.id,
-            PuntoInteres.ciudad, sub_ruta.c.ruta_nombre, Mercaderista.nombre, Visita.fecha
+            PuntoInteres.ciudad, sub_ruta.c.ruta_nombre, Mercaderista.nombre, Visita.fecha,
+            Mercaderista.id
         )
         .having(func.sum(case((Foto.id_tipo_foto.notin_([5, 6]) & Foto.id.isnot(None), 1), else_=0)) > 0)
         .order_by(Visita.fecha.desc())
@@ -284,6 +286,7 @@ def review_list(
             "ciudad": r[5] or "",
             "ruta": r[6] or "Sin ruta",
             "mercaderista": r[7],
+            "id_mercaderista": r[16],
             "fecha": r[8].isoformat() if r[8] else None,
             "fotos_revisar": rev,
             "aprobadas": apr,
@@ -300,8 +303,86 @@ def review_list(
     return out
 
 
+@router.get("/review-mercaderistas")
+def review_mercaderistas(
+    cliente_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Roster de mercaderistas asignados a rutas activas (MERCADERISTAS_RUTAS ->
+    RUTA_PROGRAMACION -> CLIENTES), a diferencia de /review-list que solo trae
+    visitas que YA tienen fotos cargadas. Este endpoint existe para que la
+    pantalla de revisión pueda mostrar primero "quién debería estar reportando"
+    (incluye mercaderistas con 0 visitas todavía), y recién al elegir uno se
+    consultan sus visitas concretas."""
+    from app.shared.visibility import coordinator_client_ids
+    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+
+    query = (
+        db.query(
+            MercaderistaRuta.mercaderista_id.label("id_mercaderista"),
+            Mercaderista.nombre.label("mercaderista"),
+            RutaProgramacion.id_cliente.label("id_cliente"),
+            Cliente.nombre.label("cliente"),
+            Ruta.nombre.label("ruta"),
+            RutaProgramacion.ruta_id.label("id_ruta"),
+        )
+        .join(RutaProgramacion, RutaProgramacion.ruta_id == MercaderistaRuta.ruta_id)
+        .join(Ruta, Ruta.id == RutaProgramacion.ruta_id)
+        .join(Mercaderista, Mercaderista.id == MercaderistaRuta.mercaderista_id)
+        .join(Cliente, Cliente.id == RutaProgramacion.id_cliente)
+        .filter(RutaProgramacion.activo == True)
+        .filter(func.coalesce(Ruta.servicio, "").notilike("%auditor%"))
+    )
+
+    if cliente_id:
+        query = query.filter(RutaProgramacion.id_cliente == cliente_id)
+    if visible_ids is not None:
+        if not visible_ids:
+            return []
+        query = query.filter(RutaProgramacion.id_cliente.in_(visible_ids))
+    if current_user.is_analyst and current_user.id_perfil:
+        analista_id = int(current_user.id_perfil)
+        sub_ar = (
+            db.query(AnalistaRuta.id_ruta)
+            .filter(AnalistaRuta.id_analista == analista_id)
+            .subquery()
+        )
+        query = query.filter(RutaProgramacion.ruta_id.in_(sub_ar))
+
+    rows = query.distinct().order_by(Cliente.nombre, Mercaderista.nombre).all()
+
+    route_ids = sorted({r.id_ruta for r in rows if r.id_ruta})
+    dept_map: dict = {}
+    if route_ids:
+        dept_rows = (
+            db.query(RutaProgramacion.ruta_id, PuntoInteres.departamento)
+            .join(PuntoInteres, PuntoInteres.id == RutaProgramacion.punto_id)
+            .filter(RutaProgramacion.ruta_id.in_(route_ids),
+                    RutaProgramacion.activo == True,
+                    PuntoInteres.departamento.isnot(None),
+                    PuntoInteres.departamento != "")
+            .distinct()
+            .all()
+        )
+        for rid, dep in dept_rows:
+            dept_map.setdefault(rid, []).append(dep)
+
+    return [
+        {
+            "id_mercaderista": r.id_mercaderista,
+            "mercaderista": r.mercaderista,
+            "id_cliente": r.id_cliente,
+            "cliente": r.cliente,
+            "ruta": r.ruta,
+            "departamentos": ", ".join(dept_map.get(r.id_ruta, [])),
+        }
+        for r in rows
+    ]
+
+
 @router.post("/{visit_id}/mark-reviewed")
-def mark_reviewed(
+async def mark_reviewed(
     visit_id: int,
     revisada: bool = True,
     db: Session = Depends(get_db),
@@ -318,7 +399,48 @@ def mark_reviewed(
                entity_id=visita.id, changes={"revisada_por": visita.revisada_por})
     db.commit()
     notify_event("visit.reviewed", {"id_visita": visita.id, "revisada": revisada})
+    if revisada and visita.id_cliente:
+        nombre_punto = visita.punto.nombre if visita.punto else None
+        await _post_system_message_to_general_chat(db, visita.id_cliente, f"✅ Visita #{visita.id} ({nombre_punto or 'Sin PDV'}) aprobada por el analista")
     return {"id_visita": visita.id, "revisada": revisada}
+
+
+async def _post_system_message_to_general_chat(db: Session, id_cliente: int, texto: str) -> None:
+    """Envía un mensaje de sistema al chat general 'cliente' de un cliente."""
+    if not id_cliente:
+        return
+    ahora = datetime.now()
+    try:
+        from app.websockets.manager import manager
+        grupos = db.query(ChatGrupo).filter(ChatGrupo.cliente_id == id_cliente, ChatGrupo.activa == True).all()
+        for g in grupos:
+            msg = ChatGrupoMensaje(
+                grupo_id=g.id,
+                sender_id=None,
+                sender_nombre="Sistema",
+                mensaje=texto,
+                tipo_mensaje="sistema",
+                created_at=ahora
+            )
+            db.add(msg)
+            db.commit()
+            db.refresh(msg)
+            
+            await manager.broadcast_to_room(f"grupo_{g.id}", {
+                "id_mensaje": msg.id,
+                "id_grupo": g.id,
+                "id_usuario": None,
+                "username": "Sistema",
+                "mensaje": texto,
+                "tipo_mensaje": "sistema",
+                "fecha_envio": str(ahora),
+                "foto_adjunta": None,
+                "leido_por": [],
+            })
+    except Exception as e:
+        import logging
+        logging.warning(f"Error _post_system_message_to_general_chat: {e}")
+        db.rollback()
 
 
 @router.get("/reject-reasons", response_model=List[RejectReason])
@@ -479,9 +601,38 @@ async def reject_photo(
         if merc:
             merc_cedula = merc.cedula
 
+    # Reabre la visita para el mercaderista: una foto rechazada significa
+    # que hay que rehacer la gestion, sin importar si la visita ya se
+    # habia dado por terminada/revisada -- es una decision de la
+    # analista, no algo que el mercaderista deba poder ignorar. El
+    # watcher de epran_backend (db-change-watcher.ts) detecta este
+    # cambio -- mismo patron que ya usa para 'Revisado' -- y avisa a la
+    # APK, que vuelve a mostrar el PDV/cliente como pendiente con el
+    # motivo del rechazo.
+    visita.estado = "Rechazada"
+
+    # FOTOS_RECHAZADAS: master rejection row, matched from v1 pattern
+    ahora = datetime.now()
+    primera_razon_id = data.razones_ids[0] if data.razones_ids else None
+    rechazo_row = db.execute(text("""
+        INSERT INTO FOTOS_RECHAZADAS
+            (id_visita, id_foto_original, fecha_registro, fecha_rechazo,
+             id_razones_rechazos, descripcion, rechazado_por)
+        OUTPUT INSERTED.id_foto_rechazada
+        VALUES (:id_visita, :id_foto_original, :fecha_registro, GETDATE(), :id_razon, :descripcion, :rechazado_por)
+    """), {
+        "id_visita": visita.id if visita else foto.visita_id,
+        "id_foto_original": foto.id,
+        "fecha_registro": foto.fecha_registro or ahora,
+        "id_razon": primera_razon_id,
+        "descripcion": motivo,
+        "rechazado_por": current_user.username,
+    }).fetchone()
+    id_foto_rechazada = rechazo_row[0] if rechazo_row else None
+
     notif = NotificacionRechazoFoto(
         foto_id=foto.id,
-        id_foto_rechazada=foto.id,
+        id_foto_rechazada=id_foto_rechazada,
         id_visita=foto.visita_id,
         id_cliente=visita.id_cliente if visita else None,
         nombre_cliente=visita.cliente.nombre if (visita and visita.cliente) else None,

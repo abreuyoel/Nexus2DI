@@ -17,6 +17,7 @@ ROL_MAP: dict[int, str] = {
     12: "encuestador",  # Encuestador
     13: "cliente_encuestador", # Cliente Encuestador
     14: "auditor_campo", # Auditor de Campo
+    15: "ejecutivo_cuenta", # Ejecutivo de Cuenta
 }
 
 
@@ -98,6 +99,10 @@ class Usuario(Base):
     @property
     def is_coordinador(self) -> bool:
         return self.id_rol in (3, 4, 11)
+
+    @property
+    def is_ejecutivo_cuenta(self) -> bool:
+        return self.id_rol == 15
 
     def has_permission(self, module: str, action: str) -> bool:
         if self.is_admin:

@@ -11,11 +11,10 @@ from typing import List
 from sqlalchemy import cast, Date
 from sqlalchemy.orm import Session
 
-from app.models.mercaderista import Mercaderista, MercaderistaRuta
-from app.models.visita import Visita
-from app.models.ruta import RutaProgramacion, RutaActivada, Ruta
-from app.models.cliente import Cliente
-from app.models.punto import PuntoInteres
+from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
+from app.modules.visits.entities import Visita
+from app.modules.routes.entities import RutaProgramacion, RutaActivada, Ruta, PuntoInteres
+from app.modules.clients.entities import Cliente
 
 
 DAY_MAP_ES = {

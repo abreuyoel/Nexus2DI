@@ -15,7 +15,8 @@ from app.core.request_ip import get_client_ip
 router = APIRouter(prefix="/api/points", tags=["Puntos de Interés"])
 
 
-def _build_base_query(db: Session, region=None, ciudad=None, cadena=None, jerarquia_n2=None, search=None):
+def _build_base_query(db: Session, region=None, ciudad=None, cadena=None, jerarquia_n2=None,
+                      jerarquia_n2_2=None, nivel_de_alcance=None, search=None):
     """Construye la query con filtros reutilizable para list y count."""
     query = db.query(PuntoInteres)
     if region:
@@ -26,6 +27,10 @@ def _build_base_query(db: Session, region=None, ciudad=None, cadena=None, jerarq
         query = query.filter(PuntoInteres.cadena == cadena)
     if jerarquia_n2:
         query = query.filter(PuntoInteres.jerarquia_n2 == jerarquia_n2)
+    if jerarquia_n2_2:
+        query = query.filter(PuntoInteres.jerarquia_n2_2 == jerarquia_n2_2)
+    if nivel_de_alcance:
+        query = query.filter(PuntoInteres.nivel_de_alcance == nivel_de_alcance)
     if search:
         query = query.filter(
             (PuntoInteres.nombre.ilike(f"%{search}%")) |
@@ -41,6 +46,8 @@ def list_points(
     ciudad: Optional[str] = None,
     cadena: Optional[str] = None,
     jerarquia_n2: Optional[str] = None,
+    jerarquia_n2_2: Optional[str] = None,
+    nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
@@ -48,7 +55,7 @@ def list_points(
     _: Usuario = Depends(get_current_user),
 ):
     """Devuelve lista paginada de puntos. Si include_total=true, responde {items, total}."""
-    query = _build_base_query(db, region, ciudad, cadena, jerarquia_n2, search)
+    query = _build_base_query(db, region, ciudad, cadena, jerarquia_n2, jerarquia_n2_2, nivel_de_alcance, search)
     total = query.count()
     items = query.order_by(PuntoInteres.id).offset(skip).limit(limit).all()
     return {"items": items, "total": total}
@@ -60,7 +67,7 @@ def create_point(
     data: PuntoInteresCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = PuntoInteres(**data.model_dump())
     db.add(punto)
@@ -138,11 +145,44 @@ def delete_point(
     point_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'delete')),
+    current_user: Usuario = Depends(require_permission('points', 'delete', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
+
+    # Sin este chequeo, el DELETE le pega directo a alguna de las llaves
+    # foráneas reales que apuntan a PUNTOS_INTERES1.identificador y SQL
+    # Server lo rechaza -- eso salía como 500 sin manejar. Antes solo se
+    # revisaba VISITAS_MERCADERISTA; RUTA_PROGRAMACION (el PDV programado en
+    # una ruta activa) es la más común y quedaba sin cubrir.
+    #
+    # OJO: ACTIVACIONES está en el modelo SQLAlchemy (app/modules/visits/
+    # entities.py) pero la tabla NUNCA se creó en la base real -- confirmado
+    # por el error "Invalid object name 'ACTIVACIONES'" en producción. Por
+    # eso NO se revisa acá aunque tenga FK declarada; si en el futuro se crea
+    # la tabla de verdad, hay que agregarla de nuevo a esta lista.
+    from sqlalchemy import text
+    tablas_bloqueantes = [
+        ("VISITAS_MERCADERISTA", "identificador_punto_interes", "visitas registradas"),
+        ("RUTA_PROGRAMACION", "id_punto_interes", "programación de rutas"),
+        ("FRECUENCIAS_PDVS_CLIENTE", "id_punto_interes", "frecuencias de visita configuradas"),
+    ]
+    motivos = []
+    for tabla, columna, etiqueta in tablas_bloqueantes:
+        existe = db.execute(
+            text(f"SELECT TOP 1 1 FROM {tabla} WHERE {columna} = :pid"),
+            {"pid": point_id},
+        ).first()
+        if existe:
+            motivos.append(etiqueta)
+    if motivos:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede eliminar: este punto de venta tiene {', '.join(motivos)}. "
+                   "Desactivalo en la programación de rutas en vez de borrarlo.",
+        )
+
     nombre = getattr(punto, 'nombre', point_id)
     db.delete(punto)
 
@@ -160,7 +200,7 @@ def update_point(
     data: PuntoInteresUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:

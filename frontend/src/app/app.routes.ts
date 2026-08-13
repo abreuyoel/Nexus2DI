@@ -30,6 +30,12 @@ export const routes: Routes = [
         data: { roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
       },
       {
+        path: 'centro-mando-auditoria',
+        loadComponent: () => import('./features/centro-mando-auditoria/centro-mando-auditoria.component').then((m) => m.CentroMandoAuditoriaComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst'] },
+      },
+      {
         path: 'visits',
         loadComponent: () => import('./features/visits/visits.component').then((m) => m.VisitsComponent),
       },
@@ -66,6 +72,18 @@ export const routes: Routes = [
         data: { roles: ['admin'] },
       },
       {
+        path: 'sku-competencia',
+        loadComponent: () => import('./features/sku-competencia/sku-competencia.component').then((m) => m.SkuCompetenciaComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin'] },
+      },
+      {
+        path: 'plan-accion',
+        loadComponent: () => import('./features/plan-accion/plan-accion.component').then((m) => m.PlanAccionComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst'] },
+      },
+      {
         path: 'clientes-rutas',
         loadComponent: () => import('./features/clientes-rutas/clientes-rutas.component').then((m) => m.ClientesRutasComponent),
         canActivate: [roleGuard],
@@ -86,6 +104,12 @@ export const routes: Routes = [
       {
         path: 'permissions',
         loadComponent: () => import('./features/admin/permissions.component').then((m) => m.PermissionsComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin'] },
+      },
+      {
+        path: 'admin/chat-grupos',
+        loadComponent: () => import('./features/admin/chat-grupos-admin.component').then((m) => m.ChatGruposAdminComponent),
         canActivate: [roleGuard],
         data: { roles: ['admin'] },
       },
@@ -185,7 +209,9 @@ export const routes: Routes = [
         path: 'encuestador',
         loadChildren: () => import('./features/encuestador/encuestador.routes').then(m => m.ENCUESTADOR_ROUTES),
         canActivate: [roleGuard],
-        data: { roles: ['encuestador', 'admin'] }
+        // cliente_encuestador (IQVIA) también puede activar jornadas y
+        // cargar médicos -- ver check_rol_encuestador en el backend.
+        data: { roles: ['encuestador', 'cliente_encuestador', 'admin'] }
       },
       {
         path: 'cliente-encuestador',
@@ -194,10 +220,35 @@ export const routes: Routes = [
         data: { roles: ['cliente_encuestador', 'admin'] }
       },
       {
+        path: 'supervisor-encuestadores',
+        loadComponent: () => import('./features/supervisor-encuestadores/supervisor-encuestadores.component').then(m => m.SupervisorEncuestadoresComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor'] }
+      },
+      {
+        path: 'portal-mercaderista',
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor', 'mercaderista'] },
+        loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
+      },
+
+      {
         path: 'ventas',
         canActivate: [roleGuard],
         data: { roles: ['vendedor', 'admin'] },
         loadComponent: () => import('./features/ventas/ventas.component').then((m) => m.VentasComponent),
+      },
+      {
+        path: 'ventas-dashboard',
+        canActivate: [roleGuard],
+        data: { roles: ['vendedor', 'supervisor', 'admin'] },
+        loadComponent: () => import('./features/ventas/ventas-dashboard.component').then((m) => m.VentasDashboardComponent),
+      },
+      {
+        path: 'pedidos-ventas',
+        canActivate: [roleGuard],
+        data: { roles: ['vendedor', 'supervisor', 'admin'] },
+        loadComponent: () => import('./features/ventas/pedidos-ventas.component').then((m) => m.PedidosVentasComponent),
       },
     ],
   },

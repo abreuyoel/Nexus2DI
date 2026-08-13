@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.modules.routes.entities import RutaCambioFuturo, RutaProgramacion
 from app.core.config import settings
+from app.services.plan_accion_service import recalcular_plan_accion
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler(timezone=settings.SCHEDULER_TIMEZONE)
@@ -74,11 +75,30 @@ def _ejecutar_cambio(db: Session, cambio: RutaCambioFuturo):
         logger.warning(f"Tipo de cambio desconocido: {cambio.tipo_cambio} (id={cambio.id})")
 
 
+def ejecutar_plan_accion():
+    db: Session = SessionLocal()
+    try:
+        n = recalcular_plan_accion(db)
+        logger.info(f"Plan de Acción recalculado: {n} pendiente(s)")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando Plan de Acción: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     scheduler.add_job(
         ejecutar_cambios_futuros,
         trigger=IntervalTrigger(minutes=settings.SCHEDULER_INTERVAL_MINUTES),
         id="ejecutar_cambios_futuros",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        ejecutar_plan_accion,
+        trigger=IntervalTrigger(hours=settings.PLAN_ACCION_INTERVAL_HOURS),
+        id="ejecutar_plan_accion",
         replace_existing=True,
         max_instances=1,
     )

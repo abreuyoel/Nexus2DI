@@ -12,13 +12,12 @@ from typing import Optional, List, BinaryIO
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, cast, Date
 
-from app.models.mercaderista import Mercaderista
-from app.models.visita import Visita
-from app.models.foto import Foto, NotificacionRechazoFoto
-from app.models.balance import Balance
-from app.models.producto import Categoria, Producto
-from app.models.cliente import Cliente, CategoriaCliente
-from app.models.punto import PuntoInteres
+from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
+from app.modules.visits.entities import Visita, Foto, NotificacionRechazoFoto, Balance
+from app.modules.catalogues.entities import Categoria, Producto
+from app.modules.clients.entities import Cliente, CategoriaCliente
+from app.modules.routes.entities import PuntoInteres, RutaActivada, RutaProgramacion
+
 
 FOTO_TIPOS = {
     "gestion_antes":        {"label": "Gestión (Antes)",            "solo_camara": False, "id": 1},
@@ -570,8 +569,7 @@ class VisitaService:
             })
 
         # Check if PDV is activated today
-        from app.models.ruta import RutaActivada, RutaProgramacion
-        from app.models.mercaderista import MercaderistaRuta
+
         hoy = date.today()
         punto_activado = False
         if punto:
@@ -707,7 +705,7 @@ class VisitaService:
     def registrar_auditoria_tiempo(
         self, current_user, payload
     ) -> dict:
-        from app.models.auditoria_tiempo import AuditoriaTiempo
+        from app.modules.visits.entities import AuditoriaTiempo
         merc = self._get_mercaderista(current_user)
         audit = AuditoriaTiempo(
             id_visita=payload.id_visita,

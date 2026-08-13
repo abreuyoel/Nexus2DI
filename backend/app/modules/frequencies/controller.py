@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import text
 from sqlalchemy.orm import Session, aliased
 
 from app.db.session import get_db
-from app.core.dependencies import get_current_user, require_analyst_or_admin
+from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.modules.auth.entities import Usuario
 from app.modules.clients.entities import Cliente
 from app.modules.catalogues.entities import TipoNegocio
@@ -34,6 +35,26 @@ def _query_con_joins_frecuencias(db: Session):
     )
 
 
+def _scope_analista(q, current_user: Usuario):
+    """Restringe a las (PDV, cliente) cubiertas por las rutas asignadas al
+    analista via analistas_rutas -> RUTA_PROGRAMACION (activa=1) -- misma
+    fuente de verdad que mk_analyst() (centro_mando.py) y _analyst_filter()
+    (client_data.py). Antes este endpoint no tenía NINGÚN filtro por
+    analista: cualquier analista veía las frecuencias de TODOS los clientes.
+    Admin (y cualquier no-analista) no se restringe."""
+    if not (current_user.is_analyst and current_user.id_perfil):
+        return q
+    return q.filter(text("""
+        EXISTS (
+            SELECT 1 FROM RUTA_PROGRAMACION rp_a
+            JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
+            WHERE rp_a.id_punto_interes = FRECUENCIAS_PDVS_CLIENTE.id_punto_interes
+              AND rp_a.id_cliente = FRECUENCIAS_PDVS_CLIENTE.id_cliente
+              AND rp_a.activa = 1 AND ar_a.id_analista = :analista_id
+        )
+    """)).params(analista_id=int(current_user.id_perfil))
+
+
 def _to_resp_frecuencia(f: FrecuenciaPdvCliente, cliente_nombre=None, pdv_nombre=None, usuario_username=None) -> FrecuenciaPdvClienteResponse:
     return FrecuenciaPdvClienteResponse(
         id=f.id, id_cliente=f.id_cliente, id_punto_interes=f.id_punto_interes,
@@ -50,7 +71,7 @@ def list_frecuencias(
     id_punto_interes: Optional[str] = Query(None),
     activo: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
     q = _query_con_joins_frecuencias(db)
     if id_cliente is not None:
@@ -59,6 +80,7 @@ def list_frecuencias(
         q = q.filter(FrecuenciaPdvCliente.id_punto_interes == id_punto_interes)
     if activo is not None:
         q = q.filter(FrecuenciaPdvCliente.activo == activo)
+    q = _scope_analista(q, current_user)
     return [_to_resp_frecuencia(f, cn, pn, un) for f, cn, pn, un in q.order_by(FrecuenciaPdvCliente.id.desc()).all()]
 
 
@@ -66,12 +88,16 @@ def list_frecuencias(
 def pdvs_disponibles_cliente(
     id_cliente: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
+    """PDVs unicos donde aparece el cliente en RUTA_PROGRAMACION, marcando la
+    frecuencia ya asignada (si existe) para poder editarla en la carga masiva.
+    Si el que pregunta es analista, solo ve los PDVs de ESE cliente que caen
+    dentro de sus propias rutas asignadas (analistas_rutas)."""
     if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
-    
-    rows = (
+
+    query = (
         db.query(
             RutaProgramacion.punto_id,
             RutaProgramacion.punto_interes_nombre
@@ -83,8 +109,16 @@ def pdvs_disponibles_cliente(
             RutaProgramacion.punto_id.isnot(None)
         )
         .order_by(RutaProgramacion.punto_interes_nombre)
-        .all()
     )
+    if current_user.is_analyst and current_user.id_perfil:
+        # Mismo criterio que _scope_analista(): solo PDVs de ESE cliente que
+        # caen dentro de las rutas asignadas al analista (analistas_rutas).
+        query = query.filter(text("""
+            EXISTS (SELECT 1 FROM analistas_rutas ar_a
+                WHERE ar_a.id_ruta = RUTA_PROGRAMACION.id_ruta
+                  AND ar_a.id_analista = :analista_id)
+        """)).params(analista_id=int(current_user.id_perfil))
+    rows = query.all()
 
     existentes = {
         f.id_punto_interes: f
@@ -107,7 +141,7 @@ def pdvs_disponibles_cliente(
 def bulk_upsert_frecuencias(
     data: FrecuenciaBulkCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.carga_masiva', 'read')),
 ):
     if not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
@@ -136,7 +170,7 @@ def bulk_upsert_frecuencias(
 
 
 @router.get("/api/frecuencias-pdvs-cliente/{id_frecuencia}", response_model=FrecuenciaPdvClienteResponse)
-def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read'))):
     row = _query_con_joins_frecuencias(db).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not row:
         raise HTTPException(404, "Registro no encontrado")
@@ -148,7 +182,7 @@ def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario
 def create_frecuencia(
     data: FrecuenciaPdvClienteCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.crear', 'read')),
 ):
     if not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
         raise HTTPException(404, "Cliente no existe")
@@ -170,7 +204,7 @@ def update_frecuencia(
     id_frecuencia: int,
     data: FrecuenciaPdvClienteUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_analyst_or_admin),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.editar', 'read')),
 ):
     f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not f:
@@ -191,7 +225,7 @@ def update_frecuencia(
 def delete_frecuencia(
     id_frecuencia: int,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_analyst_or_admin),
+    _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.eliminar', 'read')),
 ):
     f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
     if not f:

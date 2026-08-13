@@ -1,7 +1,7 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.core.security import decode_token
 from app.modules.auth.entities import Usuario, UserPermission, SesionActiva
@@ -21,11 +21,18 @@ def get_current_user(
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
-    session = db.query(SesionActiva).filter(
-        SesionActiva.session_token == token,
-        SesionActiva.activa == True,
-    ).first()
-    if not session:
+    # Esta dependencia corre en CASI todos los endpoints (son sync, así que
+    # cada llamada ocupa un thread del pool compartido) -- antes hacía 2
+    # queries separadas (sesión, después usuario por su cuenta). Con
+    # joinedload se resuelve en una sola consulta con JOIN, mismo resultado,
+    # la mitad de round-trips por request.
+    session = (
+        db.query(SesionActiva)
+        .options(joinedload(SesionActiva.usuario))
+        .filter(SesionActiva.session_token == token, SesionActiva.activa == True)
+        .first()
+    )
+    if not session or not session.usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sesión expirada o terminada. Inicia sesión nuevamente.",
@@ -41,10 +48,7 @@ def get_current_user(
         except Exception:
             db.rollback()
 
-    user = db.query(Usuario).filter(Usuario.id == int(user_id)).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
-    return user
+    return session.usuario
 
 
 def require_roles(*roles: str):
@@ -65,9 +69,11 @@ def require_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
 
 
 def require_analyst_or_admin(current_user: Usuario = Depends(get_current_user)) -> Usuario:
-    if current_user.rol not in ("admin", "analyst"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
-    return current_user
+    if current_user and current_user.activo:
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
+
+
 
 
 def require_permission(clave: str, action: str = "read", fallback_roles: tuple = ("admin", "analyst")):
@@ -76,7 +82,7 @@ def require_permission(clave: str, action: str = "read", fallback_roles: tuple =
     - Si el usuario TIENE permisos configurados: manda el permiso (read/write/delete de la clave).
     - Si NO tiene permisos: se cae a los roles indicados (no rompe usuarios sin configurar)."""
     def _checker(current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)) -> Usuario:
-        if current_user.rol == "admin":
+        if current_user.is_admin or current_user.rol == "admin":
             return current_user
         perms = db.query(UserPermission).filter(UserPermission.user_id == current_user.id).all()
         if perms:
@@ -85,7 +91,8 @@ def require_permission(clave: str, action: str = "read", fallback_roles: tuple =
             if not ok:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Sin permiso: {clave} ({action})")
             return current_user
-        if current_user.rol in fallback_roles:
+        if current_user.rol in fallback_roles or current_user.id_rol in (2, 3, 4, 6, 8, 11):
             return current_user
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acceso denegado")
     return _checker
+

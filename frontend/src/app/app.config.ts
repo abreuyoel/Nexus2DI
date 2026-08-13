@@ -1,7 +1,7 @@
 import { ApplicationConfig, provideZoneChangeDetection, isDevMode } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { provideAnimations } from '@angular/platform-browser/animations';
+import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { provideServiceWorker } from '@angular/service-worker';
@@ -12,11 +12,16 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withComponentInputBinding()),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideAnimations(),
+    // Async en vez de provideAnimations(): el motor de animaciones de
+    // Angular pasa a ser un chunk aparte que se carga recién cuando hace
+    // falta, en vez de ir siempre en el bundle inicial -- ayuda al primer
+    // load en celulares de gama baja (reportado como "cuesta entrar" desde
+    // el celular), sin sacar ninguna animación.
+    provideAnimationsAsync(),
     provideCharts(withDefaultRegisterables()),
     provideServiceWorker('ngsw-worker.js', {
-        enabled: !isDevMode(),
-        registrationStrategy: 'registerWhenStable:30000'
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000'
     })
-],
+  ],
 };

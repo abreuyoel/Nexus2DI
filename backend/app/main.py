@@ -35,6 +35,9 @@ from app.modules.clients.controller import router as clients_router
 from app.modules.catalogues.controller import router as catalogos_router
 from app.modules.analysts.controller import router as analysts_router
 from app.modules.reporting.dashboard_controller import router as centro_mando_router
+from app.modules.reporting.centro_mando_auditoria import router as centro_mando_auditoria_router
+from app.modules.sku_competencia.controller import router as sku_competencia_router
+from app.routes.plan_accion import router as plan_accion_router
 from app.modules.realtime.controller import router as realtime_router
 from app.modules.clients.photos_controller import router as client_photos_router
 from app.modules.clients.data_controller import router as client_data_router
@@ -42,6 +45,7 @@ from app.modules.merchandisers.portal_controller import router as mercaderista_p
 from app.modules.routes.segmentacion_controller import router as cliente_segmentacion_router
 from app.modules.surveyors.controller import router as surveyors_router
 from app.modules.sellers.controller import router as vendedor_router
+from app.modules.sellers.ventas_pedidos import router as ventas_pedidos_router
 from app.modules.frequencies.controller import router as frequencies_router
 from app.modules.sessions.controller import router as sessions_router
 
@@ -86,13 +90,36 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_async_init_catalogs())
     asyncio.create_task(_async_warmup())
 
-    set_loop(asyncio.get_running_loop())
+    set_loop(asyncio.get_running_loop())  # para difundir eventos en tiempo real
+
+    # Casi todos los endpoints son "def" sync (348 de 375) -- incluida
+    # get_current_user, que corre en CADA request autenticado -- así que
+    # todos pasan por el threadpool de AnyIO/Starlette. El límite por
+    # defecto (~40 threads) se satura en hora pico con --workers 1, y ahí
+    # se explica que hasta el login (que depende de la misma cola) se
+    # ponga lento o no responda mientras endpoints pesados (resumen-dia,
+    # export a Excel, compresión de fotos) ocupan esos threads. Subir el
+    # límite no soluciona la contención de CPU/GIL de fondo, pero evita que
+    # requests livianos (como login) queden en cola detrás de los pesados
+    # simplemente por falta de threads disponibles.
+    import anyio.to_thread
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+
+    # Fase A de la migración a Redis pub/sub: con --workers 1 / replicas 1
+    # (todavía) esto no cambia el comportamiento observable -- cada proceso
+    # se recibe su propio eco de Redis y lo descarta por PROCESS_ID. Valida
+    # que el cableado no rompa nada antes de escalar workers/réplicas.
+    from app.services.redis_pubsub import start_listener, stop_listener
+    from app.websockets.manager import manager
+    start_listener(manager)
+
     start_scheduler()
 
     yield
 
     # Apagado ultra-rápido sin bloqueos
     stop_scheduler()
+    await stop_listener()
     try:
         engine.dispose()
     except Exception:
@@ -180,6 +207,9 @@ app.include_router(clients_router)
 app.include_router(catalogos_router)
 app.include_router(analysts_router)
 app.include_router(centro_mando_router)
+app.include_router(centro_mando_auditoria_router)
+app.include_router(sku_competencia_router)
+app.include_router(plan_accion_router)
 app.include_router(realtime_router)
 app.include_router(client_photos_router)
 app.include_router(client_data_router)
@@ -187,14 +217,22 @@ app.include_router(mercaderista_portal_router)
 app.include_router(cliente_segmentacion_router)
 app.include_router(surveyors_router)
 app.include_router(vendedor_router)
+app.include_router(ventas_pedidos_router)
 app.include_router(frequencies_router)
 app.include_router(sessions_router)
 
 from app.modules.chat.chat_grupos_controller import router as chat_grupos_router
+from app.modules.chat.admin_controller import router as admin_chat_grupos_router
 from app.modules.media.controller import router as media_router
+from app.mercaderista.router import router as mercaderista_router
+from app.routes.supervisor_encuestadores import router as supervisor_encuestadores_router
 
 app.include_router(chat_grupos_router)
+app.include_router(admin_chat_grupos_router)
 app.include_router(media_router)
+app.include_router(mercaderista_router)
+app.include_router(supervisor_encuestadores_router)
+
 
 
 
@@ -205,7 +243,12 @@ async def root():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
+    # async, no toca la DB: las rutas sync comparten un threadpool con las
+    # queries pesadas (resumen-dia, etc.) -- si el health check también fuera
+    # sync, un pico de tráfico podía dejarlo en cola detrás de esas queries,
+    # el liveness probe expiraba (timeoutSeconds por default = 1s) y
+    # Kubernetes reiniciaba el pod en plena carga, empeorando el problema.
     return {"status": "ok", "version": "2.0.0"}
 
 

@@ -1,7 +1,20 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
+
+
+class Encuestador(Base):
+    """Catálogo de encuestadores (rol 12/13) por cédula -- USUARIOS.id_perfil
+    referencia a esta tabla cuando id_rol está en (12, 13), mismo patrón que
+    Cliente/Analista/Mercaderista (ver outerjoin en routes/users.py)."""
+    __tablename__ = "ENCUESTADORES"
+
+    id = Column("id_encuestador", Integer, primary_key=True, index=True)
+    cedula = Column(Integer, unique=True, nullable=False, index=True)
+    nombre = Column(String(200), nullable=False)
+    activo = Column(Boolean, default=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
 
 
 class JornadaEncuestador(Base):
@@ -12,10 +25,18 @@ class JornadaEncuestador(Base):
     fecha_inicio = Column(DateTime, nullable=False, default=datetime.utcnow)
     fecha_fin = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False)
+    # Ubicación de INICIO (donde activó la jornada)
     latitud = Column(Float, nullable=True)
     longitud = Column(Float, nullable=True)
     ciudad = Column(String(100), nullable=True)
     estado_geo = Column(String(100), nullable=True)
+    # Ubicación de CIERRE (donde finalizó) -- columnas separadas porque un
+    # encuestador se mueve de centro en centro durante el día; sin esto no
+    # había forma de saber dónde terminó, solo dónde empezó.
+    latitud_fin = Column(Float, nullable=True)
+    longitud_fin = Column(Float, nullable=True)
+    ciudad_fin = Column(String(100), nullable=True)
+    estado_geo_fin = Column(String(100), nullable=True)
     notes = Column("notas", String, nullable=True)
 
 
@@ -41,15 +62,18 @@ class EncuestaCentro(Base):
     creado_en = Column(DateTime, default=datetime.utcnow)
     id_jornada = Column(Integer, nullable=True)
     estado = Column(String(20), nullable=False)
+    observacion_supervisor = Column(Text, nullable=True)
+    requiere_correccion = Column(Boolean, default=False, nullable=False)
+
 
 
 class Medico(Base):
     __tablename__ = "medicos"
 
     id_medico = Column(Integer, primary_key=True, index=True)
-    id_medico_externo = Column(String(20), nullable=False)
+    id_medico_externo = Column(String(20), nullable=True)
     apellido1 = Column(String(100), nullable=False)
-    apellido2 = Column(String(100), nullable=True)
+    apellido2 = Column(String(100), nullable=False)
     nombre1 = Column(String(100), nullable=False)
     nombre2 = Column(String(100), nullable=True)
     especialidad = Column(String(100), nullable=False)
@@ -66,6 +90,18 @@ class Medico(Base):
     instagram = Column(String(255), nullable=True)
     fecha_registro = Column(DateTime, default=datetime.utcnow)
 
+class MedicoConsultorio(Base):
+    __tablename__ = 'medico_consultorios'
+
+    id_consultorio = Column(Integer, primary_key=True, index=True)
+    id_medico = Column(Integer, ForeignKey('medicos.id_medico'), nullable=False)
+    nombre_clinica = Column(String(255), nullable=False)
+    piso_consultorio = Column(String(50), nullable=True)
+    direccion_especifica = Column(String, nullable=True)
+    horarios_json = Column(Text, nullable=True)
+    valor_consulta_rango = Column(String(30), nullable=False)
+    promedio_pacientes_semanal_rango = Column(String(30), nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow)
 
 class MedicoCentroEncuesta(Base):
     __tablename__ = "medico_centro_encuesta"
@@ -73,15 +109,4 @@ class MedicoCentroEncuesta(Base):
     id_medico_centro = Column(Integer, primary_key=True, index=True)
     id_encuesta = Column(Integer, nullable=False)
     id_medico = Column(Integer, nullable=False)
-    piso_consultorio = Column(String(50), nullable=True)
-    horarios_consulta = Column(String(255), nullable=True)
-    dias_consulta = Column(String(255), nullable=True)
-    direccion_especifica = Column(String, nullable=True)
-    clinica2_nombre = Column(String(255), nullable=True)
-    piso_consultorio2 = Column(String(50), nullable=True)
-    horarios_consulta2 = Column(String(255), nullable=True)
-    dias_consulta2 = Column(String(255), nullable=True)
-    direccion_especifica2 = Column(String, nullable=True)
-    valor_consulta_rango = Column(String(30), nullable=False)
-    promedio_pacientes_semanal_rango = Column(String(30), nullable=False)
     actualizado_en = Column(DateTime, default=datetime.utcnow)

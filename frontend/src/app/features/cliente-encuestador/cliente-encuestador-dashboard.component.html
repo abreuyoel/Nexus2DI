@@ -20,13 +20,18 @@
             class="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[.2em] bg-indigo-100 dark:bg-indigo-500/10 px-3 py-1 rounded-full">Business
             Intelligence</span>
         </div>
-        <h1 class="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight">MedInsights Dashboard
+        <h1 class="text-3xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tight">IQVIA Dashboard
         </h1>
         <p class="text-slate-500 dark:text-slate-400 mt-2 text-sm max-w-md">Análisis integral de médicos, centros de
           salud y encuestas.</p>
       </div>
 
-
+      <button (click)="exportarExcel()" [disabled]="exportando"
+        class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait text-white font-bold text-sm px-5 py-3 rounded-xl transition-colors shadow-lg shadow-emerald-600/20 self-start md:self-center">
+        <mat-icon class="!text-lg" *ngIf="!exportando">description</mat-icon>
+        <div *ngIf="exportando" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></div>
+        {{ exportando ? 'Generando...' : 'Exportar a Excel' }}
+      </button>
     </div>
 
     <!-- ════ FILTROS ROW ════ -->
@@ -131,6 +136,19 @@
         </app-searchable-select>
       </div>
 
+    </div>
+
+    <!-- ════ FILTROS ACTIVOS (dropdowns + click en gráficos) ════ -->
+    <div *ngIf="activeFilterChips.length > 0"
+      class="relative flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-white/5">
+      <span class="text-[10px] font-black text-indigo-300/70 uppercase tracking-widest mr-1">Filtros activos:</span>
+      <button *ngFor="let chip of activeFilterChips" (click)="removeChip(chip)"
+        class="flex items-center gap-1.5 text-xs font-semibold bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-full pl-3 pr-2 py-1 transition-colors">
+        {{ chip.label }} <mat-icon class="!text-sm !w-4 !h-4">close</mat-icon>
+      </button>
+      <button (click)="clearAllFilters()" class="text-xs font-bold text-slate-400 hover:text-white underline ml-1">
+        Limpiar todo
+      </button>
     </div>
   </div>
 
@@ -303,33 +321,45 @@
     </div>
 
 
-    <!-- ═══════════════════════════════════ CHARTS ROW 1: DOUGHNUTS ═══ -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div
-        class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-indigo-400 dark:hover:border-indigo-500/20 transition-all shadow-sm dark:shadow-none">
-        <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
-          <mat-icon class="!text-base text-indigo-600 dark:text-indigo-400">donut_large</mat-icon> Médicos por
-          especialidad
-        </h3>
-        <div class="h-52"><canvas baseChart [data]="espChartData" [options]="doughnutOptions"
-            [type]="'doughnut'"></canvas></div>
+    <!-- ═══════════════════════════════════ ESPECIALIDADES: ancho completo ═══
+         Barras horizontales, no anillo -- puede haber 100+ especialidades y
+         un doughnut se vuelve ilegible mucho antes que eso. El contenedor
+         scrollea verticalmente y el canvas crece con la cantidad real de
+         categorías, para que cada barra tenga alto legible sea cual sea el total. -->
+    <div
+      class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-indigo-400 dark:hover:border-indigo-500/20 transition-all shadow-sm dark:shadow-none">
+      <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+        <mat-icon class="!text-base text-indigo-600 dark:text-indigo-400">bar_chart</mat-icon> Médicos por especialidad
+        <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
+      </h3>
+      <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+        <div [style.height.px]="espChartHeightPx()" class="cursor-pointer">
+          <canvas baseChart [data]="espChartData" [options]="horizontalBarOptions" [type]="'bar'"
+            (chartClick)="onEspClick($event)"></canvas>
+        </div>
       </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ CHARTS ROW 1: DOUGHNUTS ═══ -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div
         class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-emerald-400 dark:hover:border-emerald-500/20 transition-all shadow-sm dark:shadow-none">
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-emerald-600 dark:text-emerald-400">payments</mat-icon> Distribución valor
           consulta
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-52"><canvas baseChart [data]="valChartData" [options]="doughnutOptions"
-            [type]="'doughnut'"></canvas></div>
+        <div class="h-52 cursor-pointer"><canvas baseChart [data]="valChartData" [options]="doughnutOptions"
+            [type]="'doughnut'" (chartClick)="onValClick($event)"></canvas></div>
       </div>
       <div
         class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-cyan-400 dark:hover:border-cyan-500/20 transition-all shadow-sm dark:shadow-none">
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-cyan-600 dark:text-cyan-400">groups</mat-icon> Pacientes / semana
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-52"><canvas baseChart [data]="pacChartData" [options]="doughnutOptions"
-            [type]="'doughnut'"></canvas></div>
+        <div class="h-52 cursor-pointer"><canvas baseChart [data]="pacChartData" [options]="doughnutOptions"
+            [type]="'doughnut'" (chartClick)="onPacClick($event)"></canvas></div>
       </div>
     </div>
 
@@ -339,17 +369,19 @@
         class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-violet-400 dark:hover:border-violet-500/20 transition-all shadow-sm dark:shadow-none">
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-violet-600 dark:text-violet-400">map</mat-icon> Médicos por Estado
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64"><canvas baseChart [data]="estChartData" [options]="horizontalBarOptions"
-            [type]="'bar'"></canvas></div>
+        <div class="h-64 cursor-pointer"><canvas baseChart [data]="estChartData" [options]="horizontalBarOptions"
+            [type]="'bar'" (chartClick)="onEstClick($event)"></canvas></div>
       </div>
       <div
         class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-blue-400 dark:hover:border-blue-500/20 transition-all shadow-sm dark:shadow-none">
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-blue-600 dark:text-blue-400">school</mat-icon> Médicos por Universidad
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64"><canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions"
-            [type]="'bar'"></canvas></div>
+        <div class="h-64 cursor-pointer"><canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions"
+            [type]="'bar'" (chartClick)="onUniClick($event)"></canvas></div>
       </div>
     </div>
 
@@ -360,16 +392,33 @@
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-teal-600 dark:text-teal-400">local_hospital</mat-icon> Médicos por Centro de
           Salud
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64"><canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions"
-            [type]="'bar'"></canvas></div>
+        <div class="h-64 cursor-pointer"><canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions"
+            [type]="'bar'" (chartClick)="onCenClick($event)"></canvas></div>
       </div>
       <div
         class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-rose-400 dark:hover:border-rose-500/20 transition-all shadow-sm dark:shadow-none">
         <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
           <mat-icon class="!text-base text-rose-600 dark:text-rose-400">calendar_month</mat-icon> Días de consulta
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64"><canvas baseChart [data]="diasChartData" [options]="barOptions" [type]="'bar'"></canvas></div>
+        <div class="h-64 cursor-pointer"><canvas baseChart [data]="diasChartData" [options]="barOptions" [type]="'bar'"
+            (chartClick)="onDiasClick($event)"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ CHARTS ROW 4: HORAS ═══ -->
+    <div class="grid grid-cols-1 gap-6">
+      <div
+        class="rounded-2xl bg-white dark:bg-gradient-to-br dark:from-slate-900/80 dark:to-slate-950 border border-slate-200 dark:border-white/5 p-6 hover:border-sky-400 dark:hover:border-sky-500/20 transition-all shadow-sm dark:shadow-none">
+        <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-4">
+          <mat-icon class="!text-base text-sky-600 dark:text-sky-400">schedule</mat-icon> Cobertura por hora del día
+          <span class="text-[9px] font-normal text-slate-500 ml-auto">consultorios abiertos por hora
+            (00:00-23:00)</span>
+        </h3>
+        <div class="h-56"><canvas baseChart [data]="horasChartData" [options]="barOptions" [type]="'bar'"></canvas>
+        </div>
       </div>
     </div>
 

@@ -5,53 +5,53 @@
 // ── Tokens de color como CSS custom properties ────────────────────────
 // Modo claro (por defecto)
 :host {
-  --cm-bg:           #f0f2f5;
-  --cm-card:         #ffffff;
-  --cm-border:       #dde1e7;
-  --cm-card2:        #f6f8fa;
-  --cm-text:         #1f2328;
-  --cm-muted:        #656d76;
-  --cm-blue:         #0969da;
-  --cm-green:        #1a7f37;
-  --cm-amber:        #bc4c00;
-  --cm-red:          #cf222e;
-  --cm-purple:       #8250df;
-  --cm-row-hover:    rgba(9, 105, 218, 0.04);
-  --cm-border-row:   rgba(0, 0, 0, 0.07);
-  --cm-shadow:       0 1px 3px rgba(0, 0, 0, 0.07);
-  --cm-cal-filter:   none;
+  --cm-bg: #f0f2f5;
+  --cm-card: #ffffff;
+  --cm-border: #dde1e7;
+  --cm-card2: #f6f8fa;
+  --cm-text: #1f2328;
+  --cm-muted: #656d76;
+  --cm-blue: #0969da;
+  --cm-green: #1a7f37;
+  --cm-amber: #bc4c00;
+  --cm-red: #cf222e;
+  --cm-purple: #8250df;
+  --cm-row-hover: rgba(9, 105, 218, 0.04);
+  --cm-border-row: rgba(0, 0, 0, 0.07);
+  --cm-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  --cm-cal-filter: none;
 }
 
 // Modo oscuro – se activa cuando el shell agrega .dark al <html>
 :host-context(.dark) {
-  --cm-bg:           #0d1117;
-  --cm-card:         #161b22;
-  --cm-border:       #21262d;
-  --cm-card2:        #1c2333;
-  --cm-text:         #e6edf3;
-  --cm-muted:        #8b949e;
-  --cm-blue:         #58a6ff;
-  --cm-green:        #3fb950;
-  --cm-amber:        #f0883e;
-  --cm-red:          #f85149;
-  --cm-purple:       #bc8cff;
-  --cm-row-hover:    rgba(255, 255, 255, 0.03);
-  --cm-border-row:   rgba(255, 255, 255, 0.06);
-  --cm-shadow:       0 1px 3px rgba(0, 0, 0, 0.3);
-  --cm-cal-filter:   invert(1);
+  --cm-bg: #0d1117;
+  --cm-card: #161b22;
+  --cm-border: #21262d;
+  --cm-card2: #1c2333;
+  --cm-text: #e6edf3;
+  --cm-muted: #8b949e;
+  --cm-blue: #58a6ff;
+  --cm-green: #3fb950;
+  --cm-amber: #f0883e;
+  --cm-red: #f85149;
+  --cm-purple: #bc8cff;
+  --cm-row-hover: rgba(255, 255, 255, 0.03);
+  --cm-border-row: rgba(255, 255, 255, 0.06);
+  --cm-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --cm-cal-filter: invert(1);
 }
 
 // Alias SCSS → var() para no reescribir todos los usos
-$dark-bg:       var(--cm-bg);
-$dark-card:     var(--cm-card);
-$dark-border:   var(--cm-border);
-$dark-card2:    var(--cm-card2);
-$text-primary:  var(--cm-text);
-$text-muted:    var(--cm-muted);
-$accent-blue:   var(--cm-blue);
-$accent-green:  var(--cm-green);
-$accent-amber:  var(--cm-amber);
-$accent-red:    var(--cm-red);
+$dark-bg: var(--cm-bg);
+$dark-card: var(--cm-card);
+$dark-border: var(--cm-border);
+$dark-card2: var(--cm-card2);
+$text-primary: var(--cm-text);
+$text-muted: var(--cm-muted);
+$accent-blue: var(--cm-blue);
+$accent-green: var(--cm-green);
+$accent-amber: var(--cm-amber);
+$accent-red: var(--cm-red);
 $accent-purple: var(--cm-purple);
 
 // ── Wrapper ──────────────────────────────────────────────────────────
@@ -186,6 +186,7 @@ $accent-purple: var(--cm-purple);
   padding: 6px 14px;
   cursor: pointer;
   transition: all 0.15s;
+  position: relative;
 
   &:hover {
     background: rgba(88, 166, 255, 0.12);
@@ -196,7 +197,110 @@ $accent-purple: var(--cm-purple);
     width: 16px !important;
     height: 16px !important;
   }
+
+  // ── Estado: hay actualizaciones pendientes ──
+  &.has-updates {
+    border-color: $accent-green;
+    color: $accent-green;
+    background: rgba(63, 185, 80, 0.08);
+    animation: pulse-glow 2s ease-in-out infinite;
+
+    &:hover {
+      background: rgba(63, 185, 80, 0.18);
+    }
+  }
 }
+
+// ── Badge de eventos pendientes ──
+.cm-pending-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: $accent-green;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  animation: badge-pop 0.3s ease-out;
+}
+
+// ── Animación pulse-glow para el botón ──
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 14px 4px rgba(63, 185, 80, 0.2);
+  }
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.3);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+// ── Spin del ícono de refresh mientras carga ──
+.spin-once {
+  animation: spin-refresh 0.8s ease-in-out;
+}
+
+@keyframes spin-refresh {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+// ── Flash de tarjeta que cambió de valor ──
+// Se aplica via [class.cm-changed]="cardChanged('key')" y se auto-limpia
+// después de 2s en el TypeScript.
+.cm-changed {
+  animation: card-flash 1.8s ease-out;
+}
+
+@keyframes card-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.6);
+  }
+
+  15% {
+    box-shadow: 0 0 20px 6px rgba(63, 185, 80, 0.35);
+  }
+
+  30% {
+    box-shadow: 0 0 8px 2px rgba(63, 185, 80, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 16px 4px rgba(63, 185, 80, 0.25);
+  }
+
+  100% {
+    box-shadow: none;
+  }
+}
+
 
 // ── Loading ───────────────────────────────────────────────────────────
 .cm-loading-top,
@@ -234,7 +338,7 @@ $accent-purple: var(--cm-purple);
   align-items: flex-start;
   gap: 12px;
   border-top: 3px solid transparent;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 
   &.border-blue {
     border-top-color: $accent-blue;
@@ -350,7 +454,7 @@ $accent-purple: var(--cm-purple);
   border: 1px solid $dark-border;
   border-radius: 12px;
   padding: 14px 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .cm-sec-header {
@@ -392,6 +496,10 @@ $accent-purple: var(--cm-purple);
 
   &.orange {
     color: $accent-amber;
+  }
+
+  &.blue {
+    color: $accent-blue;
   }
 }
 
@@ -624,7 +732,7 @@ $accent-purple: var(--cm-purple);
   border: 1px solid $dark-border;
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .cm-bars-header {
@@ -765,7 +873,7 @@ $accent-purple: var(--cm-purple);
   border: 1px solid $dark-border;
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .cm-merc-top {
@@ -895,7 +1003,7 @@ $accent-purple: var(--cm-purple);
   border: 1px solid $dark-border;
   border-radius: 12px;
   overflow: auto;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -1083,7 +1191,7 @@ $accent-purple: var(--cm-purple);
   border: 1px solid rgba(207, 34, 46, 0.2);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .cm-pend-head {
@@ -1251,7 +1359,7 @@ $accent-purple: var(--cm-purple);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .mic-top {

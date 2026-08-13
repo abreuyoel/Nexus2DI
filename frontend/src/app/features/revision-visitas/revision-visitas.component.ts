@@ -1,7 +1,8 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
@@ -21,10 +22,28 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
   imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule],
   templateUrl: './revision-visitas.component.html',
 })
-export class RevisionVisitasComponent implements OnInit {
+export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
-  periodo: Periodo | 'custom' = 'semana';
+
+  // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
+  pendingEvents = signal(0);
+  hasPendingUpdates = signal(false);
+  private autoRefreshInterval?: any;
+  private audioCtx?: AudioContext;
+  // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
+  // RUTA_PROGRAMACION -> CLIENTES): se muestra primero, antes que las
+  // tarjetas de visitas -- incluye mercaderistas sin visitas todavía. Sin
+  // cliente elegido trae el de todos los clientes visibles (ordenado por
+  // sin_revisar en `rosterFiltrado`); al elegir cliente se reescopa server-side.
+  loadingRoster = signal(true);
+  mercaderistasRoster = signal<any[]>([]);
+  selectedMercaderista = signal<any>(null);
+  // Catálogo liviano {id_cliente, cliente} para poblar el selector "Cliente"
+  // completo (incluye clientes sin ninguna visita todavía) y resolver el id
+  // que necesita /review-mercaderistas a partir del nombre elegido.
+  clientesCatalogo = signal<{ id_cliente: number; cliente: string }[]>([]);
+  periodo: Periodo | 'custom' = 'hoy';
   desde = '';
   hasta = '';
   search = '';
@@ -32,6 +51,7 @@ export class RevisionVisitasComponent implements OnInit {
   filtroRutas: string[] = [];          // multi-select
   filtroPunto = '';
   filtroCliente = '';
+  filtroDepartamento = '';
   filtroMercaderistas: string[] = [];  // multi-select
   filtroChat = ''; // '', 'con', 'sin'
   filtroEstado = ''; // '', 'Pendiente', 'Revisado', 'Aprobada'
@@ -64,23 +84,74 @@ export class RevisionVisitasComponent implements OnInit {
   constructor(
     private api: ApiService, private snack: MatSnackBar, private auth: AuthService, private realtime: RealtimeService,
     private dialog: MatDialog, private router: Router,
-  ) {}
+  ) { }
 
-  private rtDebounce?: any;
+  private rtSubscription?: Subscription;
 
   ngOnInit(): void {
-    const r = this.rangeFor('semana');
+    const r = this.rangeFor('hoy');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
-    this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
-    // Tiempo real: nuevas visitas a revisar / cambios de fotos llegan solos
-    this.realtime.events$.subscribe(ev => {
+    this.loadRoster();
+    this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => { } });
+    this.api.getCentroMandoClientes().subscribe({
+      next: (r) => this.clientesCatalogo.set(r?.clientes || []),
+      error: () => { },
+    });
+    // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
+    // en vez de refrescar agresivamente cada 800ms.
+    this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
         if (this.reviewOpen()) return; // no interrumpir una revisión en curso
-        clearTimeout(this.rtDebounce);
-        this.rtDebounce = setTimeout(() => this.load(), 800);
+        const prev = this.pendingEvents();
+        this.pendingEvents.set(prev + 1);
+        if (!this.hasPendingUpdates()) {
+          this.hasPendingUpdates.set(true);
+          this.playNotifSound();
+        }
       }
     });
+
+    // Auto-refresh silencioso cada 60s SI hay eventos pendientes
+    this.autoRefreshInterval = setInterval(() => {
+      if (this.hasPendingUpdates() && !this.reviewOpen()) {
+        this.dismissAndRefresh();
+      }
+    }, 60_000);
+  }
+
+  ngOnDestroy(): void {
+    this.rtSubscription?.unsubscribe();
+    clearInterval(this.autoRefreshInterval);
+  }
+
+  /** Refresca y resetea el indicador de actualizaciones pendientes. */
+  dismissAndRefresh(): void {
+    this.pendingEvents.set(0);
+    this.hasPendingUpdates.set(false);
+    this.load();
+    this.loadRoster();
+  }
+
+  private playNotifSound(): void {
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = this.audioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {
+      // Silenciar errores de audio (autoplay policy, etc.)
+    }
   }
 
   private rangeFor(p: Periodo): { desde: string; hasta: string } {
@@ -109,6 +180,18 @@ export class RevisionVisitasComponent implements OnInit {
     });
   }
 
+  /** Roster (no depende del rango de fechas): quién está asignado a rutas
+   * activas, tenga o no visitas cargadas todavía. Sin cliente_id trae el de
+   * todos los clientes visibles para el usuario -- es el default de la
+   * pantalla, ordenado en `rosterFiltrado` por quién tiene más sin revisar. */
+  private loadRoster(clienteId?: number): void {
+    this.loadingRoster.set(true);
+    this.api.getReviewMercaderistas(clienteId ? { cliente_id: clienteId } : {}).subscribe({
+      next: (rs) => { this.mercaderistasRoster.set(rs || []); this.loadingRoster.set(false); },
+      error: () => { this.mercaderistasRoster.set([]); this.loadingRoster.set(false); },
+    });
+  }
+
   // ── Opciones de filtros (valores distintos del set cargado) ──
   private distinct(key: string, source: any[] = this.visitas()): string[] {
     return Array.from(new Set(source.map(v => v[key]).filter(x => x != null && x !== ''))).sort();
@@ -121,17 +204,112 @@ export class RevisionVisitasComponent implements OnInit {
       ? this.visitas().filter(v => v.cliente === this.filtroCliente)
       : this.visitas();
   }
-  get rutasOpts(): string[] { return this.distinct('ruta', this.visitasDelClienteFiltrado); }
+  private get rosterDelClienteFiltrado(): any[] {
+    return this.filtroCliente
+      ? this.mercaderistasRoster().filter(r => r.cliente === this.filtroCliente)
+      : this.mercaderistasRoster();
+  }
+  // Clientes/rutas/mercaderistas salen de la UNIÓN visitas+roster: el roster
+  // trae asignaciones aunque todavía no haya ni una visita cargada (por eso
+  // no basta con derivarlos solo de `visitas()`, que solo tiene fotos ya
+  // subidas -- HAVING revisar > 0 en review-list).
+  get rutasOpts(): string[] {
+    const b = this.rosterDelClienteFiltrado.map(r => r.ruta).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('ruta', this.visitasDelClienteFiltrado), ...b])).sort();
+  }
   get puntosOpts(): string[] { return this.distinct('punto_de_interes', this.visitasDelClienteFiltrado); }
-  get clientesOpts(): string[] { return this.distinct('cliente'); }
-  get mercaderistasOpts(): string[] { return this.distinct('mercaderista', this.visitasDelClienteFiltrado); }
+  get clientesOpts(): string[] {
+    const b = this.clientesCatalogo().map(c => c.cliente).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('cliente'), ...b])).sort();
+  }
+  get mercaderistasOpts(): string[] {
+    const b = this.rosterDelClienteFiltrado.map(r => r.mercaderista).filter((x): x is string => !!x);
+    return Array.from(new Set([...this.distinct('mercaderista', this.visitasDelClienteFiltrado), ...b])).sort();
+  }
+  /** El roster trae "departamentos" como un solo string ("Miranda, Distrito
+   * Capital") por ruta -- son los departamentos de los PDV de esa ruta. Acá
+   * se separan para armar la lista de opciones del filtro. */
+  get departamentosOpts(): string[] {
+    const set = new Set<string>();
+    for (const r of this.rosterDelClienteFiltrado) {
+      (r.departamentos || '').split(',').map((d: string) => d.trim()).filter(Boolean).forEach((d: string) => set.add(d));
+    }
+    return Array.from(set).sort();
+  }
 
   /** Al cambiar de cliente, las selecciones de ruta/punto/mercaderista
    * previas pueden ya no pertenecer al cliente nuevo -- se limpian para no
-   * dejar un filtro "fantasma" que no matchea nada. */
+   * dejar un filtro "fantasma" que no matchea nada. Volver también a la
+   * vista de mercaderistas (el mercaderista elegido era de otro cliente), y
+   * repedir el roster escopado a ese cliente (o al global si se limpió el
+   * filtro). */
   onClienteFiltroChange(): void {
-    this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = [];
+    this.filtroRutas = []; this.filtroPunto = ''; this.filtroMercaderistas = []; this.filtroDepartamento = '';
+    this.selectedMercaderista.set(null);
+    if (!this.filtroCliente) { this.loadRoster(); return; }
+    const c = this.clientesCatalogo().find(x => x.cliente === this.filtroCliente);
+    if (c) this.loadRoster(c.id_cliente); else this.mercaderistasRoster.set([]);
   }
+
+  /** Roster filtrado por cliente/ruta/mercaderista/búsqueda -- es lo que se
+   * muestra POR DEFECTO en vez de las tarjetas de visitas. Cada fila trae
+   * sus stats (visitas/fotos/sin_revisar) ya calculadas contra el rango de
+   * fechas activo, y quedan ordenadas por quién tiene más fotos sin revisar
+   * primero -- así se ve de un vistazo a quién hay que atender. */
+  /** Roster + mercaderistas que TIENEN visitas en el período pero no salen en
+   *  el roster (sin ruta activa asignada, ruta dada de baja, etc.). Sin esto
+   *  sus visitas quedaban inalcanzables: contaban en las tarjetas de arriba
+   *  (VISITAS/FOTOS salen de review-list) pero no había ninguna tarjeta que
+   *  abrir, y la pantalla decía "No hay mercaderistas asignados con estos
+   *  filtros" con el contador en 1. Reportado en campo como "busqué esa visita
+   *  y no me sale la tarjeta". */
+  private get rosterConVisitasHuerfanas(): any[] {
+    const roster = this.mercaderistasRoster();
+    const vistos = new Set(roster.map(r => `${r.id_mercaderista}_${r.cliente}`));
+    const extra: any[] = [];
+    for (const v of this.visitas()) {
+      const k = `${v.id_mercaderista}_${v.cliente}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      extra.push({
+        id_mercaderista: v.id_mercaderista, mercaderista: v.mercaderista,
+        id_cliente: v.id_cliente, cliente: v.cliente,
+        ruta: v.ruta, departamentos: v.ciudad || '',
+        _sinRuta: true,   // se marca en la tarjeta: tiene visitas pero no ruta activa
+      });
+    }
+    return [...roster, ...extra];
+  }
+
+  get rosterFiltrado(): any[] {
+    const s = this.search.trim().toLowerCase();
+    return this.rosterConVisitasHuerfanas
+      .filter(r => {
+        if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
+        if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
+        if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(r.mercaderista)) return false;
+        if (this.filtroDepartamento && !(r.departamentos || '').split(',').map((d: string) => d.trim()).includes(this.filtroDepartamento)) return false;
+        if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
+        return true;
+      })
+      .map(r => ({ ...r, _stats: this.statsDeRoster(r) }))
+      .sort((a, b) => {
+        if (b._stats.sin_revisar !== a._stats.sin_revisar) return b._stats.sin_revisar - a._stats.sin_revisar;
+        if (b._stats.visitas !== a._stats.visitas) return b._stats.visitas - a._stats.visitas;
+        return (a.mercaderista || '').localeCompare(b.mercaderista || '');
+      });
+  }
+
+  private statsDeRoster(r: any) {
+    const vs = this.visitas().filter(v => v.id_mercaderista === r.id_mercaderista && v.cliente === r.cliente);
+    const fotos = vs.reduce((a, v) => a + (v.fotos_revisar || 0), 0);
+    const apr = vs.reduce((a, v) => a + (v.aprobadas || 0), 0);
+    const sin = vs.reduce((a, v) => a + (v.sin_revisar || 0), 0);
+    return { visitas: vs.length, fotos, aprobadas: apr, sin_revisar: sin };
+  }
+
+  selectMercaderista(r: any): void { this.selectedMercaderista.set(r); }
+  backToRoster(): void { this.selectedMercaderista.set(null); }
 
   toggleRutaFiltro(r: string): void {
     const i = this.filtroRutas.indexOf(r);
@@ -143,9 +321,12 @@ export class RevisionVisitasComponent implements OnInit {
   }
 
   clearFilters(): void {
+    const teniaCliente = !!this.filtroCliente;
     this.search = ''; this.filtroRutas = []; this.filtroPunto = '';
-    this.filtroCliente = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
+    this.filtroCliente = ''; this.filtroDepartamento = ''; this.filtroMercaderistas = []; this.filtroChat = ''; this.filtroEstado = '';
     this.rutasDropdownOpen.set(false); this.mercaderistasDropdownOpen.set(false);
+    this.selectedMercaderista.set(null);
+    if (teniaCliente) this.loadRoster();
   }
 
   /** Visita 100% aprobada: tiene fotos revisables y todas quedaron Aprobada
@@ -156,7 +337,9 @@ export class RevisionVisitasComponent implements OnInit {
 
   get filtered(): any[] {
     const s = this.search.trim().toLowerCase();
+    const sel = this.selectedMercaderista();
     return this.visitas().filter(v => {
+      if (sel && v.id_mercaderista !== sel.id_mercaderista) return false;
       if (this.filtroRutas.length && !this.filtroRutas.includes(v.ruta)) return false;
       if (this.filtroPunto && v.punto_de_interes !== this.filtroPunto) return false;
       if (this.filtroCliente && v.cliente !== this.filtroCliente) return false;
@@ -195,11 +378,11 @@ export class RevisionVisitasComponent implements OnInit {
 
   // Agrupación de tipos de foto (para no mostrar tantos chips)
   readonly GRUPOS: { key: string; label: string; icon: string; ids: number[]; revisable: boolean }[] = [
-    { key: 'gestion',      label: 'Gestión',              icon: 'photo_camera',  ids: [1, 2],  revisable: true  },
-    { key: 'exhibiciones', label: 'Exhibiciones',         icon: 'view_carousel', ids: [4, 7],  revisable: true  },
-    { key: 'pop',          label: 'Material POP',         icon: 'campaign',      ids: [8, 10], revisable: true  },
-    { key: 'precio',       label: 'Precio',               icon: 'sell',          ids: [3],     revisable: true  },
-    { key: 'activacion',   label: 'Activación / Desact.', icon: 'bolt',          ids: [5, 6],  revisable: false },
+    { key: 'gestion', label: 'Gestión', icon: 'photo_camera', ids: [1, 2], revisable: true },
+    { key: 'exhibiciones', label: 'Exhibiciones', icon: 'view_carousel', ids: [4, 7], revisable: true },
+    { key: 'pop', label: 'Material POP', icon: 'campaign', ids: [8, 10], revisable: true },
+    { key: 'precio', label: 'Precio', icon: 'sell', ids: [3], revisable: true },
+    { key: 'activacion', label: 'Activación / Desact.', icon: 'bolt', ids: [5, 6], revisable: false },
   ];
 
   /** Agrupa el desglose `v.tipos` en grupos con total/rechazadas, omitiendo los vacíos. */
@@ -243,7 +426,15 @@ export class RevisionVisitasComponent implements OnInit {
     this.photosLoading.set(true);
     this.api.getVisitPhotos(v.id_visita).subscribe({
       next: (ph) => { this.photos.set(ph as any[]); this.photosLoading.set(false); },
-      error: () => { this.photos.set([]); this.photosLoading.set(false); },
+      error: (err) => {
+        // Antes esto dejaba this.photos en [] sin ningún indicio de error --
+        // indistinguible de una visita sin fotos, aunque los chips de arriba
+        // (que salen de un endpoint distinto, el agregado de la lista) sí
+        // mostraran totales > 0. Si esto vuelve a pasar, el snackbar dice
+        // el motivo real en vez de "no hay fotos en este filtro".
+        this.photos.set([]); this.photosLoading.set(false);
+        this.snack.open(`No se pudieron cargar las fotos: ${err.error?.detail ?? err.message ?? 'error desconocido'}`, 'OK', { duration: 6000 });
+      },
     });
   }
   closeReview(): void {
@@ -253,6 +444,15 @@ export class RevisionVisitasComponent implements OnInit {
 
   setGrupoSel(key: string): void { this.grupoSel = key; this.photoFilter = 'todas'; }
   isReviewable(f: any): boolean { return ![5, 6].includes(f.id_tipo_foto); }
+
+  /** Fila sintética que inserta el auto-cierre de las 7pm cuando el
+   *  mercaderista no desactivó el PDV a mano -- no tiene foto real
+   *  (file_path NULL), así que no debe renderizarse como <img>. Se detecta
+   *  por Estado y también por url vacía, por si alguna quedó con otro
+   *  Estado tras una revisión manual. */
+  esAutoCierre(f: any): boolean {
+    return this.estadoDe(f) === 'Auto-cierre' || (f?.id_tipo_foto === 6 && !f?.url);
+  }
 
   estadoDe(f: any): string { return f?.estado ?? 'pendiente'; }
   isAprobada(f: any): boolean { return this.estadoDe(f) === 'Aprobada'; }
@@ -354,10 +554,12 @@ export class RevisionVisitasComponent implements OnInit {
     });
     ref.afterClosed().subscribe(thread => {
       if (thread?.id_grupo) {
-        this.router.navigate(['/chat'], { queryParams: {
-          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
-          grupo_visita: thread.id_visita, titulo: thread.titulo,
-        } });
+        this.router.navigate(['/chat'], {
+          queryParams: {
+            grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+            grupo_visita: thread.id_visita, titulo: thread.titulo,
+          }
+        });
       }
     });
   }
@@ -405,7 +607,7 @@ export class RevisionVisitasComponent implements OnInit {
   get groupHasPairs(): boolean {
     const ph = this.photosByGrupo();
     return ph.some(f => this.ANTES_IDS.includes(f.id_tipo_foto)) &&
-           ph.some(f => this.DESPUES_IDS.includes(f.id_tipo_foto));
+      ph.some(f => this.DESPUES_IDS.includes(f.id_tipo_foto));
   }
 
   get showCompare(): boolean { return this.comparar && this.groupHasPairs; }
@@ -414,11 +616,22 @@ export class RevisionVisitasComponent implements OnInit {
   get comparePairs(): { antes: any; despues: any }[] {
     const ph = this.photosByGrupo();
     const byId = (a: any, b: any) => (a.id || 0) - (b.id || 0);
-    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
-    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
+    // El filtro de estado se aplica DESPUÉS de emparejar, no antes. Filtrar
+    // cada lista por separado (como estaba) rompía los pares: al elegir
+    // "Aprobadas", un Antes aprobado cuyo Después seguía pendiente quedaba
+    // emparejado contra el Después de OTRA pareja, o mostraba "Sin foto"
+    // aunque la foto sí existiera -- de ahí los reportes de "solo salen
+    // fotos de antes y no de después" en la pantalla de revisión.
+    // Se conserva el par completo si CUALQUIERA de las dos matchea el filtro.
+    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto)).sort(byId);
+    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto)).sort(byId);
     const n = Math.max(antes.length, despues.length);
     const pairs: { antes: any; despues: any }[] = [];
-    for (let i = 0; i < n; i++) pairs.push({ antes: antes[i] || null, despues: despues[i] || null });
+    for (let i = 0; i < n; i++) {
+      const par = { antes: antes[i] || null, despues: despues[i] || null };
+      const matchea = (par.antes && this.estadoMatch(par.antes)) || (par.despues && this.estadoMatch(par.despues));
+      if (matchea) pairs.push(par);
+    }
     return pairs;
   }
 

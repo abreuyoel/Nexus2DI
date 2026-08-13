@@ -31,7 +31,7 @@ class RutaBase(BaseModel):
 
 
 class RutaCreate(RutaBase):
-    tipo: str
+    servicio: str
     id_cliente_exclusivo: Optional[int] = None
 
 

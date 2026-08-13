@@ -21,7 +21,7 @@ import { NewChatDialogComponent } from './new-chat-dialog.component';
 import { GroupMembersDialogComponent } from './group-members-dialog.component';
 import { PhotoLightboxComponent, LightboxPhoto } from '../../shared/photo-lightbox/photo-lightbox.component';
 
-type TipoGrupo = 'operativo' | 'operativo_cliente';
+type TipoGrupo = 'operativo' | 'operativo_cliente' | 'encuestador';
 
 interface LecturaEvent {
   tipo: 'lectura';
@@ -108,7 +108,28 @@ export class ChatComponent implements OnInit, OnDestroy {
   // Los grupos 'operativo_cliente' incluyen usuarios del cliente -- por eso
   // viven en la pestaña Cliente, no en Equipo Operativo.
   activeChatTab = signal<'cliente' | 'equipo'>('cliente');
-  gruposOperativo = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo'));
+  // Roles que representan a un cliente final (dueño/comprador de la data,
+  // no personal interno): no tienen que ver la pestaña "Cliente" -- esos
+  // chats son justamente CON el cliente, y ellos SON el cliente. Se computa
+  // acá (no se reutiliza el is_client del backend) porque ese flag agrupa
+  // también coordinadores/vendedor/encuestador por otros motivos de permisos
+  // que no tienen que ver con esta pestaña -- tocarlo habría cambiado su
+  // comportamiento sin que nadie lo pidiera.
+  soloEquipoOperativo = computed(() => {
+    const r = this.auth.currentUser()?.id_rol;
+    // 1 = Cliente, 12 = Encuestador, 13 = IQVIA. Los tres son completamente
+    // ajenos al sistema de grupos por cliente (operativo_cliente) -- para
+    // 12/13 ni siquiera existe ese contenido (ver get_grupos_de_usuario en
+    // chat_grupos_membresia.py, que los resuelve aparte).
+    return r === 1 || r === 12 || r === 13;
+  });
+  // Nunca renderiza contenido de la pestaña Cliente para esos roles, sin
+  // importar cómo haya quedado activeChatTab -- defensa en profundidad además
+  // de ocultar el botón y forzar el default en ngOnInit.
+  tabEfectivo = computed<'cliente' | 'equipo'>(() => this.soloEquipoOperativo() ? 'equipo' : this.activeChatTab());
+  // El grupo único de encuestadores ('encuestador') es, en espíritu, un
+  // grupo operativo más -- vive en la misma pestaña "Equipo Operativo".
+  gruposOperativo = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo' || g.tipo_grupo === 'encuestador'));
   gruposCliente = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo_cliente'));
   clienteCount = computed(() => this.inbox().filter(i => i.kind === 'visit').length + this.gruposCliente().length);
   adHocConversations = computed(() => this.inbox().filter(i => i.kind === 'conversation'));
@@ -158,6 +179,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     const u = this.auth.currentUser();
+    if (this.soloEquipoOperativo()) this.activeChatTab.set('equipo');
     if (u?.is_coordinador_exclusivo) {
       this.isCoordinadorExclusivo.set(true);
       this.loadExclusiveClients();
@@ -249,7 +271,9 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.expandedGrupoId.set(g.id_grupo);
     if (!this.visitasPorGrupo()[g.id_grupo]) {
       this.loadingVisitasGrupo.set(g.id_grupo);
-      this.api.getVisitasConChat(g.id_cliente, g.tipo_grupo).subscribe({
+      // 'encuestador' no tiene visitas -- el backend simplemente devuelve
+      // vacío para ese tipo, no hace falta ocultar el botón de expandir.
+      this.api.getVisitasConChat(g.id_cliente, g.tipo_grupo as 'operativo' | 'operativo_cliente').subscribe({
         next: (visitas) => {
           this.visitasPorGrupo.update(m => ({ ...m, [g.id_grupo]: visitas }));
           this.loadingVisitasGrupo.set(null);
@@ -421,13 +445,18 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.activeTitle.set(v.punto || `Visita #${v.id_visita}`);
     this.resetActiveChat();
 
-    this.api.getMensajesGrupoVisita(key.id_cliente, key.tipo_grupo, key.id_visita).subscribe({
+    // El sub-hilo por visita solo existe para grupos ligados a un cliente
+    // real (operativo / operativo_cliente) -- 'encuestador' no tiene visitas
+    // (no hay VISITAS_MERCADERISTA de por medio), así que nunca llega hasta
+    // acá con ese tipo aunque el tipo TS sea más amplio.
+    const tipoVisita = key.tipo_grupo as 'operativo' | 'operativo_cliente';
+    this.api.getMensajesGrupoVisita(key.id_cliente, tipoVisita, key.id_visita).subscribe({
       next: history => {
         this.messages.set(history.map(h => this.mapGrupoMensaje(h)));
         setTimeout(() => this.scrollToBottom(), 50);
       }
     });
-    this.api.marcarLeidoGrupoVisita(key.id_cliente, key.tipo_grupo, key.id_visita).subscribe();
+    this.api.marcarLeidoGrupoVisita(key.id_cliente, tipoVisita, key.id_visita).subscribe();
 
     const room = `grupo_visita_${key.id_cliente}_${key.tipo_grupo}_${key.id_visita}`;
     this.wsSubscription = this.ws.connectToChatGrupos(room).subscribe({
@@ -517,7 +546,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     } else if (kind === 'grupo_visita') {
       const gv = this.activeGrupoVisita();
       if (!gv) return;
-      this.api.enviarMensajeGrupoVisita(gv.id_cliente, gv.tipo_grupo, gv.id_visita, text).subscribe();
+      this.api.enviarMensajeGrupoVisita(gv.id_cliente, gv.tipo_grupo as 'operativo' | 'operativo_cliente', gv.id_visita, text).subscribe();
     } else {
       return;
     }
@@ -561,7 +590,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   private scrollToBottom(): void {
     try {
       this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
-    } catch {}
+    } catch { }
   }
 
   // Helpers de UI (conversaciones ad-hoc region/pdv del tab Equipo)

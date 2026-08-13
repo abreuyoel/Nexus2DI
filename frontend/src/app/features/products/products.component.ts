@@ -67,6 +67,14 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         <input [ngModel]="searchText()" (ngModelChange)="onSearch($event)" placeholder="Buscar por nombre o código..."
           class="w-full h-11 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 rounded-xl pl-9 pr-4 text-sm font-semibold outline-none transition-colors">
       </div>
+      <div class="relative">
+        <select [ngModel]="filterDepartamento()" (ngModelChange)="filterDepartamento.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
+          <option [ngValue]="null">Todos los departamentos</option>
+          @for (d of facetOpts().departamentos; track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
       <app-searchable-select
         [options]="catFilterOptions()"
         [value]="filterCategoria()"
@@ -76,6 +84,14 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         (valueChange)="onCategoriaFilter($event)"
         class="min-w-48">
       </app-searchable-select>
+      <div class="relative">
+        <select [ngModel]="filterSubcategoria()" (ngModelChange)="filterSubcategoria.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
+          <option [ngValue]="null">Todas las subcategorías</option>
+          @for (s of facetOpts().subcategorias; track s.id) { <option [ngValue]="s.id">{{ s.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
       <app-searchable-select
         [options]="marcaFilterOptions()"
         [value]="filterMarca()"
@@ -85,7 +101,40 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
         (valueChange)="onMarcaFilter($event)"
         class="min-w-48">
       </app-searchable-select>
-      @if (searchText() || filterCategoria() || filterMarca()) {
+      <div class="relative">
+        <select [ngModel]="filterProductora()" (ngModelChange)="filterProductora.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
+          <option [ngValue]="null">Todas las productoras</option>
+          @for (p of facetOpts().productoras; track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      <div class="relative">
+        <select [ngModel]="filterPresentacion()" (ngModelChange)="filterPresentacion.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
+          <option [ngValue]="null">Todas las presentaciones</option>
+          @for (p of facetOpts().presentaciones; track p.id) { <option [ngValue]="p.id">{{ p.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      <div class="relative">
+        <select [ngModel]="filterTamano()" (ngModelChange)="filterTamano.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-36">
+          <option [ngValue]="null">Todos los tamaños</option>
+          @for (t of facetOpts().tamanos; track t.id) { <option [ngValue]="t.id">{{ t.nombre }}</option> }
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      <div class="relative">
+        <select [ngModel]="filterInagotable()" (ngModelChange)="filterInagotable.set($event); reload()"
+          class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-violet-500 text-slate-900 dark:text-white rounded-xl px-3 py-2.5 pr-8 text-sm font-semibold appearance-none outline-none min-w-32">
+          <option value="">Inagotable: todos</option>
+          <option value="si">Inagotable: Sí</option>
+          <option value="no">Inagotable: No</option>
+        </select>
+        <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none !text-base">expand_more</mat-icon>
+      </div>
+      @if (hasFilters) {
         <button (click)="clearFilters()" class="flex items-center gap-1.5 px-4 h-11 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl text-sm font-bold transition-all">
           <mat-icon class="!text-base">close</mat-icon> Limpiar
         </button>
@@ -104,11 +153,11 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
       </div>
     } @else {
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl overflow-hidden overflow-x-auto">
-        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-white/5 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1380px]">
-          <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
+        <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 px-5 py-3 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-white/5 text-[10px] font-black text-slate-500 uppercase tracking-widest min-w-[1520px]">
+          <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Productora</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
         </div>
         @for (p of productos(); track p.id) {
-          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group min-w-[1380px]">
+          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group min-w-[1520px]">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900 flex items-center justify-center shrink-0"><mat-icon class="!text-base text-violet-600 dark:text-violet-400">inventory_2</mat-icon></div>
               <p class="font-bold text-sm truncate">{{ p.producto_gu || '—' }}</p>
@@ -118,6 +167,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
             <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.categoria || '—' }}</span>
             <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.subcategoria || '—' }}</span>
             <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.marca || '—' }}</span>
+            <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.fabricante || '—' }}</span>
             <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.presentacion || '—' }}</span>
             <span class="text-sm text-slate-500 dark:text-slate-400 truncate">{{ p.tamano || '—' }}</span>
             <span class="flex items-center">
@@ -401,8 +451,20 @@ export class ProductsComponent implements OnInit {
   ];
 
   searchText = signal('');
+  filterDepartamento = signal<number | null>(null);
   filterCategoria = signal<number | null>(null);
+  filterSubcategoria = signal<number | null>(null);
   filterMarca = signal<number | null>(null);
+  filterProductora = signal<number | null>(null);
+  filterPresentacion = signal<number | null>(null);
+  filterTamano = signal<number | null>(null);
+  filterInagotable = signal<'' | 'si' | 'no'>('');
+  // Opciones de los selects de filtro, cascadeadas según lo que ya está
+  // elegido (ej. si filtrás por productora, categoría/marca/etc. solo
+  // muestran lo que esa productora realmente tiene) -- ver loadFacetOpts().
+  facetOpts = signal<{ departamentos: Simple[]; categorias: Simple[]; subcategorias: Simple[]; marcas: Simple[]; productoras: Simple[]; presentaciones: Simple[]; tamanos: Simple[] }>({
+    departamentos: [], categorias: [], subcategorias: [], marcas: [], productoras: [], presentaciones: [], tamanos: [],
+  });
   skipVal = signal(0);
   pageSize = 25;
   private search$ = new Subject<string>();
@@ -438,20 +500,43 @@ export class ProductsComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadProductos();
+    this.loadFacetOpts();
     this.loadCatalogs();
-    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => { this.skipVal.set(0); this.loadProductos(); });
+    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => { this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts(); });
+  }
+
+  /** Filtros activos, compartidos entre loadProductos() y loadFacetOpts()
+   * (que además necesita saber cuál es cada uno para excluirlo de su propia
+   * faceta -- ver comentario del endpoint en el backend). */
+  private currentFilters() {
+    return {
+      busqueda: this.searchText() || undefined,
+      id_departamento: this.filterDepartamento() ?? undefined,
+      id_categoria: this.filterCategoria() ?? undefined,
+      id_subcategoria: this.filterSubcategoria() ?? undefined,
+      id_marca: this.filterMarca() ?? undefined,
+      id_productora: this.filterProductora() ?? undefined,
+      id_presentacion: this.filterPresentacion() ?? undefined,
+      id_clasificacion_tamano: this.filterTamano() ?? undefined,
+      inagotable: this.filterInagotable() ? this.filterInagotable() === 'si' : undefined,
+    };
   }
 
   loadProductos(): void {
     this.loading.set(true);
-    this.api.getProductos({ skip: this.skipVal(), limit: this.pageSize, busqueda: this.searchText() || undefined, id_categoria: this.filterCategoria() ?? undefined, id_marca: this.filterMarca() ?? undefined })
+    this.api.getProductos({ skip: this.skipVal(), limit: this.pageSize, ...this.currentFilters() })
       .subscribe({ next: (res) => { this.productos.set(res.items); this.total.set(res.total); this.loading.set(false); }, error: () => this.loading.set(false) });
   }
 
+  loadFacetOpts(): void {
+    this.api.getProductosFiltrosDisponibles(this.currentFilters())
+      .subscribe({ next: (d) => { this.facetOpts.set(d); this.buildCatFilterOptions(); this.buildMarcaFilterOptions(); }, error: () => { } });
+  }
+
   loadCatalogs(): void {
-    this.api.getCatalogosCategorias().subscribe({ next: d => { this.catList.set(d); this.buildCatOptions(); this.buildCatFilterOptions(); }, error: () => { } });
+    this.api.getCatalogosCategorias().subscribe({ next: d => { this.catList.set(d); this.buildCatOptions(); }, error: () => { } });
     this.api.getCatalogosSubCategorias().subscribe({ next: d => { this.subcatList.set(d); this.buildSubcategoriaOptions(); }, error: () => { } });
-    this.api.getCatMarcas().subscribe({ next: d => { this.marcasList.set(d); this.buildMarcaOptions(); this.buildMarcaFilterOptions(); }, error: () => { } });
+    this.api.getCatMarcas().subscribe({ next: d => { this.marcasList.set(d); this.buildMarcaOptions(); }, error: () => { } });
     this.api.getCatPresentaciones().subscribe({ next: d => { this.presentacionesList.set(d); this.buildPresentacionOptions(); }, error: () => { } });
     this.api.getCatDepartamentos().subscribe({ next: d => { this.departamentosList.set(d); this.buildDepartamentoOptions(); }, error: () => { } });
     this.api.getCatProductoras().subscribe({ next: d => { this.productorasList.set(d); this.buildProductoraOptions(); }, error: () => { } });
@@ -460,10 +545,10 @@ export class ProductsComponent implements OnInit {
 
   // ── Build SearchableOption arrays from catalog lists ──
   private buildCatFilterOptions(): void {
-    this.catFilterOptions.set(this.catList().map(c => ({ value: c.id_categoria, label: c.nombre })));
+    this.catFilterOptions.set(this.facetOpts().categorias.map(c => ({ value: c.id, label: c.nombre })));
   }
   private buildMarcaFilterOptions(): void {
-    this.marcaFilterOptions.set(this.marcasList().map(m => ({ value: m.id, label: m.nombre })));
+    this.marcaFilterOptions.set(this.facetOpts().marcas.map(m => ({ value: m.id, label: m.nombre })));
   }
   private buildDepartamentoOptions(): void {
     this.departamentoOptions.set(this.departamentosList().map(d => ({ value: d.id, label: d.nombre })));
@@ -503,8 +588,16 @@ export class ProductsComponent implements OnInit {
   onCategoriaChange(): void { this.form.patchValue({ id_subcategoria: null }); }
 
   onSearch(val: string): void { this.searchText.set(val); this.search$.next(val); }
-  reload(): void { this.skipVal.set(0); this.loadProductos(); }
-  clearFilters(): void { this.searchText.set(''); this.filterCategoria.set(null); this.filterMarca.set(null); this.skipVal.set(0); this.loadProductos(); }
+  reload(): void { this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts(); }
+  get hasFilters(): boolean {
+    return !!(this.searchText() || this.filterDepartamento() || this.filterCategoria() || this.filterSubcategoria() ||
+      this.filterMarca() || this.filterProductora() || this.filterPresentacion() || this.filterTamano() || this.filterInagotable());
+  }
+  clearFilters(): void {
+    this.searchText.set(''); this.filterDepartamento.set(null); this.filterCategoria.set(null); this.filterSubcategoria.set(null);
+    this.filterMarca.set(null); this.filterProductora.set(null); this.filterPresentacion.set(null); this.filterTamano.set(null);
+    this.filterInagotable.set(''); this.skipVal.set(0); this.loadProductos(); this.loadFacetOpts();
+  }
   prevPage(): void { this.skipVal.update(v => Math.max(0, v - this.pageSize)); this.loadProductos(); }
   nextPage(): void { this.skipVal.update(v => v + this.pageSize); this.loadProductos(); }
 

@@ -28,6 +28,11 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "chat": {"read": True},
         "cliente-encuestador": {"read": True},
     },
+    "ejecutivo_cuenta": {
+        "chat": {"read": True},
+        "cliente-encuestador": {"read": True},
+        "encuestador": {"read": True, "write": True},
+    },
     "client": {
         "dashboard": {"read": True},
         "chat": {"read": True},

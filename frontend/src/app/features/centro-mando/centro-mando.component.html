@@ -54,9 +54,12 @@
 
       <button class="cm-hoy-btn" [class.active]="isHoy" (click)="irHoy()">Hoy</button>
 
-      <button class="cm-refresh-btn" (click)="refresh()">
-        <mat-icon>refresh</mat-icon>
+      <button class="cm-refresh-btn" [class.has-updates]="hasPendingUpdates()" (click)="dismissAndRefresh()">
+        <mat-icon [class.spin-once]="loadingResumen() || loadingActivaciones()">refresh</mat-icon>
         Actualizar
+        @if (pendingEvents() > 0) {
+        <span class="cm-pending-badge">{{ pendingEvents() }}</span>
+        }
       </button>
 
       <button
@@ -80,7 +83,7 @@
   <div class="cm-stats-grid">
 
     <!-- Mercaderistas Asignados -->
-    <div class="cm-stat-card border-blue">
+    <div class="cm-stat-card border-blue" [class.cm-changed]="cardChanged('asignados')">
       <div class="cm-stat-icon blue"><mat-icon>people</mat-icon></div>
       <div class="cm-stat-body">
         <div class="cm-stat-num">{{ resumenDia().mercaderistas.total_asignados }}</div>
@@ -93,7 +96,7 @@
     </div>
 
     <!-- Planificados Hoy -->
-    <div class="cm-stat-card border-purple">
+    <div class="cm-stat-card border-purple" [class.cm-changed]="cardChanged('planificados')">
       <div class="cm-stat-icon purple"><mat-icon>event_available</mat-icon></div>
       <div class="cm-stat-body">
         <div class="cm-stat-num">{{ resumenDia().mercaderistas.planificados_hoy }}</div>
@@ -102,7 +105,7 @@
     </div>
 
     <!-- Activaron Hoy -->
-    <div class="cm-stat-card border-green">
+    <div class="cm-stat-card border-green" [class.cm-changed]="cardChanged('activaron')">
       <div class="cm-stat-icon green"><mat-icon>check_circle</mat-icon></div>
       <div class="cm-stat-body">
         <div class="cm-stat-num">{{ resumenDia().mercaderistas.activos_hoy }}</div>
@@ -114,7 +117,7 @@
     </div>
 
     <!-- Faltaron Hoy -->
-    <div class="cm-stat-card border-red">
+    <div class="cm-stat-card border-red" [class.cm-changed]="cardChanged('faltaron')">
       <div class="cm-stat-icon red"><mat-icon>person_off</mat-icon></div>
       <div class="cm-stat-body">
         <div class="cm-stat-num">{{ resumenDia().mercaderistas.faltantes_hoy }}</div>
@@ -183,7 +186,7 @@
   <div class="cm-secondary-grid mt-2">
 
     <!-- Rutas -->
-    <div class="cm-sec-card">
+    <div class="cm-sec-card" [class.cm-changed]="cardChanged('rutas')">
       <div class="cm-sec-header">
         <mat-icon class="cm-sec-icon">route</mat-icon>
         <span class="cm-sec-title">Rutas</span>
@@ -195,10 +198,16 @@
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
-          <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.completadas
-            }}</span>
-          <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.completadas,
-            resumenDia().rutas.planificadas) }}%</span>
+          <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.activas -
+            resumenDia().rutas.completadas }}</span>
+          <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.activas -
+            resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+        </div>
+        <div class="cm-metric-sep"></div>
+        <div class="cm-metric">
+          <span class="cm-metric-num blue">{{ resumenDia().rutas.activas }}</span>
+          <span class="cm-metric-lbl">Act. · {{ pct(resumenDia().rutas.activas, resumenDia().rutas.planificadas)
+            }}%</span>
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
@@ -210,7 +219,7 @@
     </div>
 
     <!-- Puntos -->
-    <div class="cm-sec-card">
+    <div class="cm-sec-card" [class.cm-changed]="cardChanged('puntos')">
       <div class="cm-sec-header">
         <mat-icon class="cm-sec-icon">location_on</mat-icon>
         <span class="cm-sec-title">Puntos</span>
@@ -223,9 +232,16 @@
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
           <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.planificados -
-            resumenDia().puntos_interes.completados }}</span>
+            resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados }}</span>
           <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().puntos_interes.planificados -
-            resumenDia().puntos_interes.completados, resumenDia().puntos_interes.planificados) }}%</span>
+            resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados,
+            resumenDia().puntos_interes.planificados) }}%</span>
+        </div>
+        <div class="cm-metric-sep"></div>
+        <div class="cm-metric">
+          <span class="cm-metric-num blue">{{ resumenDia().puntos_interes.activos }}</span>
+          <span class="cm-metric-lbl">Act. · {{ pct(resumenDia().puntos_interes.activos,
+            resumenDia().puntos_interes.planificados) }}%</span>
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
@@ -240,7 +256,7 @@
     </div>
 
     <!-- Clientes Tradex -->
-    <div class="cm-sec-card">
+    <div class="cm-sec-card" [class.cm-changed]="cardChanged('tradex')">
       <div class="cm-sec-header">
         <mat-icon class="cm-sec-icon">groups</mat-icon>
         <span class="cm-sec-title">Clientes (Tradex)</span>
@@ -292,6 +308,10 @@
     <button class="cm-tab" [class.active]="activeView === 'lista'" (click)="activeView = 'lista'">
       <mat-icon>list_alt</mat-icon> Todas las visitas
       <span class="cm-badge">{{ activaciones().length }}</span>
+    </button>
+    <button class="cm-tab" [class.active]="activeView === 'horas'" (click)="activeView = 'horas'">
+      <mat-icon>schedule</mat-icon> Horas Trabajadas
+      <span class="cm-badge">{{ horasTrabajadas().length }}</span>
     </button>
   </div>
 
@@ -671,6 +691,59 @@
         </tbody>
       </table>
     </div>
+    }
+
+    <!-- ─── HORAS TRABAJADAS TAB ──────────────────────────────── -->
+    @if (activeView === 'horas') {
+    <div
+      class="flex items-start gap-2 text-xs text-[#8b949e] bg-[#161b22] border border-white/5 rounded-xl px-4 py-2.5 mb-3">
+      <mat-icon class="!text-base text-[#58a6ff] shrink-0">info</mat-icon>
+      <span>Horas trabajadas por mercaderista en el período, de <b>mayor a menor</b>. No hay reloj de entrada/salida: se
+        estima con el lapso entre la primera y la última foto que subió cada día, sumado sobre todo el rango. El
+        <b>tiempo de traslado</b> es el lapso entre terminar en un PDV y activarse en uno distinto ese mismo día
+        (cambiar de cliente dentro del mismo PDV no cuenta).</span>
+    </div>
+    @if (loadingHoras()) {
+    <div class="cm-loading-center">
+      <mat-spinner diameter="40" strokeWidth="3"></mat-spinner>
+      <span>Cargando horas...</span>
+    </div>
+    } @else if (!filteredHoras.length) {
+    <div class="cm-empty-state"><mat-icon>schedule</mat-icon>
+      <p>Sin datos para el período</p>
+    </div>
+    } @else {
+    <div class="cm-table-wrap">
+      <table class="cm-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Mercaderista</th>
+            <th class="text-right">Horas trabajadas</th>
+            <th class="text-right">Promedio/día</th>
+            <th class="text-right">Tiempo de traslado</th>
+            <th class="text-right">Traslado/día</th>
+            <th class="text-right">Días trabajados</th>
+            <th class="text-right">Visitas</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of filteredHoras; track m.id_mercaderista; let i = $index) {
+          <tr>
+            <td class="mono">{{ i + 1 }}</td>
+            <td class="fw">{{ m.mercaderista }}</td>
+            <td class="text-right mono">{{ m.horas_trabajadas }} h</td>
+            <td class="text-right mono">{{ m.horas_promedio_dia }} h</td>
+            <td class="text-right mono">{{ m.tiempo_traslado_horas }} h</td>
+            <td class="text-right mono">{{ m.tiempo_traslado_promedio_dia_min }} min</td>
+            <td class="text-right mono">{{ m.dias_trabajados }}</td>
+            <td class="text-right mono">{{ m.visitas }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
     }
 
     }<!-- /!loadingActivaciones -->
@@ -1103,59 +1176,69 @@
 
 
 @if (showExportModal) {
-  <div class="cm-modal-overlay" (click)="closeExportModal()">
-    <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">
-      <div class="cm-modal-header">
-        <div class="title">Exportar Visitas a Excel</div>
-        <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Cliente seleccionado' }}</div>
-      </div>
-      <div class="cm-modal-body" style="padding:20px">
-        <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para exportar todo.</p>
-        @if (exportFiltrosLoading) {
-          <div class="flex items-center gap-2 text-sm text-slate-400 py-2">
-            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner> Cargando opciones del cliente...
-          </div>
-        } @else {
-          <div class="flex flex-col gap-3">
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
-              <select [(ngModel)]="exportFilters.cuadrante" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
-                <option value="">Todos</option>
-                @for (c of exportFiltrosOpts.cuadrantes; track c) { <option [value]="c">{{ c }}</option> }
-              </select>
-              @if (exportFiltrosOpts.cuadrantes.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene cuadrantes registrados.</span> }
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
-              <select [(ngModel)]="exportFilters.departamento" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
-                <option value="">Todos</option>
-                @for (d of exportFiltrosOpts.departamentos; track d) { <option [value]="d">{{ d }}</option> }
-              </select>
-              @if (exportFiltrosOpts.departamentos.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene departamentos registrados.</span> }
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
-              <select [(ngModel)]="exportFilters.categoria" class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
-                <option value="">Todas</option>
-                @for (c of exportFiltrosOpts.categorias; track c) { <option [value]="c">{{ c }}</option> }
-              </select>
-              @if (exportFiltrosOpts.categorias.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no tiene categorías registradas.</span> }
-            </div>
-          </div>
-        }
-      </div>
-      <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
-        <button class="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50" (click)="exportVisitas()" [disabled]="exportLoading">
-          @if (exportLoading) {
-            <mat-spinner diameter="16" strokeWidth="2"></mat-spinner>
-            Generando...
-          } @else {
-            <mat-icon class="!text-base">download</mat-icon>
-            Descargar Excel
-          }
-        </button>
+<div class="cm-modal-overlay" (click)="closeExportModal()">
+  <div class="cm-modal" style="max-width:460px" (click)="$event.stopPropagation()">
+    <div class="cm-modal-header">
+      <div class="title">Exportar Visitas a Excel</div>
+      <div class="subtitle">{{ dateRangeDisplay }} &middot; {{ resumenDia()?.cliente_nombre || 'Cliente seleccionado' }}
       </div>
     </div>
+    <div class="cm-modal-body" style="padding:20px">
+      <p class="text-sm text-slate-400 mb-4">Puedes aplicar filtros opcionales antes de descargar. Deja vacío para
+        exportar todo.</p>
+      @if (exportFiltrosLoading) {
+      <div class="flex items-center gap-2 text-sm text-slate-400 py-2">
+        <mat-spinner diameter="16" strokeWidth="2"></mat-spinner> Cargando opciones del cliente...
+      </div>
+      } @else {
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuadrante</label>
+          <select [(ngModel)]="exportFilters.cuadrante"
+            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+            <option value="">Todos</option>
+            @for (c of exportFiltrosOpts.cuadrantes; track c) { <option [value]="c">{{ c }}</option> }
+          </select>
+          @if (exportFiltrosOpts.cuadrantes.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no
+            tiene cuadrantes registrados.</span> }
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Departamento / Estado</label>
+          <select [(ngModel)]="exportFilters.departamento"
+            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+            <option value="">Todos</option>
+            @for (d of exportFiltrosOpts.departamentos; track d) { <option [value]="d">{{ d }}</option> }
+          </select>
+          @if (exportFiltrosOpts.departamentos.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no
+            tiene departamentos registrados.</span> }
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</label>
+          <select [(ngModel)]="exportFilters.categoria"
+            class="bg-[#161b22] border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-[#1f6feb]">
+            <option value="">Todas</option>
+            @for (c of exportFiltrosOpts.categorias; track c) { <option [value]="c">{{ c }}</option> }
+          </select>
+          @if (exportFiltrosOpts.categorias.length === 0) { <span class="text-[11px] text-slate-500">Este cliente no
+            tiene categorías registradas.</span> }
+        </div>
+      </div>
+      }
+    </div>
+    <div class="cm-modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-close" (click)="closeExportModal()">Cancelar</button>
+      <button
+        class="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50"
+        (click)="exportVisitas()" [disabled]="exportLoading">
+        @if (exportLoading) {
+        <mat-spinner diameter="16" strokeWidth="2"></mat-spinner>
+        Generando...
+        } @else {
+        <mat-icon class="!text-base">download</mat-icon>
+        Descargar Excel
+        }
+      </button>
+    </div>
   </div>
-}
+</div>
+}

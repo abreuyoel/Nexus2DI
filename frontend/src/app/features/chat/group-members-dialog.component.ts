@@ -27,11 +27,11 @@ import { Observable } from 'rxjs';
             <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
               <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold">
-                  {{ (m.username || 'U').charAt(0).toUpperCase() }}
+                  {{ (m.nombre || m.username || 'U').charAt(0).toUpperCase() }}
                 </div>
                 <div>
-                  <div class="font-bold text-sm text-slate-800 dark:text-slate-200">{{ m.username }}</div>
-                  <div class="text-xs text-slate-500 capitalize">{{ m.rol }}</div>
+                  <div class="font-bold text-sm text-slate-800 dark:text-slate-200">{{ m.nombre || m.username }}</div>
+                  <div class="text-xs text-slate-500 capitalize">{{ m.nombre ? m.username + ' · ' : '' }}{{ m.rol || m.origen }}</div>
                 </div>
               </div>
             </div>

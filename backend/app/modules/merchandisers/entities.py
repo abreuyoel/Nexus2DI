@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -36,3 +36,5 @@ class MercaderistaRuta(Base):
 
     mercaderista = relationship("Mercaderista", back_populates="rutas")
     ruta = relationship("Ruta", back_populates="mercaderistas")
+
+

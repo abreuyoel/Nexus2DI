@@ -54,11 +54,15 @@ class Cuadrante(Base):
 
 
 class Servicio(Base):
-    """Catálogo: Servicio de ruta (usado en RUTAS_NUEVAS.servicio)."""
+    """Catálogo: Servicio de ruta (usado en RUTAS_NUEVAS.servicio).
+    prefijo: letra/sigla usada para el correlativo de nombre de ruta al
+    crearla (ej. "E" -> "Ruta E12", "PR" -> "Ruta PR1") -- ver
+    modules/routes/controller.py::_get_servicio_prefijo."""
     __tablename__ = "SERVICIOS"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String(200), nullable=False, unique=True, index=True)
+    prefijo = Column(String(10), nullable=True)
     activo = Column(Boolean, nullable=False, default=True)
     fecha_creado = Column(DateTime, server_default=func.now())
 

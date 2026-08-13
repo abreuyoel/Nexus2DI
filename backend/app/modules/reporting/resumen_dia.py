@@ -139,6 +139,13 @@ def _run_activos_y_rutas_activadas(sf, cliente_id, is_analyst_scoped, analista_c
     """Hilo 3 — Mercaderistas que activaron + filas RutaActivada."""
     db = sf()
     try:
+        # Predicado sargable: comparar sobre la columna sin envolverla en
+        # CAST(col AS DATE). SQL Server no puede usar un índice sobre una
+        # columna dentro de una función -- el CAST forzaba scan completo en
+        # cada request de resumen-dia.
+        d_desde_dt = datetime.combine(d_desde, datetime.min.time())
+        d_hasta_dt = datetime.combine(d_hasta, datetime.min.time()) + timedelta(days=1)
+
         # Mercaderistas activos
         q_act = (
             db.query(
@@ -150,8 +157,8 @@ def _run_activos_y_rutas_activadas(sf, cliente_id, is_analyst_scoped, analista_c
             .join(RutaProgramacion, RutaProgramacion.ruta_id == RutaActivada.ruta_id)
             .join(Ruta, Ruta.id == RutaProgramacion.ruta_id)
             .filter(
-                func.cast(RutaActivada.fecha_hora_activacion, Date) >= d_desde,
-                func.cast(RutaActivada.fecha_hora_activacion, Date) <= d_hasta,
+                RutaActivada.fecha_hora_activacion >= d_desde_dt,
+                RutaActivada.fecha_hora_activacion < d_hasta_dt,
                 MercaderistaRuta.mercaderista_id == RutaActivada.mercaderista_id
             )
         )
@@ -177,8 +184,8 @@ def _run_activos_y_rutas_activadas(sf, cliente_id, is_analyst_scoped, analista_c
                 func.cast(RutaActivada.fecha_hora_activacion, Date)
             )
             .filter(
-                func.cast(RutaActivada.fecha_hora_activacion, Date) >= d_desde,
-                func.cast(RutaActivada.fecha_hora_activacion, Date) <= d_hasta
+                RutaActivada.fecha_hora_activacion >= d_desde_dt,
+                RutaActivada.fecha_hora_activacion < d_hasta_dt
             )
             .all()
         )
@@ -249,8 +256,8 @@ def _run_rutas_pois_visitas(sf, cliente_id, is_analyst_scoped, analista_cliente_
         q_ev = (
             db.query(
                 Visita.punto_id, Visita.mercaderista_id, Visita.id_cliente, Visita.fecha,
-                func.max(case(((Foto.id_tipo_foto == 5) & (Foto.estado == 'Aprobada'), 1), else_=0)),
-                func.max(case(((Foto.id_tipo_foto == 6) & (Foto.estado == 'Aprobada'), 1), else_=0))
+                func.max(case(((Foto.id_tipo_foto == 5), 1), else_=0)),
+                func.max(case(((Foto.id_tipo_foto == 6), 1), else_=0))
             )
             .outerjoin(Foto, Foto.visita_id == Visita.id)
             .filter(Visita.fecha >= d_desde, Visita.fecha <= d_hasta)
@@ -295,8 +302,8 @@ def _run_tradex(sf, cliente_id, is_analyst_scoped, analista_cliente_ids,
         q_ev_full = (
             db.query(
                 Visita.punto_id, Visita.mercaderista_id, Visita.id_cliente, Visita.fecha,
-                func.max(case(((Foto.id_tipo_foto == 5) & (Foto.estado == 'Aprobada'), 1), else_=0)),
-                func.max(case(((Foto.id_tipo_foto == 6) & (Foto.estado == 'Aprobada'), 1), else_=0))
+                func.max(case(((Foto.id_tipo_foto == 5), 1), else_=0)),
+                func.max(case(((Foto.id_tipo_foto == 6), 1), else_=0))
             )
             .outerjoin(Foto, Foto.visita_id == Visita.id)
             .filter(Visita.fecha >= d_desde, Visita.fecha <= d_hasta)
@@ -458,14 +465,21 @@ def resumen_dia(
                 }
             ruta_merc_pairs[k]["planificadas"] += day_counts.get(dia, 0)
 
+        ruta_estado_final = {}
         for rid, mid, estado, _fd in ra_rows:
             k = (rid, mid)
-            if k in ruta_merc_pairs:
-                if estado == 'Finalizado':
-                    ruta_merc_pairs[k]["completadas"] += 1
-                    ruta_merc_pairs[k]["activas"] += 1
-                elif estado == 'En Progreso':
-                    ruta_merc_pairs[k]["activas"] += 1
+            if k not in ruta_merc_pairs:
+                continue
+            if estado == 'Finalizado' or ruta_estado_final.get(k) == 'Finalizado':
+                ruta_estado_final[k] = 'Finalizado'
+            else:
+                ruta_estado_final[k] = 'En Progreso'
+
+        for k, estado_final in ruta_estado_final.items():
+            if estado_final == 'Finalizado':
+                ruta_merc_pairs[k]["completadas"] = 1
+            else:
+                ruta_merc_pairs[k]["activas"] = 1
 
         rutas_planificadas = sum(x["planificadas"] for x in ruta_merc_pairs.values())
         rutas_activas = sum(x["activas"] for x in ruta_merc_pairs.values())
@@ -495,7 +509,8 @@ def resumen_dia(
 
         # ── Construir pois_status ──
         pois_status = {}
-        for id_punto, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
+        for id_punto_raw, id_merc, nombre_punto, id_ruta, ruta_nombre, dia, depto, prio in pois_plan_rows:
+            id_punto = (id_punto_raw or "").strip()
             key = (id_punto, id_merc)
             if key not in pois_status:
                 pois_status[key] = {
@@ -509,21 +524,39 @@ def resumen_dia(
             pois_status[key]["plan"] += day_counts.get(dia, 0)
             pois_status[key]["clientes_plan"] += day_counts.get(dia, 0)
 
+        # activos/completados se calculan directo por punto, desde las visitas reales del rango,
+        # sin exigir que el mercaderista coincida con el planificado de RUTA_PROGRAMACION
+        pois_reales_q = (
+            db.query(
+                Visita.punto_id,
+                func.max(case(((Foto.id_tipo_foto == 5), 1), else_=0)).label("tiene_act"),
+                func.max(case(((Foto.id_tipo_foto == 6), 1), else_=0)).label("tiene_des")
+            )
+            .outerjoin(Foto, Foto.visita_id == Visita.id)
+            .filter(Visita.fecha >= d_desde, Visita.fecha <= d_hasta)
+        )
+        if cliente_id:
+            pois_reales_q = pois_reales_q.filter(Visita.id_cliente == cliente_id)
+        elif is_analyst_scoped:
+            pois_reales_q = pois_reales_q.filter(Visita.id_cliente.in_(analista_cliente_ids))
+        
+        pois_reales_q = pois_reales_q.group_by(Visita.punto_id)
+        pois_reales_rows = pois_reales_q.all()
+        real_por_punto = {
+            (r[0] or "").strip(): (bool(r[1]), bool(r[2]))
+            for r in (pois_reales_rows or [])
+        }
+
         for key, ent in pois_status.items():
-            if cliente_id is not None:
-                ev_c = ev_agg_cli.get((key[0], key[1], cliente_id))
-                if ev_c:
-                    ent["act"] = ev_c["act"]
-                    ent["com"] = ev_c["com"]
-                    ent["clientes_act"] = ev_c["act"]
-                    ent["clientes_com"] = ev_c["com"]
-            else:
-                ag = ev_agg.get(key)
-                if ag:
-                    ent["act"] = ag["act"]
-                    ent["com"] = ag["com"]
-                    ent["clientes_act"] = ag["act"]
-                    ent["clientes_com"] = ag["com"]
+            real = real_por_punto.get(key[0])
+            if real:
+                tiene_act, tiene_des = real
+                act = 1 if tiene_act else 0
+                com = 1 if (tiene_act and tiene_des) else 0
+                ent["act"] = act
+                ent["com"] = com
+                ent["clientes_act"] = act
+                ent["clientes_com"] = com
 
             pair = ruta_merc_pairs.get((ent["id_ruta"], ent["id_mercaderista"]))
             if pair is not None:
@@ -535,8 +568,13 @@ def resumen_dia(
                 pair["clientes_com"] += ent["clientes_com"]
 
         pois_planificados = sum(v["plan"] for v in pois_status.values())
-        pois_activos = sum(v["act"] for v in pois_status.values())
-        pois_completados = sum(v["com"] for v in pois_status.values())
+        pois_activos = 0
+        pois_completados = 0
+        for tiene_act, tiene_des in real_por_punto.values():
+            if tiene_act and tiene_des:
+                pois_completados += 1
+            elif tiene_act:
+                pois_activos += 1
 
         # ── Tradex (necesita asignados_map ya resuelto) ──
         tradex_ids = [mid for mid, m in asignados_map.items()

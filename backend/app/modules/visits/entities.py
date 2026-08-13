@@ -18,6 +18,7 @@ class Visita(Base):
     estado_data = Column(String(50), nullable=True)
     revisada_por = Column(String(200), nullable=True)
     fecha_revision = Column(DateTime, nullable=True)
+    motivo_reabertura = Column("motivo_reabertura", String(500), nullable=True)
 
     mercaderista = relationship("Mercaderista", back_populates="visitas")
     punto = relationship("PuntoInteres", back_populates="visitas")
@@ -76,7 +77,7 @@ class NotificacionRechazoFoto(Base):
 
     id = Column("id_notificacion", Integer, primary_key=True, index=True)
     foto_id = Column("id_foto_original", Integer, ForeignKey("FOTOS_TOTALES.id_foto"), nullable=True)
-    id_foto_rechazada = Column(Integer, nullable=True)
+    id_foto_rechazada = Column(Integer, nullable=False)
     id_visita = Column(Integer, nullable=True)
     id_cliente = Column(Integer, nullable=True)
     nombre_cliente = Column(String(200), nullable=True)
@@ -130,7 +131,10 @@ class Activacion(Base):
     ruta_id = Column("id_ruta", Integer, ForeignKey("RUTAS_NUEVAS.id_ruta"), nullable=True)
     created_at = Column(DateTime, nullable=True)
 
-    punto = relationship("PuntoInteres", back_populates="activaciones")
+    # Sin back_populates: PuntoInteres ya no declara el lado "activaciones"
+    # (ver comentario en app/modules/routes/entities.py -- la tabla
+    # ACTIVACIONES no existe en la base real).
+    punto = relationship("PuntoInteres")
     producto = relationship("Producto")
 
 
@@ -155,6 +159,7 @@ class Balance(Base):
     identificador_pdv = Column("identificador_pdv", String(100), nullable=True)
     mercaderista = Column("mercaderista", String(100), nullable=True)
     producto = Column("producto", String(255), nullable=True)
+    id_product = Column("id_product", Integer, nullable=True)
     id_categoria = Column("id_categoria", Integer, nullable=True)
     categoria = Column("categoria", String(100), nullable=True)
     fabricante = Column("fabricante", String(100), nullable=True)
@@ -168,4 +173,21 @@ class Balance(Base):
     fecha_inicio_modificacion = Column("fecha_inicio_modificacion", DateTime, nullable=True)
     fecha_modificacion = Column("fecha_modificacion", DateTime, nullable=True)
 
+    FEFO = Column("FEFO", Date, nullable=True)
+    estado_producto = Column("estado_producto", String(20), nullable=True)
+    no_existe = Column("no_existe", Boolean, default=False)
+
     visita = relationship("Visita", backref="balances")
+
+
+class AuditoriaTiempo(Base):
+    __tablename__ = "MERC_AUDITORIA_TIEMPO"
+
+    id = Column("id_auditoria_tiempo", Integer, primary_key=True, index=True)
+    id_visita = Column("id_visita", Integer, nullable=True)
+    identificador_punto_interes = Column("identificador_punto_interes", String(50), nullable=True)
+    id_mercaderista = Column("id_mercaderista", Integer, nullable=False)
+    evento = Column("evento", String(50), nullable=False)
+    detalle = Column("detalle", String(500), nullable=True)
+    tiempo_restante_segundos = Column("tiempo_restante_segundos", Integer, nullable=False)
+    fecha_registro = Column("fecha_registro", DateTime, default=datetime.utcnow)

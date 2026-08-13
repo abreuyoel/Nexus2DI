@@ -1,0 +1,3646 @@
+diff --git a/backend/app/mercaderista/__init__.py b/backend/app/mercaderista/__init__.py
+new file mode 100644
+index 0000000..41d34d5
+--- /dev/null
++++ b/backend/app/mercaderista/__init__.py
+@@ -0,0 +1,26 @@
++"""
++Portal Mercaderista - Módulo modular con ORM SQLAlchemy.
++
++Estructura:
++  schemas.py       → Pydantic models (request/response)
++  services/        → Lógica de negocio con SQLAlchemy ORM
++  endpoints/       → Routers FastAPI (thin, solo llaman services)
++  router.py        → Router principal que agrega todos los sub-routers
++
++Endpoints:
++  /api/merc/me                    → Perfil del mercaderista
++  /api/merc/rutas                 → Rutas del día con PDVs y clientes
++  /api/merc/pdv-activos           → PDVs activos con trabajo pendiente
++  /api/merc/visitas/iniciar       → Iniciar visita
++  /api/merc/visitas               → Historial de visitas
++  /api/merc/visitas/{id}/fotos    → GET fotos | POST upload
++  /api/merc/visitas/{id}/balances → Guardar balances
++  /api/merc/visitas/{id}/finalizar→ Finalizar visita
++  /api/merc/visitas/{id}/productos→ Productos para balance
++  /api/merc/pdv/activar           → Activar PDV
++  /api/merc/pdv/desactivar        → Desactivar PDV
++  /api/merc/pdv/{id}/validar-cierre → Validar que todos los clientes estén visitados
++  /api/merc/chat/inbox            → Bandeja de chat
++  /api/merc/chat/visitas/{id}     → Mensajes de chat por visita
++  /api/merc/chat/enviar           → Enviar mensaje
++"""
+diff --git a/backend/app/mercaderista/endpoints/__init__.py b/backend/app/mercaderista/endpoints/__init__.py
+new file mode 100644
+index 0000000..8e660b6
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/__init__.py
+@@ -0,0 +1,4 @@
++"""
++Endpoints FastAPI del Portal Mercaderista.
++Cada archivo es un router independiente que se agrega al router principal.
++"""
+diff --git a/backend/app/mercaderista/endpoints/auth.py b/backend/app/mercaderista/endpoints/auth.py
+new file mode 100644
+index 0000000..942a084
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/auth.py
+@@ -0,0 +1,41 @@
++"""
++Endpoint de Perfil del Mercaderista.
++GET /api/merc/me → Datos del mercaderista autenticado + rutas asignadas.
++"""
++
++from fastapi import APIRouter, Depends
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.core.dependencies import get_current_user
++from app.models.user import Usuario
++from app.mercaderista.services.ruta_service import RutaService
++from app.mercaderista.schemas import MercaderistaProfile
++
++router = APIRouter(prefix="/api/merc", tags=["Mercaderista - Perfil"])
++
++
++@router.get("/me", response_model=MercaderistaProfile)
++def get_profile(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Perfil del mercaderista autenticado.
++    Incluye datos personales y lista de rutas asignadas.
++    """
++    service = RutaService(db)
++    merc = service._get_mercaderista(current_user)
++    rutas = service.get_rutas_asignadas(merc.id)
++
++    return MercaderistaProfile(
++        id=merc.id,
++        nombre=merc.nombre,
++        cedula=str(merc.cedula),
++        email=merc.email,
++        telefono=merc.telefono,
++        rutas=[
++            {"id_ruta": r["id_ruta"], "tipo": r["tipo"], "nombre": r["nombre"]}
++            for r in rutas
++        ],
++    )
+diff --git a/backend/app/mercaderista/endpoints/chat.py b/backend/app/mercaderista/endpoints/chat.py
+new file mode 100644
+index 0000000..3a6b6b3
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/chat.py
+@@ -0,0 +1,188 @@
++"""
++Endpoints de Chat del Mercaderista.
++  GET  /api/merc/chat/inbox              → Bandeja de conversaciones
++  GET  /api/merc/chat/visitas/{id}       → Mensajes de una visita
++  POST /api/merc/chat/enviar             → Enviar mensaje
++  GET  /api/merc/chat/notificaciones     → Rechazos, aprobaciones, visitas revisadas
++
++  ── Grupos de Chat ─────────────────────────────────────────────────────
++  GET  /api/merc/chat/grupos/mis-grupos                     → Grupos del mercaderista
++  GET  /api/merc/chat/grupos/{id_grupo}/mensajes            → Mensajes del grupo
++  POST /api/merc/chat/grupos/{id_grupo}/mensajes            → Enviar al grupo
++  GET  /api/merc/chat/grupos/{id_grupo}/miembros            → Miembros del grupo
++  GET  /api/merc/chat/grupos/{id_grupo}/visitas-activas     → Visitas con hilo
++  GET  /api/merc/chat/grupos/{id_grupo}/visitas/{id_visita} → Mensajes hilo visita
++  POST /api/merc/chat/grupos/{id_grupo}/visitas/{id_visita} → Enviar a hilo visita
++  POST /api/merc/chat/grupos/{id_grupo}/marcar-leido        → Marcar leído grupo
++"""
++
++from typing import Optional
++
++from fastapi import APIRouter, Depends, Query
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.core.dependencies import get_current_user
++from app.models.user import Usuario
++from app.mercaderista.services.chat_service import ChatService
++from app.mercaderista.schemas import (
++    ChatInboxItem, ChatMensajeResponse, EnviarMensajeRequest,
++    NotificacionesResponse,
++    GrupoChatItem, MiembroGrupoItem, MensajeGrupoItem, EnviarMensajeGrupoRequest,
++    VisitaGrupoChatItem, MensajeGrupoVisitaItem,
++)
++
++router = APIRouter(prefix="/api/merc/chat", tags=["Mercaderista - Chat"])
++
++
++@router.get("/inbox", response_model=list[ChatInboxItem])
++def get_inbox(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Bandeja de conversaciones del mercaderista (solo visitas con mensajes)."""
++    service = ChatService(db)
++    return service.get_inbox(current_user)
++
++
++@router.get("/visitas/{visita_id}", response_model=list[ChatMensajeResponse])
++def get_mensajes(
++    visita_id: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Mensajes de chat de una visita específica."""
++    service = ChatService(db)
++    return service.get_mensajes(visita_id)
++
++
++@router.post("/enviar", response_model=ChatMensajeResponse)
++def enviar_mensaje(
++    payload: EnviarMensajeRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Envía un mensaje de chat en el contexto de una visita."""
++    service = ChatService(db)
++    return service.enviar_mensaje(
++        current_user, payload.visita_id, payload.mensaje, payload.sender_nombre
++    )
++
++
++@router.get("/notificaciones", response_model=NotificacionesResponse)
++def get_notificaciones(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Notificaciones del mercaderista: fotos rechazadas (con motivo), fotos
++    aprobadas y visitas marcadas como 'Revisado' por el analista.
++    Equivale a fetchRechazos() + fetchEventos() de la APK.
++    """
++    service = ChatService(db)
++    return service.get_notificaciones(current_user)
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# GRUPOS DE CHAT (Equipo Operativo / Equipo + Cliente)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++@router.get("/grupos/mis-grupos", response_model=list[GrupoChatItem])
++def get_mis_grupos(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Grupos de chat (operativo / operativo_cliente) a los que pertenece el
++    mercaderista, con conteo de no-leídos y preview del último mensaje."""
++    service = ChatService(db)
++    return service.get_mis_grupos(current_user)
++
++
++@router.get("/grupos/{id_grupo}/mensajes", response_model=list[MensajeGrupoItem])
++def get_mensajes_grupo(
++    id_grupo: int,
++    limit: int = Query(50, le=200),
++    before_id: Optional[int] = Query(None),
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Mensajes del chat general de un grupo."""
++    service = ChatService(db)
++    return service.get_mensajes_grupo(current_user, id_grupo, limit, before_id)
++
++
++@router.post("/grupos/{id_grupo}/mensajes", response_model=MensajeGrupoItem, status_code=201)
++def enviar_mensaje_grupo(
++    id_grupo: int,
++    payload: EnviarMensajeGrupoRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Envía un mensaje al chat general del grupo."""
++    service = ChatService(db)
++    return service.enviar_mensaje_grupo(current_user, id_grupo, payload.mensaje)
++
++
++@router.get("/grupos/{id_grupo}/miembros", response_model=list[MiembroGrupoItem])
++def get_miembros_grupo(
++    id_grupo: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Miembros del grupo (resolución dinámica desde las tablas operativas)."""
++    service = ChatService(db)
++    return service.get_miembros_grupo(current_user, id_grupo)
++
++
++@router.get("/grupos/{id_grupo}/visitas-activas", response_model=list[VisitaGrupoChatItem])
++def get_visitas_activas_grupo(
++    id_grupo: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Visitas que ya tienen un sub-hilo de chat iniciado en este grupo."""
++    service = ChatService(db)
++    return service.get_visitas_activas_grupo(current_user, id_grupo)
++
++
++@router.get(
++    "/grupos/{id_grupo}/visitas/{id_visita}",
++    response_model=list[MensajeGrupoVisitaItem],
++)
++def get_mensajes_grupo_visita(
++    id_grupo: int,
++    id_visita: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Mensajes del sub-hilo de chat de una visita dentro del grupo."""
++    service = ChatService(db)
++    return service.get_mensajes_grupo_visita(current_user, id_grupo, id_visita)
++
++
++@router.post(
++    "/grupos/{id_grupo}/visitas/{id_visita}",
++    response_model=MensajeGrupoVisitaItem,
++    status_code=201,
++)
++def enviar_mensaje_grupo_visita(
++    id_grupo: int,
++    id_visita: int,
++    payload: EnviarMensajeGrupoRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Envía un mensaje al sub-hilo de chat de una visita dentro del grupo."""
++    service = ChatService(db)
++    return service.enviar_mensaje_grupo_visita(current_user, id_grupo, id_visita, payload.mensaje)
++
++
++@router.post("/grupos/{id_grupo}/marcar-leido")
++def marcar_leido_grupo(
++    id_grupo: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Marca el grupo como leído hasta su último mensaje."""
++    service = ChatService(db)
++    return service.marcar_leido_grupo(current_user, id_grupo)
+diff --git a/backend/app/mercaderista/endpoints/pdv.py b/backend/app/mercaderista/endpoints/pdv.py
+new file mode 100644
+index 0000000..0c850f0
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/pdv.py
+@@ -0,0 +1,73 @@
++"""
++Endpoints de PDV (Activación / Desactivación).
++  POST /api/merc/pdv/activar              → Activar PDV
++  POST /api/merc/pdv/desactivar           → Desactivar PDV
++  GET  /api/merc/pdv/{id}/validar-cierre  → Validar cierre (NUEVO)
++"""
++
++from fastapi import APIRouter, Depends
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.core.dependencies import get_current_user
++from app.models.user import Usuario
++from app.mercaderista.services.pdv_service import PdvService
++from app.mercaderista.schemas import (
++    ActivarPdvRequest, ActivarPdvResponse,
++    DesactivarPdvRequest, DesactivarPdvResponse,
++    ValidarCierrePdvResponse,
++)
++
++router = APIRouter(prefix="/api/merc/pdv", tags=["Mercaderista - PDV"])
++
++
++@router.post("/activar", response_model=ActivarPdvResponse)
++def activar_pdv(
++    payload: ActivarPdvRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Registra la activación de un PDV al iniciar la jornada en ese punto.
++    Solo se activa una vez por día por mercaderista.
++    """
++    service = PdvService(db)
++    return service.activar_pdv(current_user, payload.id_punto, payload.id_ruta)
++
++
++@router.post("/desactivar", response_model=DesactivarPdvResponse)
++def desactivar_pdv(
++    payload: DesactivarPdvRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Desactiva un PDV al finalizar todos los clientes del punto.
++    El frontend DEBE llamar a validar-cierre antes de este endpoint.
++    """
++    service = PdvService(db)
++    return service.desactivar_pdv(current_user, payload.id_punto)
++
++
++@router.get("/{id_punto}/validar-cierre", response_model=ValidarCierrePdvResponse)
++def validar_cierre_pdv(
++    id_punto: str,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    🔴 NUEVO: Valida que todos los clientes programados en un PDV para hoy
++    estén visitados antes de permitir la desactivación.
++
++    La APK valida esto del lado del cliente (SQLite local). En la web,
++    este endpoint reemplaza esa validación.
++
++    Retorna:
++    - puede_cerrar: bool
++    - total_clientes: cuántos clientes hay programados hoy
++    - clientes_visitados: cuántos ya tienen visita
++    - clientes_pendientes: nombres de los que faltan
++    - mensaje: resumen legible
++    """
++    service = PdvService(db)
++    return service.validar_cierre_pdv(current_user, id_punto)
+diff --git a/backend/app/mercaderista/endpoints/rutas.py b/backend/app/mercaderista/endpoints/rutas.py
+new file mode 100644
+index 0000000..b1ffb6e
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/rutas.py
+@@ -0,0 +1,130 @@
++"""
++Endpoints de Rutas del Mercaderista.
++GET  /api/merc/rutas          → Rutas del día con PDVs y clientes
++POST /api/merc/ruta/activar   → Activar una ruta (persiste en RUTAS_ACTIVADAS)
++GET  /api/merc/pdv-activos    → PDVs con trabajo pendiente hoy
++GET  /api/merc/productos      → Catálogo de productos para balance
++"""
++
++from typing import Optional
++from fastapi import APIRouter, Depends, Query
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.core.dependencies import get_current_user
++from app.models.user import Usuario
++from app.mercaderista.services.ruta_service import RutaService
++from app.mercaderista.services.pdv_service import PdvService
++from app.mercaderista.services.visita_service import VisitaService
++from app.mercaderista.schemas import (
++    MisRutasResponse, PdvActivoResponse, ProductosCatalogoResponse,
++    ProgramacionResponse,
++    ActivarRutaRequest, ActivarRutaResponse,
++    FinalizarRutaRequest, FinalizarRutaResponse,
++)
++
++router = APIRouter(prefix="/api/merc", tags=["Mercaderista - Rutas"])
++
++
++@router.get("/rutas", response_model=MisRutasResponse)
++def get_mis_rutas(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Rutas del día del mercaderista autenticado.
++    Devuelve rutas fijas y variables con sus PDVs y clientes programados para hoy.
++    Incluye estado de visita por cada cliente.
++    """
++    service = RutaService(db)
++    return service.get_mis_rutas(current_user)
++
++
++@router.get("/pdv-activos", response_model=list[PdvActivoResponse])
++def get_pdv_activos(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    PDVs activos con trabajo pendiente hoy.
++    Muestra clientes pendientes, listos y si falta desactivación.
++    """
++    service = PdvService(db)
++    return service.get_pdv_activos(current_user)
++
++
++@router.get("/productos", response_model=ProductosCatalogoResponse)
++def get_productos_catalogo(
++    id_cliente: Optional[int] = Query(None, description="Filtrar por categorías del cliente"),
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Catálogo completo de productos agrupados por categoría para el formulario
++    de balance. Si se especifica id_cliente, filtra solo las categorías
++    asignadas a ese cliente.
++    Equivale a getProductos() de la APK (/api/mobile/productos).
++    """
++    service = VisitaService(db)
++    return service.get_productos_catalogo(id_cliente)
++
++
++@router.get("/programacion", response_model=ProgramacionResponse)
++def get_programacion(
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Programación completa del día para el mercaderista.
++    Incluye rutas (fijas y variables) con PDVs y clientes, más el catálogo
++    completo de productos. Equivale a getProgramacion() de la APK.
++    """
++    service = RutaService(db)
++    return service.get_programacion_completa(current_user)
++
++
++@router.get("/ruta/{id_ruta}/pdvs")
++def get_pdvs_de_ruta(
++    id_ruta: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Todos los PDVs (y clientes) de una ruta específica, sin filtro de día.
++    Usado por el frontend cuando el mercaderista abre la ejecución de una ruta
++    para ver todos sus puntos de venta.
++    """
++    service = RutaService(db)
++    return service.get_pdvs_de_ruta(current_user, id_ruta)
++
++
++@router.post("/ruta/activar", response_model=ActivarRutaResponse)
++def activar_ruta(
++    body: ActivarRutaRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Activa una ruta completa para el mercaderista.
++    Persiste en RUTAS_ACTIVADAS para que la activación sobreviva a refrescos
++    del navegador y cierres de sesión. Idempotente: si ya existe una activación
++    para esa ruta hoy, retorna ya_activado=True.
++    Equivale a g.activarRuta() de la APK.
++    """
++    service = PdvService(db)
++    return service.activar_ruta(current_user, body.id_ruta)
++
++
++@router.post("/ruta/finalizar", response_model=FinalizarRutaResponse)
++def finalizar_ruta(
++    body: FinalizarRutaRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Finaliza una ruta previamente activada. Marca el registro en RUTAS_ACTIVADAS
++    como 'Finalizado' para que get_mis_rutas() no la devuelva como activada.
++    Equivale a g.finalizarRuta() de la APK.
++    """
++    service = PdvService(db)
++    return service.finalizar_ruta(current_user, body.id_ruta)
+diff --git a/backend/app/mercaderista/endpoints/visitas.py b/backend/app/mercaderista/endpoints/visitas.py
+new file mode 100644
+index 0000000..52d67f2
+--- /dev/null
++++ b/backend/app/mercaderista/endpoints/visitas.py
+@@ -0,0 +1,194 @@
++"""
++Endpoints de Visitas del Mercaderista.
++  POST   /api/merc/visitas/iniciar       → Iniciar visita
++  GET    /api/merc/visitas               → Historial de visitas
++  GET    /api/merc/visitas/{id}/fotos     → Fotos de una visita
++  POST   /api/merc/visitas/{id}/fotos     → Subir foto
++  POST   /api/merc/visitas/{id}/balances  → Guardar balances
++  POST   /api/merc/visitas/{id}/finalizar → Finalizar visita
++  GET    /api/merc/visitas/{id}/productos → Productos para balance
++"""
++
++from typing import Optional, List
++from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
++from sqlalchemy.orm import Session
++
++from app.db.session import get_db
++from app.core.dependencies import get_current_user
++from app.models.user import Usuario
++from app.mercaderista.services.visita_service import VisitaService
++from app.mercaderista.schemas import (
++    IniciarVisitaRequest, IniciarVisitaResponse,
++    VisitaHistorialItem, FotosVisitaResponse,
++    BalanceRequest, BalanceResponse,
++    FinalizarVisitaRequest, FinalizarVisitaResponse,
++    ProductoParaBalance,
++    VisitaDetalleResponse,
++    AuditoriaTiempoRequest, AuditoriaTiempoResponse,
++    ReabrirVisitaRequest,
++)
++
++router = APIRouter(prefix="/api/merc/visitas", tags=["Mercaderista - Visitas"])
++
++
++# ── Iniciar Visita ───────────────────────────────────────────────────────────
++
++@router.post("/iniciar", response_model=IniciarVisitaResponse)
++def iniciar_visita(
++    payload: IniciarVisitaRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Crea una nueva visita o devuelve una existente del día."""
++    service = VisitaService(db)
++    return service.iniciar_visita(current_user, payload.id_punto, payload.id_cliente)
++
++
++# ── Historial ────────────────────────────────────────────────────────────────
++
++@router.get("", response_model=List[VisitaHistorialItem])
++def list_visitas(
++    fecha_inicio: Optional[str] = None,
++    fecha_fin: Optional[str] = None,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Historial de visitas del mercaderista autenticado."""
++    service = VisitaService(db)
++    return service.get_mis_visitas(current_user, fecha_inicio, fecha_fin)
++
++
++# ── Fotos ────────────────────────────────────────────────────────────────────
++
++@router.get("/{visita_id}/fotos", response_model=FotosVisitaResponse)
++def get_fotos_visita(
++    visita_id: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Fotos de una visita agrupadas por tipo."""
++    service = VisitaService(db)
++    return service.get_fotos_visita(visita_id)
++
++
++@router.post("/{visita_id}/fotos")
++async def upload_foto(
++    visita_id: int,
++    tipo_foto: str = Form(...),
++    file: UploadFile = File(...),
++    lat: Optional[float] = Form(None),
++    lon: Optional[float] = Form(None),
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Sube una foto para una visita."""
++    service = VisitaService(db)
++    file_bytes = await file.read()
++    return service.upload_foto(
++        current_user, visita_id, tipo_foto,
++        file_bytes, file.filename or "foto.jpg", lat, lon,
++    )
++
++
++@router.delete("/fotos/{foto_id}")
++def delete_foto(
++    foto_id: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Elimina una foto individual de una visita (solo el propio mercaderista)."""
++    service = VisitaService(db)
++    service.delete_foto(current_user, foto_id)
++    return {"ok": True}
++
++
++# ── Balances ─────────────────────────────────────────────────────────────────
++
++@router.post("/{visita_id}/balances", response_model=BalanceResponse)
++def save_balances(
++    visita_id: int,
++    payload: BalanceRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Guarda los balances de productos de una visita."""
++    service = VisitaService(db)
++    productos = [p.model_dump() for p in payload.productos]
++    return service.save_balances(
++        current_user, visita_id, payload.id_cliente, payload.id_pdv, productos
++    )
++
++
++# ── Finalizar ────────────────────────────────────────────────────────────────
++
++@router.post("/{visita_id}/finalizar", response_model=FinalizarVisitaResponse)
++def finalizar_visita(
++    visita_id: int,
++    payload: FinalizarVisitaRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Cierra el ciclo de vida de una visita."""
++    # Validar que el visita_id del payload coincide con el de la URL
++    if payload.id_visita != visita_id:
++        raise HTTPException(status_code=400, detail="id_visita no coincide")
++    service = VisitaService(db)
++    return service.finalizar_visita(current_user, visita_id)
++
++
++# ── Productos para Balance ───────────────────────────────────────────────────
++
++@router.get("/{visita_id}/productos", response_model=List[ProductoParaBalance])
++def get_productos_balance(
++    visita_id: int,
++    id_cliente: Optional[int] = None,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Productos disponibles para el formulario de balance de una visita."""
++    service = VisitaService(db)
++    return service.get_productos_balance(id_cliente)
++
++
++# ── Detalle Completo de Visita ────────────────────────────────────────────────
++
++@router.get("/{visita_id}/detalle", response_model=VisitaDetalleResponse)
++def get_visita_detalle(
++    visita_id: int,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """
++    Detalle completo de una visita: metadata, fotos con estado de revisión
++    (incluye motivo de rechazo si aplica), y balances.
++    Equivale a getDataVisita() de la APK.
++    """
++    service = VisitaService(db)
++    return service.get_visita_detalle(current_user, visita_id)
++
++
++# ── Auditoría de Temporizador ──────────────────────────────────────────────────
++
++@router.post("/auditoria-tiempo", response_model=AuditoriaTiempoResponse)
++def registrar_auditoria_tiempo(
++    payload: AuditoriaTiempoRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Registra una auditoría de tiempo para una visita o punto de interés."""
++    service = VisitaService(db)
++    return service.registrar_auditoria_tiempo(current_user, payload)
++
++
++# ── Reabrir Visita ────────────────────────────────────────────────────────────
++
++@router.post("/{visita_id}/reabrir")
++def reabrir_visita(
++    visita_id: int,
++    body: ReabrirVisitaRequest,
++    db: Session = Depends(get_db),
++    current_user: Usuario = Depends(get_current_user),
++):
++    """Reabre una visita finalizada. Solo reabre el PDV, no la ruta."""
++    service = VisitaService(db)
++    return service.reabrir_visita(current_user, visita_id, body.motivo)
+diff --git a/backend/app/mercaderista/router.py b/backend/app/mercaderista/router.py
+new file mode 100644
+index 0000000..fcf0f4b
+--- /dev/null
++++ b/backend/app/mercaderista/router.py
+@@ -0,0 +1,21 @@
++"""
++Router principal del Portal Mercaderista.
++Agrega todos los sub-routers bajo /api/merc.
++"""
++
++from fastapi import APIRouter
++
++from app.mercaderista.endpoints.auth import router as auth_router
++from app.mercaderista.endpoints.rutas import router as rutas_router
++from app.mercaderista.endpoints.visitas import router as visitas_router
++from app.mercaderista.endpoints.pdv import router as pdv_router
++from app.mercaderista.endpoints.chat import router as chat_router
++
++# Router principal — los prefijos ya están definidos en cada endpoint
++router = APIRouter()
++
++router.include_router(auth_router)
++router.include_router(rutas_router)
++router.include_router(visitas_router)
++router.include_router(pdv_router)
++router.include_router(chat_router)
+diff --git a/backend/app/mercaderista/schemas.py b/backend/app/mercaderista/schemas.py
+new file mode 100644
+index 0000000..caacedc
+--- /dev/null
++++ b/backend/app/mercaderista/schemas.py
+@@ -0,0 +1,548 @@
++"""
++Schemas Pydantic para el Portal Mercaderista.
++Todos los modelos de request/response centralizados aquí.
++"""
++from __future__ import annotations
++
++from datetime import date, datetime
++from typing import Optional, List
++from pydantic import BaseModel, Field
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# AUTH / PERFIL
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class MercaderistaProfile(BaseModel):
++    """Perfil del mercaderista autenticado."""
++    id: int
++    nombre: str
++    cedula: str
++    email: Optional[str] = None
++    telefono: Optional[str] = None
++    rutas: List[RutaAsignada] = []
++
++    class Config:
++        from_attributes = True
++
++
++class RutaAsignada(BaseModel):
++    """Ruta asignada al mercaderista."""
++    id_ruta: int
++    tipo: Optional[str] = None
++    nombre: Optional[str] = None
++
++    class Config:
++        from_attributes = True
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# RUTAS
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class ClienteEnPdv(BaseModel):
++    """Cliente programado en un PDV."""
++    id_cliente: int
++    nombre: str
++    visitado: bool = False
++    id_visita: Optional[int] = None
++
++
++class PdvEnRuta(BaseModel):
++    """PDV programado en una ruta del día."""
++    id_punto: str
++    nombre: str
++    cadena: Optional[str] = None
++    direccion: Optional[str] = None
++    latitud: Optional[str] = None
++    longitud: Optional[str] = None
++    prioridad: Optional[str] = None
++    id_ruta: int
++    ruta_nombre: Optional[str] = None
++    clientes: List[ClienteEnPdv] = []
++
++
++class RutaDelDia(BaseModel):
++    """Ruta del día con sus PDVs."""
++    id_ruta: int
++    tipo: Optional[str] = None
++    nombre: Optional[str] = None
++    pdvs: List[PdvEnRuta] = []
++    activada: bool = False
++    finalizada: bool = False
++
++
++class MisRutasResponse(BaseModel):
++    """Respuesta completa de rutas del mercaderista para hoy."""
++    mercaderista_id: int
++    dia_semana: str
++    fecha: str
++    rutas_fijas: List[RutaDelDia] = []
++    rutas_variables: List[RutaDelDia] = []
++
++
++class ProgramacionProducto(BaseModel):
++    """Producto en el catálogo para la programación."""
++    id_producto: int
++    sku: Optional[str] = None
++    nombre: Optional[str] = None
++    fabricante: Optional[str] = None
++    categoria_id: Optional[int] = None
++    categoria_nombre: Optional[str] = None
++    precio_base_bs: Optional[float] = None
++    precio_base_ds: Optional[float] = None
++
++
++class ProgramacionMercaderista(BaseModel):
++    """Datos del mercaderista en la programación."""
++    id: int
++    nombre: str
++    cedula: str
++
++
++class ProgramacionResponse(BaseModel):
++    """Programación completa del día: rutas + productos en una sola llamada.
++    Equivale a getProgramacion() de la APK."""
++    fecha: str
++    dia_semana: str
++    mercaderista: ProgramacionMercaderista
++    rutas_fijas: List[RutaDelDia] = []
++    rutas_variables: List[RutaDelDia] = []
++    productos: List[ProgramacionProducto] = []
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# PDV ACTIVOS
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class PdvActivoResponse(BaseModel):
++    """PDV con trabajo pendiente hoy."""
++    punto_id: str
++    punto_nombre: str
++    ruta_id: Optional[int] = None
++    ruta_nombre: Optional[str] = None
++    clientes_pendientes: List[str] = []
++    clientes_listos: List[str] = []
++    falta_desactivacion: bool = False
++    ultima_visita_local_id: Optional[int] = None
++    ultima_visita_cliente_id: Optional[int] = None
++    ultima_visita_cliente_nombre: Optional[str] = None
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# VISITAS
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class IniciarVisitaRequest(BaseModel):
++    """Payload para iniciar una visita."""
++    id_punto: str
++    id_cliente: int
++
++
++class IniciarVisitaResponse(BaseModel):
++    """Respuesta al iniciar visita."""
++    id_visita: int
++    nueva: bool
++
++
++class VisitaHistorialItem(BaseModel):
++    """Item del historial de visitas."""
++    id_visita: int
++    fecha: Optional[str] = None
++    fecha_visita: Optional[str] = None
++    estado: Optional[str] = None
++    estado_data: Optional[str] = None
++    observaciones: Optional[str] = None
++    identificador_punto: Optional[str] = None
++    identificador_punto_interes: Optional[str] = None
++    pdv_nombre: Optional[str] = None
++    cadena: Optional[str] = None
++    region: Optional[str] = None
++    cliente_nombre: Optional[str] = None
++    id_cliente: Optional[int] = None
++    fotos_count: int = 0
++    balances_count: int = 0
++    total_fotos: int = 0
++    total_balances: int = 0
++    fotos_rechazadas: int = 0
++    fotos_aprobadas: int = 0
++
++
++class FotoEnVisita(BaseModel):
++    """Foto dentro de una visita."""
++    id_foto: int
++    estado: Optional[str] = None
++    fecha: Optional[str] = None
++    url: Optional[str] = None
++
++
++class TipoFotoGrupo(BaseModel):
++    """Grupo de fotos por tipo."""
++    codigo: str
++    label: str
++    solo_camara: bool
++    fotos: List[FotoEnVisita] = []
++
++
++class FotosVisitaResponse(BaseModel):
++    """Respuesta de fotos agrupadas por tipo."""
++    visita_id: int
++    tipos: List[TipoFotoGrupo] = []
++
++
++class ProductoBalanceItem(BaseModel):
++    """Producto individual en el formulario de balance."""
++    sku: Optional[str] = None
++    fabricante: Optional[str] = None
++    categoria: Optional[str] = None
++    inv_inicial: float = 0
++    inv_final: float = 0
++    inv_deposito: float = 0
++    caras: int = 0
++    precio_bs: float = 0
++    precio_ds: float = 0
++    fifo: Optional[str] = None  # fecha FEFO
++    estado_producto: Optional[str] = "normal"
++    no_existe: bool = False
++
++
++
++class BalanceRequest(BaseModel):
++    """Payload para guardar balances."""
++    id_cliente: Optional[int] = None
++    id_pdv: Optional[str] = None
++    productos: List[ProductoBalanceItem]
++
++
++class BalanceResponse(BaseModel):
++    """Respuesta al guardar balances."""
++    success: bool
++    productos_guardados: int
++
++
++class FinalizarVisitaRequest(BaseModel):
++    """Payload para finalizar visita."""
++    id_visita: int
++
++
++class FinalizarVisitaResponse(BaseModel):
++    """Respuesta al finalizar visita."""
++    success: bool
++    id_visita: int
++
++
++class ProductoParaBalance(BaseModel):
++    """Producto disponible para el formulario de balance."""
++    id: int
++    sku: Optional[str] = None
++    nombre: Optional[str] = None
++    fabricante: Optional[str] = None
++    categoria: Optional[str] = None
++    id_categoria: Optional[int] = None
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# PRODUCTOS (Catálogo para Balance)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class ProductoCatalogoItem(BaseModel):
++    """Producto del catálogo completo para el formulario de balance."""
++    id_producto: int
++    sku: Optional[str] = None
++    nombre: Optional[str] = None
++    fabricante: Optional[str] = None
++    categoria: Optional[str] = None
++    id_categoria: Optional[int] = None
++    categoria_nombre: Optional[str] = None
++
++
++class CategoriaConProductos(BaseModel):
++    """Categoría con sus productos para el balance."""
++    id_categoria: int
++    nombre: str
++    productos: List[ProductoCatalogoItem] = []
++
++
++class ProductosCatalogoResponse(BaseModel):
++    """Respuesta del catálogo de productos para balance."""
++    categorias: List[CategoriaConProductos] = []
++    total_productos: int = 0
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# NOTIFICACIONES (Rechazos, Aprobaciones, Visitas Revisadas)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class NotificacionRechazoItem(BaseModel):
++    """Foto rechazada con motivo."""
++    id_foto: int
++    id_visita: int
++    tipo_foto: Optional[str] = None
++    url: Optional[str] = None
++    motivo_rechazo: Optional[str] = None
++    fecha_rechazo: Optional[str] = None
++    leido: bool = False
++    punto_nombre: Optional[str] = None
++    cliente_nombre: Optional[str] = None
++
++
++class NotificacionAprobacionItem(BaseModel):
++    """Foto aprobada."""
++    id_foto: int
++    id_visita: int
++    tipo_foto: Optional[str] = None
++    url: Optional[str] = None
++    fecha_aprobacion: Optional[str] = None
++    leido: bool = False
++    punto_nombre: Optional[str] = None
++
++
++class NotificacionVisitaRevisadaItem(BaseModel):
++    """Visita marcada como revisada por el analista."""
++    id_visita: int
++    punto_nombre: Optional[str] = None
++    cliente_nombre: Optional[str] = None
++    fecha_revision: Optional[str] = None
++    leido: bool = False
++
++
++class NotificacionesResponse(BaseModel):
++    """Todas las notificaciones pendientes del mercaderista."""
++    rechazos: List[NotificacionRechazoItem] = []
++    aprobaciones: List[NotificacionAprobacionItem] = []
++    visitas_revisadas: List[NotificacionVisitaRevisadaItem] = []
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# VISITA DETALLE (Review completo)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class FotoDetalleItem(BaseModel):
++    """Foto con estado de revisión completo."""
++    id_foto: int
++    estado: Optional[str] = None           # pendiente, aprobado, rechazado
++    fecha: Optional[str] = None
++    url: Optional[str] = None
++    tipo_foto: Optional[str] = None
++    categoria: Optional[str] = None
++    motivo_rechazo: Optional[str] = None
++    latitud: Optional[float] = None
++    longitud: Optional[float] = None
++
++
++class BalanceDetalleItem(BaseModel):
++    """Balance individual en detalle de visita."""
++    id_balance: int
++    producto: Optional[str] = None
++    categoria: Optional[str] = None
++    fabricante: Optional[str] = None
++    inv_inicial: Optional[float] = None
++    inv_final: Optional[float] = None
++    inv_deposito: Optional[float] = None
++    caras: Optional[int] = None
++    precio_bs: Optional[float] = None
++    precio_ds: Optional[float] = None
++    fefo: Optional[str] = None
++    estado_producto: Optional[str] = None
++    no_existe: bool = False
++
++
++
++class VisitaDetalleResponse(BaseModel):
++    """Detalle completo de una visita (fotos + balances + metadata)."""
++    id_visita: int
++    fecha: Optional[str] = None
++    estado: Optional[str] = None
++    estado_data: Optional[str] = None
++    punto_nombre: Optional[str] = None
++    cadena: Optional[str] = None
++    direccion: Optional[str] = None
++    cliente_nombre: Optional[str] = None
++    revisada_por: Optional[str] = None
++    fecha_revision: Optional[str] = None
++    fotos: List[FotoDetalleItem] = []
++    balances: List[BalanceDetalleItem] = []
++    punto: Optional[dict] = None
++    punto_activado: bool = False
++    es_ultimo_cliente: bool = False
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# PDV (Activación / Desactivación)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class ActivarPdvRequest(BaseModel):
++    """Payload para activar un PDV."""
++    id_punto: str
++    id_ruta: Optional[int] = None
++
++
++class ActivarPdvResponse(BaseModel):
++    """Respuesta al activar PDV."""
++    success: bool
++    id_activacion: Optional[int] = None
++    ya_activado: bool = False
++
++
++class ActivarRutaRequest(BaseModel):
++    """Payload para activar una ruta completa."""
++    id_ruta: int
++
++
++class ActivarRutaResponse(BaseModel):
++    """Respuesta al activar una ruta."""
++    success: bool
++    id_activacion: Optional[int] = None
++    ya_activado: bool = False
++
++
++class FinalizarRutaRequest(BaseModel):
++    """Payload para finalizar una ruta."""
++    id_ruta: int
++
++
++class FinalizarRutaResponse(BaseModel):
++    """Respuesta al finalizar una ruta."""
++    success: bool
++    mensaje: Optional[str] = None
++
++
++class DesactivarPdvRequest(BaseModel):
++    """Payload para desactivar un PDV."""
++    id_punto: str
++
++
++class DesactivarPdvResponse(BaseModel):
++    """Respuesta al desactivar PDV."""
++    success: bool
++    mensaje: Optional[str] = None
++
++
++class ValidarCierrePdvResponse(BaseModel):
++    """Resultado de validación de cierre de PDV."""
++    puede_cerrar: bool
++    total_clientes: int
++    clientes_visitados: int
++    clientes_pendientes: List[str] = []
++    mensaje: Optional[str] = None
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# CHAT
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class ChatInboxItem(BaseModel):
++    """Conversación en la bandeja de chat."""
++    id_visita: int
++    fecha_visita: Optional[str] = None
++    estado: Optional[str] = None
++    pdv_nombre: Optional[str] = None
++    cliente_nombre: Optional[str] = None
++    total_msgs: int = 0
++    ultimo_mensaje: Optional[str] = None
++    ultimo_timestamp: Optional[str] = None
++
++
++class ChatMensajeResponse(BaseModel):
++    """Mensaje de chat."""
++    id_mensaje: int
++    id_visita: Optional[int] = None
++    sender_nombre: Optional[str] = None
++    mensaje: Optional[str] = None
++    tipo_mensaje: Optional[str] = None
++    fecha_envio: Optional[str] = None
++    foto_adjunta: Optional[str] = None
++
++
++class EnviarMensajeRequest(BaseModel):
++    """Payload para enviar mensaje."""
++    visita_id: int
++    mensaje: str
++    sender_nombre: Optional[str] = None
++
++
++# ═══════════════════════════════════════════════════════════════════════════════
++# CHAT GRUPOS (Equipo Operativo / Equipo + Cliente)
++# ═══════════════════════════════════════════════════════════════════════════════
++
++class GrupoChatItem(BaseModel):
++    """Grupo de chat al que pertenece el mercaderista."""
++    id_grupo: int
++    id_cliente: int
++    tipo_grupo: str
++    nombre: Optional[str] = None
++    no_leidos: int = 0
++    ultimo_mensaje: Optional[str] = None
++    ultimo_mensaje_fecha: Optional[str] = None
++
++
++class MiembroGrupoItem(BaseModel):
++    """Miembro de un grupo de chat."""
++    id_usuario: int
++    username: Optional[str] = None
++    nombre: Optional[str] = None
++    origen: str
++
++
++class MensajeGrupoItem(BaseModel):
++    """Mensaje en el chat general del grupo."""
++    id_mensaje: int
++    id_grupo: int
++    id_usuario: Optional[int] = None
++    username: Optional[str] = None
++    mensaje: str
++    tipo_mensaje: str
++    fecha_envio: Optional[str] = None
++    foto_adjunta: Optional[str] = None
++    es_mio: bool = False
++
++
++class EnviarMensajeGrupoRequest(BaseModel):
++    """Payload para enviar mensaje al grupo."""
++    mensaje: str
++
++
++class VisitaGrupoChatItem(BaseModel):
++    """Visita activa con hilo de chat en el grupo."""
++    id_visita: int
++    fecha_visita: Optional[str] = None
++    mercaderista: Optional[str] = None
++    punto: Optional[str] = None
++    estado: Optional[str] = None
++    ultimo_mensaje: Optional[str] = None
++    fecha_ultimo: Optional[str] = None
++
++
++class MensajeGrupoVisitaItem(BaseModel):
++    """Mensaje en el sub-hilo de visita del grupo."""
++    id_mensaje: int
++    id_cliente: int
++    tipo_grupo: str
++    id_visita: int
++    id_usuario: Optional[int] = None
++    username: Optional[str] = None
++    mensaje: str
++    tipo_mensaje: str
++    fecha_envio: Optional[str] = None
++    foto_adjunta: Optional[str] = None
++    es_mio: bool = False
++
++
++class AuditoriaTiempoRequest(BaseModel):
++    """Payload para registrar una auditoría de tiempo/temporizador."""
++    id_visita: Optional[int] = None
++    identificador_punto_interes: Optional[str] = None
++    evento: str
++    detalle: Optional[str] = None
++    tiempo_restante_segundos: int
++
++
++class ReabrirVisitaRequest(BaseModel):
++    """Payload para reabrir una visita finalizada."""
++    motivo: str
++
++
++class AuditoriaTiempoResponse(BaseModel):
++    """Respuesta al registrar auditoría de tiempo."""
++    success: bool
++    id_auditoria_tiempo: int
+diff --git a/backend/app/mercaderista/services/__init__.py b/backend/app/mercaderista/services/__init__.py
+new file mode 100644
+index 0000000..6637122
+--- /dev/null
++++ b/backend/app/mercaderista/services/__init__.py
+@@ -0,0 +1,8 @@
++"""
++Servicios del Portal Mercaderista.
++Cada servicio encapsula la lógica de negocio usando SQLAlchemy ORM.
++"""
++from .ruta_service import RutaService
++from .visita_service import VisitaService
++from .pdv_service import PdvService
++from .chat_service import ChatService
+diff --git a/backend/app/mercaderista/services/chat_service.py b/backend/app/mercaderista/services/chat_service.py
+new file mode 100644
+index 0000000..97f1041
+--- /dev/null
++++ b/backend/app/mercaderista/services/chat_service.py
+@@ -0,0 +1,614 @@
++"""
++Servicio de Chat del Mercaderista.
++Gestiona la bandeja de entrada, mensajes por visita y envío de mensajes.
++Usa exclusivamente SQLAlchemy ORM.
++"""
++
++from datetime import datetime
++from typing import List, Optional
++
++from sqlalchemy.orm import Session
++from sqlalchemy import desc, text
++
++from app.models.mercaderista import Mercaderista
++from app.models.visita import Visita
++from app.models.chat import ChatMensaje
++from app.models.foto import Foto
++
++
++class ChatService:
++    """Bandeja de chat y mensajería por visita."""
++
++    def __init__(self, db: Session):
++        self.db = db
++
++    def _get_mercaderista(self, current_user) -> Mercaderista:
++        merc = (
++            self.db.query(Mercaderista)
++            .filter(Mercaderista.cedula == str(current_user.username))
++            .first()
++        )
++        if not merc:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
++        return merc
++
++    # ── Bandeja de Entrada ───────────────────────────────────────────────────
++
++    def get_inbox(self, current_user) -> List[dict]:
++        """Devuelve las conversaciones agrupadas por visita."""
++        merc = self._get_mercaderista(current_user)
++
++        # Visitas del mercaderista que tienen mensajes
++        visitas = (
++            self.db.query(Visita)
++            .filter(Visita.mercaderista_id == merc.id)
++            .order_by(Visita.fecha.desc())
++            .all()
++        )
++
++        result = []
++        for v in visitas:
++            # Contar mensajes
++            total = (
++                self.db.query(ChatMensaje)
++                .filter(ChatMensaje.visita_id == v.id)
++                .count()
++            )
++
++            # Último mensaje
++            ultimo = (
++                self.db.query(ChatMensaje)
++                .filter(ChatMensaje.visita_id == v.id)
++                .order_by(desc(ChatMensaje.created_at))
++                .first()
++            )
++
++            punto = v.punto
++            cliente = v.cliente
++
++            result.append({
++                "id_visita": v.id,
++                "fecha_visita": str(v.fecha) if v.fecha else None,
++                "estado": v.estado,
++                "pdv_nombre": punto.nombre if punto else None,
++                "cliente_nombre": cliente.nombre if cliente else None,
++                "total_msgs": total,
++                "ultimo_mensaje": ultimo.mensaje if ultimo else None,
++                "ultimo_timestamp": str(ultimo.created_at) if ultimo and ultimo.created_at else None,
++            })
++
++        # Filtrar solo las que tienen mensajes
++        return [r for r in result if r["total_msgs"] > 0]
++
++    # ── Mensajes de una Visita ───────────────────────────────────────────────
++
++    def get_mensajes(self, visita_id: int) -> List[dict]:
++        """Obtiene los mensajes de chat de una visita."""
++        mensajes = (
++            self.db.query(ChatMensaje)
++            .filter(ChatMensaje.visita_id == visita_id)
++            .order_by(ChatMensaje.created_at)
++            .all()
++        )
++
++        return [
++            {
++                "id_mensaje": m.id,
++                "id_visita": m.visita_id,
++                "sender_nombre": m.sender_nombre,
++                "mensaje": m.mensaje,
++                "tipo_mensaje": m.sender_type,
++                "fecha_envio": str(m.created_at) if m.created_at else None,
++                "foto_adjunta": m.foto_adjunta,
++            }
++            for m in mensajes
++        ]
++
++    # ── Enviar Mensaje ───────────────────────────────────────────────────────
++
++    def enviar_mensaje(
++        self,
++        current_user,
++        visita_id: int,
++        mensaje: str,
++        sender_nombre: Optional[str] = None,
++    ) -> dict:
++        """Envía un mensaje a una visita."""
++        merc = self._get_mercaderista(current_user)
++        now = datetime.utcnow()
++
++        # Verificar que la visita pertenece al mercaderista
++        visita = (
++            self.db.query(Visita)
++            .filter(Visita.id == visita_id, Visita.mercaderista_id == merc.id)
++            .first()
++        )
++        if not visita:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Visita no encontrada")
++
++        msg = ChatMensaje(
++            visita_id=visita_id,
++            sender_nombre=sender_nombre or merc.nombre,
++            mensaje=mensaje,
++            sender_type="mercaderista",
++            created_at=now,
++            leido=False,
++        )
++        self.db.add(msg)
++        self.db.commit()
++        self.db.refresh(msg)
++
++        # Notificar por WebSocket
++        try:
++            from app.services.realtime import notify_event
++            notify_event("chat.new_message", {
++                "id_mensaje": msg.id,
++                "id_visita": visita_id,
++                "sender_nombre": msg.sender_nombre,
++                "mensaje": mensaje,
++                "fecha_envio": str(now),
++            })
++        except Exception:
++            pass
++
++        return {
++            "id_mensaje": msg.id,
++            "id_visita": visita_id,
++            "sender_nombre": msg.sender_nombre,
++            "mensaje": mensaje,
++            "fecha_envio": str(now),
++        }
++
++    # ── Notificaciones (Rechazos, Aprobaciones, Visitas Revisadas) ─────────
++
++    def get_notificaciones(self, current_user) -> dict:
++        """
++        Devuelve todas las notificaciones pendientes del mercaderista:
++        - Rechazos: fotos rechazadas por AI/analista con motivo
++        - Aprobaciones: fotos aprobadas
++        - Visitas revisadas: visitas marcadas como 'Revisado' por analista
++        
++        Equivale a fetchRechazos() + fetchEventos() en la APK.
++        """
++        merc = self._get_mercaderista(current_user)
++
++        # ── Rechazos ──────────────────────────────────────────────────────
++        from app.models.foto import NotificacionRechazoFoto
++
++        rechazos_raw = (
++            self.db.query(NotificacionRechazoFoto, Foto, Visita)
++            .join(Foto, NotificacionRechazoFoto.foto_id == Foto.id)
++            .join(Visita, Foto.visita_id == Visita.id)
++            .filter(Visita.mercaderista_id == merc.id)
++            .order_by(NotificacionRechazoFoto.fecha_notificacion.desc())
++            .limit(50)
++            .all()
++        )
++
++        id_to_codigo = {v["id"]: k for k, v in {
++            "gestion_antes":      {"label": "Gestión (Antes)",            "id": 1},
++            "gestion_despues":    {"label": "Gestión (Después)",          "id": 2},
++            "precios":            {"label": "Precios",                    "id": 3},
++            "exhibicion_antes":   {"label": "Exhibición Adic. (Antes)",   "id": 4},
++            "activacion":         {"label": "Activación",                 "id": 5},
++            "desactivacion":      {"label": "Desactivación",              "id": 6},
++            "exhibicion_despues": {"label": "Exhibición Adic. (Después)", "id": 7},
++            "pop_antes":          {"label": "Material POP (Antes)",       "id": 8},
++            "pop_despues":        {"label": "Material POP (Después)",     "id": 10},
++        }.items()}
++
++        rechazos = []
++        for notif, foto, visita in rechazos_raw:
++            punto = visita.punto
++            cliente = visita.cliente
++            tipo_codigo = id_to_codigo.get(foto.id_tipo_foto, "gestion_antes")
++            rechazos.append({
++                "id_foto": foto.id,
++                "id_visita": visita.id,
++                "tipo_foto": tipo_codigo,
++                "url": self._foto_url(foto.blob_path, foto.id),
++                "motivo_rechazo": notif.motivo,
++                "fecha_rechazo": str(notif.fecha_creacion) if notif.fecha_creacion else None,
++                "leido": notif.leido or False,
++                "punto_nombre": punto.nombre if punto else None,
++                "cliente_nombre": cliente.nombre if cliente else None,
++            })
++
++        # ── Aprobaciones (fotos pasadas a estado 'aprobado') ──────────────
++        aprobaciones_raw = (
++            self.db.query(Foto, Visita)
++            .join(Visita, Foto.visita_id == Visita.id)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Foto.estado.in_(["aprobado", "aprobada"]),
++            )
++            .order_by(Foto.fecha_registro.desc())
++            .limit(30)
++            .all()
++        )
++
++        aprobaciones = []
++        for foto, visita in aprobaciones_raw:
++            punto = visita.punto
++            tipo_codigo = id_to_codigo.get(foto.id_tipo_foto, "gestion_antes")
++            aprobaciones.append({
++                "id_foto": foto.id,
++                "id_visita": visita.id,
++                "tipo_foto": tipo_codigo,
++                "url": self._foto_url(foto.blob_path, foto.id),
++                "fecha_aprobacion": str(foto.fecha_registro) if foto.fecha_registro else None,
++                "leido": False,
++                "punto_nombre": punto.nombre if punto else None,
++            })
++
++        # ── Visitas Revisadas ─────────────────────────────────────────────
++        visitas_revisadas_raw = (
++            self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Visita.estado == "Revisado",
++            )
++            .order_by(Visita.fecha_revision.desc())
++            .limit(20)
++            .all()
++        )
++
++        visitas_revisadas = []
++        for v in visitas_revisadas_raw:
++            punto = v.punto
++            cliente = v.cliente
++            visitas_revisadas.append({
++                "id_visita": v.id,
++                "punto_nombre": punto.nombre if punto else None,
++                "cliente_nombre": cliente.nombre if cliente else None,
++                "fecha_revision": str(v.fecha_revision) if v.fecha_revision else None,
++                "leido": False,
++            })
++
++        return {
++            "rechazos": rechazos,
++            "aprobaciones": aprobaciones,
++            "visitas_revisadas": visitas_revisadas,
++        }
++
++    # ── Helpers ─────────────────────────────────────────────────────────────
++
++    def _foto_url(self, blob_path, foto_id: int):
++        """Genera URL para una foto."""
++        if not blob_path:
++            return None
++        if isinstance(blob_path, str) and blob_path.startswith("http"):
++            return blob_path
++        return f"/api/media/foto/{foto_id}"
++
++    def _az_foto_url(self, blob_path) -> Optional[str]:
++        """Convierte blob_path a URL proxy de Azure, si aplica."""
++        if not blob_path:
++            return None
++        from app.services.azure_service import azure_service
++        return azure_service.get_proxy_url(blob_path)
++
++    # ── Grupos de Chat (Equipo Operativo / Equipo + Cliente) ───────────────
++
++    def get_mis_grupos(self, current_user) -> List[dict]:
++        """Devuelve los grupos de chat a los que pertenece el mercaderista,
++        con conteo de no-leídos y preview del último mensaje."""
++        from app.services.chat_grupos_membresia import get_grupos_de_usuario
++
++        grupos = get_grupos_de_usuario(self.db, current_user.id)
++        if not grupos:
++            return []
++
++        ids = [g["id_grupo"] for g in grupos]
++        ph = ",".join(str(int(i)) for i in ids)
++
++        unread_rows = self.db.execute(text("""
++            SELECT m.id_grupo, COUNT(*)
++            FROM CHAT_GRUPO_MENSAJES m
++            LEFT JOIN CHAT_GRUPO_LECTURAS l
++                   ON l.id_grupo = m.id_grupo AND l.id_usuario = :uid
++            WHERE m.id_grupo IN ({ph})
++              AND m.id_usuario <> :uid
++              AND m.id_mensaje > ISNULL(l.last_read_id_mensaje, 0)
++            GROUP BY m.id_grupo
++        """.replace("{ph}", ph)), {"uid": current_user.id}).fetchall()
++        unread = {int(r[0]): int(r[1]) for r in unread_rows}
++
++        last_rows = self.db.execute(text("""
++            SELECT x.id_grupo, x.mensaje, x.fecha_envio
++            FROM (
++                SELECT m.id_grupo, m.mensaje, m.fecha_envio,
++                       ROW_NUMBER() OVER (PARTITION BY m.id_grupo ORDER BY m.id_mensaje DESC) AS rn
++                FROM CHAT_GRUPO_MENSAJES m
++                WHERE m.id_grupo IN ({ph})
++                  AND NOT (
++                      m.tipo_mensaje = 'sistema'
++                      AND (
++                          m.mensaje LIKE N'%Foto Rechazada%'
++                          OR m.mensaje LIKE N'%Foto rechazada%'
++                          OR m.mensaje LIKE N'%🚫%'
++                      )
++                  )
++            ) x
++            WHERE x.rn = 1
++        """.replace("{ph}", ph))).fetchall()
++        last = {int(r[0]): {"mensaje": r[1], "fecha": str(r[2]) if r[2] else None} for r in last_rows}
++
++        result = []
++        for g in grupos:
++            result.append({
++                "id_grupo": g["id_grupo"],
++                "id_cliente": g["id_cliente"],
++                "tipo_grupo": g["tipo_grupo"],
++                "nombre": g["nombre"],
++                "no_leidos": unread.get(g["id_grupo"], 0),
++                "ultimo_mensaje": last.get(g["id_grupo"], {}).get("mensaje"),
++                "ultimo_mensaje_fecha": last.get(g["id_grupo"], {}).get("fecha"),
++            })
++        result.sort(key=lambda g: (-g["no_leidos"], g["nombre"] or ""))
++        return result
++
++    def _autorizado_grupo(self, current_user, id_grupo: int) -> bool:
++        """Verifica que el usuario pertenezca al grupo."""
++        from app.services.chat_grupos_membresia import get_grupos_de_usuario
++        return any(g["id_grupo"] == id_grupo for g in get_grupos_de_usuario(self.db, current_user.id))
++
++    def _grupo_info(self, id_grupo: int):
++        """Obtiene metadata de un grupo."""
++        return self.db.execute(text("""
++            SELECT id_grupo, id_cliente, tipo_grupo, nombre, activa
++            FROM CHAT_GRUPOS WHERE id_grupo = :id
++        """), {"id": id_grupo}).fetchone()
++
++    def get_mensajes_grupo(
++        self, current_user, id_grupo: int, limit: int = 50, before_id: Optional[int] = None
++    ) -> List[dict]:
++        """Devuelve los mensajes del chat general de un grupo."""
++        from fastapi import HTTPException
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++
++        cond = " AND m.id_mensaje < :before_id" if before_id else ""
++        params = {"limit": limit, "id_grupo": id_grupo}
++        if before_id:
++            params["before_id"] = before_id
++
++        rows = self.db.execute(text("""
++            SELECT TOP (:limit) m.id_mensaje, m.id_grupo, m.id_usuario, m.username,
++                                 m.mensaje, m.tipo_mensaje, m.fecha_envio, m.foto_adjunta
++            FROM CHAT_GRUPO_MENSAJES m
++            WHERE m.id_grupo = :id_grupo""" + cond + """
++              AND NOT (
++                  m.tipo_mensaje = 'sistema'
++                  AND (
++                      m.mensaje LIKE N'%Foto Rechazada%'
++                      OR m.mensaje LIKE N'%Foto rechazada%'
++                      OR m.mensaje LIKE N'%🚫%'
++                  )
++              )
++            ORDER BY m.id_mensaje DESC
++        """), params).fetchall()
++
++        mensajes = [{
++            "id_mensaje": r[0], "id_grupo": r[1], "id_usuario": r[2], "username": r[3],
++            "mensaje": r[4], "tipo_mensaje": r[5], "fecha_envio": str(r[6]) if r[6] else None,
++            "foto_adjunta": self._az_foto_url(r[7]), "es_mio": r[2] == current_user.id,
++        } for r in rows]
++
++        mensajes.reverse()
++        return mensajes
++
++    def enviar_mensaje_grupo(self, current_user, id_grupo: int, mensaje: str) -> dict:
++        """Envía un mensaje al chat general del grupo."""
++        from fastapi import HTTPException
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++
++        texto = (mensaje or "").strip()
++        if not texto:
++            raise HTTPException(status_code=400, detail="Mensaje vacío")
++
++        ahora = datetime.now()
++        row = self.db.execute(text("""
++            INSERT INTO CHAT_GRUPO_MENSAJES (id_grupo, id_usuario, username, mensaje, tipo_mensaje, fecha_envio)
++            OUTPUT INSERTED.id_mensaje
++            VALUES (:id_grupo, :uid, :username, :mensaje, 'usuario', :fecha)
++        """), {"id_grupo": id_grupo, "uid": current_user.id, "username": current_user.username,
++               "mensaje": texto, "fecha": ahora}).fetchone()
++        self.db.commit()
++        id_mensaje = row[0]
++
++        # WebSocket: notificar nuevo mensaje en grupo
++        try:
++            from app.services.realtime import notify_event
++            notify_event("chat.new_message", {
++                "id_grupo": id_grupo,
++                "id_usuario": current_user.id,
++                "username": current_user.username,
++                "id_mensaje": id_mensaje,
++            })
++        except Exception:
++            pass
++
++        return {
++            "id_mensaje": id_mensaje, "id_grupo": id_grupo,
++            "id_usuario": current_user.id, "username": current_user.username,
++            "mensaje": texto, "tipo_mensaje": "usuario",
++            "fecha_envio": str(ahora), "foto_adjunta": None, "es_mio": True,
++        }
++
++    def get_miembros_grupo(self, current_user, id_grupo: int) -> List[dict]:
++        """Devuelve los miembros de un grupo (resolución dinámica)."""
++        from fastapi import HTTPException
++        from app.services.chat_grupos_membresia import get_miembros_grupo
++
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++        info = self._grupo_info(id_grupo)
++        if not info:
++            raise HTTPException(status_code=404, detail="Grupo no encontrado")
++        return get_miembros_grupo(self.db, info[1], info[2])
++
++    def get_visitas_activas_grupo(self, current_user, id_grupo: int) -> List[dict]:
++        """Devuelve las visitas activas que tienen hilo de chat en este grupo."""
++        from fastapi import HTTPException
++
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++        info = self._grupo_info(id_grupo)
++        if not info:
++            raise HTTPException(status_code=404, detail="Grupo no encontrado")
++
++        id_cliente = info[1]
++        tipo_grupo = info[2]
++
++        rows = self.db.execute(text("""
++            SELECT v.id_visita, v.fecha_visita, m.nombre AS mercaderista, p.punto_de_interes,
++                   v.estado, x.ultimo_mensaje, x.fecha_ultimo
++            FROM (
++                SELECT DISTINCT id_visita FROM CHAT_MENSAJES_GRUPO_VISITA
++                WHERE id_cliente = :cid AND tipo_grupo = :tipo
++            ) gv
++            JOIN VISITAS_MERCADERISTA v ON v.id_visita = gv.id_visita
++            LEFT JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
++            LEFT JOIN PUNTOS_INTERES1 p ON p.identificador = v.identificador_punto_interes
++            CROSS APPLY (
++                SELECT TOP 1 mensaje AS ultimo_mensaje, fecha_envio AS fecha_ultimo
++                FROM CHAT_MENSAJES_GRUPO_VISITA
++                WHERE id_visita = v.id_visita AND id_cliente = :cid AND tipo_grupo = :tipo
++                ORDER BY fecha_envio DESC
++            ) x
++            ORDER BY x.fecha_ultimo DESC
++        """), {"cid": id_cliente, "tipo": tipo_grupo}).fetchall()
++
++        return [{
++            "id_visita": r[0],
++            "fecha_visita": str(r[1]) if r[1] else None,
++            "mercaderista": r[2],
++            "punto": r[3],
++            "estado": r[4],
++            "ultimo_mensaje": r[5],
++            "fecha_ultimo": str(r[6]) if r[6] else None,
++        } for r in rows]
++
++    def get_mensajes_grupo_visita(
++        self, current_user, id_grupo: int, id_visita: int
++    ) -> List[dict]:
++        """Devuelve los mensajes del sub-hilo de visita dentro del grupo."""
++        from fastapi import HTTPException
++        from app.services.chat_grupos_membresia import usuario_es_miembro
++
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++        info = self._grupo_info(id_grupo)
++        if not info:
++            raise HTTPException(status_code=404, detail="Grupo no encontrado")
++
++        id_cliente = info[1]
++        tipo_grupo = info[2]
++
++        rows = self.db.execute(text("""
++            SELECT id_mensaje, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta
++            FROM CHAT_MENSAJES_GRUPO_VISITA
++            WHERE id_cliente = :cid AND tipo_grupo = :tipo AND id_visita = :vid
++            ORDER BY fecha_envio ASC
++        """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita}).fetchall()
++
++        return [{
++            "id_mensaje": r[0], "id_cliente": id_cliente, "tipo_grupo": tipo_grupo,
++            "id_visita": id_visita, "id_usuario": r[1], "username": r[2],
++            "mensaje": r[3], "tipo_mensaje": r[4],
++            "fecha_envio": str(r[5]) if r[5] else None,
++            "foto_adjunta": self._az_foto_url(r[6]),
++            "es_mio": r[1] == current_user.id,
++        } for r in rows]
++
++    def enviar_mensaje_grupo_visita(
++        self, current_user, id_grupo: int, id_visita: int, mensaje: str
++    ) -> dict:
++        """Envía un mensaje al sub-hilo de visita dentro del grupo."""
++        from fastapi import HTTPException
++
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++        info = self._grupo_info(id_grupo)
++        if not info:
++            raise HTTPException(status_code=404, detail="Grupo no encontrado")
++
++        id_cliente = info[1]
++        tipo_grupo = info[2]
++
++        texto = (mensaje or "").strip()
++        if not texto:
++            raise HTTPException(status_code=400, detail="Mensaje vacío")
++
++        ahora = datetime.now()
++        row = self.db.execute(text("""
++            INSERT INTO CHAT_MENSAJES_GRUPO_VISITA
++                (id_cliente, tipo_grupo, id_visita, id_usuario, username, mensaje, tipo_mensaje, fecha_envio)
++            OUTPUT INSERTED.id_mensaje
++            VALUES (:cid, :tipo, :vid, :uid, :username, :mensaje, 'usuario', :fecha)
++        """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita,
++               "uid": current_user.id, "username": current_user.username,
++               "mensaje": texto, "fecha": ahora}).fetchone()
++        self.db.commit()
++        id_mensaje = row[0]
++
++        # WebSocket: notificar nuevo mensaje en hilo de visita del grupo
++        try:
++            from app.services.realtime import notify_event
++            notify_event("chat.new_message", {
++                "id_grupo": id_grupo,
++                "id_visita": id_visita,
++                "id_usuario": current_user.id,
++                "username": current_user.username,
++                "id_mensaje": id_mensaje,
++            })
++        except Exception:
++            pass
++
++        return {
++            "id_mensaje": id_mensaje, "id_cliente": id_cliente, "tipo_grupo": tipo_grupo,
++            "id_visita": id_visita, "id_usuario": current_user.id,
++            "username": current_user.username, "mensaje": texto,
++            "tipo_mensaje": "usuario", "fecha_envio": str(ahora),
++            "foto_adjunta": None, "es_mio": True,
++        }
++
++    def marcar_leido_grupo(self, current_user, id_grupo: int) -> dict:
++        """Marca como leído el grupo hasta su último mensaje."""
++        from fastapi import HTTPException
++        if not self._autorizado_grupo(current_user, id_grupo):
++            raise HTTPException(status_code=403, detail="No autorizado")
++
++        last = self.db.execute(text("""
++            SELECT MAX(id_mensaje) FROM CHAT_GRUPO_MENSAJES WHERE id_grupo = :id
++        """), {"id": id_grupo}).scalar()
++        last_id = int(last or 0)
++
++        self.db.execute(text("""
++            MERGE CHAT_GRUPO_LECTURAS AS t
++            USING (SELECT :id_grupo AS id_grupo, :uid AS id_usuario) AS s
++               ON t.id_grupo = s.id_grupo AND t.id_usuario = s.id_usuario
++            WHEN MATCHED THEN
++                UPDATE SET last_read_id_mensaje = :last_id, fecha_actualizacion = GETDATE()
++            WHEN NOT MATCHED THEN
++                INSERT (id_grupo, id_usuario, last_read_id_mensaje, fecha_actualizacion)
++                VALUES (:id_grupo, :uid, :last_id, GETDATE());
++        """), {"id_grupo": id_grupo, "uid": current_user.id, "last_id": last_id})
++        self.db.commit()
++
++        # WebSocket: notificar lectura del grupo
++        try:
++            from app.services.realtime import notify_grupo_lectura
++            notify_grupo_lectura(
++                id_grupo=id_grupo,
++                id_usuario=current_user.id,
++                username=current_user.username,
++            )
++        except Exception:
++            pass
++
++        return {"last_read_id_mensaje": last_id}
+diff --git a/backend/app/mercaderista/services/pdv_service.py b/backend/app/mercaderista/services/pdv_service.py
+new file mode 100644
+index 0000000..c4d4f67
+--- /dev/null
++++ b/backend/app/mercaderista/services/pdv_service.py
+@@ -0,0 +1,561 @@
++"""
++Servicio de PDV (Activación / Desactivación).
++Gestiona la activación y desactivación de puntos de interés, con validación
++de que todos los clientes del PDV estén visitados antes de permitir el cierre.
++Usa exclusivamente SQLAlchemy ORM.
++"""
++
++from datetime import date, datetime
++from typing import List
++
++from sqlalchemy import cast, Date
++from sqlalchemy.orm import Session
++
++from app.models.mercaderista import Mercaderista, MercaderistaRuta
++from app.models.visita import Visita
++from app.models.ruta import RutaProgramacion, RutaActivada, Ruta
++from app.models.cliente import Cliente
++from app.models.punto import PuntoInteres
++
++
++DAY_MAP_ES = {
++    0: "Lunes", 1: "Martes", 2: "Miércoles",
++    3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo",
++}
++
++
++class PdvService:
++    """Gestión de activación/desactivación de PDVs."""
++
++    def __init__(self, db: Session):
++        self.db = db
++
++    def _get_mercaderista(self, current_user) -> Mercaderista:
++        merc = (
++            self.db.query(Mercaderista)
++            .filter(Mercaderista.cedula == str(current_user.username))
++            .first()
++        )
++        if not merc:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
++        return merc
++
++    # ── PDVs Activos ─────────────────────────────────────────────────────────
++
++    def get_pdv_activos(self, current_user) -> List[dict]:
++        """
++        Devuelve los PDVs que tienen trabajo pendiente hoy.
++        Un PDV está activo si:
++        - Su ruta está activada en RUTAS_ACTIVADAS (estado="activo")
++        - Tiene programación hoy
++        - Tiene al menos un cliente sin visitar, O
++        - Todos los clientes están visitados pero falta la desactivación
++        """
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++        dia_numero = hoy.weekday()
++
++        print(f"\n[get_pdv_activos] 🔍 mercaderista_id={merc.id}, hoy={hoy}, dia={DAY_MAP_ES[dia_numero]}")
++
++        # DEBUG: ver TODAS las activaciones del mercaderista sin filtrar
++        todas_activaciones = (
++            self.db.query(RutaActivada)
++            .filter(RutaActivada.mercaderista_id == merc.id)
++            .all()
++        )
++        print(f"[get_pdv_activos] 📋 Todas las activaciones ({len(todas_activaciones)}):")
++        for a in todas_activaciones:
++            ruta_n = self.db.query(Ruta).filter(Ruta.id == a.ruta_id).first()
++            print(f"  id={a.id} ruta={a.ruta_id} ({ruta_n.nombre if ruta_n else '?'}) estado='{a.estado}' tipo='{a.tipo_activacion}' fecha={a.fecha_hora_activacion}")
++
++        # Solo rutas que están realmente activadas por este mercaderista
++        rutas_activadas = (
++            self.db.query(RutaActivada.ruta_id)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.estado == "activo",
++                RutaActivada.tipo_activacion == "ruta",
++            )
++            .all()
++        )
++        rutas_activadas_ids = [r[0] for r in rutas_activadas]
++        print(f"[get_pdv_activos] ✅ Rutas activadas filtradas (estado='activo', tipo='ruta'): {rutas_activadas_ids}")
++
++        if not rutas_activadas_ids:
++            # Intentar también con tipo_activacion="pdv" (PDVs activados individualmente)
++            print("[get_pdv_activos] ⚠️ Sin rutas activadas. Buscando PDVs activados individualmente...")
++            pdvs_activados = (
++                self.db.query(RutaActivada)
++                .filter(
++                    RutaActivada.mercaderista_id == merc.id,
++                    RutaActivada.estado == "activo",
++                    RutaActivada.tipo_activacion == "pdv",
++                )
++                .all()
++            )
++            print(f"[get_pdv_activos] PDVs activados individualmente: {[(a.id, a.ruta_id, a.identificador_punto_interes) for a in pdvs_activados]}")
++            # Si hay PDVs activados, usar sus rutas
++            if pdvs_activados:
++                rutas_activadas_ids = list(set(a.ruta_id for a in pdvs_activados if a.ruta_id))
++                print(f"[get_pdv_activos] 🟢 Usando rutas de PDVs activados: {rutas_activadas_ids}")
++
++        # 🆕 Fallback: buscar visitas NO finalizadas hoy para construir resultado directo
++        modo_fallback_visitas = False
++        fallback_puntos_ids = []
++
++        if not rutas_activadas_ids:
++            print("[get_pdv_activos] ⚠️ Sin activaciones formales. Buscando visitas pendientes hoy...")
++
++            # Rutas que YA fueron finalizadas hoy (no deben aparecer en el fallback)
++            rutas_finalizadas_hoy = (
++                self.db.query(RutaActivada.ruta_id)
++                .filter(
++                    RutaActivada.mercaderista_id == merc.id,
++                    RutaActivada.estado == "Finalizado",
++                    RutaActivada.tipo_activacion == "ruta",
++                    cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++                )
++                .all()
++            )
++            rutas_finalizadas_ids = set(r[0] for r in rutas_finalizadas_hoy)
++            print(f"[get_pdv_activos] 🚫 Rutas ya finalizadas hoy: {rutas_finalizadas_ids}")
++
++            visitas_pendientes = (
++                self.db.query(Visita)
++                .filter(
++                    Visita.mercaderista_id == merc.id,
++                    Visita.fecha == hoy,
++                    Visita.estado != "Finalizada",
++                )
++                .all()
++            )
++            print(f"[get_pdv_activos] 📝 Visitas pendientes hoy: {[(v.id, v.punto_id, v.id_cliente, v.estado) for v in visitas_pendientes]}")
++            if visitas_pendientes:
++                puntos_ids = list(set(v.punto_id for v in visitas_pendientes))
++                print(f"[get_pdv_activos] 🎯 Puntos con visitas pendientes: {puntos_ids}")
++                # Buscar las rutas asociadas a esos puntos hoy
++                rutas_de_puntos = (
++                    self.db.query(RutaProgramacion.ruta_id)
++                    .filter(
++                        RutaProgramacion.punto_id.in_(puntos_ids),
++                        RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                        RutaProgramacion.activo == True,
++                    )
++                    .distinct()
++                    .all()
++                )
++                todas_rutas_ids = [r[0] for r in rutas_de_puntos]
++                print(f"[get_pdv_activos] 🔗 Rutas de los puntos con visitas: {todas_rutas_ids}")
++
++                # Filtrar: solo incluir rutas que NO estan finalizadas
++                rutas_filtradas = [rid for rid in todas_rutas_ids if rid not in rutas_finalizadas_ids]
++                print(f"[get_pdv_activos] 🟢 Rutas NO finalizadas con visitas pendientes: {rutas_filtradas}")
++
++                if rutas_filtradas:
++                    # Solo incluir puntos cuyas rutas NO esten finalizadas
++                    puntos_filtrados = []
++                    for pid in puntos_ids:
++                        prog_punto = (
++                            self.db.query(RutaProgramacion)
++                            .filter(
++                                RutaProgramacion.punto_id == pid,
++                                RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                                RutaProgramacion.activo == True,
++                            )
++                            .first()
++                        )
++                        if prog_punto and prog_punto.ruta_id not in rutas_finalizadas_ids:
++                            puntos_filtrados.append(pid)
++
++                    print(f"[get_pdv_activos] 🎯 Puntos con visitas en rutas NO finalizadas: {puntos_filtrados}")
++
++                    if puntos_filtrados:
++                        rutas_activadas_ids = rutas_filtradas
++                        fallback_puntos_ids = puntos_filtrados
++                        modo_fallback_visitas = True
++                        print(f"[get_pdv_activos] 🔒 Modo fallback: solo puntos {fallback_puntos_ids}")
++
++        if not rutas_activadas_ids:
++            return []
++
++        # Programaciones de hoy para las rutas activadas
++        # Si es fallback de visitas, filtrar SOLO por los puntos con visitas reales
++        if modo_fallback_visitas and fallback_puntos_ids:
++            programaciones = (
++                self.db.query(RutaProgramacion)
++                .filter(
++                    RutaProgramacion.punto_id.in_(fallback_puntos_ids),
++                    RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                    RutaProgramacion.activo == True
++                )
++                .all()
++            )
++        else:
++            programaciones = (
++                self.db.query(RutaProgramacion)
++                .filter(
++                    RutaProgramacion.ruta_id.in_(rutas_activadas_ids),
++                    RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                    RutaProgramacion.activo == True
++                )
++                .all()
++            )
++
++        if not programaciones:
++            return []
++
++        # Pre-cache de nombres de ruta (una sola query)
++        ruta_nombres = {}
++        for rid in set(p.ruta_id for p in programaciones):
++            r = self.db.query(Ruta).filter(Ruta.id == rid).first()
++            ruta_nombres[rid] = r.nombre if r else f"Ruta #{rid}"
++
++        # Agrupar por PDV
++        pdvs: dict = {}
++        for prog in programaciones:
++            key = prog.punto_id
++            if key not in pdvs:
++                punto = self.db.query(PuntoInteres).filter(PuntoInteres.id == key).first()
++                pdvs[key] = {
++                    "punto_id": key,
++                    "punto_nombre": punto.nombre if punto else "Sin nombre",
++                    "ruta_id": prog.ruta_id,
++                    "ruta_nombre": ruta_nombres.get(prog.ruta_id, f"Ruta #{prog.ruta_id}"),
++                    "clientes_pendientes": [],
++                    "clientes_listos": [],
++                    "falta_desactivacion": False,
++                    "ultima_visita_local_id": None,
++                    "ultima_visita_cliente_id": None,
++                    "ultima_visita_cliente_nombre": None,
++                }
++
++            cliente = self.db.query(Cliente).filter(Cliente.id == prog.id_cliente).first()
++            cliente_nombre = cliente.nombre if cliente else f"Cliente #{prog.id_cliente}"
++
++            # Verificar si este cliente ya tiene visita hoy
++            visita_hoy = (
++                self.db.query(Visita)
++                .filter(
++                    Visita.mercaderista_id == merc.id,
++                    Visita.punto_id == key,
++                    Visita.id_cliente == prog.id_cliente,
++                    Visita.fecha == hoy,
++                )
++                .first()
++            )
++
++            if visita_hoy:
++                pdvs[key]["clientes_listos"].append(cliente_nombre)
++                pdvs[key]["ultima_visita_local_id"] = visita_hoy.id
++                pdvs[key]["ultima_visita_cliente_id"] = prog.id_cliente
++                pdvs[key]["ultima_visita_cliente_nombre"] = cliente_nombre
++            else:
++                pdvs[key]["clientes_pendientes"].append(cliente_nombre)
++
++        # Determinar si falta desactivación: todos los clientes visitados
++        # pero el PDV no está desactivado.
++        # ⚠️ Solo incluir PDVs que tienen al menos una visita real creada hoy.
++        # Si un PDV no tiene ninguna visita, no hay "trabajo en progreso".
++        result = []
++        for pdv_data in pdvs.values():
++            if not pdv_data["clientes_pendientes"] and not pdv_data["clientes_listos"]:
++                continue  # Sin clientes, ignorar
++
++            # 🆕 Filtrar: solo PDVs con al menos una visita real hoy
++            if pdv_data["ultima_visita_local_id"] is None:
++                continue  # Sin visitas → no hay trabajo real
++
++            if not pdv_data["clientes_pendientes"]:
++                # Todos visitados → ¿falta desactivación?
++                # Solo marcamos falta_desactivacion si hay al menos un cliente listo
++                pdv_data["falta_desactivacion"] = len(pdv_data["clientes_listos"]) > 0
++
++            result.append(pdv_data)
++
++        return result
++
++    # ── Activar PDV ──────────────────────────────────────────────────────────
++
++    def activar_pdv(
++        self, current_user, id_punto: str, id_ruta: int = None
++    ) -> dict:
++        """Registra la activación de un PDV."""
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++
++        # Verificar si ya está activado hoy (estado Activo)
++        existente = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.identificador_punto_interes == id_punto,
++                cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++            )
++            .first()
++        )
++
++        if existente:
++            return {"success": True, "id_activacion": existente.id, "ya_activado": True}
++
++        activacion = RutaActivada(
++            mercaderista_id=merc.id,
++            identificador_punto_interes=id_punto,
++            ruta_id=id_ruta,
++            fecha_hora_activacion=datetime.now(),
++            estado="Activo",
++            tipo_activacion="mercaderista",
++        )
++        self.db.add(activacion)
++        self.db.commit()
++        self.db.refresh(activacion)
++
++        return {"success": True, "id_activacion": activacion.id, "ya_activado": False}
++
++    # ── Activar Ruta ──────────────────────────────────────────────────────────
++
++    def activar_ruta(self, current_user, id_ruta: int) -> dict:
++        """Registra la activación de una ruta completa a nivel de backend.
++        Inserta un registro en RUTAS_ACTIVADAS que persiste entre sesiones del navegador."""
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++
++        # Verificar si ya existe una activación para esta ruta hoy
++        existente = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.ruta_id == id_ruta,
++                cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++            )
++            .first()
++        )
++
++        if existente:
++            # Si estaba finalizado, reactivar
++            if existente.estado != "activo":
++                existente.estado = "activo"
++                existente.tipo_activacion = "ruta"
++                existente.fecha_hora_activacion = datetime.now()
++                self.db.commit()
++                print(f"[activar_ruta] 🔄 Reactivando ruta {id_ruta} (estaba '{existente.estado}') -> id={existente.id}")
++                return {"success": True, "id_activacion": existente.id, "ya_activado": False, "reactivado": True}
++            print(f"[activar_ruta] ℹ️ Ruta {id_ruta} ya activa, id={existente.id}")
++            return {"success": True, "id_activacion": existente.id, "ya_activado": True}
++
++        activacion = RutaActivada(
++            mercaderista_id=merc.id,
++            ruta_id=id_ruta,
++            fecha_hora_activacion=datetime.now(),
++            estado="activo",
++            tipo_activacion="ruta",
++        )
++        self.db.add(activacion)
++        self.db.commit()
++        self.db.refresh(activacion)
++
++        return {"success": True, "id_activacion": activacion.id, "ya_activado": False}
++
++    # ── Finalizar Ruta ───────────────────────────────────────────────────────
++
++    def finalizar_ruta(self, current_user, id_ruta: int) -> dict:
++        """Marca como Finalizado el registro de RUTAS_ACTIVADAS para esta ruta.
++        Antes de finalizar, valida que no haya visitas pendientes en los PDVs
++        de esta ruta para hoy. Si hay pendientes, rechaza la finalización."""
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++        dia_numero = hoy.weekday()
++
++        # Aceptar ambas variantes de casing: "activo" (ruta) y "Activo" (pdv)
++        activacion = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.ruta_id == id_ruta,
++                cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++                RutaActivada.estado.in_(["activo", "Activo"]),
++            )
++            .first()
++        )
++
++        if not activacion:
++            return {"success": True, "mensaje": "Ruta ya estaba finalizada"}
++
++        # Validar que no haya visitas pendientes en los PDVs de esta ruta hoy
++        puntos_de_ruta = (
++            self.db.query(RutaProgramacion.punto_id)
++            .filter(
++                RutaProgramacion.ruta_id == id_ruta,
++                RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                RutaProgramacion.activo == True,
++            )
++            .distinct()
++            .all()
++        )
++        puntos_ids = [p[0] for p in puntos_de_ruta]
++
++        if puntos_ids:
++            visitas_pendientes = (
++                self.db.query(Visita)
++                .filter(
++                    Visita.mercaderista_id == merc.id,
++                    Visita.punto_id.in_(puntos_ids),
++                    Visita.fecha == hoy,
++                    Visita.estado.in_(["Pendiente", "En Progreso"]),
++                )
++                .all()
++            )
++
++            if visitas_pendientes:
++                puntos_con_pendientes = list(set(v.punto_id for v in visitas_pendientes))
++                from fastapi import HTTPException
++                raise HTTPException(
++                    status_code=400,
++                    detail={
++                        "error": "visitas_pendientes",
++                        "mensaje": f"No se puede finalizar la ruta. Hay {len(visitas_pendientes)} visita(s) pendiente(s) en {len(puntos_con_pendientes)} PDV(s).",
++                        "visitas_pendientes": [
++                            {"id_visita": v.id, "punto_id": v.punto_id, "id_cliente": v.id_cliente, "estado": v.estado}
++                            for v in visitas_pendientes
++                        ],
++                    },
++                )
++
++        activacion.estado = "Finalizado"
++        self.db.commit()
++
++        return {"success": True, "mensaje": "Ruta finalizada correctamente"}
++
++    # ── Desactivar PDV ───────────────────────────────────────────────────────
++
++    def desactivar_pdv(self, current_user, id_punto: str) -> dict:
++        """Desactiva un PDV (actualiza estado a Finalizado).
++        
++        Busca tanto registros de activación por ruta (estado="activo")
++        como por PDV individual (estado="Activo"). Si no encuentra ninguno,
++        finaliza las visitas pendientes asociadas para evitar que el fallback
++        de get_pdv_activos() siga devolviendo el PDV.
++        """
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++
++        # Buscar con ambas variantes de casing: "activo" (ruta) y "Activo" (pdv)
++        activacion = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.identificador_punto_interes == id_punto,
++                cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++                RutaActivada.estado.in_(["activo", "Activo"]),
++            )
++            .first()
++        )
++
++        print(f"[desactivar_pdv] 🔍 Buscando activación para punto={id_punto} merc={merc.id}: {'encontrada' if activacion else 'NO encontrada'}")
++
++        if activacion:
++            activacion.estado = "Finalizado"
++            self.db.commit()
++            print(f"[desactivar_pdv] ✅ Activación id={activacion.id} marcada como Finalizado")
++            return {"success": True, "mensaje": "PDV desactivado correctamente"}
++
++        # No se encontró registro RUTAS_ACTIVADAS, pero puede haber visitas
++        # pendientes que el fallback de get_pdv_activos() está detectando.
++        # Finalizar esas visitas para que el PDV deje de aparecer como activo.
++        visitas_pendientes = (
++            self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Visita.punto_id == id_punto,
++                Visita.fecha == hoy,
++                Visita.estado.in_(["Pendiente", "En Progreso"]),
++            )
++            .all()
++        )
++
++        if visitas_pendientes:
++            for v in visitas_pendientes:
++                v.estado = "Finalizada"
++            self.db.commit()
++            print(f"[desactivar_pdv] ⚠️ Sin registro RUTAS_ACTIVADAS, pero se finalizaron {len(visitas_pendientes)} visita(s) pendiente(s) para {id_punto}")
++            return {"success": True, "mensaje": f"PDV desactivado ({len(visitas_pendientes)} visita(s) finalizada(s))"}
++
++        print(f"[desactivar_pdv] ℹ️ Sin activación ni visitas pendientes para {id_punto}")
++        return {"success": True, "mensaje": "PDV ya estaba desactivado"}
++
++    # ── Validar Cierre de PDV ────────────────────────────────────────────────
++
++    def validar_cierre_pdv(
++        self, current_user, id_punto: str
++    ) -> dict:
++        """
++        Valida que todos los clientes programados en un PDV para hoy
++        estén visitados antes de permitir la desactivación.
++        """
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++        dia_numero = hoy.weekday()
++
++        # Rutas del mercaderista
++        mis_rutas_ids = [
++            mr.ruta_id
++            for mr in self.db.query(MercaderistaRuta.ruta_id)
++            .filter(MercaderistaRuta.mercaderista_id == merc.id)
++            .all()
++        ]
++
++        # Obtener todos los clientes programados hoy para este PDV
++        programaciones = (
++            self.db.query(RutaProgramacion)
++            .filter(
++                RutaProgramacion.punto_id == id_punto,
++                RutaProgramacion.ruta_id.in_(mis_rutas_ids),
++                RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                RutaProgramacion.activo == True,
++            )
++            .all()
++        )
++
++        if not programaciones:
++            return {
++                "puede_cerrar": True,
++                "total_clientes": 0,
++                "clientes_visitados": 0,
++                "clientes_pendientes": [],
++                "mensaje": "No hay clientes programados para hoy en este PDV",
++            }
++
++        total_clientes = len(programaciones)
++        clientes_pendientes: List[str] = []
++
++        for prog in programaciones:
++            cliente = self.db.query(Cliente).filter(Cliente.id == prog.id_cliente).first()
++            cliente_nombre = cliente.nombre if cliente else f"Cliente #{prog.id_cliente}"
++
++            visita_hoy = (
++                self.db.query(Visita)
++                .filter(
++                    Visita.mercaderista_id == merc.id,
++                    Visita.punto_id == id_punto,
++                    Visita.id_cliente == prog.id_cliente,
++                    Visita.fecha == hoy,
++                )
++                .first()
++            )
++
++            if not visita_hoy:
++                clientes_pendientes.append(cliente_nombre)
++
++        clientes_visitados = total_clientes - len(clientes_pendientes)
++        puede_cerrar = len(clientes_pendientes) == 0
++
++        return {
++            "puede_cerrar": puede_cerrar,
++            "total_clientes": total_clientes,
++            "clientes_visitados": clientes_visitados,
++            "clientes_pendientes": clientes_pendientes,
++            "mensaje": (
++                "Todos los clientes han sido visitados" if puede_cerrar
++                else f"Faltan {len(clientes_pendientes)} cliente(s) por visitar: {', '.join(clientes_pendientes)}"
++            ),
++        }
+diff --git a/backend/app/mercaderista/services/ruta_service.py b/backend/app/mercaderista/services/ruta_service.py
+new file mode 100644
+index 0000000..75173d6
+--- /dev/null
++++ b/backend/app/mercaderista/services/ruta_service.py
+@@ -0,0 +1,407 @@
++"""
++Servicio de Rutas del Mercaderista.
++Consulta las rutas asignadas, los PDVs programados para hoy y los clientes
++de cada PDV. Usa exclusivamente SQLAlchemy ORM.
++"""
++
++from datetime import date, datetime
++from typing import List, Optional
++from sqlalchemy.orm import Session
++from sqlalchemy import cast, Date
++
++from app.models.mercaderista import Mercaderista, MercaderistaRuta
++from app.models.ruta import Ruta, RutaProgramacion, RutaActivada
++from app.models.punto import PuntoInteres
++from app.models.cliente import Cliente
++from app.models.visita import Visita
++
++DAY_MAP_ES = {
++    0: "Lunes", 1: "Martes", 2: "Miércoles",
++    3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo",
++}
++
++
++class RutaService:
++    """Consulta de rutas del mercaderista para el día actual."""
++
++    def __init__(self, db: Session):
++        self.db = db
++
++    # ── Helpers ──────────────────────────────────────────────────────────────
++
++    def _get_mercaderista(self, current_user) -> Mercaderista:
++        """Obtiene el registro MERCADERISTAS asociado al usuario autenticado."""
++        merc = (
++            self.db.query(Mercaderista)
++            .filter(Mercaderista.cedula == str(current_user.username))
++            .first()
++        )
++        if not merc:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
++        return merc
++
++    def _dia_semana_hoy(self) -> dict:
++        """Devuelve el día de la semana en español y la fecha actual."""
++        hoy = date.today()
++        return {
++            "dia_semana": DAY_MAP_ES[hoy.weekday()],
++            "fecha": hoy.isoformat(),
++            "dia_numero": hoy.weekday(),
++        }
++
++    # ── Rutas asignadas ──────────────────────────────────────────────────────
++
++    def get_rutas_asignadas(self, mercaderista_id: int) -> List[dict]:
++        """Obtiene todas las rutas asignadas al mercaderista."""
++        rows = (
++            self.db.query(MercaderistaRuta, Ruta)
++            .join(Ruta, MercaderistaRuta.ruta_id == Ruta.id)
++            .filter(MercaderistaRuta.mercaderista_id == mercaderista_id)
++            .all()
++        )
++        return [
++            {
++                "id_ruta": mr.ruta_id,
++                "tipo": mr.tipo_ruta,
++                "nombre": r.nombre,
++            }
++            for mr, r in rows
++        ]
++
++    # ── PDVs del día ─────────────────────────────────────────────────────────
++
++    def get_pdvs_programados(
++        self, mercaderista_id: int, dia_numero: int
++    ) -> List[dict]:
++        """
++        Obtiene los PDVs programados para hoy con sus clientes y estado de visita.
++        Une RUTA_PROGRAMACION → PUNTOS_INTERES1 → CLIENTES.
++        Filtra por mercaderista_id y día de la semana.
++        """
++        dia_es = DAY_MAP_ES[dia_numero]
++        print(f"\n[get_pdvs_programados] 🔍 mercaderista_id={mercaderista_id}, dia={dia_es}")
++
++        # Obtenemos las rutas del mercaderista
++        mis_rutas_ids = [
++            mr.ruta_id
++            for mr in self.db.query(MercaderistaRuta.ruta_id)
++            .filter(MercaderistaRuta.mercaderista_id == mercaderista_id)
++            .all()
++        ]
++        print(f"[get_pdvs_programados] 📋 Rutas asignadas: {mis_rutas_ids}")
++
++        if not mis_rutas_ids:
++            print("[get_pdvs_programados] ⚠️ Sin rutas asignadas, retornando vacío")
++            return []
++
++        # Obtener los nombres de todas las rutas de una sola vez
++        rutas_nombres = {
++            r.id: r.nombre
++            for r in self.db.query(Ruta.id, Ruta.nombre)
++            .filter(Ruta.id.in_(mis_rutas_ids))
++            .all()
++        }
++        print(f"[get_pdvs_programados] 🏷️ Nombres de rutas: {rutas_nombres}")
++
++        # PDVs programados para hoy en las rutas del mercaderista
++        programaciones = (
++            self.db.query(RutaProgramacion, PuntoInteres, Cliente)
++            .join(PuntoInteres, RutaProgramacion.punto_id == PuntoInteres.id)
++            .join(Cliente, RutaProgramacion.id_cliente == Cliente.id)
++            .filter(
++                RutaProgramacion.ruta_id.in_(mis_rutas_ids),
++                RutaProgramacion.dia == dia_es,
++                RutaProgramacion.activo == True,
++            )
++            .all()
++        )
++        print(f"[get_pdvs_programados] 📊 Programaciones encontradas: {len(programaciones)}")
++        for prog, punto, cliente in programaciones:
++            print(f"  ruta={prog.ruta_id} pdv={punto.id} '{punto.nombre}' cliente={cliente.id} '{cliente.nombre}' prioridad={prog.prioridad}")
++
++        # Obtener todas las visitas de este mercaderista hoy de una sola vez
++        hoy = date.today()
++        visitas_hoy_db = (
++            self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == mercaderista_id,
++                Visita.fecha == hoy,
++            )
++            .all()
++        )
++        print(f"[get_pdvs_programados] 📝 Visitas hoy: {len(visitas_hoy_db)}")
++        for v in visitas_hoy_db:
++            print(f"  visita_id={v.id} pdv={v.punto_id} cliente={v.id_cliente} estado='{v.estado}'")
++        
++        # Crear un mapa/dict de visitas hoy indexado por (punto_id, id_cliente): (id_visita, estado)
++        visitas_hoy_map = {
++            (v.punto_id, v.id_cliente): (v.id, v.estado)
++            for v in visitas_hoy_db
++        }
++
++        # Agrupar por PDV
++        pdvs_map: dict = {}
++        for prog, punto, cliente in programaciones:
++            key = punto.id
++            if key not in pdvs_map:
++                ruta_nombre = rutas_nombres.get(prog.ruta_id)
++
++                pdvs_map[key] = {
++                    "id_punto": punto.id,
++                    "nombre": punto.nombre or "Sin nombre",
++                    "cadena": punto.cadena,
++                    "direccion": punto.direccion,
++                    "latitud": punto.latitud,
++                    "longitud": punto.longitud,
++                    "prioridad": prog.prioridad,
++                    "id_ruta": prog.ruta_id,
++                    "ruta_nombre": ruta_nombre,
++                    "clientes": [],
++                }
++
++            visita_info = visitas_hoy_map.get((punto.id, cliente.id))
++            id_visita = visita_info[0] if visita_info else None
++            estado_visita = visita_info[1] if visita_info else None
++            # IDÉNTICO al APK: solo se marca como visitado si la visita está Finalizada
++            cliente_visitado = (estado_visita == "Finalizada")
++            pdvs_map[key]["clientes"].append({
++                "id_cliente": cliente.id,
++                "nombre": cliente.nombre,
++                "visitado": cliente_visitado,
++                "id_visita": id_visita,
++            })
++
++        # Limpiar y convertir a lista
++        result = list(pdvs_map.values())
++
++        # Ordenar por prioridad
++        PRIORIDAD_ORDEN = {"Alta": 0, "Media": 1, "Baja": 2}
++        result.sort(key=lambda p: PRIORIDAD_ORDEN.get(p.get("prioridad", "Media"), 1))
++
++        print(f"[get_pdvs_programados] 🎯 Resultado final: {len(result)} PDVs")
++        for pdv in result:
++            print(f"  PDV '{pdv['nombre']}' ruta={pdv['id_ruta']} prioridad={pdv['prioridad']} clientes={len(pdv['clientes'])}")
++            for c in pdv['clientes']:
++                print(f"    cliente id={c['id_cliente']} '{c['nombre']}' visitado={c['visitado']} id_visita={c['id_visita']}")
++
++        return result
++
++    # ── API principal ────────────────────────────────────────────────────────
++
++    def get_mis_rutas(self, current_user) -> dict:
++        """
++        Devuelve la estructura completa de rutas del día para el mercaderista.
++        Separa en rutas fijas y variables. Incluye campo 'activada' desde RUTAS_ACTIVADAS.
++        """
++        merc = self._get_mercaderista(current_user)
++        dia_info = self._dia_semana_hoy()
++        hoy = date.today()
++
++        rutas_asignadas = self.get_rutas_asignadas(merc.id)
++        pdvs = self.get_pdvs_programados(merc.id, dia_info["dia_numero"])
++
++        # Consultar RUTAS_ACTIVADAS para hoy — determina qué rutas están activadas y cuáles finalizadas
++        today_start = datetime.combine(hoy, datetime.min.time())
++        today_end = datetime.combine(hoy, datetime.max.time())
++        activaciones_hoy = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.fecha_hora_activacion >= today_start,
++                RutaActivada.fecha_hora_activacion <= today_end,
++            )
++            .all()
++        )
++        rutas_activadas_ids = {a.ruta_id for a in activaciones_hoy if a.ruta_id and a.estado == "activo"}
++        rutas_finalizadas_ids = {a.ruta_id for a in activaciones_hoy if a.ruta_id and a.estado == "Finalizado"}
++        print(f"\n[get_mis_rutas] 🔍 merc_id={merc.id}, hoy={hoy}, dia={dia_info['dia_semana']}")
++        print(f"[get_mis_rutas] 📋 Activaciones hoy: {[(a.id, a.ruta_id, a.estado, a.tipo_activacion) for a in activaciones_hoy]}")
++        print(f"[get_mis_rutas] ✅ Rutas activadas: {rutas_activadas_ids} | Finalizadas: {rutas_finalizadas_ids}")
++
++        # Indexar PDVs por ruta
++        pdvs_por_ruta: dict = {}
++        for pdv in pdvs:
++            rid = pdv["id_ruta"]
++            if rid not in pdvs_por_ruta:
++                pdvs_por_ruta[rid] = []
++            pdvs_por_ruta[rid].append(pdv)
++
++        # Separar en fijas y variables
++        rutas_fijas = []
++        rutas_variables = []
++        for ra in rutas_asignadas:
++            ruta_pdvs = pdvs_por_ruta.get(ra["id_ruta"], [])
++            ruta_data = {
++                "id_ruta": ra["id_ruta"],
++                "tipo": ra["tipo"],
++                "nombre": ra["nombre"],
++                "pdvs": ruta_pdvs,
++                "activada": ra["id_ruta"] in rutas_activadas_ids,
++                "finalizada": ra["id_ruta"] in rutas_finalizadas_ids,
++            }
++            if ra["tipo"] == "Variable":
++                rutas_variables.append(ruta_data)
++            else:
++                rutas_fijas.append(ruta_data)
++
++        return {
++            "mercaderista_id": merc.id,
++            "dia_semana": dia_info["dia_semana"],
++            "fecha": dia_info["fecha"],
++            "rutas_fijas": rutas_fijas,
++            "rutas_variables": rutas_variables,
++        }
++
++    def get_pdvs_de_ruta(self, current_user, id_ruta: int) -> dict:
++        """
++        Todos los PDV de una ruta (sin filtro de día), con estado de visita de hoy.
++        Equivale al endpoint GET /api/merc/ruta/{id_ruta}/pdvs de mercaderista_portal.py.
++        """
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++
++        programaciones = (
++            self.db.query(RutaProgramacion, PuntoInteres, Cliente)
++            .join(PuntoInteres, RutaProgramacion.punto_id == PuntoInteres.id)
++            .join(Cliente, RutaProgramacion.id_cliente == Cliente.id)
++            .filter(
++                RutaProgramacion.ruta_id == id_ruta,
++                RutaProgramacion.activo == True,
++            )
++            .order_by(PuntoInteres.nombre)
++            .all()
++        )
++
++        visitas_hoy = {
++            (v.punto_id, v.id_cliente): (v.id, v.estado)
++            for v in self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Visita.fecha == hoy,
++            )
++            .all()
++        }
++
++        pdvs_map: dict = {}
++        for prog, punto, cliente in programaciones:
++            key = punto.id
++            if key not in pdvs_map:
++                lat = None
++                lon = None
++                try:
++                    if punto.latitud:
++                        lat = float(str(punto.latitud).replace(",", "."))
++                    if punto.longitud:
++                        lon = float(str(punto.longitud).replace(",", "."))
++                except (ValueError, TypeError):
++                    pass
++
++                pdvs_map[key] = {
++                    "id_punto": punto.id,
++                    "nombre": punto.nombre or "Sin nombre",
++                    "cadena": punto.cadena,
++                    "direccion": punto.direccion,
++                    "latitud": lat,
++                    "longitud": lon,
++                    "id_ruta": id_ruta,
++                    "clients": [],
++                }
++
++            visita_info = visitas_hoy.get((punto.id, cliente.id))
++            id_visita = visita_info[0] if visita_info else None
++            estado_visita = visita_info[1] if visita_info else None
++            # IDÉNTICO al APK: solo se marca como visitado si la visita está Finalizada
++            cliente_visitado = (estado_visita == "Finalizada")
++            pdvs_map[key]["clients"].append({
++                "id_cliente": cliente.id,
++                "nombre": cliente.nombre,
++                "visitado": cliente_visitado,
++                "visita_id": id_visita,
++            })
++
++        return {"id_ruta": id_ruta, "pdvs": list(pdvs_map.values())}
++
++    def get_programacion_completa(self, current_user) -> dict:
++        """
++        Programación completa del día: mercaderista + rutas + productos.
++        Equivale a getProgramacion() de la APK — un solo endpoint para el dashboard.
++        """
++        merc = self._get_mercaderista(current_user)
++        dia_info = self._dia_semana_hoy()
++
++        # Rutas (misma lógica que get_mis_rutas)
++        rutas_asignadas = self.get_rutas_asignadas(merc.id)
++        pdvs = self.get_pdvs_programados(merc.id, dia_info["dia_numero"])
++        hoy = date.today()
++
++        # Consultar RUTAS_ACTIVADAS para hoy
++        today_start = datetime.combine(hoy, datetime.min.time())
++        today_end = datetime.combine(hoy, datetime.max.time())
++        activaciones_hoy = (
++            self.db.query(RutaActivada)
++            .filter(
++                RutaActivada.mercaderista_id == merc.id,
++                RutaActivada.fecha_hora_activacion >= today_start,
++                RutaActivada.fecha_hora_activacion <= today_end,
++            )
++            .all()
++        )
++        rutas_activadas_ids = {a.ruta_id for a in activaciones_hoy if a.ruta_id and a.estado == "activo"}
++        rutas_finalizadas_ids = {a.ruta_id for a in activaciones_hoy if a.ruta_id and a.estado == "Finalizado"}
++
++        pdvs_por_ruta: dict = {}
++        for pdv in pdvs:
++            rid = pdv["id_ruta"]
++            if rid not in pdvs_por_ruta:
++                pdvs_por_ruta[rid] = []
++            pdvs_por_ruta[rid].append(pdv)
++
++        rutas_fijas = []
++        rutas_variables = []
++        for ra in rutas_asignadas:
++            ruta_pdvs = pdvs_por_ruta.get(ra["id_ruta"], [])
++            ruta_data = {
++                "id_ruta": ra["id_ruta"],
++                "tipo": ra["tipo"],
++                "nombre": ra["nombre"],
++                "pdvs": ruta_pdvs,
++                "activada": ra["id_ruta"] in rutas_activadas_ids,
++                "finalizada": ra["id_ruta"] in rutas_finalizadas_ids,
++            }
++            if ra["tipo"] == "Variable":
++                rutas_variables.append(ruta_data)
++            else:
++                rutas_fijas.append(ruta_data)
++
++        # Productos (catálogo completo)
++        from app.mercaderista.services.visita_service import VisitaService
++        prod_result = VisitaService(self.db).get_productos_catalogo(id_cliente=None)
++
++        # Aplanar productos de todas las categorías
++        productos = []
++        for cat in prod_result.get("categorias", []):
++            for p in cat.get("productos", []):
++                productos.append({
++                    "id_producto": p.get("id_producto"),
++                    "sku": p.get("sku"),
++                    "nombre": p.get("nombre"),
++                    "fabricante": p.get("fabricante"),
++                    "categoria_id": cat.get("id_categoria"),
++                    "categoria_nombre": cat.get("nombre"),
++                    "precio_base_bs": p.get("precio_base_bs"),
++                    "precio_base_ds": p.get("precio_base_ds"),
++                })
++
++        return {
++            "fecha": dia_info["fecha"],
++            "dia_semana": dia_info["dia_semana"],
++            "mercaderista": {
++                "id": merc.id,
++                "nombre": merc.nombre,
++                "cedula": merc.cedula,
++            },
++            "rutas_fijas": rutas_fijas,
++            "rutas_variables": rutas_variables,
++            "productos": productos,
++        }
+diff --git a/backend/app/mercaderista/services/visita_service.py b/backend/app/mercaderista/services/visita_service.py
+new file mode 100644
+index 0000000..45b29b7
+--- /dev/null
++++ b/backend/app/mercaderista/services/visita_service.py
+@@ -0,0 +1,747 @@
++"""
++Servicio de Visitas del Mercaderista.
++Gestiona el ciclo de vida completo de una visita: inicio, fotos, balances,
++finalización. Usa exclusivamente SQLAlchemy ORM.
++"""
++
++import os
++import uuid
++from datetime import date, datetime
++from typing import Optional, List, BinaryIO
++
++from sqlalchemy.orm import Session
++from sqlalchemy import and_, cast, Date
++
++from app.models.mercaderista import Mercaderista
++from app.models.visita import Visita
++from app.models.foto import Foto, NotificacionRechazoFoto
++from app.models.balance import Balance
++from app.models.producto import Categoria, Producto
++from app.models.cliente import Cliente, CategoriaCliente
++from app.models.punto import PuntoInteres
++
++FOTO_TIPOS = {
++    "gestion_antes":        {"label": "Gestión (Antes)",            "solo_camara": False, "id": 1},
++    "gestion_despues":      {"label": "Gestión (Después)",          "solo_camara": False, "id": 2},
++    "precios":              {"label": "Precios",                    "solo_camara": False, "id": 3},
++    "exhibicion_antes":     {"label": "Exhibición Adic. (Antes)",   "solo_camara": False, "id": 4},
++    "exhibiciones_antes":   {"label": "Exhibición Adic. (Antes)",   "solo_camara": False, "id": 4},
++    "activacion":           {"label": "Activación",                 "solo_camara": True,  "id": 5},
++    "desactivacion":        {"label": "Desactivación",              "solo_camara": True,  "id": 6},
++    "exhibicion_despues":   {"label": "Exhibición Adic. (Después)", "solo_camara": False, "id": 7},
++    "exhibiciones_despues": {"label": "Exhibición Adic. (Después)", "solo_camara": False, "id": 7},
++    "pop_antes":            {"label": "Material POP (Antes)",       "solo_camara": False, "id": 8},
++    "material_pop_antes":   {"label": "Material POP (Antes)",       "solo_camara": False, "id": 8},
++    "pop_despues":          {"label": "Material POP (Después)",     "solo_camara": False, "id": 10},
++    "material_pop_despues": {"label": "Material POP (Después)",     "solo_camara": False, "id": 10},
++}
++
++FOTOS_DIR = "app/static/fotos_mercaderista"
++
++
++DAY_MAP_ES = {
++    0: "Lunes", 1: "Martes", 2: "Miércoles",
++    3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo",
++}
++
++
++class VisitaService:
++    """CRUD y operaciones del ciclo de vida de una visita."""
++
++    def __init__(self, db: Session):
++        self.db = db
++
++    def _get_mercaderista(self, current_user) -> Mercaderista:
++        merc = (
++            self.db.query(Mercaderista)
++            .filter(Mercaderista.cedula == str(current_user.username))
++            .first()
++        )
++        if not merc:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
++        return merc
++
++    # ── Iniciar Visita ───────────────────────────────────────────────────────
++
++    def iniciar_visita(
++        self, current_user, id_punto: str, id_cliente: int
++    ) -> dict:
++        """Crea una nueva visita o devuelve una existente del día."""
++        merc = self._get_mercaderista(current_user)
++        hoy = date.today()
++
++        # Verificar si ya existe visita hoy para ese PDV+cliente
++        existente = (
++            self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Visita.punto_id == id_punto,
++                Visita.id_cliente == id_cliente,
++                Visita.fecha == hoy,
++            )
++            .first()
++        )
++
++        if existente:
++            return {"id_visita": existente.id, "nueva": False}
++
++        # Crear nueva visita
++        visita = Visita(
++            mercaderista_id=merc.id,
++            punto_id=id_punto,
++            id_cliente=id_cliente,
++            fecha=hoy,
++            estado="Pendiente",
++            estado_data="Sin Data",
++        )
++        self.db.add(visita)
++        self.db.commit()
++        self.db.refresh(visita)
++        return {"id_visita": visita.id, "nueva": True}
++
++    # ── Historial de Visitas ─────────────────────────────────────────────────
++
++    def get_mis_visitas(
++        self,
++        current_user,
++        fecha_inicio: Optional[str] = None,
++        fecha_fin: Optional[str] = None,
++    ) -> List[dict]:
++        """Devuelve el historial de visitas del mercaderista."""
++        merc = self._get_mercaderista(current_user)
++
++        fi = fecha_inicio or str(date.today())
++        ff = fecha_fin or str(date.today())
++
++        visitas = (
++            self.db.query(Visita)
++            .filter(
++                Visita.mercaderista_id == merc.id,
++                Visita.fecha >= fi,
++                Visita.fecha <= ff,
++            )
++            .order_by(Visita.fecha.desc())
++            .all()
++        )
++
++        # Optimización N+1: Obtener conteos agrupados por visita_id en una sola consulta
++        visita_ids = [v.id for v in visitas]
++        
++        fotos_counts = {}
++        balances_counts = {}
++        if visita_ids:
++            from sqlalchemy import func
++            res_fotos = (
++                self.db.query(Foto.visita_id, func.count(Foto.id))
++                .filter(Foto.visita_id.in_(visita_ids))
++                .group_by(Foto.visita_id)
++                .all()
++            )
++            fotos_counts = {r[0]: r[1] for r in res_fotos if r[0] is not None}
++
++            res_balances = (
++                self.db.query(Balance.visita_id, func.count(Balance.id))
++                .filter(Balance.visita_id.in_(visita_ids))
++                .group_by(Balance.visita_id)
++                .all()
++            )
++            balances_counts = {r[0]: r[1] for r in res_balances if r[0] is not None}
++
++        result = []
++        for v in visitas:
++            punto = v.punto
++            cliente = v.cliente
++
++            fotos_count = fotos_counts.get(v.id, 0)
++            balances_count = balances_counts.get(v.id, 0)
++
++            result.append({
++                "id_visita": v.id,
++                "fecha": str(v.fecha) if v.fecha else None,
++                "fecha_visita": str(v.fecha) if v.fecha else None,
++                "estado": v.estado,
++                "estado_data": v.estado_data,
++                "observaciones": getattr(v, "observaciones", None),
++                "identificador_punto": v.punto_id,
++                "identificador_punto_interes": v.punto_id,
++                "pdv_nombre": punto.nombre if punto else None,
++                "cadena": getattr(punto, "cadena", None) if punto else None,
++                "region": getattr(punto, "jerarquia_n2_2", None) if punto else None,
++                "cliente_nombre": cliente.nombre if cliente else None,
++                "id_cliente": v.id_cliente,
++                "fotos_count": fotos_count,
++                "total_fotos": fotos_count,
++                "balances_count": balances_count,
++                "total_balances": balances_count,
++                "fotos_rechazadas": 0,
++                "fotos_aprobadas": 0,
++            })
++
++        return result
++
++    # ── Fotos ────────────────────────────────────────────────────────────────
++
++    def get_fotos_visita(self, visita_id: int) -> dict:
++        """Devuelve las fotos de una visita agrupadas por tipo."""
++        fotos = (
++            self.db.query(Foto)
++            .filter(Foto.visita_id == visita_id)
++            .order_by(Foto.fecha_registro.desc())
++            .all()
++        )
++
++        por_codigo: dict = {}
++        # Mapa inverso: id_tipo_foto → codigo (priorizando claves estándar)
++        id_to_codigo = {}
++        for k, v in FOTO_TIPOS.items():
++            if k in ["exhibicion_antes", "exhibicion_despues", "pop_antes", "pop_despues", "fachada", "firma", "gestion_antes", "gestion_despues", "desactivacion"]:
++                id_to_codigo[v["id"]] = k
++            elif v["id"] not in id_to_codigo:
++                id_to_codigo[v["id"]] = k
++
++        for f in fotos:
++            codigo = id_to_codigo.get(f.id_tipo_foto, "gestion_antes")
++            if codigo not in por_codigo:
++                por_codigo[codigo] = []
++            por_codigo[codigo].append({
++                "id_foto": f.id,
++                "estado": f.estado,
++                "fecha": str(f.fecha_registro) if f.fecha_registro else None,
++                "url": self._foto_url(f.blob_path, f.id),
++            })
++
++        tipos_info = [
++            {
++                "codigo": k,
++                "label": v["label"],
++                "solo_camara": v["solo_camara"],
++                "fotos": por_codigo.get(k, []),
++            }
++            for k, v in FOTO_TIPOS.items()
++        ]
++
++        return {"visita_id": visita_id, "tipos": tipos_info}
++
++    def upload_foto(
++        self,
++        current_user,
++        visita_id: int,
++        tipo_foto: str,
++        file_bytes: bytes,
++        filename: str,
++        lat: Optional[float] = None,
++        lon: Optional[float] = None,
++    ) -> dict:
++        """Sube una foto para una visita."""
++        if tipo_foto not in FOTO_TIPOS:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=400, detail=f"Tipo de foto inválido: {tipo_foto}")
++
++        # Validar extensión
++        ext = (filename or "foto.jpg").rsplit(".", 1)[-1].lower()
++        if ext not in ("jpg", "jpeg", "png", "webp"):
++            ext = "jpg"
++
++        blob_path = None
++
++        # Intentar usar Azure Blob Storage
++        try:
++            from app.services.azure_service import azure_service
++            blob_name = f"mercaderista/{visita_id}/{uuid.uuid4()}.{ext}"
++            blob_path = azure_service.upload_bytes(file_bytes, blob_name)
++        except Exception:
++            pass
++
++        # Fallback: guardar localmente
++        if not blob_path:
++            os.makedirs(FOTOS_DIR, exist_ok=True)
++            local_name = f"{visita_id}_{uuid.uuid4().hex[:12]}.{ext}"
++            local_path = os.path.join(FOTOS_DIR, local_name)
++            with open(local_path, "wb") as f:
++                f.write(file_bytes)
++            blob_path = f"/static/fotos_mercaderista/{local_name}"
++
++        foto = Foto(
++            visita_id=visita_id,
++            id_tipo_foto=FOTO_TIPOS[tipo_foto]["id"],
++            blob_path=blob_path,
++            fecha_registro=datetime.utcnow(),
++            estado="pendiente",
++            latitud=lat,
++            longitud=lon,
++        )
++        self.db.add(foto)
++        self.db.commit()
++        self.db.refresh(foto)
++
++        return {
++            "id_foto": foto.id,
++            "url": self._foto_url(foto.blob_path, foto.id),
++            "tipo_foto": tipo_foto,
++            "estado": foto.estado,
++        }
++
++    # ── Balances ─────────────────────────────────────────────────────────────
++
++    def save_balances(
++        self,
++        current_user,
++        visita_id: int,
++        id_cliente: Optional[int],
++        id_pdv: Optional[str],
++        productos: List[dict],
++    ) -> dict:
++        """Guarda los balances de productos de una visita."""
++        merc = self._get_mercaderista(current_user)
++        now = datetime.utcnow()
++
++        # Validar que la visita pertenece al mercaderista
++        visita = (
++            self.db.query(Visita)
++            .filter(Visita.id == visita_id, Visita.mercaderista_id == merc.id)
++            .first()
++        )
++        if not visita:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Visita no encontrada")
++
++        for p in productos:
++            fefo_date = None
++            if p.get("fifo"):
++                try:
++                    fefo_date = datetime.strptime(p.get("fifo"), "%Y-%m-%d").date()
++                except Exception:
++                    pass
++
++            balance = Balance(
++                id_cliente=id_cliente or merc.id,
++                fecha_balance=now,
++                identificador_pdv=id_pdv or "",
++                mercaderista=merc.nombre,
++                producto=p.get("sku", ""),
++                categoria=p.get("categoria", ""),
++                fabricante=p.get("fabricante", ""),
++                inv_inicial=p.get("inv_inicial"),
++                inv_final=p.get("inv_final"),
++                inv_deposito=p.get("inv_deposito"),
++                caras=p.get("caras"),
++                precio_bs=p.get("precio_bs") or 0,
++                precio_ds=p.get("precio_ds") or 0,
++                visita_id=visita_id,
++                fecha_inicio_modificacion=now,
++                fecha_modificacion=now,
++                FEFO=fefo_date,
++                estado_producto=p.get("estado_producto", "normal"),
++                no_existe=p.get("no_existe", False),
++            )
++            self.db.add(balance)
++
++        # Actualizar estado_data de la visita
++        visita.estado_data = "Cargado"
++
++        self.db.commit()
++
++        return {"success": True, "productos_guardados": len(productos)}
++
++    # ── Finalizar Visita ─────────────────────────────────────────────────────
++
++    def finalizar_visita(self, current_user, id_visita: int) -> dict:
++        """Cierra el ciclo de vida de una visita."""
++        merc = self._get_mercaderista(current_user)
++
++        visita = (
++            self.db.query(Visita)
++            .filter(Visita.id == id_visita, Visita.mercaderista_id == merc.id)
++            .first()
++        )
++        if not visita:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Visita no encontrada")
++
++        visita.estado = "Finalizada"
++        self.db.commit()
++
++        # Notificar por WebSocket
++        try:
++            from app.services.realtime import notify_event
++            notify_event("visit.finished", {"id_visita": id_visita})
++        except Exception:
++            pass
++
++        return {"success": True, "id_visita": id_visita}
++
++    # ── Productos para Balance ───────────────────────────────────────────────
++
++    def get_productos_balance(self, id_cliente: Optional[int] = None) -> List[dict]:
++        """
++        Devuelve los productos disponibles para el formulario de balance.
++        Filtra por las categorías asignadas al cliente si se especifica.
++        """
++        if id_cliente:
++            # Obtener categorías del cliente (CATEGORIAS_CLIENTES + fallback a CLIENTES.id_categoria)
++            cats_cliente = [
++                cc.id_categoria
++                for cc in self.db.query(CategoriaCliente)
++                .filter(CategoriaCliente.id_cliente == id_cliente)
++                .all()
++            ]
++
++            if not cats_cliente:
++                cliente = self.db.query(Cliente).filter(Cliente.id == id_cliente).first()
++                if cliente and cliente.id_categoria:
++                    cats_cliente = [cliente.id_categoria]
++
++            if cats_cliente:
++                productos = (
++                    self.db.query(Producto)
++                    .filter(Producto.id_categoria.in_(cats_cliente))
++                    .all()
++                )
++            else:
++                return []
++        else:
++            productos = self.db.query(Producto).all()
++
++        result = []
++        for p in productos:
++            cat = p.subcategoria.categoria if p.subcategoria else None
++            result.append({
++                "id": p.id,
++                "sku": p.sku,
++                "nombre": p.nombre,
++                "fabricante": p.fabricante,
++                "categoria": cat.nombre if cat else None,
++                "id_categoria": p.id_categoria,
++            })
++
++        return result
++
++    # ── Catálogo Completo de Productos ──────────────────────────────────────
++
++    def get_productos_catalogo(self, id_cliente: Optional[int] = None) -> dict:
++        """
++        Devuelve el catálogo completo de productos agrupados por categoría.
++        Si se especifica id_cliente, filtra solo categorías de ese cliente.
++        Este endpoint reemplaza /api/mobile/productos de la APK.
++        """
++        if id_cliente:
++            cats_cliente = [
++                cc.id_categoria
++                for cc in self.db.query(CategoriaCliente)
++                .filter(CategoriaCliente.id_cliente == id_cliente)
++                .all()
++            ]
++
++            if not cats_cliente:
++                cliente = self.db.query(Cliente).filter(Cliente.id == id_cliente).first()
++                if cliente and cliente.id_categoria:
++                    cats_cliente = [cliente.id_categoria]
++
++            if cats_cliente:
++                categorias = (
++                    self.db.query(Categoria)
++                    .filter(Categoria.id_categoria.in_(cats_cliente))
++                    .all()
++                )
++            else:
++                return {"categorias": [], "total_productos": 0}
++        else:
++            categorias = self.db.query(Categoria).all()
++
++        result_categorias = []
++        total_productos = 0
++
++        for cat in categorias:
++            productos = (
++                self.db.query(Producto)
++                .filter(Producto.id_categoria == cat.id_categoria)
++                .all()
++            )
++            if not productos:
++                continue
++
++            items = []
++            for p in productos:
++                items.append({
++                    "id_producto": p.id_producto,
++                    "sku": p.cod_prod or p.producto_gu or "",
++                    "nombre": p.descripcion_bi or p.producto_gu or "",
++                    "fabricante": getattr(p, "fabricante", None),
++                    "categoria": cat.nombre,
++                    "id_categoria": cat.id_categoria,
++                    "categoria_nombre": cat.nombre,
++                })
++                total_productos += 1
++
++            result_categorias.append({
++                "id_categoria": cat.id_categoria,
++                "nombre": cat.nombre,
++                "productos": items,
++            })
++
++        return {
++            "categorias": result_categorias,
++            "total_productos": total_productos,
++        }
++
++    # ── Detalle Completo de Visita ──────────────────────────────────────────
++
++    def get_visita_detalle(self, current_user, visita_id: int) -> dict:
++        """
++        Devuelve el detalle completo de una visita: metadata, fotos con
++        estado de revisión AI (motivo de rechazo si aplica), y balances.
++        Equivale a getDataVisita() en la APK (/api/mobile/mis-visitas/{id}/data).
++        """
++        merc = self._get_mercaderista(current_user)
++
++        visita = (
++            self.db.query(Visita)
++            .filter(Visita.id == visita_id, Visita.mercaderista_id == merc.id)
++            .first()
++        )
++        if not visita:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Visita no encontrada")
++
++        punto = visita.punto
++        cliente = visita.cliente
++
++        # Fotos con estado de revisión
++        fotos = (
++            self.db.query(Foto)
++            .filter(Foto.visita_id == visita_id)
++            .order_by(Foto.fecha_registro.desc())
++            .all()
++        )
++
++        id_to_codigo = {v["id"]: k for k, v in FOTO_TIPOS.items()}
++        fotos_result = []
++        for f in fotos:
++            tipo_codigo = id_to_codigo.get(f.id_tipo_foto, "gestion_antes")
++            tipo_label = FOTO_TIPOS.get(tipo_codigo, {}).get("label", tipo_codigo)
++
++            # Obtener motivo de rechazo si existe
++            motivo_rechazo = None
++            if f.estado and f.estado.lower() in ("rechazado", "rechazada"):
++                notif = (
++                    self.db.query(NotificacionRechazoFoto)
++                    .filter(NotificacionRechazoFoto.id_foto == f.id)
++                    .order_by(NotificacionRechazoFoto.fecha_creacion.desc())
++                    .first()
++                )
++                if notif:
++                    motivo_rechazo = notif.motivo
++
++            fotos_result.append({
++                "id_foto": f.id,
++                "estado": f.estado,
++                "fecha": str(f.fecha_registro) if f.fecha_registro else None,
++                "url": self._foto_url(f.blob_path, f.id),
++                "tipo_foto": tipo_codigo,
++                "categoria": tipo_label,
++                "motivo_rechazo": motivo_rechazo,
++                "latitud": f.latitud,
++                "longitud": f.longitud,
++            })
++
++        # Balances
++        balances = (
++            self.db.query(Balance)
++            .filter(Balance.visita_id == visita_id)
++            .all()
++        )
++        balances_result = []
++        for b in balances:
++            balances_result.append({
++                "id_balance": b.id,
++                "producto": b.producto,
++                "categoria": b.categoria,
++                "fabricante": b.fabricante,
++                "inv_inicial": b.inv_inicial,
++                "inv_final": b.inv_final,
++                "inv_deposito": b.inv_deposito,
++                "caras": b.caras,
++                "precio_bs": b.precio_bs,
++                "precio_ds": b.precio_ds,
++                "fefo": str(b.FEFO) if b.FEFO else None,
++                "estado_producto": b.estado_producto or "normal",
++                "no_existe": b.no_existe or False,
++            })
++
++        # Check if PDV is activated today
++        from app.models.ruta import RutaActivada, RutaProgramacion
++        from app.models.mercaderista import MercaderistaRuta
++        hoy = date.today()
++        punto_activado = False
++        if punto:
++            activacion = (
++                self.db.query(RutaActivada)
++                .filter(
++                    RutaActivada.mercaderista_id == merc.id,
++                    RutaActivada.identificador_punto_interes == punto.id,
++                    cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
++                )
++                .first()
++            )
++            punto_activado = activacion is not None
++
++        # Check if es_ultimo_cliente
++        es_ultimo_cliente = False
++        if punto:
++            dia_numero = hoy.weekday()
++            # Obtener las rutas asociadas al mercaderista
++            mis_rutas_ids = [
++                mr.ruta_id
++                for mr in self.db.query(MercaderistaRuta.ruta_id)
++                .filter(MercaderistaRuta.mercaderista_id == merc.id)
++                .all()
++            ]
++            if mis_rutas_ids:
++                programaciones = (
++                    self.db.query(RutaProgramacion)
++                    .filter(
++                        RutaProgramacion.punto_id == punto.id,
++                        RutaProgramacion.ruta_id.in_(mis_rutas_ids),
++                        RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
++                        RutaProgramacion.activo == True,
++                    )
++                    .all()
++                )
++                if programaciones:
++                    clientes_pendientes = []
++                    for prog in programaciones:
++                        visita_hoy = (
++                            self.db.query(Visita)
++                            .filter(
++                                Visita.mercaderista_id == merc.id,
++                                Visita.punto_id == punto.id,
++                                Visita.id_cliente == prog.id_cliente,
++                                Visita.fecha == hoy,
++                            )
++                            .first()
++                        )
++                        if not visita_hoy:
++                            clientes_pendientes.append(prog.id_cliente)
++                    if len(clientes_pendientes) == 0:
++                        es_ultimo_cliente = True
++                    elif len(clientes_pendientes) == 1 and clientes_pendientes[0] == visita.id_cliente:
++                        es_ultimo_cliente = True
++
++        return {
++            "id_visita": visita.id,
++            "fecha": str(visita.fecha) if visita.fecha else None,
++            "estado": visita.estado,
++            "estado_data": visita.estado_data,
++            "punto_nombre": punto.nombre if punto else None,
++            "cadena": getattr(punto, "cadena", None) if punto else None,
++            "direccion": getattr(punto, "direccion", None) if punto else None,
++            "cliente_nombre": cliente.nombre if cliente else None,
++            "revisada_por": visita.revisada_por,
++            "fecha_revision": str(visita.fecha_revision) if visita.fecha_revision else None,
++            "fotos": fotos_result,
++            "balances": balances_result,
++            "punto": {"id": punto.id, "nombre": punto.nombre} if punto else None,
++            "punto_activado": punto_activado,
++            "es_ultimo_cliente": es_ultimo_cliente,
++        }
++
++    # ── Helpers ──────────────────────────────────────────────────────────────
++
++    def delete_foto(self, current_user, foto_id: int) -> None:
++        """
++        Elimina una foto individual. Solo el mercaderista dueño de la visita
++        puede eliminar sus propias fotos.
++        """
++        from fastapi import HTTPException
++        from app.services.azure_service import azure_service
++
++        merc = self._get_mercaderista(current_user)
++
++        foto = self.db.query(Foto).filter(Foto.id == foto_id).first()
++        if not foto:
++            raise HTTPException(status_code=404, detail="Foto no encontrada")
++
++        # Verificar que la foto pertenece a una visita del mercaderista
++        if not foto.visita_id:
++            raise HTTPException(status_code=403, detail="La foto no está asociada a una visita")
++
++        visita = self.db.query(Visita).filter(
++            Visita.id == foto.visita_id,
++            Visita.mercaderista_id == merc.id,
++        ).first()
++        if not visita:
++            raise HTTPException(status_code=403, detail="No tenés permiso para eliminar esta foto")
++
++        # Eliminar blob de Azure si existe
++        if foto.blob_path:
++            try:
++                azure_service.delete_blob(foto.blob_path)
++            except Exception:
++                pass  # Si falla el delete del blob, seguimos adelante
++
++        # Eliminar notificaciones asociadas
++        self.db.query(NotificacionRechazoFoto).filter(
++            NotificacionRechazoFoto.id_foto == foto_id
++        ).delete()
++
++        # Eliminar la foto
++        self.db.delete(foto)
++        self.db.commit()
++
++    def _foto_url(self, blob_path: Optional[str], foto_id: int) -> Optional[str]:
++        """Genera URL para una foto. Incluye token JWT para que <img> tags
++        puedan autenticarse sin enviar header Authorization."""
++        if not blob_path:
++            return None
++        if blob_path.startswith("http"):
++            return blob_path
++        import urllib.parse
++        from app.core.security import create_media_token
++        token = create_media_token()
++        return (
++            f"/api/media/foto?path={urllib.parse.quote(blob_path, safe='')}"
++            f"&token={urllib.parse.quote(token, safe='')}"
++        )
++
++    def registrar_auditoria_tiempo(
++        self, current_user, payload
++    ) -> dict:
++        from app.models.auditoria_tiempo import AuditoriaTiempo
++        merc = self._get_mercaderista(current_user)
++        audit = AuditoriaTiempo(
++            id_visita=payload.id_visita,
++            identificador_punto_interes=payload.identificador_punto_interes,
++            id_mercaderista=merc.id,
++            evento=payload.evento,
++            detalle=payload.detalle,
++            tiempo_restante_segundos=payload.tiempo_restante_segundos,
++        )
++        self.db.add(audit)
++        self.db.commit()
++        self.db.refresh(audit)
++        return {"success": True, "id_auditoria_tiempo": audit.id}
++
++    def reabrir_visita(self, current_user, id_visita: int, motivo: str) -> dict:
++        """Reabre una visita que estaba Finalizada, cambiándola a Pendiente.
++        Solo reabre el PDV, NO reactiva la ruta asociada."""
++        merc = self._get_mercaderista(current_user)
++        visita = (
++            self.db.query(Visita)
++            .filter(Visita.id == id_visita, Visita.mercaderista_id == merc.id)
++            .first()
++        )
++        if not visita:
++            from fastapi import HTTPException
++            raise HTTPException(status_code=404, detail="Visita no encontrada")
++            
++        if visita.estado != "Finalizada":
++            from fastapi import HTTPException
++            raise HTTPException(status_code=400, detail="La visita no está finalizada")
++            
++        # Reabrir solo el PDV, sin reactivar la ruta
++        visita.estado = "Pendiente"
++        visita.motivo_reabertura = motivo
++                
++        self.db.commit()
++        return {"success": True, "mensaje": "Visita reabierta con éxito"}

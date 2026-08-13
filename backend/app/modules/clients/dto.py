@@ -28,6 +28,10 @@ class AsignacionCategoria(BaseModel):
     id_categoria: int
 
 
+class AsignacionMasiva(BaseModel):
+    cliente_ids: List[int]
+
+
 class PuntoInteresBase(BaseModel):
     nombre: Optional[str] = None
     direccion: Optional[str] = None

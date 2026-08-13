@@ -13,14 +13,25 @@ class Settings(BaseSettings):
     DB_NAME: str = "epran-qa"
     DB_USER: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
+    # Con --workers 1 (ver Dockerfile) todo el tráfico de ~400 mercaderistas +
+    # usuarios web pasa por un solo proceso -- 5+10=15 conexiones máximo se
+    # agotaban rápido bajo carga real, dejando requests en cola hasta 30s
+    # (pool_timeout) antes de fallar: eso es lo que se percibía como "el
+    # servidor está lento" y, si superaba el timeout del proxy/Cloudflare, un
+    # 502 directo. Puede sobreescribirse por env var si hace falta ajustar
+    # más sin tocar código.
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 30
     DB_TRUSTED_CONNECTION: bool = False
 
     ENVIRONMENT: str = "development"
 
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_PASSWORD: Optional[str] = None
+    # DB lógica separada de epran_backend (usa la 0 para socket.io/BullMQ en
+    # la misma instancia) -- aísla el canal de pub/sub de este backend.
+    REDIS_DB: int = 1
 
     AZURE_STORAGE_CONNECTION_STRING: str = ""
     AZURE_CONTAINER_NAME: str = "epran"
@@ -32,8 +43,30 @@ class Settings(BaseSettings):
 
     SCHEDULER_INTERVAL_MINUTES: int = 60
     SCHEDULER_TIMEZONE: str = "America/Caracas"
+    PLAN_ACCION_INTERVAL_HOURS: int = 4
+
 
     FRONTEND_URL: str = "http://localhost:4200"
+
+    # IA (Ollama) -- mismo servicio "ollama" (namespace default) que ya usa
+    # epran_backend para analizar fotos de precios con el modelo "llava"
+    # (ver epran_backend/src/infrastructure/ai/ollama.service.ts). Reusado
+    # acá para leer notas de pedido en papel: se manda la foto directo al
+    # modelo de visión (sin motor de OCR aparte) y se le pide texto
+    # estructurado en JSON.
+    OLLAMA_API_URL: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "llava"
+
+    # Notificaciones por correo del módulo de Ventas (confirmación de pedido,
+    # alertas de pedido grande, etc.) -- sin valores reales por defecto:
+    # mientras no se configuren, EmailService.enviar() hace no-op y loguea en
+    # vez de fallar, para no bloquear el flujo de ventas por esto.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "ventas@epran.com"
+
     CORS_ORIGINS: str = "http://localhost:4200,http://127.0.0.1:4200,http://localhost,http://127.0.0.1"
 
     @property

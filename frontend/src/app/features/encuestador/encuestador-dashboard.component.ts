@@ -4,7 +4,7 @@ import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { EncuestadorOfflineQueueService } from './services/encuestador-offline-queue.service';
+import { EncuestadorOfflineQueueService, StorageHealth } from './services/encuestador-offline-queue.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 
 @Component({
@@ -20,11 +20,73 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
             <span class="w-1.5 h-1.5 rounded-full" [ngClass]="isOnline ? 'bg-emerald-500' : 'bg-red-500'"></span>
             {{ isOnline ? 'En línea' : 'Sin conexión' }}
           </span>
-          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+          <button *ngIf="pendingSync > 0" (click)="sincronizar()" [disabled]="!isOnline" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400 disabled:opacity-60">
             <span class="material-icons !text-sm">sync</span>{{ pendingSync }} pendientes
           </button>
+          <button *ngIf="pendingSync > 0" (click)="verPendientes()" class="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-slate-800 text-slate-300">
+            {{ mostrandoPendientes ? 'Ocultar' : 'Ver' }}
+          </button>
+          
+          <button (click)="exportarBackup()" *ngIf="pendingSync > 0" class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-blue-950 text-blue-400" title="Descargar Respaldo">
+            <span class="material-icons !text-sm">download</span>
+          </button>
+          <label class="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full bg-purple-950 text-purple-400 cursor-pointer" title="Importar Respaldo">
+            <span class="material-icons !text-sm">upload</span>
+            <input type="file" class="hidden" accept=".json" (change)="importarBackup($event)">
+          </label>
         </div>
       </div>
+
+      <div *ngIf="pendingSync > 0" class="mb-4 bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2">
+        <p class="text-xs text-amber-200/90 font-semibold">
+          {{ pendingSync }} registro(s) guardados en este dispositivo, esperando señal para subir.
+          No cierres sesión ni borres los datos del navegador hasta que se sincronicen.
+        </p>
+        <div *ngIf="mostrandoPendientes" class="mt-2 space-y-1 border-t border-amber-900/50 pt-2">
+          <div *ngFor="let e of pendientes" class="flex flex-col gap-2 text-xs border-b border-amber-900/50 pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
+            <div class="flex items-center justify-between">
+              <span class="text-amber-100/80 font-bold truncate">
+                <span class="material-icons !text-xs align-middle" [class.text-red-400]="e.status === 'error'">
+                  {{ e.status === 'error' ? 'error_outline' : 'schedule' }}
+                </span>
+                {{ e.label }}
+                <span *ngIf="e.error" class="text-red-400/80">— {{ e.error }}</span>
+              </span>
+              <button (click)="descartarPendiente(e)" class="shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded bg-red-900/60 text-red-200 hover:bg-red-900 transition-colors">
+                Descartar
+              </button>
+            </div>
+            <div *ngIf="e.jsonBody" class="bg-black/30 p-2 rounded text-amber-200/60 whitespace-pre-wrap font-mono text-[10px] max-h-32 overflow-y-auto">
+              {{ formatJson(e.jsonBody) }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Espacio del dispositivo: avisa, NUNCA bloquea. Un médico encolado
+           pesa ~2 KB, así que el problema nunca es la cola sino que el
+           teléfono esté lleno (fotos, otras apps). -->
+      <div *ngIf="storage?.nivel === 'critical'" class="mb-4 bg-red-950/60 border border-red-900 rounded-xl px-3 py-2">
+        <p class="text-xs text-red-200 font-semibold">
+          El teléfono está casi sin espacio ({{ storagePct }}% usado).
+          Buscá señal y subí lo pendiente ahora, o liberá espacio: si se llena del todo,
+          los próximos registros no se van a poder guardar.
+        </p>
+      </div>
+      <div *ngIf="storage?.nivel === 'warn'" class="mb-4 bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2">
+        <p class="text-xs text-amber-200/90 font-semibold">
+          Queda poco espacio en el teléfono ({{ storagePct }}% usado).
+          Conviene subir lo pendiente cuando agarres señal; después podés seguir sin conexión normalmente.
+        </p>
+      </div>
+      <div *ngIf="pendingSync > 0 && storage?.soportado && !storage?.persisted" class="mb-4 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+        <p class="text-xs text-slate-300">
+          <span class="material-icons !text-xs align-middle">info</span>
+          Este navegador no garantizó guardar los datos de forma permanente: si el teléfono se queda
+          sin espacio podría borrarlos. Subí lo pendiente en cuanto tengas señal.
+        </p>
+      </div>
+
       <div *ngIf="syncError" class="mb-4 bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
         <span class="text-xs text-red-600 dark:text-red-300 font-semibold">No se pudo sincronizar: {{ syncError }}</span>
         <button (click)="sincronizar()" class="text-[10px] font-black uppercase px-2 py-1 rounded-lg bg-red-200 text-red-700 dark:bg-red-900 dark:text-red-200">Reintentar</button>
@@ -84,13 +146,39 @@ export class EncuestadorDashboardComponent implements OnInit {
   isOnline = navigator.onLine;
   pendingSync = 0;
   syncError: string | null = null;
+  pendientes: any[] = [];
+  mostrandoPendientes = false;
+  storage: StorageHealth | null = null;
+
+  get storagePct(): number { return Math.round((this.storage?.pct || 0) * 100); }
+
+  cachedLocation: { lat: number | null, lng: number | null } | null = null;
 
   ngOnInit() {
     this.checkJornada();
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
-    this.offline.pendingCount$.subscribe(v => this.pendingSync = v);
+    this.offline.pendingCount$.subscribe(v => { this.pendingSync = v; this.refrescarStorage(); });
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
-    if (navigator.onLine) this.offline.syncAll();
+    if (navigator.onLine) {
+      this.offline.syncAll();
+      // Deja centros y catálogos en IndexedDB mientras todavía hay señal, que
+      // es lo único que hace falta para completar una jornada entera adentro
+      // de un centro de salud sin cobertura.
+      this.offline.prefetchReference(this.API);
+    }
+    // Que el navegador no desaloje la cola solo cuando al teléfono le falte
+    // espacio -- es la forma más probable de perder una jornada entera en un
+    // dispositivo de gama baja.
+    this.offline.requestPersistence().then(() => this.refrescarStorage());
+
+    // Precargar geolocalización en background
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { this.cachedLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+        () => { this.cachedLocation = { lat: null, lng: null }; },
+        { timeout: 5000 }
+      );
+    }
   }
 
   sincronizar() { this.offline.syncAll(); }
@@ -121,7 +209,9 @@ export class EncuestadorDashboardComponent implements OnInit {
 
   activarJornada() {
     this.loading = true;
-    if (navigator.geolocation) {
+    if (this.cachedLocation) {
+      this.doActivar(this.cachedLocation.lat, this.cachedLocation.lng);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => this.doActivar(pos.coords.latitude, pos.coords.longitude),
         () => this.doActivar(null, null),
@@ -132,37 +222,112 @@ export class EncuestadorDashboardComponent implements OnInit {
     }
   }
 
-  doActivar(lat: number | null, lng: number | null) {
+  async doActivar(lat: number | null, lng: number | null) {
     const body = { latitud: lat, longitud: lng, ciudad: '', estado_geo: '' };
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/activar-jornada`, jsonBody: body, label: 'Activar jornada' });
-      this.offline.cacheWrite('jornada-activa', { success: true, activa: true, centros_visitados: 0, medicos_registrados: 0 });
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/activar-jornada`, body, { label: 'Activar jornada' },
+      );
+      if (queued) {
+        await this.offline.cacheWrite('jornada-activa', { success: true, activa: true, centros_visitados: 0, medicos_registrados: 0 });
+      }
+      // En lugar de quedarse en el dashboard, redirigir directo a seleccionar centro
       this.router.navigate(['/encuestador/centro']);
-      return;
+    } catch (err: any) {
+      this.loading = false;
+      this.confirmDialog.info('No se pudo activar la jornada: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post<any>(`${this.API}/activar-jornada`, body).subscribe({
-      next: () => {
-        // En lugar de quedarse en el dashboard, redirigir directo a seleccionar centro
-        this.router.navigate(['/encuestador/centro']);
-      },
-      error: () => this.loading = false
-    });
   }
 
   async finalizarJornada() {
-    const ok = await this.confirmDialog.confirm('¿Estás seguro de finalizar la jornada actual?', { title: 'Finalizar jornada', confirmText: 'Sí, finalizar', danger: true });
+    const pend = await this.offline.getPendientes();
+    const aviso = pend.length
+      ? `\n\nOJO: quedan ${pend.length} registro(s) sin subir. No cierres sesión ni borres los datos del navegador hasta que se sincronicen.`
+      : '';
+    const ok = await this.confirmDialog.confirm(
+      '¿Estás seguro de finalizar la jornada actual?' + aviso,
+      { title: 'Finalizar jornada', confirmText: 'Sí, finalizar', danger: true },
+    );
     if (!ok) return;
     this.loading = true;
-    if (!navigator.onLine) {
-      this.offline.enqueue({ url: `${this.API}/finalizar-jornada`, jsonBody: {}, label: 'Finalizar jornada' });
-      this.offline.cacheWrite('jornada-activa', { success: true, activa: false });
-      this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: false });
+    try {
+      const { queued } = await this.offline.postOrQueue(
+        `${this.API}/finalizar-jornada`, {}, { label: 'Finalizar jornada' },
+      );
+      if (queued) {
+        await this.offline.cacheWrite('jornada-activa', { success: true, activa: false });
+        await this.offline.cacheWrite('encuesta-abierta', { success: true, tiene_encuesta: false, jornada_activa: false });
+      }
       this.checkJornada();
-      return;
+    } catch (err: any) {
+      this.loading = false;
+      this.confirmDialog.info('No se pudo finalizar la jornada: ' + (err.error?.detail || err.message), { title: 'Error' });
     }
-    this.http.post(`${this.API}/finalizar-jornada`, {}).subscribe({
-      next: () => this.checkJornada(),
-      error: () => this.loading = false
-    });
+  }
+
+  async refrescarStorage() {
+    this.storage = await this.offline.getStorageHealth();
+  }
+
+  async verPendientes() {
+    this.pendientes = await this.offline.getPendientes();
+    this.mostrandoPendientes = !this.mostrandoPendientes;
+    this.refrescarStorage();
+  }
+
+  async descartarPendiente(e: any) {
+    const ok = await this.confirmDialog.confirm(
+      `Se va a borrar definitivamente "${e.label}" de este dispositivo. Esa carga se pierde y hay que rehacerla. ¿Continuar?`,
+      { title: 'Descartar registro pendiente', confirmText: 'Sí, descartar', danger: true },
+    );
+    if (!ok) return;
+    await this.offline.descartar(e.id);
+    this.pendientes = await this.offline.getPendientes();
+  }
+
+  formatJson(obj: any): string {
+    if (!obj) return '';
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch {
+      return '';
+    }
+  }
+
+  async exportarBackup() {
+    const jsonStr = await this.offline.exportQueue();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().split('T')[0];
+    a.href = url;
+    a.download = `respaldo_encuestas_${fecha}.json`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    this.confirmDialog.info('Respaldo descargado con éxito. Si cambias de teléfono o la app se queda sin espacio, puedes restaurarlo con el botón de subir.', { title: 'Respaldo Generado' });
+  }
+
+  async importarBackup(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        const { success, count, error } = await this.offline.importQueue(result);
+        if (success) {
+          this.confirmDialog.info(`Se han importado ${count} registros pendientes desde el respaldo.`, { title: 'Respaldo Restaurado' });
+          if (this.mostrandoPendientes) {
+            this.pendientes = await this.offline.getPendientes();
+          }
+        } else {
+          this.confirmDialog.info(`Error al importar: ${error}`, { title: 'Error' });
+        }
+      }
+    };
+    reader.readAsText(file);
+    // Limpiar el input
+    (event.target as HTMLInputElement).value = '';
   }
 }

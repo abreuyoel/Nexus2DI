@@ -81,6 +81,18 @@ class ChatGrupo(Base):
     fecha_creacion = Column(DateTime, nullable=True)
 
 
+class ChatGrupoMiembroExtra(Base):
+    """Miembros agregados a mano desde el CRUD de admin (Grupos de Chat) --
+    encima de la membresía dinámica de arriba, para gente que no encaja en
+    ningún bloque de chat_grupos_membresia.py (ni ruta, ni rol, ni cliente)
+    pero igual necesita participar en un grupo puntual."""
+    __tablename__ = "CHAT_GRUPO_MIEMBROS_EXTRA"
+
+    grupo_id = Column("id_grupo", Integer, ForeignKey("CHAT_GRUPOS.id_grupo"), primary_key=True)
+    usuario_id = Column("id_usuario", Integer, primary_key=True)
+    agregado_en = Column(DateTime, nullable=True)
+
+
 class ChatGrupoMensaje(Base):
     """Mensajes del chat general de un grupo (CHAT_GRUPO_MENSAJES de v1)."""
     __tablename__ = "CHAT_GRUPO_MENSAJES"

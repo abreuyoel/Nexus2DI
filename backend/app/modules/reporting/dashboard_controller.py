@@ -11,6 +11,7 @@ La funcionalidad se encuentra separada en los siguientes archivos:
 - filtros_opciones.py:      GET /filtros-opciones
 - fotos_visualizador.py:    GET /fotos-visualizador
 - activaciones.py:          GET /activaciones
+- horas_trabajadas.py:      GET /horas-trabajadas
 - utils.py:                 Utilidades compartidas (_dia_es, _clientes_de_analista)
 - dto.py:                   Modelos Pydantic de respuesta
 """
@@ -22,6 +23,7 @@ from app.modules.reporting.detalle_mercaderistas import router as detalle_mercad
 from app.modules.reporting.filtros_opciones import router as filtros_opciones_router
 from app.modules.reporting.fotos_visualizador import router as fotos_visualizador_router
 from app.modules.reporting.activaciones import router as activaciones_router
+from app.modules.reporting.horas_trabajadas import router as horas_trabajadas_router
 
 router = APIRouter(prefix="/api/centro-mando", tags=["Centro de Mando"])
 
@@ -31,3 +33,4 @@ router.include_router(detalle_mercaderistas_router)
 router.include_router(filtros_opciones_router)
 router.include_router(fotos_visualizador_router)
 router.include_router(activaciones_router)
+router.include_router(horas_trabajadas_router)

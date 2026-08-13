@@ -6,10 +6,13 @@ data:
   DB_DRIVER: "ODBC Driver 17 for SQL Server"
   DB_SERVER: "172.174.41.110"
   DB_NAME: "epran"
-  # Conservador para 1 réplica x 1 worker — subir solo si kubectl top pods
-  # muestra margen y hace falta más throughput de BD.
-  DB_POOL_SIZE: "5"
-  DB_MAX_OVERFLOW: "10"
+  # Segundo intento con --workers 2 (2026-08-04): vuelve a 10+15 por
+  # proceso -- con 2 réplicas x 2 workers = 4 procesos, eso da 100
+  # conexiones totales a SQL Server (el mismo techo ya validado). Esta vez
+  # además se subió limits.cpu a "4" en backend-deployment.yaml antes de
+  # reintentar, que fue lo que faltó la primera vez.
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "15"
   ENVIRONMENT: "production"
   ACCESS_TOKEN_EXPIRE_MINUTES: "480"
   FRONTEND_URL: "https://www.nexus2di.net"
@@ -17,3 +20,11 @@ data:
   AZURE_ACCOUNT_NAME: "saeprandat001"
   SCHEDULER_INTERVAL_MINUTES: "60"
   SCHEDULER_TIMEZONE: "America/Caracas"
+  # Fase A de la migración de WebSocket a pub/sub (ver plan de migración):
+  # mismo Redis que ya usa epran_backend (Service "redis" en este namespace),
+  # pero en una DB lógica separada (1, epran_backend usa la 0) para no
+  # chocar con su tráfico de socket.io/BullMQ. REDIS_PASSWORD va en el
+  # Secret, no acá.
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "1"

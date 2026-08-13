@@ -11,6 +11,7 @@ import { ApiService } from '../../../core/services/api.service';
 import { PuntoInteres } from '../../../core/models/visita.model';
 import { CatalogosComponent } from './catalogos.component';
 import { HasPermDirective } from '../../../core/directives/has-perm.directive';
+import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
 import { SearchableSelectComponent } from '../../../shared/components/searchable-select/searchable-select.component';
 
 @Component({
@@ -82,7 +83,7 @@ import { SearchableSelectComponent } from '../../../shared/components/searchable
     <div class="flex items-center gap-2 mb-3">
       <mat-icon class="!text-base text-primary-500">filter_list</mat-icon>
       <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtros</span>
-      @if (filterRegion() || filterCiudad() || filterJerarquia() || searchText()) {
+      @if (filterRegion() || filterCiudad() || filterJerarquia() || filterJerarquia2() || filterNivelAlcance() || filterCadena() || searchText()) {
         <button (click)="clearFilters()"
           class="ml-auto flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-rose-400 transition-colors">
           <mat-icon class="!text-sm">close</mat-icon> Limpiar
@@ -119,6 +120,39 @@ import { SearchableSelectComponent } from '../../../shared/components/searchable
           placeholder="Todos"
           [clearable]="true">
         </app-searchable-select>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Jerarquía Nivel 2_2</label>
+        <div class="relative">
+          <select [ngModel]="filterJerarquia2()" (ngModelChange)="filterJerarquia2.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (j of jerarquias2(); track j) { <option [value]="j">{{ j }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nivel de Alcance</label>
+        <div class="relative">
+          <select [ngModel]="filterNivelAlcance()" (ngModelChange)="filterNivelAlcance.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (n of nivelesAlcance(); track n) { <option [value]="n">{{ n }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Clasificación de Canal</label>
+        <div class="relative">
+          <select [ngModel]="filterCadena()" (ngModelChange)="filterCadena.set($event); reload()"
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
+            <option value="">Todos</option>
+            @for (c of chains(); track c) { <option [value]="c">{{ c }}</option> }
+          </select>
+          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
+        </div>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Buscar</label>
@@ -405,6 +439,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
   private fb = inject(FormBuilder);
+  private confirmSvc = inject(ConfirmService);
 
   view = signal<'pdvs' | 'catalogos'>('pdvs');
   loading = signal(false);
@@ -429,6 +464,9 @@ export class PointsComponent implements OnInit, OnDestroy {
   filterRegion = signal('');
   filterCiudad = signal('');
   filterJerarquia = signal('');
+  filterJerarquia2 = signal('');
+  filterNivelAlcance = signal('');
+  filterCadena = signal('');
   searchText = signal('');
 
   // Opciones para searchable-select
@@ -522,6 +560,9 @@ export class PointsComponent implements OnInit, OnDestroy {
       region: this.filterRegion() || undefined,
       ciudad: this.filterCiudad() || undefined,
       jerarquia_n2: this.filterJerarquia() || undefined,
+      jerarquia_n2_2: this.filterJerarquia2() || undefined,
+      nivel_de_alcance: this.filterNivelAlcance() || undefined,
+      cadena: this.filterCadena() || undefined,
       search: this.searchText() || undefined,
     };
   }
@@ -557,7 +598,9 @@ export class PointsComponent implements OnInit, OnDestroy {
     this.reload();
   }
   clearFilters(): void {
-    this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set(''); this.searchText.set('');
+    this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set('');
+    this.filterJerarquia2.set(''); this.filterNivelAlcance.set(''); this.filterCadena.set('');
+    this.searchText.set('');
     this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => { } });
     this.reload();
   }
@@ -667,8 +710,11 @@ export class PointsComponent implements OnInit, OnDestroy {
     if (this.mapInstance) { this.mapInstance.remove(); this.mapInstance = null; this.mapMarker = null; }
   }
 
-  deletePoint(p: PuntoInteres): void {
-    if (!confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`)) return;
+  async deletePoint(p: PuntoInteres): Promise<void> {
+    const ok = await this.confirmSvc.confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`, {
+      title: 'Eliminar punto de venta', confirmText: 'Eliminar', cancelText: 'Cancelar', danger: true,
+    });
+    if (!ok) return;
     this.api.deletePoint(p.id).subscribe({
       next: () => { this.loadAll(); this.snack.open('PDV eliminado', 'OK', { duration: 3000 }); },
       error: (err) => this.snack.open(err?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 })

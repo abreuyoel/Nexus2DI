@@ -50,7 +50,6 @@ def _run_main_query(sf, query_cols, act_alias, des_alias, ruta_pre_alias, chat_p
             .outerjoin(des_alias, (des_alias.c.visita_id == Visita.id) & (des_alias.c.rn == 1))
             .outerjoin(ruta_pre_alias, (ruta_pre_alias.c.id_punto_interes == PuntoInteres.id) & (ruta_pre_alias.c.rn == 1))
             .outerjoin(chat_pre_alias, chat_pre_alias.c.visita_id == Visita.id)
-            .filter((act_alias.c.id_foto.isnot(None)) | (des_alias.c.id_foto.isnot(None)))
             .filter(Visita.fecha >= d_desde, Visita.fecha <= d_hasta)
         )
         if cliente_id:
@@ -458,6 +457,13 @@ def get_activaciones(
             })
 
         # ── Tradex Photo Propagation ──
+        # La APK toma la activación/desactivación UNA sola vez por PDV+día (la
+        # desactivación al terminar el último cliente pendiente ahí -- ver
+        # gestion_provider.dart::esUltimoClientePendienteHoy), no por visita.
+        # Agrupamos por mercaderista+punto+día y propagamos la foto entre todas
+        # las visitas del grupo. Esto es la semántica del fix 26db894, que en
+        # main se resolvió dentro del OUTER APPLY act/des de /activaciones
+        # (acá se resuelve en Python sobre el resultado ya cargado).
         _grp = _dd(list)
         for v in activaciones:
             _grp[(v["id_mercaderista"], v["id_punto"], (v["fecha_visita"] or "")[:10])].append(v)
@@ -643,16 +649,38 @@ def get_activaciones(
         pc_act, pc_com = _desglose(lambda v: v["cliente"], lambda v: v["id_cliente"], planned_pc)
 
         # ── Gestión por día (gestion_por_dia) ──
+        # Acotar el join sobre FOTOS_TOTALES: el resultado solo cubre los
+        # últimos 7 días, así que filtrar fecha_registro acá evita escanear la
+        # tabla histórica completa para resolver estas 2 subqueries.
+        photo_date_limit = _date.today() - timedelta(days=8)
+        # Activación/desactivación resueltas a nivel PDV+mercaderista+día, NO
+        # por visita (fix 26db894). La APK toma esas dos fotos UNA sola vez por
+        # punto, así que exigirlas por visita hacía que un PDV con N clientes
+        # tuviera como máximo 1 de N visitas "completa" -- el % de Completas
+        # era matemáticamente inalcanzable. Todas las visitas hechas ese día en
+        # ese punto quedan ligadas a la misma activación/desactivación.
         act4_sub = (
-            db.query(Foto.visita_id.label("visita_id"), func.min(Foto.id).label("id_foto"))
-            .filter(Foto.id_tipo_foto == 5)
-            .group_by(Foto.visita_id)
+            db.query(
+                Visita.punto_id.label("id_punto"),
+                Visita.mercaderista_id.label("id_mercaderista"),
+                Visita.fecha.label("fecha"),
+                func.min(Foto.id).label("id_foto"),
+            )
+            .join(Foto, Foto.visita_id == Visita.id)
+            .filter(Foto.id_tipo_foto == 5, Foto.fecha_registro >= photo_date_limit)
+            .group_by(Visita.punto_id, Visita.mercaderista_id, Visita.fecha)
             .subquery()
         )
         des4_sub = (
-            db.query(Foto.visita_id.label("visita_id"), func.min(Foto.id).label("id_foto"))
-            .filter(Foto.id_tipo_foto == 6)
-            .group_by(Foto.visita_id)
+            db.query(
+                Visita.punto_id.label("id_punto"),
+                Visita.mercaderista_id.label("id_mercaderista"),
+                Visita.fecha.label("fecha"),
+                func.min(Foto.id).label("id_foto"),
+            )
+            .join(Foto, Foto.visita_id == Visita.id)
+            .filter(Foto.id_tipo_foto == 6, Foto.fecha_registro >= photo_date_limit)
+            .group_by(Visita.punto_id, Visita.mercaderista_id, Visita.fecha)
             .subquery()
         )
         act4_alias = aliased(act4_sub, name="act4")
@@ -677,8 +705,12 @@ def get_activaciones(
             )
             .join(Cliente, Visita.id_cliente == Cliente.id)
             .join(PuntoInteres, Visita.punto_id == PuntoInteres.id)
-            .outerjoin(act4_alias, act4_alias.c.visita_id == Visita.id)
-            .outerjoin(des4_alias, des4_alias.c.visita_id == Visita.id)
+            .outerjoin(act4_alias, (act4_alias.c.id_punto == Visita.punto_id)
+                                   & (act4_alias.c.id_mercaderista == Visita.mercaderista_id)
+                                   & (act4_alias.c.fecha == Visita.fecha))
+            .outerjoin(des4_alias, (des4_alias.c.id_punto == Visita.punto_id)
+                                   & (des4_alias.c.id_mercaderista == Visita.mercaderista_id)
+                                   & (des4_alias.c.fecha == Visita.fecha))
             .filter(Visita.fecha >= date_limit)
         )
         if cliente_id:

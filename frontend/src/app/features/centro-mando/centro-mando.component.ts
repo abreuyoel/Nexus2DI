@@ -1,6 +1,7 @@
-import { Component, OnInit, signal, computed, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, HostListener } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,7 +28,7 @@ import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.componen
   templateUrl: './centro-mando.component.html',
   styleUrls: ['./centro-mando.component.scss']
 })
-export class CentroMandoComponent implements OnInit {
+export class CentroMandoComponent implements OnInit, OnDestroy {
 
 
   // ─── Vista (toggle Activaciones / Visitas) ─────────────────────────────────
@@ -36,6 +37,15 @@ export class CentroMandoComponent implements OnInit {
   // ─── Loading ───────────────────────────────────────────────────────────────
   loadingResumen = signal(true);
   loadingActivaciones = signal(false);
+
+  // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
+  pendingEvents = signal(0);
+  hasPendingUpdates = signal(false);
+  /** Set de keys de tarjetas que cambiaron en el último refresh. Se limpia
+   *  automáticamente después de la animación (1.5s). */
+  changedCards = signal<Set<string>>(new Set());
+  private autoRefreshInterval?: any;
+  private notifAudio?: HTMLAudioElement;
 
   // ─── Resumen del Día (top stats) ───────────────────────────────────────────
   resumenDia = signal<any>(null);
@@ -47,6 +57,10 @@ export class CentroMandoComponent implements OnInit {
   pendientes = signal<any[]>([]);
   gestionPorDia = signal<any>({ fechas: [], clientes: [] });
   clientes = signal<any[]>([]);
+
+  // ─── Horas Trabajadas (por mercaderista, de mayor a menor) ────────────────
+  loadingHoras = signal(false);
+  horasTrabajadas = signal<any[]>([]);
 
   /** Opciones para el searchable-select de clientes */
   clienteOptions = computed<SearchableOption[]>(() => {
@@ -71,7 +85,7 @@ export class CentroMandoComponent implements OnInit {
   filtroHasta: string = this.todayStr();
 
   // ─── Vista activa ──────────────────────────────────────────────────────────
-  activeView: 'dashboard' | 'mercaderistas' | 'gestion' | 'pendientes' | 'lista' = 'dashboard';
+  activeView: 'dashboard' | 'mercaderistas' | 'gestion' | 'pendientes' | 'lista' | 'horas' = 'dashboard';
 
   // ─── UI State (Detalle y Modal) ───────────────────────────────────────────
   showDetalle: 'activos' | 'faltantes' | null = null;
@@ -124,22 +138,44 @@ export class CentroMandoComponent implements OnInit {
   constructor(
     private api: ApiService, private auth: AuthService, private realtime: RealtimeService,
     private dialog: MatDialog, private router: Router,
-  ) {}
+  ) { }
 
 
-  private rtDebounce?: any;
+  private rtSubscription?: Subscription;
 
   ngOnInit() {
     this.loadClientes();
     this.loadResumenDia();
     this.loadActivaciones();
-    // Tiempo real: refrescar al crear/revisar visitas o decidir fotos (con debounce)
-    this.realtime.events$.subscribe(ev => {
+    this.loadHorasTrabajadas();
+
+    // Preparar audio de notificación (un beep sutil generado por Web Audio API)
+    this.prepareNotifSound();
+
+    // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
+    // en vez de refrescar agresivamente cada 800ms.
+    this.rtSubscription = this.realtime.events$.subscribe(ev => {
       if (ev.tipo.startsWith('visit.') || ev.tipo.startsWith('photo.')) {
-        clearTimeout(this.rtDebounce);
-        this.rtDebounce = setTimeout(() => { this.loadResumenDia(); this.loadActivaciones(); }, 800);
+        const prev = this.pendingEvents();
+        this.pendingEvents.set(prev + 1);
+        if (!this.hasPendingUpdates()) {
+          this.hasPendingUpdates.set(true);
+          this.playNotifSound();
+        }
       }
     });
+
+    // Auto-refresh silencioso cada 60s SI hay eventos pendientes
+    this.autoRefreshInterval = setInterval(() => {
+      if (this.hasPendingUpdates()) {
+        this.dismissAndRefresh();
+      }
+    }, 60_000);
+  }
+
+  ngOnDestroy() {
+    this.rtSubscription?.unsubscribe();
+    clearInterval(this.autoRefreshInterval);
   }
 
   private todayStr(): string {
@@ -165,9 +201,15 @@ export class CentroMandoComponent implements OnInit {
     const opts: any = { desde: this.filtroDesde, hasta: this.filtroHasta };
     if (this.filtroCliente) opts.cliente_id = this.filtroCliente;
 
+    const prevResumen = this.resumenDia();
+
     this.api.getCentroMandoResumenDia(opts).subscribe({
       next: (res) => {
         if (res.success) {
+          // Detectar qué tarjetas cambiaron respecto al valor anterior
+          if (prevResumen) {
+            this.detectCardChanges(prevResumen, res);
+          }
           this.resumenDia.set(res);
           // Actualizar detalle si está abierto
           if (this.showDetalle === 'activos') {
@@ -202,6 +244,23 @@ export class CentroMandoComponent implements OnInit {
     });
   }
 
+  /** No depende del cliente (es por mercaderista) ni se refresca por eventos
+   * en tiempo real -- es un agregado diario, no necesita precisión al segundo,
+   * y sumarla al refresh de cada evento de foto/visita agregaría más carga al
+   * mismo mecanismo que ya causó reinicios del backend bajo tráfico real. */
+  loadHorasTrabajadas() {
+    this.loadingHoras.set(true);
+    const opts: any = { desde: this.filtroDesde, hasta: this.filtroHasta };
+    if (this.filtroCliente) opts.cliente_id = this.filtroCliente;
+    this.api.getCentroMandoHorasTrabajadas(opts).subscribe({
+      next: (res) => {
+        this.horasTrabajadas.set(res?.success ? (res.mercaderistas || []) : []);
+        this.loadingHoras.set(false);
+      },
+      error: () => { this.horasTrabajadas.set([]); this.loadingHoras.set(false); },
+    });
+  }
+
   // ─── Acciones Top UI ──────────────────────────────────────────────────────
   irHoy() {
     const today = this.todayStr();
@@ -219,6 +278,83 @@ export class CentroMandoComponent implements OnInit {
   refresh() {
     this.loadResumenDia();
     this.loadActivaciones();
+    this.loadHorasTrabajadas();
+  }
+
+  /** Refresca y resetea el indicador de actualizaciones pendientes. */
+  dismissAndRefresh() {
+    this.pendingEvents.set(0);
+    this.hasPendingUpdates.set(false);
+    this.refresh();
+  }
+
+  /** Compara resumen anterior vs nuevo y marca las tarjetas que cambiaron. */
+  private detectCardChanges(prev: any, next: any): void {
+    const changed = new Set<string>();
+    const pm = prev.mercaderistas || {};
+    const nm = next.mercaderistas || {};
+    if (pm.total_asignados !== nm.total_asignados) changed.add('asignados');
+    if (pm.planificados_hoy !== nm.planificados_hoy) changed.add('planificados');
+    if (pm.activos_hoy !== nm.activos_hoy) changed.add('activaron');
+    if (pm.faltantes_hoy !== nm.faltantes_hoy) changed.add('faltaron');
+
+    const pr = prev.rutas || {};
+    const nr = next.rutas || {};
+    if (pr.planificadas !== nr.planificadas || pr.activas !== nr.activas || pr.completadas !== nr.completadas) {
+      changed.add('rutas');
+    }
+
+    const pp = prev.puntos_interes || {};
+    const np = next.puntos_interes || {};
+    if (pp.planificados !== np.planificados || pp.activos !== np.activos || pp.completados !== np.completados) {
+      changed.add('puntos');
+    }
+
+    const pc = prev.clientes_tradex || {};
+    const nc = next.clientes_tradex || {};
+    if (pc.planificados !== nc.planificados || pc.activos !== nc.activos || pc.completados !== nc.completados) {
+      changed.add('tradex');
+    }
+
+    if (changed.size > 0) {
+      this.changedCards.set(changed);
+      // Limpiar la animación después de 2s
+      setTimeout(() => this.changedCards.set(new Set()), 2000);
+    }
+  }
+
+  /** Helper: ¿esta tarjeta cambió en el último refresh? */
+  cardChanged(key: string): boolean {
+    return this.changedCards().has(key);
+  }
+
+  // ─── Sonido de notificación (Web Audio API – sin archivos externos) ────────
+  private audioCtx?: AudioContext;
+
+  private prepareNotifSound(): void {
+    // Se crea bajo demanda para respetar la política de autoplay del browser
+  }
+
+  private playNotifSound(): void {
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = this.audioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      // Tono suave tipo "ding" – 880Hz (nota A5), corto
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {
+      // Silenciar errores de audio (autoplay policy, etc.)
+    }
   }
 
   onClienteChange() {
@@ -307,6 +443,14 @@ export class CentroMandoComponent implements OnInit {
     const q = this.searchText.toLowerCase();
     return this.mercaderistasUnificados.filter(m =>
       !q || (m.nombre || '').toLowerCase().includes(q)
+    );
+  }
+
+  /** Ya viene ordenado de mayor a menor por horas_trabajadas desde el backend. */
+  get filteredHoras() {
+    const q = this.searchText.toLowerCase();
+    return this.horasTrabajadas().filter(m =>
+      !q || (m.mercaderista || '').toLowerCase().includes(q)
     );
   }
 
@@ -466,10 +610,12 @@ export class CentroMandoComponent implements OnInit {
     });
     ref.afterClosed().subscribe(thread => {
       if (thread?.id_grupo) {
-        this.router.navigate(['/chat'], { queryParams: {
-          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
-          grupo_visita: thread.id_visita, titulo: thread.titulo,
-        } });
+        this.router.navigate(['/chat'], {
+          queryParams: {
+            grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+            grupo_visita: thread.id_visita, titulo: thread.titulo,
+          }
+        });
       }
     });
   }

@@ -4,6 +4,7 @@ from fastapi import WebSocket, status
 
 from app.websockets.guard import ws_guard
 from app.modules.auth.entities import Usuario
+from app.services import redis_pubsub
 
 logger = logging.getLogger("app.websockets")
 
@@ -47,7 +48,8 @@ class ConnectionManager:
                 except ValueError:
                     pass
 
-    async def broadcast_to_room(self, room: str, message: dict):
+    async def _local_send(self, room: str, message: dict):
+        """Entrega solo a los sockets conectados a ESTE proceso."""
         if room in self.active_connections:
             dead = []
             for ws in self.active_connections[room]:
@@ -57,6 +59,12 @@ class ConnectionManager:
                     dead.append(ws)
             for ws in dead:
                 self.disconnect(ws, room)
+
+    async def broadcast_to_room(self, room: str, message: dict):
+        # Entrega local primero, siempre: si Redis está caído o lento, los
+        # clientes conectados a este mismo proceso igual reciben el evento.
+        await self._local_send(room, message)
+        await redis_pubsub.publish(room, message)
 
     async def send_personal_message(self, websocket: WebSocket, message: dict):
         try:

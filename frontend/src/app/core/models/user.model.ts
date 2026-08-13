@@ -1,6 +1,8 @@
 export interface User {
   id: number;
   username: string;
+  nombre?: string;
+  cedula?: string | number;
   rol: string;
   rol_nombre?: string;
   email?: string;
@@ -13,8 +15,10 @@ export interface User {
   is_mercaderista: boolean;
   is_coordinador_exclusivo: boolean;
   is_coordinador_tradex: boolean;
+  is_ejecutivo_cuenta?: boolean;
   permisos: Permission[];
 }
+
 
 export interface Permission {
   module: string;

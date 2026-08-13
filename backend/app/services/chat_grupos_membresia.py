@@ -5,6 +5,9 @@ Grupos por cliente:
   - 'operativo'           : Equipo interno (Analista, Mercaderistas, Coordinador).
                             Excluye usuarios con rol Cliente (id_rol=1).
   - 'operativo_cliente'   : Equipo interno + Rol Cliente (id_rol=1).
+  - 'encuestador'         : ÚNICO grupo global (id_cliente=0, sentinela) para los
+                            roles 12/13 -- NO se crea por cliente. Sus miembros
+                            son todos los USUARIOS con id_rol IN (12,13) activos.
 
 Auto-provisionamiento:
   Al solicitar los grupos de un cliente, si no existen en CHAT_GRUPOS, se
@@ -13,28 +16,106 @@ Auto-provisionamiento:
 
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import func, String
+from sqlalchemy import func, String, and_
 from sqlalchemy.orm import Session
 
 from app.modules.auth.entities import Usuario
 from app.modules.merchandisers.entities import Mercaderista, MercaderistaRuta
 from app.modules.routes.entities import RutaProgramacion, AnalistaRuta
 from app.modules.clients.entities import Cliente
-from app.modules.chat.entities import ChatGrupo
+from app.modules.chat.entities import ChatGrupo, ChatGrupoMiembroExtra
+from app.modules.surveyors.entities import Encuestador
 
-TIPOS_VALIDOS = ("operativo", "operativo_cliente")
+TIPOS_VALIDOS = ("operativo", "operativo_cliente", "encuestador")
+# Los grupos 'encuestador' son globales (uno solo); el resto se provisionan
+# por cliente en asegurar_grupos_cliente.
+TIPOS_POR_CLIENTE = ("operativo", "operativo_cliente")
 ROLES_COORDINADOR = (3, 4, 8, 11)
+ROLES_ENCUESTADOR = (12, 13)  # 12 = Encuestador, 13 = IQVIA/Cliente Encuestador
+# 0 nunca es un id_cliente real (IDENTITY arranca en 1) -- sentinela reservado
+# para el único grupo 'encuestador' global.
+ID_CLIENTE_ENCUESTADORES = 0
+NOMBRE_GRUPO_ENCUESTADORES = "Equipo Encuestadores · IQVIA"
+
+
+def _miembros_extra(db: Session, id_cliente: int, tipo_grupo: str) -> list[dict]:
+    """Miembros agregados a mano desde el CRUD de admin (CHAT_GRUPO_MIEMBROS_EXTRA)
+    -- gente que no encaja en ningún bloque dinámico de abajo (ni ruta, ni rol,
+    ni cliente) pero igual necesita participar en ESTE grupo puntual."""
+    rows = (
+        db.query(Usuario.id, Usuario.username)
+        .join(ChatGrupoMiembroExtra, ChatGrupoMiembroExtra.usuario_id == Usuario.id)
+        .join(ChatGrupo, ChatGrupo.id == ChatGrupoMiembroExtra.grupo_id)
+        .filter(
+            ChatGrupo.cliente_id == id_cliente,
+            ChatGrupo.tipo_grupo == tipo_grupo,
+            Usuario.activo == True,
+        )
+        .all()
+    )
+    return [
+        {"id_usuario": int(uid), "username": uname, "nombre": None, "origen": "agregado"}
+        for uid, uname in rows if uid is not None
+    ]
 
 
 def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[dict]:
     """Retorna la lista de miembros actuales de un grupo de cliente usando consultas ORM.
 
-    Devuelve dicts: [{'id_usuario', 'username', 'origen'}]
+    Devuelve dicts: [{'id_usuario', 'username', 'nombre', 'origen'}]
     """
     if tipo_grupo not in TIPOS_VALIDOS:
         raise ValueError(f"tipo_grupo inválido: {tipo_grupo}")
 
     miembros: dict[int, dict] = {}
+
+    # Grupo global de encuestadores (12/13): sus miembros NO dependen de ningún
+    # cliente -- son todos los USUARIOS con rol encuestador activos. LEFT JOIN a
+    # ENCUESTADORES para el nombre real (id_perfil -> ENCUESTADORES.id_encuestador);
+    # IQVIA sin fila propia cae a nombre=None (su username ya es legible).
+    if tipo_grupo == "encuestador":
+        try:
+            rows_enc = (
+                db.query(Usuario.id, Usuario.username, Encuestador.nombre)
+                .outerjoin(Encuestador, and_(
+                    Encuestador.id == Usuario.id_perfil,
+                    Usuario.id_rol.in_(ROLES_ENCUESTADOR),
+                ))
+                .filter(Usuario.id_rol.in_(ROLES_ENCUESTADOR), Usuario.activo == True)
+                .distinct()
+                .all()
+            )
+            for uid, uname, nombre in rows_enc:
+                if uid is not None:
+                    miembros[int(uid)] = {
+                        "id_usuario": int(uid), "username": uname,
+                        "nombre": nombre, "origen": "encuestador",
+                    }
+        except Exception:
+            pass
+
+        # Los administradores también ven este grupo (ver es_miembro() en
+        # get_grupos_de_usuario) -- listarlos también como miembros acá para
+        # que "Miembros del Grupo" sea consistente con quién puede entrar.
+        try:
+            rows_admin = (
+                db.query(Usuario.id, Usuario.username)
+                .filter(Usuario.id_rol == 8, Usuario.activo == True)
+                .distinct()
+                .all()
+            )
+            for uid, uname in rows_admin:
+                if uid is not None and int(uid) not in miembros:
+                    miembros[int(uid)] = {
+                        "id_usuario": int(uid), "username": uname,
+                        "nombre": None, "origen": "admin",
+                    }
+        except Exception:
+            pass
+
+        for m in _miembros_extra(db, id_cliente, tipo_grupo):
+            miembros.setdefault(m["id_usuario"], m)
+        return list(miembros.values())
 
     # 1. Bloque Mercaderistas asignaciones activas
     try:
@@ -49,7 +130,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[di
         )
         for uid, uname in rows_merc:
             if uid is not None and uid not in miembros:
-                miembros[uid] = {"id_usuario": int(uid), "username": uname, "origen": "mercaderista"}
+                miembros[uid] = {"id_usuario": int(uid), "username": uname, "nombre": None, "origen": "mercaderista"}
     except Exception:
         pass
 
@@ -65,7 +146,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[di
         )
         for uid, uname in rows_analista:
             if uid is not None and uid not in miembros:
-                miembros[uid] = {"id_usuario": int(uid), "username": uname, "origen": "analista"}
+                miembros[uid] = {"id_usuario": int(uid), "username": uname, "nombre": None, "origen": "analista"}
     except Exception:
         pass
 
@@ -79,7 +160,7 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[di
         )
         for uid, uname in rows_coord:
             if uid is not None and uid not in miembros:
-                miembros[uid] = {"id_usuario": int(uid), "username": uname, "origen": "coordinador"}
+                miembros[uid] = {"id_usuario": int(uid), "username": uname, "nombre": None, "origen": "coordinador"}
     except Exception:
         pass
 
@@ -94,9 +175,12 @@ def get_miembros_grupo(db: Session, id_cliente: int, tipo_grupo: str) -> list[di
             )
             for uid, uname in rows_cliente:
                 if uid is not None and uid not in miembros:
-                    miembros[uid] = {"id_usuario": int(uid), "username": uname, "origen": "cliente"}
+                    miembros[uid] = {"id_usuario": int(uid), "username": uname, "nombre": None, "origen": "cliente"}
         except Exception:
             pass
+
+    for m in _miembros_extra(db, id_cliente, tipo_grupo):
+        miembros.setdefault(m["id_usuario"], m)
 
     return list(miembros.values())
 
@@ -127,7 +211,7 @@ def asegurar_grupos_cliente(db: Session, id_cliente: int, cliente_nombre: Option
         cliente_nombre = cliente_obj.nombre if (cliente_obj and cliente_obj.nombre) else f"Cliente {id_cliente}"
 
     creados = 0
-    for tipo in TIPOS_VALIDOS:
+    for tipo in TIPOS_POR_CLIENTE:
         existing = db.query(ChatGrupo).filter(
             ChatGrupo.cliente_id == id_cliente,
             ChatGrupo.tipo_grupo == tipo
@@ -149,6 +233,48 @@ def asegurar_grupos_cliente(db: Session, id_cliente: int, cliente_nombre: Option
     return creados
 
 
+def asegurar_grupo_encuestadores(db: Session) -> Optional[int]:
+    """Crea (idempotente) el único grupo 'encuestador' global. Devuelve su id_grupo.
+
+    A diferencia de asegurar_grupos_cliente, este grupo NO se crea por cliente:
+    existe uno solo, anclado al id_cliente sentinela 0.
+    """
+    existing = db.query(ChatGrupo).filter(
+        ChatGrupo.cliente_id == ID_CLIENTE_ENCUESTADORES,
+        ChatGrupo.tipo_grupo == "encuestador"
+    ).first()
+    if existing:
+        return int(existing.id)
+
+    nuevo_grupo = ChatGrupo(
+        cliente_id=ID_CLIENTE_ENCUESTADORES,
+        tipo_grupo="encuestador",
+        nombre=NOMBRE_GRUPO_ENCUESTADORES[:150],
+        activa=True,
+        fecha_creacion=datetime.now()
+    )
+    db.add(nuevo_grupo)
+    db.commit()
+    db.refresh(nuevo_grupo)
+    return int(nuevo_grupo.id)
+
+
+def _grupos_extra_de_usuario(db: Session, id_usuario: int) -> list[dict]:
+    """Grupos a los que un usuario entra por asignación manual (CRUD de admin),
+    no por rol/ruta/cliente -- ej. alguien que necesita participar en un grupo
+    puntual sin encajar en ningún bloque dinámico."""
+    rows = (
+        db.query(ChatGrupo.id, ChatGrupo.cliente_id, ChatGrupo.tipo_grupo, ChatGrupo.nombre)
+        .join(ChatGrupoMiembroExtra, ChatGrupoMiembroExtra.grupo_id == ChatGrupo.id)
+        .filter(ChatGrupoMiembroExtra.usuario_id == id_usuario, ChatGrupo.activa == True)
+        .all()
+    )
+    return [
+        {"id_grupo": int(gid), "id_cliente": int(cid), "tipo_grupo": tipo, "nombre": nombre}
+        for gid, cid, tipo, nombre in rows
+    ]
+
+
 def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
     """Grupos (ya provisionados y activos) a los que pertenece un usuario mediante ORM.
     Devuelve: [{'id_grupo', 'id_cliente', 'tipo_grupo', 'nombre'}].
@@ -161,6 +287,21 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
         return []
 
     id_perfil, id_rol = u.id_perfil, u.id_rol
+    extra = _grupos_extra_de_usuario(db, id_usuario)
+
+    # Encuestador (12) / IQVIA (13): completamente aparte del sistema por
+    # cliente -- un solo grupo global, sin rutas/clientes de por medio.
+    if id_rol in ROLES_ENCUESTADOR:
+        id_grupo_enc = asegurar_grupo_encuestadores(db)
+        grupos_enc = [{
+            "id_grupo": id_grupo_enc,
+            "id_cliente": ID_CLIENTE_ENCUESTADORES,
+            "tipo_grupo": "encuestador",
+            "nombre": NOMBRE_GRUPO_ENCUESTADORES,
+        }] if id_grupo_enc else []
+        vistos = {g["id_grupo"] for g in grupos_enc}
+        return grupos_enc + [g for g in extra if g["id_grupo"] not in vistos]
+
     id_merc = id_perfil if id_rol == 5 else None
     id_analista = id_perfil if id_rol == 2 else None
     id_cliente_user = id_perfil if id_rol == 1 else None
@@ -212,7 +353,7 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
 
     faltantes = [
         cli for cli in todos_los_clientes
-        if any((cli, tipo) not in existentes for tipo in TIPOS_VALIDOS)
+        if any((cli, tipo) not in existentes for tipo in TIPOS_POR_CLIENTE)
     ]
     if faltantes:
         for cli in faltantes:
@@ -232,10 +373,16 @@ def get_grupos_de_usuario(db: Session, id_usuario: Optional[int]) -> list[dict]:
                 cli in clientes_solo_cliente
                 or (es_personal_epran and cli in clientes_operativo)
             ))
+            # El administrador también ve el grupo global de encuestadores
+            # (consistente con get_miembros_grupo(), que ya lo lista ahí).
+            or (tipo == "encuestador" and id_rol == 8)
         )
         if es_miembro:
             grupos.append({
                 "id_grupo": id_grupo, "id_cliente": cli,
                 "tipo_grupo": tipo, "nombre": nombre,
             })
+
+    vistos = {g["id_grupo"] for g in grupos}
+    grupos += [g for g in extra if g["id_grupo"] not in vistos]
     return grupos

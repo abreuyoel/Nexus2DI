@@ -1,7 +1,7 @@
 from datetime import date, timedelta, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -35,13 +35,17 @@ def get_client_data_filters(
 
     if current_user.is_analyst and current_user.id_perfil:
         analista_id = int(current_user.id_perfil)
-        sub_rp = (
-            db.query(RutaProgramacion.punto_id)
-            .join(AnalistaRuta, RutaProgramacion.ruta_id == AnalistaRuta.id_ruta)
-            .filter(RutaProgramacion.activo == True, AnalistaRuta.id_analista == analista_id)
-            .subquery()
+        # Correlaciona por PDV Y por id_cliente: un mismo PDV puede estar
+        # cubierto por rutas de más de un cliente, así que filtrar solo por
+        # identificador_pdv dejaba colar balances/productos de otro cliente.
+        base_filter.append(
+            exists()
+            .where(RutaProgramacion.punto_id == Balance.identificador_pdv)
+            .where(RutaProgramacion.id_cliente == Balance.id_cliente)
+            .where(RutaProgramacion.activo == True)
+            .where(AnalistaRuta.id_ruta == RutaProgramacion.ruta_id)
+            .where(AnalistaRuta.id_analista == analista_id)
         )
-        base_filter.append(Balance.identificador_pdv.in_(sub_rp))
 
     if current_user.rol == "client":
         from app.shared.visibility import client_route_ids
@@ -228,13 +232,17 @@ def get_client_balances(
 
     if current_user.is_analyst and current_user.id_perfil:
         analista_id = int(current_user.id_perfil)
-        sub_rp = (
-            db.query(RutaProgramacion.punto_id)
-            .join(AnalistaRuta, RutaProgramacion.ruta_id == AnalistaRuta.id_ruta)
-            .filter(RutaProgramacion.activo == True, AnalistaRuta.id_analista == analista_id)
-            .subquery()
+        # Correlaciona por PDV Y por id_cliente: un mismo PDV puede estar
+        # cubierto por rutas de más de un cliente, así que filtrar solo por
+        # identificador_pdv dejaba colar balances/productos de otro cliente.
+        query = query.filter(
+            exists()
+            .where(RutaProgramacion.punto_id == Balance.identificador_pdv)
+            .where(RutaProgramacion.id_cliente == Balance.id_cliente)
+            .where(RutaProgramacion.activo == True)
+            .where(AnalistaRuta.id_ruta == RutaProgramacion.ruta_id)
+            .where(AnalistaRuta.id_analista == analista_id)
         )
-        query = query.filter(Balance.identificador_pdv.in_(sub_rp))
 
     if current_user.rol == "client":
         from app.shared.visibility import client_route_ids

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
-from app.models.user import Usuario
+from app.modules.auth.entities import Usuario
 from app.mercaderista.services.visita_service import VisitaService
 from app.mercaderista.schemas import (
     IniciarVisitaRequest, IniciarVisitaResponse,

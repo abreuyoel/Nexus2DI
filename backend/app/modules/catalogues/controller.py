@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List, Optional, Type
 from app.db.session import get_db
-from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
+from app.core.dependencies import get_current_user, require_permission
 from app.modules.auth.entities import Usuario
 from app.modules.routes.entities import PuntoInteres, Ruta
+from app.modules.clients.entities import CategoriaCliente
 from app.modules.catalogues.entities import (
     TipoNegocio, SubtipoNegocio, Alcance, CanalVenta, DepartamentoGeo, Ciudad,
     Cuadrante, Servicio, Estado, Departamento, Categoria, SubCategoria,
@@ -13,6 +15,7 @@ from app.modules.catalogues.entities import (
 from app.modules.catalogues.dto import (
     CatalogoCreate, CatalogoUpdate, CatalogoResponse,
     CiudadCreate, CiudadUpdate, CiudadResponse,
+    ServicioCreate, ServicioUpdate, ServicioResponse,
     CategoriaCreate, CategoriaUpdate, CategoriaResponse,
     SubCategoriaCreate, SubCategoriaUpdate, SubCategoriaResponse,
     CatalogoSimple, ProductoCreate, ProductoUpdate, ProductoResponse, ProductoListResponse,
@@ -34,7 +37,6 @@ CATALOG_USAGE = {
     "canal-venta": (PuntoInteres, PuntoInteres.cadena, PuntoInteres.id),
     "departamentos": (PuntoInteres, PuntoInteres.departamento, PuntoInteres.id),
     "cuadrantes": (Ruta, Ruta.cuadrante, Ruta.nombre),
-    "servicios": (Ruta, Ruta.servicio, Ruta.nombre),
 }
 
 
@@ -170,6 +172,107 @@ def delete_ciudad(
     return {"message": "Eliminada", "usage_count": usage, "force": force}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Servicios — registrados ANTES del genérico (necesita el campo extra "prefijo",
+# la sigla que arma el correlativo de nombre de ruta, ver modules/routes/controller.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/api/catalogos/servicios/", response_model=List[ServicioResponse])
+def list_servicios(
+    activo: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    q = db.query(Servicio)
+    if activo is not None:
+        q = q.filter(Servicio.activo == activo)
+    return q.order_by(Servicio.nombre).all()
+
+
+@router.post("/api/catalogos/servicios/", response_model=ServicioResponse, status_code=201)
+def create_servicio(
+    data: ServicioCreate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'write')),
+):
+    nombre = data.nombre.strip()
+    prefijo = data.prefijo.strip().upper()
+    if db.query(Servicio).filter(Servicio.nombre == nombre).first():
+        raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}'")
+    if db.query(Servicio).filter(Servicio.prefijo == prefijo).first():
+        raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa otro servicio -- las rutas se numerarían mezcladas")
+    item = Servicio(nombre=nombre, prefijo=prefijo, activo=data.activo)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/api/catalogos/servicios/{item_id}", response_model=ServicioResponse)
+def update_servicio(
+    item_id: int,
+    data: ServicioUpdate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'write')),
+):
+    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    old_nombre = item.nombre
+    if data.nombre is not None:
+        nuevo = data.nombre.strip()
+        if nuevo != old_nombre:
+            if db.query(Servicio).filter(Servicio.nombre == nuevo).first():
+                raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo}'")
+            db.query(Ruta).filter(Ruta.servicio == old_nombre).update(
+                {Ruta.servicio: nuevo}, synchronize_session=False
+            )
+            item.nombre = nuevo
+
+    if data.prefijo is not None:
+        prefijo = data.prefijo.strip().upper()
+        clash = db.query(Servicio).filter(Servicio.prefijo == prefijo, Servicio.id != item_id).first()
+        if clash:
+            raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa '{clash.nombre}'")
+        item.prefijo = prefijo
+
+    if data.activo is not None:
+        item.activo = data.activo
+
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/api/catalogos/servicios/{item_id}")
+def delete_servicio(
+    item_id: int,
+    force: bool = Query(False),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('points', 'delete')),
+):
+    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    usage = _count_usage(db, Ruta, Ruta.servicio, item.nombre)
+    if usage > 0 and not force:
+        sample = _list_usage_ids(db, Ruta.servicio, Ruta.nombre, item.nombre)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"No se puede eliminar '{item.nombre}' porque está siendo usado por {usage} ruta(s). Reasigne o elimine esas rutas primero, o use ?force=true.",
+                "usage_count": usage,
+                "sample_pdv_ids": sample,
+            },
+        )
+
+    db.delete(item)
+    db.commit()
+    return {"message": "Eliminado", "usage_count": usage, "force": force}
+
+
 @router.get("/api/catalogos/estados", response_model=List[CatalogoResponse])
 def get_estados(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     estados = db.query(Estado).order_by(Estado.nombre).all()
@@ -191,7 +294,6 @@ GENERIC_CATALOGS: dict[str, Type] = {
     "canal-venta": CanalVenta,
     "departamentos": DepartamentoGeo,
     "cuadrantes": Cuadrante,
-    "servicios": Servicio,
 }
 
 
@@ -312,7 +414,7 @@ def get_categorias(db: Session = Depends(get_db)):
 def create_categoria(
     cat: CategoriaCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'write'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'write'))
 ):
     nueva = Categoria(**cat.model_dump())
     db.add(nueva)
@@ -326,7 +428,7 @@ def update_categoria(
     id_categoria: int,
     cat: CategoriaUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'write'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'write'))
 ):
     db_cat = db.query(Categoria).filter(Categoria.id_categoria == id_categoria).first()
     if not db_cat:
@@ -344,7 +446,7 @@ def update_categoria(
 def delete_categoria(
     id_categoria: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'delete'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'delete'))
 ):
     db_cat = db.query(Categoria).filter(Categoria.id_categoria == id_categoria).first()
     if not db_cat:
@@ -374,7 +476,7 @@ def get_subcategorias(
 def create_subcategoria(
     subcat: SubCategoriaCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'write'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'write'))
 ):
     nueva = SubCategoria(**subcat.model_dump())
     db.add(nueva)
@@ -388,7 +490,7 @@ def update_subcategoria(
     id_subcategoria: int,
     subcat: SubCategoriaUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'write'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'write'))
 ):
     db_subcat = db.query(SubCategoria).filter(SubCategoria.id_subcategoria == id_subcategoria).first()
     if not db_subcat:
@@ -406,7 +508,7 @@ def update_subcategoria(
 def delete_subcategoria(
     id_subcategoria: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_permission('products', 'delete'))
+    current_user: Usuario = Depends(require_permission('products.catalogos', 'delete'))
 ):
     db_subcat = db.query(SubCategoria).filter(SubCategoria.id_subcategoria == id_subcategoria).first()
     if not db_subcat:
@@ -455,14 +557,14 @@ def get_tamanos(db: Session = Depends(get_db)):
 
 
 @router.post("/api/productos-catalogos/tamanos", response_model=CatalogoSimple, status_code=201)
-def create_tamano(data: TamanoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def create_tamano(data: TamanoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     t = ClasificacionTamano(nombre=data.nombre.strip())
     db.add(t); db.commit(); db.refresh(t)
     return CatalogoSimple(id=t.id, nombre=t.nombre)
 
 
 @router.put("/api/productos-catalogos/tamanos/{id_tamano}", response_model=CatalogoSimple)
-def update_tamano(id_tamano: int, data: TamanoUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def update_tamano(id_tamano: int, data: TamanoUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     t = db.query(ClasificacionTamano).filter(ClasificacionTamano.id == id_tamano).first()
     if not t:
         raise HTTPException(404, "Tamaño no encontrado")
@@ -473,7 +575,7 @@ def update_tamano(id_tamano: int, data: TamanoUpdate, db: Session = Depends(get_
 
 
 @router.delete("/api/productos-catalogos/tamanos/{id_tamano}")
-def delete_tamano(id_tamano: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'delete'))):
+def delete_tamano(id_tamano: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'delete'))):
     t = db.query(ClasificacionTamano).filter(ClasificacionTamano.id == id_tamano).first()
     if not t:
         raise HTTPException(404, "Tamaño no encontrado")
@@ -485,14 +587,14 @@ def delete_tamano(id_tamano: int, db: Session = Depends(get_db), _: Usuario = De
 
 
 @router.post("/api/productos-catalogos/departamentos", response_model=CatalogoSimple, status_code=201)
-def create_departamento_prod(data: DepartamentoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def create_departamento_prod(data: DepartamentoCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     d = Departamento(nombre=data.nombre.strip())
     db.add(d); db.commit(); db.refresh(d)
     return CatalogoSimple(id=d.id_departamento, nombre=d.nombre)
 
 
 @router.put("/api/productos-catalogos/departamentos/{id_departamento}", response_model=CatalogoSimple)
-def update_departamento_prod(id_departamento: int, data: DepartamentoUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def update_departamento_prod(id_departamento: int, data: DepartamentoUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     d = db.query(Departamento).filter(Departamento.id_departamento == id_departamento).first()
     if not d:
         raise HTTPException(404, "Departamento no encontrado")
@@ -503,7 +605,7 @@ def update_departamento_prod(id_departamento: int, data: DepartamentoUpdate, db:
 
 
 @router.delete("/api/productos-catalogos/departamentos/{id_departamento}")
-def delete_departamento_prod(id_departamento: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'delete'))):
+def delete_departamento_prod(id_departamento: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'delete'))):
     d = db.query(Departamento).filter(Departamento.id_departamento == id_departamento).first()
     if not d:
         raise HTTPException(404, "Departamento no encontrado")
@@ -515,14 +617,14 @@ def delete_departamento_prod(id_departamento: int, db: Session = Depends(get_db)
 
 
 @router.post("/api/productos-catalogos/marcas", response_model=CatalogoSimple, status_code=201)
-def create_marca(data: MarcaCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def create_marca(data: MarcaCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     m = Marca(nombre=data.nombre.strip(), id_productora=data.id_productora)
     db.add(m); db.commit(); db.refresh(m)
     return CatalogoSimple(id=m.id_marca, nombre=m.nombre, id_productora=m.id_productora)
 
 
 @router.put("/api/productos-catalogos/marcas/{id_marca}", response_model=CatalogoSimple)
-def update_marca(id_marca: int, data: MarcaUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def update_marca(id_marca: int, data: MarcaUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     m = db.query(Marca).filter(Marca.id_marca == id_marca).first()
     if not m:
         raise HTTPException(404, "Marca no encontrada")
@@ -535,7 +637,7 @@ def update_marca(id_marca: int, data: MarcaUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/api/productos-catalogos/marcas/{id_marca}")
-def delete_marca(id_marca: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'delete'))):
+def delete_marca(id_marca: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'delete'))):
     m = db.query(Marca).filter(Marca.id_marca == id_marca).first()
     if not m:
         raise HTTPException(404, "Marca no encontrada")
@@ -547,14 +649,14 @@ def delete_marca(id_marca: int, db: Session = Depends(get_db), _: Usuario = Depe
 
 
 @router.post("/api/productos-catalogos/presentaciones", response_model=CatalogoSimple, status_code=201)
-def create_presentacion(data: PresentacionCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def create_presentacion(data: PresentacionCreate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     p = Presentacion(nombre=data.nombre.strip(), clasificacion_tamanos=data.clasificacion_tamanos)
     db.add(p); db.commit(); db.refresh(p)
     return CatalogoSimple(id=p.id_presentacion, nombre=p.nombre)
 
 
 @router.put("/api/productos-catalogos/presentaciones/{id_presentacion}", response_model=CatalogoSimple)
-def update_presentacion(id_presentacion: int, data: PresentacionUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'write'))):
+def update_presentacion(id_presentacion: int, data: PresentacionUpdate, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'write'))):
     p = db.query(Presentacion).filter(Presentacion.id_presentacion == id_presentacion).first()
     if not p:
         raise HTTPException(404, "Presentación no encontrada")
@@ -567,7 +669,7 @@ def update_presentacion(id_presentacion: int, data: PresentacionUpdate, db: Sess
 
 
 @router.delete("/api/productos-catalogos/presentaciones/{id_presentacion}")
-def delete_presentacion(id_presentacion: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products', 'delete'))):
+def delete_presentacion(id_presentacion: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('products.catalogos', 'delete'))):
     p = db.query(Presentacion).filter(Presentacion.id_presentacion == id_presentacion).first()
     if not p:
         raise HTTPException(404, "Presentación no encontrada")
@@ -582,8 +684,8 @@ def delete_presentacion(id_presentacion: int, db: Session = Depends(get_db), _: 
 # 3. Productos (antes en productos_catalogos.py)
 # ════════════════════════════════════════════════════════════════════════════
 
-def _producto_join(db: Session):
-    return (
+def _producto_join(db: Session, current_user: Optional[Usuario] = None):
+    q = (
         db.query(Producto, SubCategoria, Categoria, Marca, Productora, Presentacion, Departamento, ClasificacionTamano)
         .outerjoin(SubCategoria, SubCategoria.id_subcategoria == Producto.id_subcategoria)
         .outerjoin(Categoria, Categoria.id_categoria == SubCategoria.id_categoria)
@@ -593,6 +695,29 @@ def _producto_join(db: Session):
         .outerjoin(Departamento, Departamento.id_departamento == Categoria.id_departamento)
         .outerjoin(ClasificacionTamano, ClasificacionTamano.id == Producto.id_clasificacion_tamano)
     )
+    # Un analista solo debe ver productos de las categorías asociadas a SUS
+    # clientes (CATEGORIAS_CLIENTES), mismo criterio de alcance que ya se usa
+    # en centro_mando.py/client_data.py/frecuencias_pdvs_cliente.py -- antes
+    # este endpoint no filtraba nada acá y un analista veía el catálogo
+    # completo de todos los clientes.
+    if current_user is not None and current_user.is_analyst and current_user.id_perfil:
+        ids_cliente = [
+            r[0] for r in db.execute(text("""
+                SELECT DISTINCT rp.id_cliente
+                FROM analistas_rutas ar
+                JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
+                WHERE ar.id_analista = :analista_id AND rp.activa = 1
+            """), {"analista_id": int(current_user.id_perfil)}).fetchall()
+            if r[0] is not None
+        ]
+        if not ids_cliente:
+            return q.filter(Producto.id_producto == None)  # noqa: E711 -- sin clientes asignados, sin productos
+        q = q.filter(
+            Categoria.id_categoria.in_(
+                db.query(CategoriaCliente.id_categoria).filter(CategoriaCliente.id_cliente.in_(ids_cliente))
+            )
+        )
+    return q
 
 
 def _producto_resp(p, sc, cat, m, pr, pres, dep, tam) -> ProductoResponse:
@@ -612,27 +737,58 @@ def _producto_resp(p, sc, cat, m, pr, pres, dep, tam) -> ProductoResponse:
     )
 
 
-@router.get("/api/productos-catalogos/productos", response_model=ProductoListResponse)
-def list_productos(
-    busqueda: Optional[str] = Query(None),
-    id_categoria: Optional[int] = Query(None),
-    id_subcategoria: Optional[int] = Query(None),
-    id_marca: Optional[int] = Query(None),
-    skip: int = 0,
-    limit: int = 25,
-    db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+def _apply_producto_filtros(
+    q, *, busqueda=None, id_departamento=None, id_categoria=None, id_subcategoria=None,
+    id_marca=None, id_productora=None, id_presentacion=None, id_clasificacion_tamano=None,
+    inagotable=None, exclude: Optional[str] = None,
 ):
-    q = _producto_join(db)
+    """Filtros de /productos, reusados también por /productos/filtros-disponibles
+    (que necesita aplicar TODOS los filtros MENOS el de la propia faceta que
+    está calculando -- `exclude` -- para no reducir sus propias opciones a 1
+    apenas se elige un valor)."""
     if busqueda:
         like = f"%{busqueda}%"
         q = q.filter((Producto.producto_gu.ilike(like)) | (Producto.cod_prod.ilike(like)))
-    if id_categoria is not None:
+    if exclude != "departamento" and id_departamento is not None:
+        q = q.filter(Departamento.id_departamento == id_departamento)
+    if exclude != "categoria" and id_categoria is not None:
         q = q.filter(SubCategoria.id_categoria == id_categoria)
-    if id_subcategoria is not None:
+    if exclude != "subcategoria" and id_subcategoria is not None:
         q = q.filter(Producto.id_subcategoria == id_subcategoria)
-    if id_marca is not None:
+    if exclude != "marca" and id_marca is not None:
         q = q.filter(Producto.id_marca == id_marca)
+    if exclude != "productora" and id_productora is not None:
+        q = q.filter(Productora.id_productora == id_productora)
+    if exclude != "presentacion" and id_presentacion is not None:
+        q = q.filter(Producto.id_presentacion == id_presentacion)
+    if exclude != "tamano" and id_clasificacion_tamano is not None:
+        q = q.filter(Producto.id_clasificacion_tamano == id_clasificacion_tamano)
+    if inagotable is not None:
+        q = q.filter(Producto.inagotable == inagotable)
+    return q
+
+
+@router.get("/api/productos-catalogos/productos", response_model=ProductoListResponse)
+def list_productos(
+    busqueda: Optional[str] = Query(None),
+    id_departamento: Optional[int] = Query(None),
+    id_categoria: Optional[int] = Query(None),
+    id_subcategoria: Optional[int] = Query(None),
+    id_marca: Optional[int] = Query(None),
+    id_productora: Optional[int] = Query(None),
+    id_presentacion: Optional[int] = Query(None),
+    id_clasificacion_tamano: Optional[int] = Query(None),
+    inagotable: Optional[bool] = Query(None),
+    skip: int = 0,
+    limit: int = 25,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    q = _apply_producto_filtros(
+        _producto_join(db, current_user), busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
+        id_subcategoria=id_subcategoria, id_marca=id_marca, id_productora=id_productora,
+        id_presentacion=id_presentacion, id_clasificacion_tamano=id_clasificacion_tamano, inagotable=inagotable,
+    )
     total = q.count()
     limit = max(1, limit)
     rows = q.order_by(Producto.producto_gu).offset(skip).limit(limit).all()
@@ -640,6 +796,53 @@ def list_productos(
         total=total, pagina=(skip // limit + 1),
         items=[_producto_resp(*r) for r in rows],
     )
+
+
+@router.get("/api/productos-catalogos/productos/filtros-disponibles")
+def productos_filtros_disponibles(
+    busqueda: Optional[str] = Query(None),
+    id_departamento: Optional[int] = Query(None),
+    id_categoria: Optional[int] = Query(None),
+    id_subcategoria: Optional[int] = Query(None),
+    id_marca: Optional[int] = Query(None),
+    id_productora: Optional[int] = Query(None),
+    id_presentacion: Optional[int] = Query(None),
+    id_clasificacion_tamano: Optional[int] = Query(None),
+    inagotable: Optional[bool] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Para que los filtros de Productos cascadeen: dado lo que ya está
+    elegido (ej. una productora), devuelve solo los departamentos/categorías/
+    subcategorías/marcas/productoras/presentaciones/tamaños que EXISTEN entre
+    los productos que matchean esa selección -- en vez de listas fijas de
+    todo el catálogo. Cada faceta se calcula excluyendo su propio filtro
+    (`exclude`) para no colapsarse a una sola opción apenas se la elige."""
+    kwargs = dict(
+        busqueda=busqueda, id_departamento=id_departamento, id_categoria=id_categoria,
+        id_subcategoria=id_subcategoria, id_marca=id_marca, id_productora=id_productora,
+        id_presentacion=id_presentacion, id_clasificacion_tamano=id_clasificacion_tamano, inagotable=inagotable,
+    )
+
+    def opts(exclude: str, id_col, nombre_col):
+        rows = (
+            _apply_producto_filtros(_producto_join(db, current_user), exclude=exclude, **kwargs)
+            .with_entities(id_col, nombre_col).distinct().all()
+        )
+        return sorted(
+            [{"id": r[0], "nombre": r[1]} for r in rows if r[0] is not None and r[1] is not None],
+            key=lambda x: x["nombre"],
+        )
+
+    return {
+        "departamentos": opts("departamento", Departamento.id_departamento, Departamento.nombre),
+        "categorias": opts("categoria", Categoria.id_categoria, Categoria.nombre),
+        "subcategorias": opts("subcategoria", SubCategoria.id_subcategoria, SubCategoria.nombre),
+        "marcas": opts("marca", Marca.id_marca, Marca.nombre),
+        "productoras": opts("productora", Productora.id_productora, Productora.nombre),
+        "presentaciones": opts("presentacion", Presentacion.id_presentacion, Presentacion.nombre),
+        "tamanos": opts("tamano", ClasificacionTamano.id, ClasificacionTamano.nombre),
+    }
 
 
 @router.get("/api/productos-catalogos/productos/{producto_id}", response_model=ProductoResponse)

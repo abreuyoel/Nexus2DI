@@ -197,7 +197,55 @@ def save_auditor_data(
 # ════════════════════════════════════════════════════════════════════════════
 
 @router.get("/api/auditor-campo/rutas/{cedula}", response_model=List[AuditorCampoRutaResponse])
-def get_auditor_campo_rutas(cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_auditor_campo_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    # Admin no tiene cédula de auditor real (el front cae al placeholder
+    # '88880001') -- en vez de "0 rutas asignadas", debe ver TODAS las rutas
+    # de auditoría existentes, sin filtrar por auditor.
+    if current_user.is_admin:
+        today = date.today()
+        sub_count = (
+            db.query(
+                RutaProgramacion.ruta_id.label("id_ruta"),
+                func.count(func.distinct(RutaProgramacion.punto_id)).label("total_puntos")
+            )
+            .filter(RutaProgramacion.activo == True)
+            .group_by(RutaProgramacion.ruta_id)
+            .subquery()
+        )
+        sub_active = (
+            db.query(RutaActivada.ruta_id.label("id_ruta"))
+            .filter(
+                RutaActivada.estado == "En Progreso",
+                func.cast(RutaActivada.fecha_hora_activacion, Date) == today
+            )
+            .subquery()
+        )
+        query = (
+            db.query(
+                Ruta.id,
+                Ruta.nombre,
+                func.coalesce(sub_count.c.total_puntos, 0).label("total_puntos"),
+                case((sub_active.c.id_ruta.isnot(None), 1), else_=0).label("activa")
+            )
+            .join(MercaderistaRuta, Ruta.id == MercaderistaRuta.ruta_id)
+            .join(Mercaderista, MercaderistaRuta.mercaderista_id == Mercaderista.id)
+            .outerjoin(sub_count, Ruta.id == sub_count.c.id_ruta)
+            .outerjoin(sub_active, Ruta.id == sub_active.c.id_ruta)
+            .filter(Mercaderista.tipo == TIPO)
+            .distinct()
+            .order_by(Ruta.nombre)
+            .all()
+        )
+        return [
+            AuditorCampoRutaResponse(
+                id=r[0],
+                nombre=r[1] or "",
+                total_puntos=r[2] or 0,
+                esta_activa=bool(r[3])
+            )
+            for r in query
+        ]
+
     if not _es_cedula(cedula):
         return []
     ced_int = int(str(cedula).strip())
@@ -255,7 +303,7 @@ def get_auditor_campo_rutas(cedula: str, db: Session = Depends(get_db), _: Usuar
 
 
 @router.get("/api/auditor-campo/ruta-puntos/{route_id}", response_model=List[RutaPuntoResponse])
-def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
     today = date.today()
 
@@ -269,7 +317,7 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _
         .subquery()
     )
 
-    query = (
+    base_q = (
         db.query(
             PuntoInteres.id,
             PuntoInteres.nombre,
@@ -282,12 +330,18 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _
         .filter(
             RutaProgramacion.ruta_id == route_id,
             RutaProgramacion.activo == True,
-            RutaProgramacion.dia == dia
         )
         .group_by(PuntoInteres.id, PuntoInteres.nombre, sub_act.c.identificador_punto)
         .order_by(PuntoInteres.nombre)
-        .all()
     )
+
+    rows = base_q.filter(RutaProgramacion.dia == dia).all()
+    if not rows and current_user.is_admin:
+        # Fallback solo para admin: si hoy no hay nada programado para este
+        # día de la semana (fin de semana, etc.), trae TODOS los PDV de la
+        # ruta en vez de nada -- así puede probar el flujo completo
+        # cualquier día sin tocar RUTA_PROGRAMACION.dia (el cronograma real).
+        rows = base_q.all()
 
     return [
         RutaPuntoResponse(
@@ -297,7 +351,7 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), _
             total_clientes=r[3] or 0,
             activado=bool(r[4])
         )
-        for r in query
+        for r in rows
     ]
 
 
@@ -441,9 +495,9 @@ async def subir_foto_categoria(id_visita: int = Form(...), id_categoria: int = F
 
 
 @router.get("/api/auditor-campo/pdv-clientes/{point_id}/{route_id}", response_model=List[PdvClienteResponse])
-def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
-    rows = (
+    base_q = (
         db.query(
             RutaProgramacion.id_cliente,
             Cliente.nombre,
@@ -455,11 +509,16 @@ def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db)
             RutaProgramacion.punto_id == point_id,
             RutaProgramacion.ruta_id == route_id,
             RutaProgramacion.activo == True,
-            RutaProgramacion.dia == dia
         )
         .order_by(RutaProgramacion.prioridad.desc(), Cliente.nombre)
-        .all()
     )
+
+    rows = base_q.filter(RutaProgramacion.dia == dia).all()
+    if not rows and current_user.is_admin:
+        # Mismo fallback que get_ruta_puntos: admin puede probar el flujo
+        # cualquier día, sin tocar RUTA_PROGRAMACION.dia.
+        rows = base_q.all()
+
     return [
         PdvClienteResponse(
             id=r[0],
