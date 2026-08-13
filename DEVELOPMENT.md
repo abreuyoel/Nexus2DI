@@ -289,3 +289,11 @@ CREATE INDEX ix_chat_msgs_visita ON CHAT_MENSAJES_CLIENTE (id_visita)
 CREATE INDEX ix_mercaderistas_activo ON MERCADERISTAS (activo)
     INCLUDE (id_mercaderista, nombre);
 
+---
+
+## 🔄 Estado de Migración Manual de main
+- **Fecha:** Agosto 2026
+- **Rama:** experimentalmerge
+- **Resumen:** Se completó la migración y merge manual de todos los endpoints, filtros, lógica de negocio y componentes de la rama main hacia la arquitectura modular (`app/modules/`) utilizando estrictamente SQLAlchemy ORM y componentes standalone de Angular 17.
+
+
