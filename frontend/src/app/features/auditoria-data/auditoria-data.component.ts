@@ -1,4 +1,4 @@
-D: \proyects\original\Nexus2DI\frontend\src\app\features\auditoria - data\auditoria - data.component.tsimport { Component } from '@angular/core';
+import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MercaderistaComponent } from '../mercaderista/mercaderista.component';
 import { DataComponent } from '../data/data.component';
@@ -19,10 +19,10 @@ import { AuthService } from '../../core/services/auth.service';
   `,
 })
 export class AuditoriaDataComponent {
-  isAdmin = false;
-
-  constructor(private auth: AuthService) {
+  get isAdmin(): boolean {
     const user = this.auth.currentUser();
-    this.isAdmin = !!(user && (user.is_admin || user.rol === 'admin'));
+    return user ? (user.is_admin || user.rol === 'admin' || user.rol === 'analyst') : false;
   }
+
+  constructor(private auth: AuthService) {}
 }
