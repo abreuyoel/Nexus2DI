@@ -387,7 +387,137 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     
     (window as any)._map = map;
 
-    // TODO: When lat/lng are provided for doctors/centers, add markers
-    // new maplibregl.Marker({ color: '#8b5cf6' }).setLngLat([-66.9036, 10.4806]).addTo(map);
+    // Convert medicos to GeoJSON Features
+    const features = this.medicos
+      .filter(m => m.latitud != null && m.longitud != null)
+      .map(m => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [Number(m.longitud), Number(m.latitud)]
+        },
+        properties: {
+          id: m.id_medico,
+          nombre: m.nombre_completo,
+          especialidad: m.especialidad,
+          centro: m.centro
+        }
+      }));
+
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: features
+    };
+
+    map.on('load', () => {
+      map.addSource('medicos', {
+        type: 'geojson',
+        data: geojson,
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 50
+      });
+
+      // Cluster circle layer
+      map.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'medicos',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#a78bfa', // < 5 medicos
+            5,
+            '#8b5cf6', // 5-15 medicos
+            15,
+            '#6d28d9'  // >= 15 medicos
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            15,
+            5,
+            20,
+            15,
+            25
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff'
+        }
+      });
+
+      // Cluster count label layer
+      map.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'medicos',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count}',
+          'text-font': ['Open Sans Regular', 'Arial HTML5'],
+          'text-size': 12
+        },
+        paint: {
+          'text-color': '#ffffff'
+        }
+      });
+
+      // Unclustered single points layer
+      map.addLayer({
+        id: 'unclustered-point',
+        type: 'circle',
+        source: 'medicos',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#10b981', // emerald color
+          'circle-radius': 7,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#ffffff'
+        }
+      });
+
+      // Click event to expand clusters
+      map.on('click', 'clusters', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+        const clusterId = features[0].properties['cluster_id'];
+        const source = map.getSource('medicos') as any;
+        source.getClusterExpansionZoom(clusterId, (err: any, zoom: number) => {
+          if (err) return;
+          const geom = features[0].geometry as any;
+          map.easeTo({
+            center: geom.coordinates,
+            zoom: zoom
+          });
+        });
+      });
+
+      // Click event for details popup on single points
+      map.on('click', 'unclustered-point', (e) => {
+        const features = map.queryRenderedFeatures(e.point, { layers: ['unclustered-point'] });
+        if (!features.length) return;
+        const f = features[0];
+        const geom = f.geometry as any;
+        const props = f.properties as any;
+
+        new maplibregl.Popup({ offset: 10 })
+          .setLngLat(geom.coordinates)
+          .setHTML(`
+            <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; padding: 4px;">
+              <strong style="font-size: 14px; display: block; margin-bottom: 2px;">${props.nombre}</strong>
+              <span style="color: #64748b; display: block; margin-bottom: 2px;">${props.especialidad}</span>
+              <span style="color: #6366f1; font-weight: 500; display: block;">${props.centro}</span>
+            </div>
+          `)
+          .addTo(map);
+      });
+
+      // Hover states
+      map.on('mouseenter', 'clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'clusters', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'unclustered-point', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'unclustered-point', () => { map.getCanvas().style.cursor = ''; });
+    });
   }
 }

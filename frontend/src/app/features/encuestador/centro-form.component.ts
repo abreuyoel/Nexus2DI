@@ -57,13 +57,17 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
         </div>
         
         <div class="mt-4 space-y-2">
-          <div *ngFor="let m of encuestaActiva.medicos" class="bg-slate-800 p-4 rounded-lg border border-slate-700 flex justify-between items-center">
-            <div>
+          <div *ngFor="let m of encuestaActiva.medicos" class="bg-slate-800 p-4 rounded-lg border border-slate-700 flex justify-between items-center gap-3">
+            <div class="min-w-0">
               <div class="font-bold text-white">{{ m.apellido1 }} {{ m.apellido2 }}, {{ m.nombre1 }} {{ m.nombre2 }}</div>
               <div class="text-sm text-slate-400">{{ m.especialidad }}</div>
             </div>
-            <div class="text-right">
+            <div class="flex items-center gap-2 shrink-0">
               <span class="inline-block px-2 py-1 bg-slate-700 text-xs rounded text-slate-300">{{ m.valor_consulta_rango }}</span>
+              <button *ngIf="m.id_medico" [routerLink]="['/encuestador/medico', m.id_medico]"
+                      class="flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                <span class="material-icons !text-sm">edit</span> Editar
+              </button>
             </div>
           </div>
           <div *ngIf="!encuestaActiva.medicos?.length" class="text-slate-500 italic py-4">No hay médicos registrados en este centro aún.</div>

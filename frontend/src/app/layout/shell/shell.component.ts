@@ -1,5 +1,5 @@
 import { Component, computed, signal, HostListener, OnInit } from '@angular/core';
-import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
@@ -15,6 +15,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { EncuestadorOfflineQueueService } from '../../features/encuestador/services/encuestador-offline-queue.service';
 
 interface NavItem {
   label: string;
@@ -51,7 +53,7 @@ export class ShellComponent implements OnInit {
   hasClientDashboard = signal(false);
 
   private navItems: NavItem[] = [
-    { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: [] },
+    { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: ['admin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
     { label: 'Plan de Acción', icon: 'assignment_late', route: '/plan-accion', roles: ['admin', 'analyst'] },

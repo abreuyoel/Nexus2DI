@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus2di-backend
+  namespace: qa
+spec:
+  # 1 réplica en QA: ahorro de recursos, no necesitamos HA en testing.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: nexus2di-backend }
+  template:
+    metadata:
+      labels: { app: nexus2di-backend }
+    spec:
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: nexus2di-backend
+          # Imagen con tag :qa — construida desde la rama qa
+          image: ghcr.io/abreuyoel/nexus2di-backend:qa
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: nexus2di-backend-config }
+            - secretRef: { name: nexus2di-backend-secret }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 10
+          resources:
+            requests: { cpu: "200m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus2di-backend-svc
+  namespace: qa
+spec:
+  selector: { app: nexus2di-backend }
+  ports:
+    - port: 8000
+      targetPort: 8000

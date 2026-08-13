@@ -49,6 +49,25 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:4200"
 
+    # IA (Ollama) -- mismo servicio "ollama" (namespace default) que ya usa
+    # epran_backend para analizar fotos de precios con el modelo "llava"
+    # (ver epran_backend/src/infrastructure/ai/ollama.service.ts). Reusado
+    # acá para leer notas de pedido en papel: se manda la foto directo al
+    # modelo de visión (sin motor de OCR aparte) y se le pide texto
+    # estructurado en JSON.
+    OLLAMA_API_URL: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "llava"
+
+    # Notificaciones por correo del módulo de Ventas (confirmación de pedido,
+    # alertas de pedido grande, etc.) -- sin valores reales por defecto:
+    # mientras no se configuren, EmailService.enviar() hace no-op y loguea en
+    # vez de fallar, para no bloquear el flujo de ventas por esto.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "ventas@epran.com"
+
     @property
     def DATABASE_URL(self) -> str:
         driver = self.DB_DRIVER.replace(" ", "+")

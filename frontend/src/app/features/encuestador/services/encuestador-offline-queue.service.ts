@@ -383,4 +383,47 @@ export class EncuestadorOfflineQueueService {
     const entries = await this.getAll();
     this._pendingCount.next(entries.filter(e => e.status !== 'done').length);
   }
+
+  // ── Respaldos (Backup Manual) ──────────────────────────────────────────
+
+  /**
+   * Exporta toda la cola (pendientes y completados recientes) a un string JSON.
+   */
+  async exportQueue(): Promise<string> {
+    const entries = await this.getAll();
+    return JSON.stringify(entries, null, 2);
+  }
+
+  /**
+   * Importa entradas desde un JSON de respaldo.
+   * Evita duplicados basándose en el ID único (UUID) de cada entrada.
+   * Actualiza el contador de secuencia para que los próximos envíos sigan el orden.
+   */
+  async importQueue(jsonString: string): Promise<{ success: boolean; count: number; error?: string }> {
+    try {
+      const entries: QueueEntry[] = JSON.parse(jsonString);
+      if (!Array.isArray(entries)) {
+        return { success: false, count: 0, error: 'Formato de respaldo inválido' };
+      }
+      
+      let importCount = 0;
+      for (const entry of entries) {
+        if (!entry.id || !entry.url) continue; // Validación básica
+        
+        // put() sobreescribe si el ID ya existe, lo cual es seguro porque el ID es un UUID único de esta entrada
+        await this.withStore(STORE_QUEUE, 'readwrite', s => s.put(entry));
+        
+        // Actualizamos el contador de secuencia para evitar choques futuros
+        if (entry.seq > this.seqCounter) {
+          this.seqCounter = entry.seq;
+        }
+        importCount++;
+      }
+      
+      await this.refreshCount();
+      return { success: true, count: importCount };
+    } catch (err: any) {
+      return { success: false, count: 0, error: 'No se pudo leer el archivo de respaldo' };
+    }
+  }
 }

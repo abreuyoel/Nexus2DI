@@ -205,6 +205,8 @@ from app.routes import cliente_encuestador
 app.include_router(cliente_encuestador.router)
 from app.routes import vendedor
 app.include_router(vendedor.router)
+from app.routes import ventas_pedidos
+app.include_router(ventas_pedidos.router)
 from app.routes import frecuencias_pdvs_cliente
 app.include_router(frecuencias_pdvs_cliente.router)
 from app.routes import horas_promedio_ejecucion

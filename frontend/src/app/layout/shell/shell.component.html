@@ -22,7 +22,7 @@
     </div>
 
     <!-- Navigation List -->
-    <nav class="flex-1 overflow-y-auto overflow-x-hidden py-8 px-3 space-y-2 custom-scrollbar">
+    <nav class="flex-1 py-8 px-3 space-y-2 overflow-y-auto custom-scrollbar">
       @for (item of visibleNavItems(); track item.route) {
       <a [routerLink]="item.route" routerLinkActive="bg-white/5 text-white !border-primary-500/30 shadow-inner"
         class="flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-transparent transition-all duration-300 hover:bg-white/5 hover:text-white group relative overflow-hidden h-[52px]"

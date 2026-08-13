@@ -239,6 +239,18 @@ export const routes: Routes = [
         data: { roles: ['vendedor', 'admin'] },
         loadComponent: () => import('./features/ventas/ventas.component').then((m) => m.VentasComponent),
       },
+      {
+        path: 'ventas-dashboard',
+        canActivate: [roleGuard],
+        data: { roles: ['vendedor', 'supervisor', 'admin'] },
+        loadComponent: () => import('./features/ventas/ventas-dashboard.component').then((m) => m.VentasDashboardComponent),
+      },
+      {
+        path: 'pedidos-ventas',
+        canActivate: [roleGuard],
+        data: { roles: ['vendedor', 'supervisor', 'admin'] },
+        loadComponent: () => import('./features/ventas/pedidos-ventas.component').then((m) => m.PedidosVentasComponent),
+      },
     ],
   },
 

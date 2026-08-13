@@ -257,9 +257,34 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
    * sus stats (visitas/fotos/sin_revisar) ya calculadas contra el rango de
    * fechas activo, y quedan ordenadas por quién tiene más fotos sin revisar
    * primero -- así se ve de un vistazo a quién hay que atender. */
+  /** Roster + mercaderistas que TIENEN visitas en el período pero no salen en
+   *  el roster (sin ruta activa asignada, ruta dada de baja, etc.). Sin esto
+   *  sus visitas quedaban inalcanzables: contaban en las tarjetas de arriba
+   *  (VISITAS/FOTOS salen de review-list) pero no había ninguna tarjeta que
+   *  abrir, y la pantalla decía "No hay mercaderistas asignados con estos
+   *  filtros" con el contador en 1. Reportado en campo como "busqué esa visita
+   *  y no me sale la tarjeta". */
+  private get rosterConVisitasHuerfanas(): any[] {
+    const roster = this.mercaderistasRoster();
+    const vistos = new Set(roster.map(r => `${r.id_mercaderista}_${r.cliente}`));
+    const extra: any[] = [];
+    for (const v of this.visitas()) {
+      const k = `${v.id_mercaderista}_${v.cliente}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      extra.push({
+        id_mercaderista: v.id_mercaderista, mercaderista: v.mercaderista,
+        id_cliente: v.id_cliente, cliente: v.cliente,
+        ruta: v.ruta, departamentos: v.ciudad || '',
+        _sinRuta: true,   // se marca en la tarjeta: tiene visitas pero no ruta activa
+      });
+    }
+    return [...roster, ...extra];
+  }
+
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
-    return this.mercaderistasRoster()
+    return this.rosterConVisitasHuerfanas
       .filter(r => {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
         if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
@@ -421,6 +446,15 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   setGrupoSel(key: string): void { this.grupoSel = key; this.photoFilter = 'todas'; }
   isReviewable(f: any): boolean { return ![5, 6].includes(f.id_tipo_foto); }
 
+  /** Fila sintética que inserta el auto-cierre de las 7pm cuando el
+   *  mercaderista no desactivó el PDV a mano -- no tiene foto real
+   *  (file_path NULL), así que no debe renderizarse como <img>. Se detecta
+   *  por Estado y también por url vacía, por si alguna quedó con otro
+   *  Estado tras una revisión manual. */
+  esAutoCierre(f: any): boolean {
+    return this.estadoDe(f) === 'Auto-cierre' || (f?.id_tipo_foto === 6 && !f?.url);
+  }
+
   estadoDe(f: any): string { return f?.estado ?? 'pendiente'; }
   isAprobada(f: any): boolean { return this.estadoDe(f) === 'Aprobada'; }
   isRechazada(f: any): boolean { return this.estadoDe(f) === 'Rechazada'; }
@@ -581,11 +615,22 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get comparePairs(): { antes: any; despues: any }[] {
     const ph = this.photosByGrupo();
     const byId = (a: any, b: any) => (a.id || 0) - (b.id || 0);
-    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
-    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto) && this.estadoMatch(f)).sort(byId);
+    // El filtro de estado se aplica DESPUÉS de emparejar, no antes. Filtrar
+    // cada lista por separado (como estaba) rompía los pares: al elegir
+    // "Aprobadas", un Antes aprobado cuyo Después seguía pendiente quedaba
+    // emparejado contra el Después de OTRA pareja, o mostraba "Sin foto"
+    // aunque la foto sí existiera -- de ahí los reportes de "solo salen
+    // fotos de antes y no de después" en la pantalla de revisión.
+    // Se conserva el par completo si CUALQUIERA de las dos matchea el filtro.
+    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto)).sort(byId);
+    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto)).sort(byId);
     const n = Math.max(antes.length, despues.length);
     const pairs: { antes: any; despues: any }[] = [];
-    for (let i = 0; i < n; i++) pairs.push({ antes: antes[i] || null, despues: despues[i] || null });
+    for (let i = 0; i < n; i++) {
+      const par = { antes: antes[i] || null, despues: despues[i] || null };
+      const matchea = (par.antes && this.estadoMatch(par.antes)) || (par.despues && this.estadoMatch(par.despues));
+      if (matchea) pairs.push(par);
+    }
     return pairs;
   }
 
