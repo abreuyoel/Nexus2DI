@@ -26,6 +26,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
+  isClientePuro = signal(false);
 
   // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
   pendingEvents      = signal(0);
