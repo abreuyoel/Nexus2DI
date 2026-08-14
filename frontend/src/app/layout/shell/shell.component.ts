@@ -94,11 +94,13 @@ export class ShellComponent implements OnInit {
 
     // --- Items exclusivos para rol cliente (id_rol=1) ---
     {
+      // El sub-ítem "Power BI" que vivía acá se quitó: quedaba redundante
+      // con las pestañas "Resumen | Power BI" que ya tiene la propia página
+      // del dashboard (dashboard.component.ts, activeView) -- "Power BI"
+      // aparecía dos veces en pantalla a la vez. Esa pestaña interna sigue
+      // siendo la única forma de llegar a la vista Power BI.
       label: 'Dashboard', icon: 'dashboard', route: '/dashboard',
       roles: ['client'], hideForAdmin: true,
-      children: [
-        { label: 'Power BI', icon: 'bar_chart', route: '/dashboard?view=powerbi', roles: ['client'], module: 'dashboard-powerbi', hideForAdmin: true },
-      ],
     },
     { label: 'Centro de Mando', icon: 'bolt', route: '/centro-mando', roles: ['client'], hideForAdmin: true },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['client'], hideForAdmin: true },
