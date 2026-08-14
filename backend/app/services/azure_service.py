@@ -37,6 +37,25 @@ class AzureStorageService:
         )
         return blob_name
 
+    def upload_bytes(self, file_bytes: bytes, blob_name: str) -> Optional[str]:
+        """Sube bytes a Azure Blob Storage con un nombre de blob específico.
+        Usado por VisitaService.upload_foto() que controla el path completo."""
+        try:
+            container = self.client.get_container_client(settings.AZURE_CONTAINER_NAME)
+            # Detectar content type por extensión
+            ext = blob_name.rsplit(".", 1)[-1].lower() if "." in blob_name else "jpg"
+            ct_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+            content_type = ct_map.get(ext, "image/jpeg")
+            container.upload_blob(
+                name=blob_name,
+                data=file_bytes,
+                content_settings=ContentSettings(content_type=content_type),
+                overwrite=True,
+            )
+            return blob_name
+        except Exception:
+            return None
+
     def get_sas_url(self, blob_name: str, hours: int = 2) -> str:
         """Return a SAS-signed URL valid for `hours` hours. Handles private containers and special characters in paths."""
         account_key = _extract_account_key(settings.AZURE_STORAGE_CONNECTION_STRING)

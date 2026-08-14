@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
-from sqlalchemy.exc import IntegrityError
-from typing import List, Any
+from typing import List, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario as User
-from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta, MedicoConsultorio
+from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta, MedicoConsultorio, CatalogoEncuestador
 from app.schemas.encuestador import JornadaActivarRequest, CentroSaludCreate, EncuestaCentroCreate, MedicoCentroCreate
 
 router = APIRouter(prefix="/api/encuestador", tags=["Encuestador"])
@@ -583,11 +582,18 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
     return {"success": True, "id_medico": id_medico}
 
 @router.get("/catalogos")
-def api_catalogos(current_user: User = Depends(get_current_user)):
+def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
+    
+    especialidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "especialidad").order_by(CatalogoEncuestador.nombre).all()
+    subespecialidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "subespecialidad").order_by(CatalogoEncuestador.nombre).all()
+    universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
+    estados = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre).all()
+    ciudades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre).all()
+    
     return {
         "valor_consulta_rangos": [
-            "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
+            "Gratuito", "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
             "Entre 60$ a 100$", "Más de 100$"
         ],
         "promedio_pacientes_rangos": [
@@ -599,5 +605,363 @@ def api_catalogos(current_user: User = Depends(get_current_user)):
             "Página web del centro", "Redes sociales", "Otra"
         ],
         "dias_consulta": ["Lunes", "Martes", "Miércoles", "Jueves",
-                          "Viernes", "Sábado", "Domingo"]
+                          "Viernes", "Sábado", "Domingo"],
+        "especialidades": [e[0] for e in especialidades],
+        "subespecialidades": [s[0] for s in subespecialidades],
+        "universidades": [u[0] for u in universidades],
+        "estados": [est[0] for est in estados],
+        "ciudades": [c[0] for c in ciudades],
     }
+
+class CatalogoCreate(BaseModel):
+    tipo: str  # 'especialidad', 'subespecialidad', 'universidad', 'estado', 'ciudad'
+    nombre: str
+
+class CatalogoUpdate(BaseModel):
+    nombre: str
+
+@router.post("/catalogos")
+def api_catalogos_create(req: CatalogoCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    
+    tipo = req.tipo.strip().lower()
+    nombre = req.nombre.strip()
+    
+    if tipo not in ("especialidad", "subespecialidad", "universidad", "estado", "ciudad"):
+        raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
+        
+    existente = db.query(CatalogoEncuestador).filter(
+        CatalogoEncuestador.tipo == tipo,
+        CatalogoEncuestador.nombre == nombre
+    ).first()
+    
+    if existente:
+        return {"success": True, "id": existente.id, "message": "Elemento ya existe"}
+    
+    creador = getattr(current_user, "nombre", None) or getattr(current_user, "username", "Sistema")
+    nuevo = CatalogoEncuestador(
+        tipo=tipo,
+        nombre=nombre,
+        creado_por=creador,
+        creado_en=datetime.utcnow()
+    )
+    db.add(nuevo)
+    db.commit()
+    db.refresh(nuevo)
+    
+    return {"success": True, "id": nuevo.id, "message": "Elemento agregado"}
+
+@router.put("/catalogos/{id_catalogo}")
+def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    
+    nuevo_nombre = req.nombre.strip()
+    if not nuevo_nombre:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
+        
+    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Elemento no encontrado")
+        
+    viejo_nombre = item.nombre
+    item.nombre = nuevo_nombre
+    item.modificado_en = datetime.utcnow()
+    
+    # Actualizar en cascada en la tabla medicos
+    if viejo_nombre != nuevo_nombre:
+        if item.tipo == "especialidad":
+            db.query(Medico).filter(Medico.especialidad == viejo_nombre).update({"especialidad": nuevo_nombre})
+        elif item.tipo == "subespecialidad":
+            db.query(Medico).filter(Medico.sub_especialidad == viejo_nombre).update({"sub_especialidad": nuevo_nombre})
+        elif item.tipo == "universidad":
+            db.query(Medico).filter(Medico.universidad_graduacion == viejo_nombre).update({"universidad_graduacion": nuevo_nombre})
+        elif item.tipo == "estado":
+            db.query(Medico).filter(Medico.estado == viejo_nombre).update({"estado": nuevo_nombre})
+        elif item.tipo == "ciudad":
+            db.query(Medico).filter(Medico.ciudad == viejo_nombre).update({"ciudad": nuevo_nombre})
+            
+    db.commit()
+    return {"success": True, "message": "Elemento actualizado correctamente"}
+
+@router.get("/catalogos-gestion")
+def api_catalogos_gestion(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    items = db.query(CatalogoEncuestador).order_by(CatalogoEncuestador.tipo, CatalogoEncuestador.nombre).all()
+    
+    # Pre-cargar conteos de médicos por campo para máxima velocidad
+    from sqlalchemy import func
+    esp_counts = dict(db.query(Medico.especialidad, func.count(Medico.id_medico)).group_by(Medico.especialidad).all())
+    subesp_counts = dict(db.query(Medico.sub_especialidad, func.count(Medico.id_medico)).group_by(Medico.sub_especialidad).all())
+    uni_counts = dict(db.query(Medico.universidad_graduacion, func.count(Medico.id_medico)).group_by(Medico.universidad_graduacion).all())
+    est_counts = dict(db.query(Medico.estado, func.count(Medico.id_medico)).group_by(Medico.estado).all())
+    ciu_counts = dict(db.query(Medico.ciudad, func.count(Medico.id_medico)).group_by(Medico.ciudad).all())
+    
+    result = []
+    for i in items:
+        count = 0
+        if i.tipo == "especialidad":
+            count = esp_counts.get(i.nombre, 0)
+        elif i.tipo == "subespecialidad":
+            count = subesp_counts.get(i.nombre, 0)
+        elif i.tipo == "universidad":
+            count = uni_counts.get(i.nombre, 0)
+        elif i.tipo == "estado":
+            count = est_counts.get(i.nombre, 0)
+        elif i.tipo == "ciudad":
+            count = ciu_counts.get(i.nombre, 0)
+            
+        result.append({
+            "id": i.id,
+            "tipo": i.tipo,
+            "nombre": i.nombre,
+            "creado_por": getattr(i, "creado_por", None) or "Sistema",
+            "creado_en": i.creado_en.isoformat() if getattr(i, "creado_en", None) else None,
+            "modificado_en": i.modificado_en.isoformat() if getattr(i, "modificado_en", None) else None,
+            "medicos_count": count
+        })
+        
+    return {
+        "success": True,
+        "items": result
+    }
+
+@router.get("/catalogos/{id_catalogo}/detalles")
+def api_catalogos_detalles(id_catalogo: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Elemento no encontrado")
+        
+    medicos_query = db.query(Medico)
+    if item.tipo == "especialidad":
+        medicos_query = medicos_query.filter(Medico.especialidad == item.nombre)
+    elif item.tipo == "subespecialidad":
+        medicos_query = medicos_query.filter(Medico.sub_especialidad == item.nombre)
+    elif item.tipo == "universidad":
+        medicos_query = medicos_query.filter(Medico.universidad_graduacion == item.nombre)
+    elif item.tipo == "estado":
+        medicos_query = medicos_query.filter(Medico.estado == item.nombre)
+    elif item.tipo == "ciudad":
+        medicos_query = medicos_query.filter(Medico.ciudad == item.nombre)
+        
+    medicos = medicos_query.limit(50).all()
+    medicos_data = [{
+        "id_medico": m.id_medico,
+        "id_externo": m.id_medico_externo,
+        "nombre_completo": f"{m.apellido1} {m.apellido2 or ''}, {m.nombre1} {m.nombre2 or ''}".strip(),
+        "especialidad": m.especialidad,
+        "ciudad": m.ciudad,
+        "estado": m.estado,
+        "telefono": m.telefono or m.whatsapp or "—"
+    } for m in medicos]
+    
+    return {
+        "success": True,
+        "item": {
+            "id": item.id,
+            "tipo": item.tipo,
+            "nombre": item.nombre,
+            "creado_por": getattr(item, "creado_por", None) or "Sistema",
+            "creado_en": item.creado_en.isoformat() if getattr(item, "creado_en", None) else None,
+            "modificado_en": item.modificado_en.isoformat() if getattr(item, "modificado_en", None) else None,
+            "medicos_count": len(medicos_data),
+            "medicos": medicos_data
+        }
+    }
+
+@router.delete("/catalogos/{id_catalogo}")
+def api_catalogos_delete(id_catalogo: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Elemento no encontrado")
+    db.delete(item)
+    db.commit()
+    return {"success": True, "message": "Elemento eliminado"}
+
+# --- ENDPOINTS DE CORRECCIONES DE SUPERVISOR ---
+
+class EncuestaCentroUpdate(BaseModel):
+    fuente_informacion: str
+    notas_generales: Optional[str] = None
+
+@router.get("/correcciones-pendientes")
+def api_correcciones_pendientes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    encuestas = db.query(EncuestaCentro).filter(
+        EncuestaCentro.id_usuario == current_user.id,
+        EncuestaCentro.requiere_correccion == True
+    ).order_by(desc(EncuestaCentro.id_encuesta)).all()
+    
+    result = []
+    for e in encuestas:
+        centro = db.query(CentroSalud).filter(CentroSalud.id_centro == e.id_centro).first()
+        
+        # Obtener médicos registrados en esta encuesta
+        medicos_rel = db.query(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta).all()
+        medicos_list = []
+        for mr in medicos_rel:
+            m = db.query(Medico).filter(Medico.id_medico == mr.id_medico).first()
+            if m:
+                consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).all()
+                medicos_list.append({
+                    "id_medico": m.id_medico,
+                    "id_medico_externo": m.id_medico_externo,
+                    "apellido1": m.apellido1,
+                    "apellido2": m.apellido2,
+                    "nombre1": m.nombre1,
+                    "nombre2": m.nombre2,
+                    "especialidad": m.especialidad,
+                    "sub_especialidad": m.sub_especialidad,
+                    "universidad_graduacion": m.universidad_graduacion,
+                    "nro_MPPS": m.nro_MPPS,
+                    "nro_colegiado": m.nro_colegiado,
+                    "ciudad": m.ciudad,
+                    "estado": m.estado,
+                    "telefono": m.telefono,
+                    "whatsapp": m.whatsapp,
+                    "email": m.email,
+                    "linkedin": m.linkedin,
+                    "instagram": m.instagram,
+                    "consultorios": [
+                        {
+                            "nombre_clinica": c.nombre_clinica,
+                            "piso_consultorio": c.piso_consultorio,
+                            "direccion_especifica": c.direccion_especifica,
+                            "horarios_json": c.horarios_json,
+                            "valor_consulta_rango": c.valor_consulta_rango,
+                            "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango
+                        } for c in consultorios
+                    ]
+                })
+        
+        result.append({
+            "id_encuesta": e.id_encuesta,
+            "id_centro": e.id_centro,
+            "nombre_centro": centro.nombre_centro if centro else "Centro Desconocido",
+            "ciudad": centro.ciudad if centro else None,
+            "estado_geo": centro.estado if centro else None,
+            "fecha_verificacion": e.fecha_verificacion.isoformat() if e.fecha_verificacion else None,
+            "fuente_informacion": e.fuente_informacion,
+            "notas_generales": e.notas_generales,
+            "observacion_supervisor": e.observacion_supervisor,
+            "requiere_correccion": True,
+            "medicos": medicos_list
+        })
+    return result
+
+@router.put("/encuestas/{id_encuesta}")
+def api_encuesta_corregir(
+    id_encuesta: int,
+    req: EncuestaCentroUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_rol_encuestador(current_user)
+    encuesta = db.query(EncuestaCentro).filter(
+        EncuestaCentro.id_encuesta == id_encuesta,
+        EncuestaCentro.id_usuario == current_user.id
+    ).first()
+    
+    if not encuesta:
+        raise HTTPException(status_code=404, detail="Encuesta no encontrada o no te pertenece")
+        
+    if not getattr(encuesta, "requiere_correccion", False) and encuesta.estado != "Abierta":
+        raise HTTPException(status_code=400, detail="Esta encuesta no requiere correcciones ni está en progreso.")
+        
+    encuesta.fuente_informacion = req.fuente_informacion
+    encuesta.notas_generales = req.notas_generales
+    encuesta.requiere_correccion = False  # Al guardar la corrección, se quita la alerta
+    
+    db.commit()
+    return {"success": True, "message": "Encuesta corregida exitosamente"}
+
+class ConsultorioUpdate(BaseModel):
+    nombre_clinica: str
+    piso_consultorio: Optional[str] = None
+    direccion_especifica: Optional[str] = None
+    horarios_json: Optional[str] = None
+    valor_consulta_rango: str
+    promedio_pacientes_semanal_rango: str
+
+class MedicoCentroUpdateReq(BaseModel):
+    id_medico_externo: str
+    apellido1: str
+    apellido2: Optional[str] = None
+    nombre1: str
+    nombre2: Optional[str] = None
+    especialidad: str
+    sub_especialidad: Optional[str] = None
+    universidad_graduacion: Optional[str] = None
+    nro_MPPS: Optional[str] = None
+    nro_colegiado: Optional[str] = None
+    ciudad: str
+    estado: str
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    linkedin: Optional[str] = None
+    instagram: Optional[str] = None
+    consultorios: List[ConsultorioUpdate] = []
+
+@router.put("/medicos/{id_medico}")
+def api_medico_corregir(
+    id_medico: int,
+    req: MedicoCentroUpdateReq,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    check_rol_encuestador(current_user)
+    
+    # Verificar que el médico esté registrado en una encuesta de este usuario
+    vinculo = db.query(MedicoCentroEncuesta).join(
+        EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
+    ).filter(
+        MedicoCentroEncuesta.id_medico == id_medico,
+        EncuestaCentro.id_usuario == current_user.id
+    ).first()
+    
+    if not vinculo:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este médico")
+        
+    m = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Médico no encontrado")
+        
+    m.id_medico_externo = req.id_medico_externo
+    m.apellido1 = req.apellido1
+    m.apellido2 = req.apellido2
+    m.nombre1 = req.nombre1
+    m.nombre2 = req.nombre2
+    m.especialidad = req.especialidad
+    m.sub_especialidad = req.sub_especialidad
+    m.universidad_graduacion = req.universidad_graduacion
+    m.nro_MPPS = req.nro_MPPS
+    m.nro_colegiado = req.nro_colegiado
+    m.ciudad = req.ciudad
+    m.estado = req.estado
+    m.telefono = req.telefono
+    m.whatsapp = req.whatsapp
+    m.email = req.email
+    m.linkedin = req.linkedin
+    m.instagram = req.instagram
+
+    # Actualizar consultorios
+    db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).delete()
+    for cons in req.consultorios:
+        c = MedicoConsultorio(
+            id_medico=id_medico,
+            nombre_clinica=cons.nombre_clinica,
+            piso_consultorio=cons.piso_consultorio,
+            direccion_especifica=cons.direccion_especifica,
+            horarios_json=cons.horarios_json,
+            valor_consulta_rango=cons.valor_consulta_rango,
+            promedio_pacientes_semanal_rango=cons.promedio_pacientes_semanal_rango
+        )
+        db.add(c)
+        
+    db.commit()
+    return {"success": True, "message": "Datos de médico actualizados correctamente"}
+

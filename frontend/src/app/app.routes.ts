@@ -13,6 +13,12 @@ export const routes: Routes = [
     path: 'login-mercaderista',
     loadComponent: () => import('./features/auth/login-mercaderista/login-mercaderista.component').then((m) => m.LoginMercaderistaComponent),
   },
+  {
+    path: 'mercaderista',
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ['mercaderista', 'admin'] },
+    loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
+  },
 
   {
     path: '',
@@ -175,17 +181,18 @@ export const routes: Routes = [
         canActivate: [roleGuard],
         data: { roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'] },
       },
-      {
-        path: 'mercaderista',
-        canActivate: [roleGuard],
-        data: { roles: ['mercaderista', 'admin'] },
-        loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
-      },
+
       {
         path: 'auditoria-data',
         canActivate: [roleGuard],
         data: { roles: ['auditor', 'admin'] },
         loadComponent: () => import('./features/auditoria-data/auditoria-data.component').then((m) => m.AuditoriaDataComponent),
+      },
+      {
+        path: 'auditoria-usuarios',
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst', 'auditor'] },
+        loadComponent: () => import('./features/auditoria-usuarios/auditoria-usuarios.component').then((m) => m.AuditoriaUsuariosComponent),
       },
       {
         path: 'auditor-campo',
@@ -218,6 +225,19 @@ export const routes: Routes = [
         loadChildren: () => import('./features/cliente-encuestador/cliente-encuestador.routes').then(m => m.CLIENTE_ENCUESTADOR_ROUTES),
         canActivate: [roleGuard],
         data: { roles: ['cliente_encuestador', 'admin'] }
+      },
+      {
+        path: 'supervisor-encuestadores',
+        // Force recompilation
+        loadComponent: () => import('./features/supervisor-encuestadores/supervisor-encuestadores.component').then(m => m.SupervisorEncuestadoresComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor'] }
+      },
+      {
+        path: 'portal-mercaderista',
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor', 'mercaderista'] },
+        loadComponent: () => import('./features/mercaderista/mercaderista.component').then((m) => m.MercaderistaComponent),
       },
       {
         path: 'ventas',

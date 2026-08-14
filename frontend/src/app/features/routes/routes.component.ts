@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators, FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -17,6 +17,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { Ruta } from '../../core/models/ruta.model';
 import { RouteDetailDialogComponent } from './route-detail-dialog.component';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 interface AssignedRoute {
   id: number;
@@ -36,13 +37,18 @@ interface CatalogItem { id: number; nombre: string; activo: boolean; prefijo?: s
     MatFormFieldModule, MatInputModule, MatDialogModule,
     MatProgressSpinnerModule, MatSlideToggleModule, MatSnackBarModule,
     MatSelectModule, MatTooltipModule,
+    SearchableSelectComponent,
   ],
   templateUrl: './routes.component.html',
   styleUrls: ['./routes.component.scss']
 })
 export class RoutesComponent implements OnInit {
+  private static readonly RUTAS_PAGE_SIZE = 12;
+  private static readonly MERC_PAGE_SIZE = 12;
+
   // ── Rutas ─────────────────────────────────────────────────
   loading = signal(true);
+  page = signal(1);
   saving = signal(false);
   routes = signal<Ruta[]>([]);
   showCreateForm = signal(false);
@@ -77,6 +83,7 @@ export class RoutesComponent implements OnInit {
   mercList = signal<any[]>([]);
   mercSearch = '';
   mercFilterTipo = '';
+  mercPage = signal(1);
 
   // ── Assignment panel ──────────────────────────────────────
   panelOpen = signal(false);
@@ -117,7 +124,7 @@ export class RoutesComponent implements OnInit {
     private dialog: MatDialog,
     public auth: AuthService,
     private realtime: RealtimeService,
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     this.loadRoutes();
@@ -141,7 +148,7 @@ export class RoutesComponent implements OnInit {
   loadRoutes(): void {
     this.loading.set(true);
     this.api.getRoutes().subscribe({
-      next: (data) => { this.routes.set(data); this.loading.set(false); },
+      next: (data) => { this.routes.set(data); this.loading.set(false); this.resetPage(); },
       error: () => this.loading.set(false),
     });
   }
@@ -160,13 +167,41 @@ export class RoutesComponent implements OnInit {
     );
   }
 
-  get clienteOptions(): string[] {
+  // ── Paginación de rutas ───────────────────────────────────
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredRoutes.length / RoutesComponent.RUTAS_PAGE_SIZE));
+  }
+  get paginatedRoutes(): Ruta[] {
+    const p = Math.min(this.page(), this.totalPages);
+    const start = (p - 1) * RoutesComponent.RUTAS_PAGE_SIZE;
+    return this.filteredRoutes.slice(start, start + RoutesComponent.RUTAS_PAGE_SIZE);
+  }
+  goPage(p: number): void { this.page.set(Math.min(Math.max(1, p), this.totalPages)); }
+  resetPage(): void { this.page.set(1); }
+  onSearchTermChange(): void { this.resetPage(); }
+
+  // Opciones para los select de búsqueda (SearchableSelectComponent)
+  cuadranteOpts = computed<SelectOption[]>(() =>
+    this.cuadrantes().map(c => ({ value: c.nombre, label: c.nombre })));
+
+  clienteOpts = computed<SelectOption[]>(() => {
     const set = new Set<string>();
     this.routes().forEach(r => (r.clientes ?? []).forEach(c => set.add(c)));
-    return [...set].sort();
-  }
+    return [...set].sort().map(c => ({ value: c, label: c }));
+  });
 
-  clearFilters(): void { this.searchTerm = ''; this.filterCuadrante = ''; this.filterCliente = ''; this.filterServicio = ''; }
+  servicioOpts = computed<SelectOption[]>(() =>
+    this.servicios().map(s => ({ value: s.nombre, label: s.nombre })));
+
+  mercTipoOpts = computed<SelectOption[]>(() =>
+    [...new Set(this.mercList().map(m => m.tipo).filter(Boolean))].map(t => ({ value: t, label: t })));
+
+  onCuadranteChange(v: string): void { this.filterCuadrante = v; this.resetPage(); }
+  onClienteChange(v: string): void { this.filterCliente = v; this.resetPage(); }
+  onFilterServicioChange(v: string): void { this.filterServicio = v; this.resetPage(); }
+  onMercTipoChange(v: string): void { this.mercFilterTipo = v; this.resetMercPage(); }
+
+  clearFilters(): void { this.searchTerm = ''; this.filterCuadrante = ''; this.filterCliente = ''; this.filterServicio = ''; this.resetPage(); }
 
   // ── Crear ─────────────────────────────────────────────────
   get isExclusiva(): boolean { return this.createForm.get('servicio')?.value === 'Exclusivo'; }
@@ -476,7 +511,7 @@ export class RoutesComponent implements OnInit {
   loadMercaderistas(): void {
     this.mercLoading.set(true);
     this.api.getMercaderistasConRutas().subscribe({
-      next: (data) => { this.mercList.set(data); this.mercLoading.set(false); },
+      next: (data) => { this.mercList.set(data); this.mercLoading.set(false); this.resetMercPage(); },
       error: () => this.mercLoading.set(false),
     });
   }
@@ -485,11 +520,23 @@ export class RoutesComponent implements OnInit {
     const s = this.mercSearch.toLowerCase();
     const t = this.mercFilterTipo;
     return this.mercList().filter(m =>
-      (!s || m.nombre?.toLowerCase().includes(s) || m.cedula?.includes(s) || m.email?.toLowerCase().includes(s) ||
+      (!s || m.nombre?.toLowerCase().includes(s) || String(m.cedula ?? '').includes(s) || m.email?.toLowerCase().includes(s) ||
         (m.rutas_nombres || []).some((rn: string) => rn.toLowerCase().includes(s))) &&
       (!t || m.tipo === t)
     );
   }
+
+  get totalMercPages(): number {
+    return Math.max(1, Math.ceil(this.filteredMercaderistas.length / RoutesComponent.MERC_PAGE_SIZE));
+  }
+  get paginatedMercaderistas(): any[] {
+    const p = Math.min(this.mercPage(), this.totalMercPages);
+    const start = (p - 1) * RoutesComponent.MERC_PAGE_SIZE;
+    return this.filteredMercaderistas.slice(start, start + RoutesComponent.MERC_PAGE_SIZE);
+  }
+  goMercPage(p: number): void { this.mercPage.set(Math.min(Math.max(1, p), this.totalMercPages)); }
+  resetMercPage(): void { this.mercPage.set(1); }
+  onMercSearchChange(): void { this.resetMercPage(); }
 
   get mercTipos(): string[] {
     return [...new Set(this.mercList().map(m => m.tipo).filter(Boolean))];

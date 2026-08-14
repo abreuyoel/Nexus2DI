@@ -18,6 +18,24 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("utf-8")
 
 
+def create_media_token() -> str:
+    """Token de corta duración (24h) para acceso a imágenes vía query param.
+    Las etiquetas <img> no pueden enviar headers Authorization, así que
+    firmamos un JWT ligero que viaja como ?token=... en la URL.
+    No incluye user_id — solo prueba que la URL fue generada por el servidor."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    return jwt.encode(
+        {"exp": expire, "type": "media"},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+
+def decode_media_token(token: str) -> dict[str, Any]:
+    """Decodifica un token de media. Lanza InvalidTokenError si es inválido/expirado."""
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+
+
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (

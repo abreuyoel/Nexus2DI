@@ -22,12 +22,22 @@ from app.routes import auth, users, merchandisers, visits, rutas, points, superv
 async def lifespan(app: FastAPI):
     from app.services.scheduler_service import start_scheduler, stop_scheduler
     from app.services.catalogos_init import ensure_catalog_tables
+    from app.services.plan_accion_service import ensure_plan_accion_tables
     import asyncio
     from app.services.realtime import set_loop
     try:
         ensure_catalog_tables()
     except Exception as e:
         logger.exception(f"Fallo inicializando catálogos: {e}")
+
+    # Plan de Acción: asegura la tabla PLAN_ACCION_PENDIENTES (idempotente) y,
+    # si quedó vacía en un ambiente nuevo (epran-qa), dispara un recálculo en
+    # background. Sin esto, GET /api/plan-accion/pendientes devuelve 500
+    # 'Invalid object name' la primera vez que se abre el módulo.
+    try:
+        ensure_plan_accion_tables()
+    except Exception as e:
+        logger.exception(f"Fallo inicializando Plan de Acción: {e}")
         
     # Pre-calentamiento del pool de conexiones (Punto B5 del Informe Optimización)
     try:
@@ -89,6 +99,7 @@ app = FastAPI(
     description="Sistema de gestión de visitas y merchandising",
     version="2.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.state.limiter = limiter
@@ -194,8 +205,9 @@ from app.routes import client_photos
 app.include_router(client_photos.router)
 from app.routes import client_data
 app.include_router(client_data.router)
-from app.routes import mercaderista_portal
-app.include_router(mercaderista_portal.router)
+# Portal Mercaderista v2 — Arquitectura modular con ORM (reemplaza mercaderista_portal legacy)
+from app.mercaderista.router import router as mercaderista_router
+app.include_router(mercaderista_router)
 from app.routes import cliente_segmentacion
 app.include_router(cliente_segmentacion.router)
 from app.routes import encuestador
@@ -216,6 +228,10 @@ from app.routes import admin_chat_grupos
 app.include_router(admin_chat_grupos.router)
 from app.routes import media as media_routes
 app.include_router(media_routes.router)
+from app.routes import supervisor_encuestadores
+app.include_router(supervisor_encuestadores.router)
+from app.routes import auditoria_usuarios
+app.include_router(auditoria_usuarios.router)
 
 
 

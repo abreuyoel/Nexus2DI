@@ -37,6 +37,31 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
         </div>
       </div>
 
+      <!-- Sección de Correcciones Requeridas por el Supervisor -->
+      <div *ngIf="correccionesPendientes.length > 0" class="mb-6 bg-amber-950/60 border border-amber-500/40 rounded-2xl p-5 shadow-lg shadow-amber-500/5 animate-in slide-in-from-top-4 duration-300 text-left">
+        <div class="flex items-center gap-2 mb-3 text-amber-400">
+          <span class="material-icons">warning</span>
+          <h3 class="font-bold text-lg">Observaciones del Supervisor</h3>
+        </div>
+        <p class="text-xs text-amber-200/90 mb-4">El supervisor solicitó corregir la información de las siguientes visitas/encuestas:</p>
+        
+        <div class="space-y-3">
+          <div *ngFor="let c of correccionesPendientes" class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div class="flex-1">
+              <div class="font-bold text-white text-sm">{{ c.nombre_centro | uppercase }}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Fecha de visita: {{ c.fecha_verificacion | date:'dd/MM/yyyy' }}</div>
+              <div class="mt-2 text-xs text-amber-350 bg-amber-950/30 border border-amber-900/60 p-2.5 rounded-lg">
+                <strong class="text-amber-200">Motivo:</strong> {{ c.observacion_supervisor }}
+              </div>
+            </div>
+            
+            <button (click)="iniciarCorreccion(c)" class="shrink-0 text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all flex items-center gap-1 shadow-lg shadow-amber-500/20">
+              <span class="material-icons !text-sm">edit</span> Corregir Datos
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div *ngIf="pendingSync > 0" class="mb-4 bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2">
         <p class="text-xs text-amber-200/90 font-semibold">
           {{ pendingSync }} registro(s) guardados en este dispositivo, esperando señal para subir.
@@ -130,6 +155,180 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
           Gestionar Centro de Salud
         </button>
       </div>
+
+      <!-- Modal de Corrección de Encuesta -->
+      <div *ngIf="showCorreccionModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+        <div class="bg-slate-900 rounded-3xl p-6 max-w-lg w-full border border-slate-700/80 shadow-2xl relative my-8 text-left">
+          <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-white flex items-center gap-2"><span class="material-icons text-amber-400">warning</span> Corregir Datos de Encuesta</h3>
+            <button (click)="showCorreccionModal = false" class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors"><span class="material-icons !text-lg">close</span></button>
+          </div>
+
+          <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+            <div class="p-3 bg-amber-950/20 border border-amber-900/50 rounded-xl mb-4 text-xs text-amber-200">
+              <strong>Observación del Supervisor:</strong> {{ currentCorreccion.observacion_supervisor }}
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Centro de Salud</label>
+              <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-300 font-semibold">{{ currentCorreccion.nombre_centro }}</div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fecha de Visita</label>
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-300">{{ currentCorreccion.fecha_verificacion | date:'dd/MM/yyyy' }}</div>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Fuente de Información *</label>
+                <input type="text" [(ngModel)]="currentCorreccion.fuente_informacion" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Notas Generales</label>
+              <textarea [(ngModel)]="currentCorreccion.notas_generales" rows="2" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none resize-none"></textarea>
+            </div>
+
+            <!-- Lista de Médicos -->
+            <div class="mt-6 border-t border-white/5 pt-4">
+              <h4 class="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Médicos Registrados ({{ currentCorreccion.medicos?.length || 0 }})</h4>
+              <div class="space-y-2">
+                <div *ngFor="let m of currentCorreccion.medicos" class="bg-slate-800 border border-slate-700 rounded-xl p-3 flex justify-between items-center text-xs">
+                  <div>
+                    <div class="font-bold text-white">{{ m.apellido1 }} {{ m.apellido2 }}, {{ m.nombre1 }}</div>
+                    <div class="text-[10px] text-violet-400 uppercase font-black tracking-wider mt-0.5">{{ m.especialidad }}</div>
+                  </div>
+                  <button (click)="editarMedico(m)" class="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-amber-400 hover:text-amber-300 rounded-lg font-bold transition-all flex items-center gap-1 shadow">
+                    <span class="material-icons !text-xs">edit</span> Editar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 flex gap-3">
+            <button (click)="guardarCorreccion()" class="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-amber-500/10">
+              Enviar Corrección
+            </button>
+            <button (click)="showCorreccionModal = false" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal de Edición de Médico -->
+      <div *ngIf="showEditMedicoModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+        <div class="bg-slate-900 rounded-3xl p-6 max-w-lg w-full border border-slate-700/80 shadow-2xl relative my-8 text-left">
+          <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-white flex items-center gap-2"><span class="material-icons text-amber-400">person_add</span> Corregir Datos de Médico</h3>
+            <button (click)="showEditMedicoModal = false" class="text-slate-400 hover:text-white w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition-colors"><span class="material-icons !text-lg">close</span></button>
+          </div>
+
+          <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Cédula *</label>
+                <input type="text" [(ngModel)]="currentMedico.id_medico_externo" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Primer Nombre *</label>
+                <input type="text" [(ngModel)]="currentMedico.nombre1" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Primer Apellido *</label>
+                <input type="text" [(ngModel)]="currentMedico.apellido1" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Especialidad *</label>
+                <input type="text" [(ngModel)]="currentMedico.especialidad" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Teléfono</label>
+                <input type="text" [(ngModel)]="currentMedico.telefono" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">WhatsApp</label>
+                <input type="text" [(ngModel)]="currentMedico.whatsapp" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Ciudad *</label>
+                <input type="text" [(ngModel)]="currentMedico.ciudad" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado *</label>
+                <input type="text" [(ngModel)]="currentMedico.estado" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-amber-500 outline-none">
+              </div>
+            </div>
+
+            <!-- Consultorios -->
+            <div class="mt-4">
+              <div class="flex justify-between items-center border-b border-white/5 pb-2 mb-3">
+                <h4 class="text-xs font-black text-slate-400 uppercase tracking-wider">Consultorios</h4>
+                <button (click)="addConsultorio()" class="text-[10px] font-black bg-slate-800 hover:bg-slate-700 text-amber-400 px-2 py-1 rounded">+ Añadir</button>
+              </div>
+              <div *ngFor="let c of currentMedico.consultorios; let idx = index" class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 mb-3 relative">
+                <button (click)="removeConsultorio(idx)" class="absolute top-2 right-2 text-rose-500"><span class="material-icons !text-base">delete</span></button>
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                  <div>
+                    <label class="block text-[9px] font-bold text-slate-400">Clínica *</label>
+                    <input type="text" [(ngModel)]="c.nombre_clinica" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-xs text-white">
+                  </div>
+                  <div>
+                    <label class="block text-[9px] font-bold text-slate-400">Piso</label>
+                    <input type="text" [(ngModel)]="c.piso_consultorio" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-xs text-white">
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block text-[9px] font-bold text-slate-400">Valor Consulta</label>
+                    <select [(ngModel)]="c.valor_consulta_rango" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-xs text-white">
+                      <option value="Gratuito">Gratuito</option>
+                      <option value="Menos de 30$">Menos de 30$</option>
+                      <option value="Entre 30$ a 50$">Entre 30$ a 50$</option>
+                      <option value="Entre 50$ a 60$">Entre 50$ a 60$</option>
+                      <option value="Entre 60$ a 100$">Entre 60$ a 100$</option>
+                      <option value="Más de 100$">Más de 100$</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[9px] font-bold text-slate-400">Pacientes Semanal</label>
+                    <select [(ngModel)]="c.promedio_pacientes_semanal_rango" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-xs text-white">
+                      <option value="1 a 5 pacientes">1 a 5 pacientes</option>
+                      <option value="6 a 10 pacientes">6 a 10 pacientes</option>
+                      <option value="11 a 15 pacientes">11 a 15 pacientes</option>
+                      <option value="16 a 20 pacientes">16 a 20 pacientes</option>
+                      <option value="21 a 30 pacientes">21 a 30 pacientes</option>
+                      <option value="Más de 30 pacientes">Más de 30 pacientes</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 flex gap-3">
+            <button (click)="guardarMedico()" class="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold py-3 rounded-xl transition-all">
+              Aceptar
+            </button>
+            <button (click)="showEditMedicoModal = false" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl border border-slate-700 transition-colors">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `
 })
@@ -150,12 +349,20 @@ export class EncuestadorDashboardComponent implements OnInit {
   mostrandoPendientes = false;
   storage: StorageHealth | null = null;
 
+  // Correcciones del supervisor
+  correccionesPendientes: any[] = [];
+  showCorreccionModal = false;
+  showEditMedicoModal = false;
+  currentCorreccion: any = { medicos: [] };
+  currentMedico: any = { consultorios: [] };
+
   get storagePct(): number { return Math.round((this.storage?.pct || 0) * 100); }
 
   cachedLocation: { lat: number | null, lng: number | null } | null = null;
 
   ngOnInit() {
     this.checkJornada();
+    this.loadCorrecciones();
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
     this.offline.pendingCount$.subscribe(v => { this.pendingSync = v; this.refrescarStorage(); });
     this.offline.syncError$.subscribe(e => this.syncError = e?.error || null);
@@ -285,49 +492,78 @@ export class EncuestadorDashboardComponent implements OnInit {
     this.pendientes = await this.offline.getPendientes();
   }
 
-  formatJson(obj: any): string {
-    if (!obj) return '';
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch {
-      return '';
-    }
+  loadCorrecciones() {
+    if (!navigator.onLine) return;
+    this.http.get<any[]>(`${environment.apiUrl}/api/encuestador/correcciones-pendientes`).subscribe({
+      next: (res) => this.correccionesPendientes = res || [],
+      error: () => {}
+    });
   }
 
-  async exportarBackup() {
-    const jsonStr = await this.offline.exportQueue();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const fecha = new Date().toISOString().split('T')[0];
-    a.href = url;
-    a.download = `respaldo_encuestas_${fecha}.json`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-    this.confirmDialog.info('Respaldo descargado con éxito. Si cambias de teléfono o la app se queda sin espacio, puedes restaurarlo con el botón de subir.', { title: 'Respaldo Generado' });
+  iniciarCorreccion(c: any) {
+    this.currentCorreccion = JSON.parse(JSON.stringify(c));
+    this.showCorreccionModal = true;
   }
 
-  async importarBackup(event: Event) {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const result = e.target?.result;
-      if (typeof result === 'string') {
-        const { success, count, error } = await this.offline.importQueue(result);
-        if (success) {
-          this.confirmDialog.info(`Se han importado ${count} registros pendientes desde el respaldo.`, { title: 'Respaldo Restaurado' });
-          if (this.mostrandoPendientes) {
-            this.pendientes = await this.offline.getPendientes();
-          }
-        } else {
-          this.confirmDialog.info(`Error al importar: ${error}`, { title: 'Error' });
-        }
+  guardarCorreccion() {
+    this.loading = true;
+    this.http.put(`${environment.apiUrl}/api/encuestador/encuestas/${this.currentCorreccion.id_encuesta}`, {
+      fuente_informacion: this.currentCorreccion.fuente_informacion,
+      notas_generales: this.currentCorreccion.notas_generales
+    }).subscribe({
+      next: () => {
+        this.showCorreccionModal = false;
+        this.loadCorrecciones();
+        this.checkJornada();
+        this.loading = false;
+      },
+      error: (err) => {
+        this.loading = false;
+        this.confirmDialog.info('Error al guardar corrección: ' + (err.error?.detail || err.message));
       }
-    };
-    reader.readAsText(file);
-    // Limpiar el input
-    (event.target as HTMLInputElement).value = '';
+    });
+  }
+
+  editarMedico(m: any) {
+    this.currentMedico = JSON.parse(JSON.stringify(m));
+    this.showEditMedicoModal = true;
+  }
+
+  addConsultorio() {
+    this.currentMedico.consultorios.push({
+      nombre_clinica: '',
+      piso_consultorio: '',
+      valor_consulta_rango: 'Menos de 30$',
+      promedio_pacientes_semanal_rango: '1 a 5 pacientes'
+    });
+  }
+
+  removeConsultorio(idx: number) {
+    this.currentMedico.consultorios.splice(idx, 1);
+  }
+
+  guardarMedico() {
+    this.loading = true;
+    this.http.put(`${environment.apiUrl}/api/encuestador/medicos/${this.currentMedico.id_medico}`, this.currentMedico).subscribe({
+      next: () => {
+        // Actualizar el médico en la lista local de currentCorreccion
+        const idx = this.currentCorreccion.medicos.findIndex((x: any) => x.id_medico === this.currentMedico.id_medico);
+        if (idx !== -1) {
+          this.currentCorreccion.medicos[idx] = { ...this.currentMedico };
+        }
+        this.showEditMedicoModal = false;
+        this.loading = false;
+      },
+      error: (err) => {
+        this.loading = false;
+        this.confirmDialog.info('Error al guardar médico: ' + (err.error?.detail || err.message));
+      }
+    });
+  }
+
+  exportarBackup() {}
+  importarBackup(event: any) {}
+  formatJson(obj: any): string {
+    return JSON.stringify(obj, null, 2);
   }
 }

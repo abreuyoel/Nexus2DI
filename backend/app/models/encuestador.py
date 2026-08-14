@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Date, Text, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -12,6 +12,8 @@ class Encuestador(Base):
     id = Column("id_encuestador", Integer, primary_key=True, index=True)
     cedula = Column(Integer, unique=True, nullable=False, index=True)
     nombre = Column(String(200), nullable=False)
+    telefono = Column(String(50), nullable=True)
+    email = Column(String(200), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
@@ -58,6 +60,8 @@ class EncuestaCentro(Base):
     creado_en = Column(DateTime, default=datetime.utcnow)
     id_jornada = Column(Integer, nullable=True)
     estado = Column(String(20), nullable=False)
+    observacion_supervisor = Column(Text, nullable=True)
+    requiere_correccion = Column(Boolean, default=False, server_default="0")
 
 class Medico(Base):
     __tablename__ = "medicos"
@@ -102,3 +106,18 @@ class MedicoCentroEncuesta(Base):
     id_encuesta = Column(Integer, nullable=False)
     id_medico = Column(Integer, nullable=False)
     actualizado_en = Column(DateTime, default=datetime.utcnow)
+
+class CatalogoEncuestador(Base):
+    __tablename__ = "CATALOGOS_ENCUESTADOR"
+
+    id = Column("id_catalogo", Integer, primary_key=True, index=True)
+    tipo = Column(String(50), nullable=False, index=True)  # 'especialidad', 'subespecialidad', 'universidad', 'estado', 'ciudad'
+    nombre = Column(String(150), nullable=False)
+    creado_por = Column(String(150), nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow, nullable=True)
+    modificado_en = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('tipo', 'nombre', name='uq_tipo_nombre'),
+    )
+

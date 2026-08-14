@@ -65,11 +65,27 @@ def create_user(
     existing = db.query(Usuario).filter(Usuario.username == data.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
+
+    id_perfil = data.id_perfil
+    # Si es rol encuestador (12) y se envió cédula sin id_perfil, buscar o crear perfil en ENCUESTADORES
+    if data.id_rol in (12, 13) and not id_perfil and data.cedula:
+        try:
+            cedula_int = int(str(data.cedula).strip())
+            enc = db.query(Encuestador).filter(Encuestador.cedula == cedula_int).first()
+            if not enc:
+                enc = Encuestador(cedula=cedula_int, nombre=data.username, activo=data.activo if data.activo is not None else True)
+                db.add(enc)
+                db.flush()
+            id_perfil = enc.id
+        except Exception:
+            pass
+
     user = Usuario(
         username=data.username,
         email=data.email,
+        cedula=str(data.cedula) if data.cedula else None,
         id_rol=data.id_rol,
-        id_perfil=data.id_perfil,
+        id_perfil=id_perfil,
         activo=data.activo,
         password=get_password_hash(data.password),
     )
@@ -81,7 +97,17 @@ def create_user(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=user.id, entity_name=data.username,
-               changes={"username": data.username, "email": data.email, "id_rol": data.id_rol})
+               changes={
+                   "old": None,
+                   "new": {
+                       "username": data.username,
+                       "email": data.email,
+                       "cedula": data.cedula,
+                       "id_rol": data.id_rol,
+                       "id_perfil": id_perfil,
+                       "activo": data.activo
+                   }
+               })
     db.commit()
     db.refresh(user)
     notify_event("user.created", {"id": user.id, "username": user.username})
@@ -99,12 +125,20 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     username = user.username
+    old_values = {
+        "username": user.username,
+        "email": user.email,
+        "id_rol": user.id_rol,
+        "id_perfil": user.id_perfil,
+        "activo": user.activo
+    }
     db.delete(user)
 
     log_action(db, action="DELETE_USER", entity_type="Usuario",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
-               entity_id=user_id, entity_name=username)
+               entity_id=user_id, entity_name=username,
+               changes={"old": old_values, "new": None})
     db.commit()
     notify_event("user.deleted", {"id": user_id})
     return {"message": "Usuario eliminado"}
@@ -121,14 +155,31 @@ def update_user(
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    old_values = {
+        "username": user.username,
+        "email": user.email,
+        "id_rol": user.id_rol,
+        "id_perfil": user.id_perfil,
+        "activo": user.activo
+    }
     update_data = data.model_dump(exclude_none=True)
     for key, value in update_data.items():
         setattr(user, key, value)
 
+    new_values = {
+        "username": user.username,
+        "email": user.email,
+        "id_rol": user.id_rol,
+        "id_perfil": user.id_perfil,
+        "activo": user.activo
+    }
+
     log_action(db, action="UPDATE_USER", entity_type="Usuario",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
-               entity_id=user_id, entity_name=user.username, changes=update_data)
+               entity_id=user_id, entity_name=user.username,
+               changes={"old": old_values, "new": new_values, "modified_fields": list(update_data.keys())})
     db.commit()
     db.refresh(user)
     notify_event("user.updated", {"id": user.id, "activo": user.activo})
@@ -183,6 +234,19 @@ def update_user_permissions(
 ):
     target = db.query(Usuario).filter(Usuario.id == user_id).first()
     
+    # 0. Obtener permisos anteriores
+    old_perms_list = db.query(UserPermission).filter(UserPermission.user_id == user_id).all()
+    old_permissions = [
+        {
+            "module": p.module,
+            "can_read": p.can_read,
+            "can_write": p.can_write,
+            "can_delete": p.can_delete,
+            "can_see_all": p.can_see_all
+        }
+        for p in old_perms_list
+    ]
+
     # 1. Obtener los módulos enviados desde el frontend (los que no son 'inherit')
     sent_modules = [p['module'] for p in data.permissions]
     
@@ -217,6 +281,180 @@ def update_user_permissions(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=user_id, entity_name=target.username if target else str(user_id),
-               changes={"permissions": data.permissions})
+               changes={
+                   "old": old_permissions,
+                   "new": data.permissions,
+                   "permissions": data.permissions
+               })
     db.commit()
     return {"message": "Permisos actualizados"}
+
+
+# =============================================================================
+# ENDPOINTS DE GESTIÓN DE ENCUESTADORES
+# =============================================================================
+
+from pydantic import BaseModel
+from typing import Optional
+
+class EncuestadorCreate(BaseModel):
+    nombre: str
+    cedula: int
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    activo: bool = True
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+class EncuestadorUpdate(BaseModel):
+    nombre: Optional[str] = None
+    cedula: Optional[int] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    activo: Optional[bool] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+@router.get("/encuestadores")
+def get_encuestadores_list(db: Session = Depends(get_db), _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin', 'supervisor')))):
+    encuestadores = db.query(Encuestador).order_by(Encuestador.nombre).all()
+    users_enc = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil.isnot(None)).all()
+    user_map = {u.id_perfil: u for u in users_enc}
+
+    return [{
+        "id": e.id,
+        "id_encuestador": e.id,
+        "cedula": e.cedula,
+        "nombre": e.nombre,
+        "telefono": getattr(e, "telefono", None),
+        "email": getattr(e, "email", None) or (user_map[e.id].email if e.id in user_map else None),
+        "activo": e.activo,
+        "creado_en": e.creado_en.isoformat() if e.creado_en else None,
+        "id_usuario": user_map[e.id].id if e.id in user_map else None,
+        "username": user_map[e.id].username if e.id in user_map else None,
+        "usuario_activo": user_map[e.id].activo if e.id in user_map else None
+    } for e in encuestadores]
+
+@router.post("/encuestadores", status_code=201)
+def create_encuestador_item(
+    data: EncuestadorCreate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin', 'supervisor')))
+):
+    existente = db.query(Encuestador).filter(Encuestador.cedula == data.cedula).first()
+    if existente:
+        raise HTTPException(status_code=400, detail=f"Ya existe un encuestador con la cédula {data.cedula}")
+
+    enc = Encuestador(
+        nombre=data.nombre.strip(),
+        cedula=data.cedula,
+        telefono=data.telefono.strip() if data.telefono else None,
+        email=data.email.strip() if data.email else None,
+        activo=data.activo
+    )
+    db.add(enc)
+    db.flush()
+
+    if data.username and data.password:
+        user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip()).first()
+        if user_existente:
+            raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
+        nuevo_user = Usuario(
+            username=data.username.strip(),
+            password=get_password_hash(data.password.strip()),
+            email=data.email.strip() if data.email else None,
+            cedula=str(data.cedula),
+            id_rol=12,
+            id_perfil=enc.id,
+            activo=data.activo
+        )
+        db.add(nuevo_user)
+        db.flush()
+        seed_default_permissions(db, nuevo_user)
+
+    db.commit()
+    db.refresh(enc)
+    return {
+        "id": enc.id,
+        "id_encuestador": enc.id,
+        "cedula": enc.cedula,
+        "nombre": enc.nombre,
+        "telefono": enc.telefono,
+        "email": enc.email,
+        "activo": enc.activo
+    }
+
+@router.put("/encuestadores/{id_encuestador}")
+def update_encuestador_item(
+    id_encuestador: int,
+    data: EncuestadorUpdate,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin', 'supervisor')))
+):
+    enc = db.query(Encuestador).filter(Encuestador.id == id_encuestador).first()
+    if not enc:
+        raise HTTPException(status_code=404, detail="Encuestador no encontrado")
+
+    if data.nombre is not None:
+        enc.nombre = data.nombre.strip()
+    if data.cedula is not None:
+        enc.cedula = data.cedula
+    if data.telefono is not None:
+        enc.telefono = data.telefono.strip() if data.telefono else None
+    if data.email is not None:
+        enc.email = data.email.strip() if data.email else None
+    if data.activo is not None:
+        enc.activo = data.activo
+
+    user = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id).first()
+    if user:
+        if data.activo is not None:
+            user.activo = data.activo
+        if data.email is not None:
+            user.email = data.email.strip() if data.email else None
+        if data.cedula is not None:
+            user.cedula = str(data.cedula)
+        if data.username and data.username.strip() and data.username.strip() != user.username:
+            user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip(), Usuario.id != user.id).first()
+            if user_existente:
+                raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
+            user.username = data.username.strip()
+        if data.password and data.password.strip():
+            user.password = get_password_hash(data.password.strip())
+    elif data.username and data.username.strip():
+        user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip()).first()
+        if user_existente:
+            raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
+        nuevo_user = Usuario(
+            username=data.username.strip(),
+            password=get_password_hash(data.password.strip() if data.password else "123456"),
+            email=data.email.strip() if data.email else None,
+            cedula=str(enc.cedula),
+            id_rol=12,
+            id_perfil=enc.id,
+            activo=enc.activo
+        )
+        db.add(nuevo_user)
+        db.flush()
+        seed_default_permissions(db, nuevo_user)
+
+    db.commit()
+    return {"message": "Encuestador actualizado", "id": enc.id}
+
+@router.delete("/encuestadores/{id_encuestador}")
+def delete_encuestador_item(
+    id_encuestador: int,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('users', 'delete', fallback_roles=('admin', 'supervisor')))
+):
+    enc = db.query(Encuestador).filter(Encuestador.id == id_encuestador).first()
+    if not enc:
+        raise HTTPException(status_code=404, detail="Encuestador no encontrado")
+
+    user = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id).first()
+    if user:
+        db.delete(user)
+
+    db.delete(enc)
+    db.commit()
+    return {"message": "Encuestador eliminado"}

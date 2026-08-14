@@ -7,19 +7,23 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-plan-accion',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, SearchableSelectComponent],
   templateUrl: './plan-accion.component.html',
 })
 export class PlanAccionComponent implements OnInit {
+  private static readonly PAGE_SIZE = 15;
+
   loading = signal(true);
   recalculando = signal(false);
   items = signal<any[]>([]);
   fechaCalculo = signal<string | null>(null);
   totalCriticos = signal(0);
+  page = signal(1);
 
   vista = signal<'lista' | 'clusters'>('lista');
   clusters = signal<any[]>([]);
@@ -30,17 +34,17 @@ export class PlanAccionComponent implements OnInit {
   seleccionMerc: Record<number, number | null> = {};
   confirmandoIdx = signal<number | null>(null);
 
-  filtroRuta: string | null = null;
-  filtroCliente: string | null = null;
-  filtroTipo: string | null = null;
-  filtroPrioridad: string | null = null;
+  filtroRuta = '';
+  filtroCliente = '';
+  filtroTipo = '';
+  filtroPrioridad = '';
   search = '';
 
-  constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) {}
+  constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) { }
 
   ngOnInit(): void {
     this.load();
-    this.api.getMercaderistas().subscribe({ next: (d) => this.mercaderistas.set(d || []), error: () => {} });
+    this.api.getMercaderistas().subscribe({ next: (d) => this.mercaderistas.set(d || []), error: () => { } });
   }
 
   load(): void {
@@ -51,6 +55,7 @@ export class PlanAccionComponent implements OnInit {
         this.items.set(res?.items || []);
         this.fechaCalculo.set(res?.fecha_calculo || null);
         this.totalCriticos.set(res?.total_criticos || 0);
+        this.resetPage();
       },
       error: () => { this.loading.set(false); this.items.set([]); this.snack.open('Error al cargar el plan de acción', 'OK', { duration: 3000 }); },
     });
@@ -100,8 +105,23 @@ export class PlanAccionComponent implements OnInit {
     });
   }
 
-  rutasOpts = computed(() => Array.from(new Set(this.items().map((i) => i.ruta_nombre).filter(Boolean))).sort());
-  clientesOpts = computed(() => Array.from(new Set(this.items().map((i) => i.cliente_nombre).filter(Boolean))).sort());
+  rutasOpts = computed<SelectOption[]>(() =>
+    Array.from(new Set(this.items().map((i) => i.ruta_nombre).filter(Boolean)))
+      .sort()
+      .map((r) => ({ value: r, label: r })));
+  clientesOpts = computed<SelectOption[]>(() =>
+    Array.from(new Set(this.items().map((i) => i.cliente_nombre).filter(Boolean)))
+      .sort()
+      .map((c) => ({ value: c, label: c })));
+  tiposOpts = computed<SelectOption[]>(() => [
+    { value: 'nunca_visitado', label: 'Nunca visitado' },
+    { value: 'fotos_rechazadas', label: 'Fotos rechazadas' },
+  ]);
+  prioridadOpts = computed<SelectOption[]>(() => [
+    { value: 'Alta', label: 'Alta' },
+    { value: 'Media', label: 'Media' },
+    { value: 'Baja', label: 'Baja' },
+  ]);
   totalRechazadas = computed(() => this.items().filter((i) => i.tipo_pendiente === 'fotos_rechazadas').length);
 
   get filteredItems(): any[] {
@@ -120,7 +140,31 @@ export class PlanAccionComponent implements OnInit {
   }
 
   clearFilters(): void {
-    this.filtroRuta = null; this.filtroCliente = null; this.filtroTipo = null; this.filtroPrioridad = null; this.search = '';
+    this.filtroRuta = ''; this.filtroCliente = ''; this.filtroTipo = ''; this.filtroPrioridad = ''; this.search = '';
+    this.resetPage();
+  }
+
+  onRutaChange(v: string): void { this.filtroRuta = v; this.resetPage(); }
+  onClienteChange(v: string): void { this.filtroCliente = v; this.resetPage(); }
+  onTipoChange(v: string): void { this.filtroTipo = v; this.resetPage(); }
+  onPrioridadChange(v: string): void { this.filtroPrioridad = v; this.resetPage(); }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredItems.length / PlanAccionComponent.PAGE_SIZE));
+  }
+
+  get paginatedItems(): any[] {
+    const page = Math.min(this.page(), this.totalPages);
+    const start = (page - 1) * PlanAccionComponent.PAGE_SIZE;
+    return this.filteredItems.slice(start, start + PlanAccionComponent.PAGE_SIZE);
+  }
+
+  goPage(p: number): void {
+    this.page.set(Math.min(Math.max(1, p), this.totalPages));
+  }
+
+  resetPage(): void {
+    this.page.set(1);
   }
 
   scoreColor(score: number): string {

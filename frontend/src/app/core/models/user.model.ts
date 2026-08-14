@@ -15,6 +15,8 @@ export interface User {
   is_coordinador_tradex: boolean;
   is_ejecutivo_cuenta?: boolean;
   permisos: Permission[];
+  nombre?: string;
+  cedula?: string;
 }
 
 export interface Permission {

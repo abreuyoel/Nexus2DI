@@ -5,6 +5,7 @@ from typing import Optional, List
 class UsuarioBase(BaseModel):
     username: str
     email: Optional[str] = None
+    cedula: Optional[str] = None
     id_rol: Optional[int] = None
     id_perfil: Optional[int] = None
     activo: Optional[bool] = True
@@ -15,7 +16,9 @@ class UsuarioCreate(UsuarioBase):
 
 
 class UsuarioUpdate(BaseModel):
+    username: Optional[str] = None
     email: Optional[str] = None
+    cedula: Optional[str] = None
     id_rol: Optional[int] = None
     id_perfil: Optional[int] = None
     activo: Optional[bool] = None
@@ -54,6 +57,7 @@ class UsuarioCurrentResponse(BaseModel):
     rol: str
     rol_nombre: Optional[str] = None
     email: Optional[str] = None
+    cedula: Optional[str] = None
     id_rol: Optional[int] = None
     id_perfil: Optional[int] = None
     is_admin: bool
@@ -65,6 +69,8 @@ class UsuarioCurrentResponse(BaseModel):
     is_coordinador_tradex: bool
     is_ejecutivo_cuenta: bool
     permisos: List[PermissionResponse] = []
+    nombre: Optional[str] = None
+    cedula: Optional[str] = None
 
     class Config:
         from_attributes = True

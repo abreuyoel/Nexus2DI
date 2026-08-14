@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,28 +7,52 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartData, ChartOptions } from 'chart.js';
 import { ApiService } from '../../core/services/api.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-centro-mando-auditoria',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, BaseChartDirective],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, BaseChartDirective, SearchableSelectComponent],
   templateUrl: './centro-mando-auditoria.component.html',
+  styleUrls: ['./centro-mando-auditoria.component.scss'],
 })
 export class CentroMandoAuditoriaComponent implements OnInit {
+  private static readonly PAGE_SIZE = 10;
+  private static readonly ALERTAS_PAGE_SIZE = 10;
+
   loading = signal(true);
+  logPage = signal(1);
+  porClienteCategoriaPage = signal(1);
+  alertasPage = signal(1);
+  expandedIndex = signal<number | null>(null);
+
+  readonly INDICADORES_LABELS: { key: string; label: string }[] = [
+    { key: 'aplico_planograma', label: 'Aplicó planograma' },
+    { key: 'lineamiento_marca', label: 'Lineamiento de marca' },
+    { key: 'precio_correcto', label: 'Precio correcto' },
+    { key: 'limpieza_correcta', label: 'Limpieza correcta' },
+    { key: 'participacion_correcta', label: 'Participación correcta' },
+    { key: 'fifo_correcto', label: 'FIFO correcto' },
+  ];
 
   // Filtros
   desde = '';
   hasta = '';
-  idAuditor: number | null = null;
-  idRuta: number | null = null;
-  idCliente: number | null = null;
-  idCategoria: number | null = null;
+  idAuditor = '';
+  idRuta = '';
+  idCliente = '';
+  idCategoria = '';
   search = '';
 
   filtros = signal<{ auditores: any[]; rutas: any[]; clientes: any[]; categorias: any[] }>({
     auditores: [], rutas: [], clientes: [], categorias: [],
   });
+
+  // Adaptadores para el SearchableSelect (búsqueda en vez de scrollear)
+  auditorOptions = computed<SelectOption[]>(() => this.filtros().auditores.map(a => ({ value: String(a.id), label: a.nombre })));
+  rutaOptions = computed<SelectOption[]>(() => this.filtros().rutas.map(r => ({ value: String(r.id), label: r.nombre })));
+  clienteOptions = computed<SelectOption[]>(() => this.filtros().clientes.map(c => ({ value: String(c.id), label: c.nombre })));
+  categoriaOptions = computed<SelectOption[]>(() => this.filtros().categorias.map(c => ({ value: String(c.id), label: c.nombre })));
 
   kpis = signal<any>({
     rutas_auditadas: 0, pdvs_visitados: 0, clientes_auditados: 0,
@@ -78,14 +102,74 @@ export class CentroMandoAuditoriaComponent implements OnInit {
 
   porClienteCategoria: any[] = [];
 
-  constructor(private api: ApiService) {}
+  // ── Paginación client-side (evita tablas kilométricas cuando hay mucho log) ──
+  get totalLogPages(): number {
+    return Math.max(1, Math.ceil(this.filteredLog.length / CentroMandoAuditoriaComponent.PAGE_SIZE));
+  }
+
+  get logPaginado(): any[] {
+    const page = Math.min(this.logPage(), this.totalLogPages);
+    const start = (page - 1) * CentroMandoAuditoriaComponent.PAGE_SIZE;
+    return this.filteredLog.slice(start, start + CentroMandoAuditoriaComponent.PAGE_SIZE);
+  }
+
+  get totalPorClienteCategoriaPages(): number {
+    return Math.max(1, Math.ceil(this.porClienteCategoria.length / 9));
+  }
+
+  get porClienteCategoriaPaginado(): any[] {
+    const page = Math.min(this.porClienteCategoriaPage(), this.totalPorClienteCategoriaPages);
+    const start = (page - 1) * 9;
+    return this.porClienteCategoria.slice(start, start + 9);
+  }
+
+  get totalAlertasPages(): number {
+    return Math.max(1, Math.ceil(this.alertasVencimiento().length / CentroMandoAuditoriaComponent.ALERTAS_PAGE_SIZE));
+  }
+
+  get alertasPaginado(): any[] {
+    const page = Math.min(this.alertasPage(), this.totalAlertasPages);
+    const start = (page - 1) * CentroMandoAuditoriaComponent.ALERTAS_PAGE_SIZE;
+    return this.alertasVencimiento().slice(start, start + CentroMandoAuditoriaComponent.ALERTAS_PAGE_SIZE);
+  }
+
+  indicadoresDe(r: any): { label: string; ok: boolean }[] {
+    return this.INDICADORES_LABELS.map(ix => ({ label: ix.label, ok: !!r[ix.key] }));
+  }
+
+  toggleExpand(i: number): void {
+    this.expandedIndex.set(this.expandedIndex() === i ? null : i);
+  }
+
+  goLogPage(p: number): void {
+    this.logPage.set(Math.min(Math.max(1, p), this.totalLogPages));
+  }
+
+  goPorClienteCategoriaPage(p: number): void {
+    this.porClienteCategoriaPage.set(Math.min(Math.max(1, p), this.totalPorClienteCategoriaPages));
+  }
+
+  goAlertasPage(p: number): void {
+    this.alertasPage.set(Math.min(Math.max(1, p), this.totalAlertasPages));
+  }
+
+  resetPages(): void {
+    this.logPage.set(1);
+    this.porClienteCategoriaPage.set(1);
+    this.alertasPage.set(1);
+    this.expandedIndex.set(null);
+  }
+
+  constructor(private api: ApiService) { }
 
   ngOnInit(): void {
     const hoy = new Date();
-    const hace7 = new Date(hoy); hace7.setDate(hace7.getDate() - 7);
-    this.desde = formatDate(hace7, 'yyyy-MM-dd', 'en-US');
+    // Ventana por defecto de 90 días: los cuestionarios de auditoría se
+    // registran de forma esporádica y 7 días dejaba el tablero en 0.
+    const hace90 = new Date(hoy); hace90.setDate(hace90.getDate() - 90);
+    this.desde = formatDate(hace90, 'yyyy-MM-dd', 'en-US');
     this.hasta = formatDate(hoy, 'yyyy-MM-dd', 'en-US');
-    this.api.getCentroMandoAuditoriaFiltros().subscribe({ next: (d) => this.filtros.set(d), error: () => {} });
+    this.api.getCentroMandoAuditoriaFiltros().subscribe({ next: (d) => this.filtros.set(d), error: () => { } });
     this.load();
   }
 
@@ -93,12 +177,15 @@ export class CentroMandoAuditoriaComponent implements OnInit {
     this.loading.set(true);
     this.api.getCentroMandoAuditoriaResumen({
       desde: this.desde, hasta: this.hasta,
-      id_auditor: this.idAuditor ?? undefined, id_ruta: this.idRuta ?? undefined,
-      id_cliente: this.idCliente ?? undefined, id_categoria: this.idCategoria ?? undefined,
+      id_auditor: this.idAuditor ? Number(this.idAuditor) : undefined,
+      id_ruta: this.idRuta ? Number(this.idRuta) : undefined,
+      id_cliente: this.idCliente ? Number(this.idCliente) : undefined,
+      id_categoria: this.idCategoria ? Number(this.idCategoria) : undefined,
     }).subscribe({
       next: (res) => {
         this.loading.set(false);
         if (!res?.success) { this.resetEmpty(); return; }
+        this.resetPages();
         this.kpis.set(res.kpis);
         this.alertasVencimiento.set(res.alertas_vencimiento || []);
         this.log.set(res.log || []);
@@ -110,6 +197,7 @@ export class CentroMandoAuditoriaComponent implements OnInit {
   }
 
   private resetEmpty(): void {
+    this.resetPages();
     this.kpis.set({ rutas_auditadas: 0, pdvs_visitados: 0, clientes_auditados: 0, cuestionarios_completados: 0, fotos_subidas: 0, cumplimiento_promedio: 0 });
     this.alertasVencimiento.set([]); this.log.set([]); this.porClienteCategoria = [];
   }
@@ -146,8 +234,13 @@ export class CentroMandoAuditoriaComponent implements OnInit {
     };
   }
 
+  onAuditorChange(v: string): void { this.idAuditor = v; this.load(); }
+  onRutaChange(v: string): void { this.idRuta = v; this.load(); }
+  onClienteChange(v: string): void { this.idCliente = v; this.load(); }
+  onCategoriaChange(v: string): void { this.idCategoria = v; this.load(); }
+
   clearFilters(): void {
-    this.idAuditor = null; this.idRuta = null; this.idCliente = null; this.idCategoria = null; this.search = '';
+    this.idAuditor = ''; this.idRuta = ''; this.idCliente = ''; this.idCategoria = ''; this.search = '';
     this.load();
   }
 

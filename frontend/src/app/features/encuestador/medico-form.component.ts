@@ -6,11 +6,12 @@ import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { EncuestadorOfflineQueueService } from './services/encuestador-offline-queue.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { MutableSearchSelectComponent } from './components/mutable-search-select.component';
 
 @Component({
   selector: 'app-medico-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule, FormsModule, MutableSearchSelectComponent],
   template: `
     <div class="p-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       
@@ -85,17 +86,38 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
               <input type="text" [(ngModel)]="medicoData.nombre2" name="nombre2" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
             </div>
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Especialidad <span class="text-red-500 dark:text-red-400">*</span></label>
-              <input type="text" [(ngModel)]="medicoData.especialidad" name="especialidad" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
+              <app-mutable-search-select
+                label="Especialidad"
+                placeholder="Seleccione especialidad..."
+                [options]="especialidadesList"
+                [(value)]="medicoData.especialidad"
+                tipo="especialidad"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
 
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Sub-especialidad</label>
-              <input type="text" [(ngModel)]="medicoData.sub_especialidad" name="sub_especialidad" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+              <app-mutable-search-select
+                label="Sub-especialidad"
+                placeholder="Seleccione sub-especialidad..."
+                [options]="subespecialidadesList"
+                [(value)]="medicoData.sub_especialidad"
+                tipo="subespecialidad"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Universidad de graduación</label>
-              <input type="text" [(ngModel)]="medicoData.universidad_graduacion" name="universidad_graduacion" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+              <app-mutable-search-select
+                label="Universidad de graduación"
+                placeholder="Seleccione universidad..."
+                [options]="universidadesList"
+                [(value)]="medicoData.universidad_graduacion"
+                tipo="universidad"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
 
             <div class="md:col-span-1">
@@ -107,12 +129,26 @@ import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.s
               <input type="text" [(ngModel)]="medicoData.nro_colegiado" name="colegiado" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
             </div>
             <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Ciudad <span class="text-red-500 dark:text-red-400">*</span></label>
-              <input type="text" [(ngModel)]="medicoData.ciudad" name="ciudad" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
+              <app-mutable-search-select
+                label="Ciudad"
+                placeholder="Seleccione ciudad..."
+                [options]="ciudadesList"
+                [(value)]="medicoData.ciudad"
+                tipo="ciudad"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
             <div class="md:col-span-1">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Estado <span class="text-red-500 dark:text-red-400">*</span></label>
-              <input type="text" [(ngModel)]="medicoData.estado" name="estado" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente" required>
+              <app-mutable-search-select
+                label="Estado"
+                placeholder="Seleccione estado..."
+                [options]="estadosList"
+                [(value)]="medicoData.estado"
+                tipo="estado"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
 
             <div class="md:col-span-1">
@@ -236,6 +272,11 @@ export class MedicoFormComponent implements OnInit {
   medicosResult: any[] = [];
   catalogos: any = { valor_consulta_rangos: [], promedio_pacientes_rangos: [] };
   isOnline = navigator.onLine;
+  especialidadesList: string[] = [];
+  subespecialidadesList: string[] = [];
+  universidadesList: string[] = [];
+  estadosList: string[] = [];
+  ciudadesList: string[] = [];
 
   // Modo edición: se llega acá con /encuestador/medico/:idMedico (ej. desde
   // "Editar" en Gestión de Centro) en vez de /encuestador/medico (alta). El
@@ -258,8 +299,17 @@ export class MedicoFormComponent implements OnInit {
   ngOnInit() {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
     this.http.get<any>(`${this.API}/catalogos`).subscribe({
-      next: res => { this.catalogos = res; this.loading = false; this.offline.cacheWrite('catalogos', res); },
-      error: async () => { this.catalogos = (await this.offline.cacheRead('catalogos')) || this.catalogos; this.loading = false; }
+      next: res => {
+        this.catalogos = res;
+        this.loading = false;
+        this.offline.cacheWrite('catalogos', res);
+        this.inicializarListasCatalogos();
+      },
+      error: async () => {
+        this.catalogos = (await this.offline.cacheRead('catalogos')) || this.catalogos;
+        this.loading = false;
+        this.inicializarListasCatalogos();
+      }
     });
 
     const idParam = this.route.snapshot.paramMap.get('idMedico');
@@ -409,6 +459,23 @@ export class MedicoFormComponent implements OnInit {
     this.medicoData = { ...this.getEmptyMedico(), ...m };
     this.medicosResult = [];
     this.searchQuery = m.id_medico_externo;
+
+    // Asegurar que el valor del médico seleccionado esté en la lista temporal para que se muestre en el select
+    if (m.especialidad && !this.especialidadesList.includes(m.especialidad)) {
+      this.especialidadesList.push(m.especialidad);
+    }
+    if (m.sub_especialidad && !this.subespecialidadesList.includes(m.sub_especialidad)) {
+      this.subespecialidadesList.push(m.sub_especialidad);
+    }
+    if (m.universidad_graduacion && !this.universidadesList.includes(m.universidad_graduacion)) {
+      this.universidadesList.push(m.universidad_graduacion);
+    }
+    if (m.estado && !this.estadosList.includes(m.estado)) {
+      this.estadosList.push(m.estado);
+    }
+    if (m.ciudad && !this.ciudadesList.includes(m.ciudad)) {
+      this.ciudadesList.push(m.ciudad);
+    }
   }
 
   guardando = false;
@@ -520,6 +587,80 @@ export class MedicoFormComponent implements OnInit {
       // Resto: el servidor rechazó el dato (no es falta de señal), reintentarlo
       // igual fallaría, así que se muestra el motivo real.
       this.confirmDialog.info('Error al guardar: ' + (err.error?.detail || err.message), { title: 'Error' });
+    }
+  }
+
+  inicializarListasCatalogos() {
+    this.especialidadesList = [...(this.catalogos.especialidades || [])];
+    this.subespecialidadesList = [...(this.catalogos.subespecialidades || [])];
+    this.universidadesList = [...(this.catalogos.universidades || [])];
+    this.estadosList = [...(this.catalogos.estados || [])];
+    this.ciudadesList = [...(this.catalogos.ciudades || [])];
+  }
+
+  async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad', value: string }) {
+    const { tipo, value } = event;
+    const valorFormateado = value.trim();
+    if (!valorFormateado) return;
+
+    // Añadir localmente si no existe para actualizar la lista de opciones
+    if (tipo === 'especialidad') {
+      if (!this.especialidadesList.includes(valorFormateado)) {
+        this.especialidadesList.push(valorFormateado);
+        this.especialidadesList.sort();
+      }
+    } else if (tipo === 'subespecialidad') {
+      if (!this.subespecialidadesList.includes(valorFormateado)) {
+        this.subespecialidadesList.push(valorFormateado);
+        this.subespecialidadesList.sort();
+      }
+    } else if (tipo === 'universidad') {
+      if (!this.universidadesList.includes(valorFormateado)) {
+        this.universidadesList.push(valorFormateado);
+        this.universidadesList.sort();
+      }
+    } else if (tipo === 'estado') {
+      if (!this.estadosList.includes(valorFormateado)) {
+        this.estadosList.push(valorFormateado);
+        this.estadosList.sort();
+      }
+    } else if (tipo === 'ciudad') {
+      if (!this.ciudadesList.includes(valorFormateado)) {
+        this.ciudadesList.push(valorFormateado);
+        this.ciudadesList.sort();
+      }
+    }
+
+    // Encolar o enviar al backend
+    try {
+      await this.offline.postOrQueue(
+        `${this.API}/catalogos`,
+        { tipo, nombre: valorFormateado },
+        { label: `Agregar ${tipo}: ${valorFormateado}` }
+      );
+      
+      // Actualizar el caché de catálogos local
+      const cached = await this.offline.cacheRead('catalogos');
+      if (cached) {
+        const keyMap: Record<string, string> = {
+          'especialidad': 'especialidades',
+          'subespecialidad': 'subespecialidades',
+          'universidad': 'universidades',
+          'estado': 'estados',
+          'ciudad': 'ciudades'
+        };
+        const key = keyMap[tipo];
+        if (key) {
+          if (!cached[key]) cached[key] = [];
+          if (!cached[key].includes(valorFormateado)) {
+            cached[key].push(valorFormateado);
+            cached[key].sort();
+          }
+          await this.offline.cacheWrite('catalogos', cached);
+        }
+      }
+    } catch (err) {
+      console.error('Error guardando catálogo:', err);
     }
   }
 }
