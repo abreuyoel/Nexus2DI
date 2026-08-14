@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -11,13 +11,15 @@ import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ClientCategoriesDialogComponent } from '../users/client-categories-dialog.component';
 import { HasPermDirective } from '../../core/directives/has-perm.directive';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-client-categories',
   standalone: true,
   imports: [
     CommonModule, MatCardModule, MatIconModule, MatButtonModule,
-    MatDialogModule, MatProgressSpinnerModule, MatTooltipModule, MatSnackBarModule, FormsModule, HasPermDirective
+    MatDialogModule, MatProgressSpinnerModule, MatTooltipModule, MatSnackBarModule, FormsModule, HasPermDirective,
+    SearchableSelectComponent
   ],
   template: `
     <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -38,28 +40,12 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
           <div class="flex flex-wrap items-center gap-3 flex-1">
             <div class="relative w-full md:w-72">
               <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg">search</mat-icon>
-              <input [(ngModel)]="searchTerm" placeholder="Buscar cliente por nombre o RIF..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-indigo-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-2.5 text-sm font-semibold outline-none transition-colors">
+              <input [(ngModel)]="searchTerm" (ngModelChange)="onSearchChange()" placeholder="Buscar cliente por nombre o RIF..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-indigo-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-2.5 text-sm font-semibold outline-none transition-colors">
             </div>
-            <div class="relative min-w-56">
-              <button type="button" (click)="catDropdownOpen.set(!catDropdownOpen())"
-                class="w-full flex items-center justify-between gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
-                <span class="truncate">{{ filterCategoryName() || 'Filtrar por categoría: todas' }}</span>
-                <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
-              </button>
-              @if (catDropdownOpen()) {
-                <div class="fixed inset-0 z-10" (click)="catDropdownOpen.set(false)"></div>
-                <div class="absolute z-20 mt-1 w-72 max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
-                  <input [(ngModel)]="catSearchTerm" placeholder="Buscar categoría..." class="w-full mb-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-sm outline-none">
-                  <button type="button" (click)="onFilterCategoryChange(null); catDropdownOpen.set(false)" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-semibold text-slate-500">Todas</button>
-                  @for (cat of catOptsFiltered(); track cat.id_categoria) {
-                    <button type="button" (click)="onFilterCategoryChange(cat.id_categoria); catDropdownOpen.set(false)"
-                      class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 truncate"
-                      [class.font-bold]="filterCategoryId() === cat.id_categoria">{{ cat.nombre }}</button>
-                  } @empty {
-                    <p class="text-xs text-slate-400 px-2 py-1">Sin categorías para esta búsqueda.</p>
-                  }
-                </div>
-              }
+            <div class="min-w-56 w-64">
+              <app-searchable-select [options]="categoryOptions()" [value]="filterCategoryStr"
+                (valueChange)="onFilterCategoryChangeStr($event)" placeholder="Filtrar por categoría: todas"
+                searchPlaceholder="Buscar categoría..." allLabel="Filtrar por categoría: todas" icon="category"></app-searchable-select>
             </div>
             @if (filterCategoryId()) {
               <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">{{ filteredClients().length }} cliente(s) con esta categoría</span>
@@ -75,25 +61,10 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
 
         @if (bulkMode()) {
           <div class="mb-6 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 flex flex-wrap items-center gap-3">
-            <div class="relative min-w-56">
-              <button type="button" (click)="bulkCatDropdownOpen.set(!bulkCatDropdownOpen())"
-                class="w-full flex items-center justify-between gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-semibold outline-none focus:border-indigo-500">
-                <span class="truncate">{{ bulkCategoryName() || 'Elegí la categoría a asignar…' }}</span>
-                <mat-icon class="!text-base shrink-0">expand_more</mat-icon>
-              </button>
-              @if (bulkCatDropdownOpen()) {
-                <div class="fixed inset-0 z-10" (click)="bulkCatDropdownOpen.set(false)"></div>
-                <div class="absolute z-20 mt-1 w-72 max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-lg p-2 space-y-0.5" (click)="$event.stopPropagation()">
-                  <input [(ngModel)]="bulkCatSearchTerm" placeholder="Buscar categoría..." class="w-full mb-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-lg px-2.5 py-1.5 text-sm outline-none">
-                  @for (cat of bulkCatOptsFiltered(); track cat.id_categoria) {
-                    <button type="button" (click)="bulkCategoryId = cat.id_categoria; bulkCatDropdownOpen.set(false)"
-                      class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 truncate"
-                      [class.font-bold]="bulkCategoryId === cat.id_categoria">{{ cat.nombre }}</button>
-                  } @empty {
-                    <p class="text-xs text-slate-400 px-2 py-1">Sin categorías para esta búsqueda.</p>
-                  }
-                </div>
-              }
+            <div class="min-w-56 w-64">
+              <app-searchable-select [options]="categoryOptions()" [value]="bulkCategoryStr"
+                (valueChange)="onBulkCategoryChange($event)" placeholder="Elegí la categoría a asignar…"
+                searchPlaceholder="Buscar categoría..." allLabel="Elegí la categoría a asignar…" icon="category"></app-searchable-select>
             </div>
             <span class="text-sm font-bold text-indigo-700 dark:text-indigo-300">{{ bulkSelected().size }} cliente(s) seleccionados</span>
             <button (click)="bulkAssign()" [disabled]="!bulkCategoryId || bulkSelected().size === 0 || bulkSaving()"
@@ -108,7 +79,7 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
           <div class="flex justify-center py-12"><mat-spinner diameter="40"></mat-spinner></div>
         } @else {
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            @for (c of filteredClients(); track c.id) {
+            @for (c of paginatedClients; track c.id) {
               <mat-card class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 group hover:border-indigo-500 transition-colors" [class.!border-indigo-500]="bulkMode() && bulkSelected().has(c.id)">
                 <mat-card-content class="!p-5 flex flex-col h-full justify-between">
                   <div>
@@ -148,6 +119,24 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
               </div>
             }
           </div>
+
+          @if (filteredClients().length > 0) {
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+              <p class="text-sm text-slate-500 dark:text-slate-400">
+                Mostrando <span class="font-bold text-slate-800 dark:text-white">{{ filterPage() * filterPageSize + 1 }}–{{ filterPage() * filterPageSize + paginatedClients.length }}</span> de <span class="font-bold text-slate-800 dark:text-white">{{ filteredClients().length }}</span>
+              </p>
+              <div class="flex items-center gap-2">
+                <select [(ngModel)]="filterPageSize" (ngModelChange)="onFilterPageSizeChange()"
+                  class="bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-bold outline-none" matTooltip="Registros por página">
+                  <option [ngValue]="20">20</option>
+                  <option [ngValue]="50">50</option>
+                  <option [ngValue]="100">100</option>
+                </select>
+                <button (click)="goFilterPage(filterPage() - 1)" [disabled]="filterPage() <= 0" class="flex items-center gap-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white rounded-xl text-sm font-bold"><mat-icon class="!text-base">chevron_left</mat-icon> Anterior</button>
+                <button (click)="goFilterPage(filterPage() + 1)" [disabled]="filterPage() >= totalFilterPages - 1" class="flex items-center gap-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white rounded-xl text-sm font-bold">Siguiente <mat-icon class="!text-base">chevron_right</mat-icon></button>
+              </div>
+            </div>
+          }
         }
       </div>
     </div>
@@ -162,53 +151,51 @@ export class ClientCategoriesComponent implements OnInit {
   filterCategoryId = signal<number | null>(null);
   private categoryClientIds = signal<Set<number> | null>(null);
 
-  // Dropdowns custom (no <select> nativo): con 100+ categorías el <select>
-  // del navegador se corta contra el borde de la ventana y no deja ver/
-  // scrollear el resto de las opciones -- este panel sí tiene su propio
-  // scroll garantizado (max-h + overflow-y-auto).
-  catDropdownOpen = signal(false);
-  catSearchTerm = '';
-  bulkCatDropdownOpen = signal(false);
-  bulkCatSearchTerm = '';
+  // Paginación
+  filterPage = signal(0);
+  filterPageSize = 20;
 
   bulkMode = signal(false);
   bulkCategoryId: number | null = null;
   bulkSelected = signal<Set<number>>(new Set());
   bulkSaving = signal(false);
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snack: MatSnackBar) {}
+  categoryOptions = computed<SelectOption[]>(() => this.allCategories().map(c => ({ value: String(c.id_categoria), label: c.nombre })));
+  get filterCategoryStr(): string { return this.filterCategoryId() != null ? String(this.filterCategoryId()!) : ''; }
+  get bulkCategoryStr(): string { return this.bulkCategoryId != null ? String(this.bulkCategoryId) : ''; }
+
+  constructor(private api: ApiService, private dialog: MatDialog, private snack: MatSnackBar) { }
 
   ngOnInit() {
     this.api.getClients().subscribe(data => {
       this.clients.set(data);
       this.loading.set(false);
     });
-    this.api.getCatalogosCategorias().subscribe({ next: d => this.allCategories.set(d), error: () => {} });
+    this.api.getCatalogosCategorias().subscribe({ next: d => this.allCategories.set(d), error: () => { } });
   }
 
-  filterCategoryName(): string {
-    return this.allCategories().find(c => c.id_categoria === this.filterCategoryId())?.nombre || '';
-  }
-  bulkCategoryName(): string {
-    return this.allCategories().find(c => c.id_categoria === this.bulkCategoryId)?.nombre || '';
-  }
-  catOptsFiltered() {
-    const q = this.catSearchTerm.trim().toLowerCase();
-    return !q ? this.allCategories() : this.allCategories().filter(c => c.nombre.toLowerCase().includes(q));
-  }
-  bulkCatOptsFiltered() {
-    const q = this.bulkCatSearchTerm.trim().toLowerCase();
-    return !q ? this.allCategories() : this.allCategories().filter(c => c.nombre.toLowerCase().includes(q));
-  }
+  onSearchChange(): void { this.filterPage.set(0); }
 
+  get totalFilterPages(): number { return Math.ceil(this.filteredClients().length / this.filterPageSize); }
+  get paginatedClients(): any[] {
+    const start = this.filterPage() * this.filterPageSize;
+    return this.filteredClients().slice(start, start + this.filterPageSize);
+  }
+  goFilterPage(p: number): void { this.filterPage.set(Math.max(0, Math.min(this.totalFilterPages - 1, p))); }
+  onFilterPageSizeChange(): void { this.filterPage.set(0); }
+
+  onFilterCategoryChangeStr(val: string): void { this.onFilterCategoryChange(val ? +val : null); }
   onFilterCategoryChange(id: number | null): void {
     this.filterCategoryId.set(id);
+    this.filterPage.set(0);
     if (!id) { this.categoryClientIds.set(null); return; }
     this.api.getClientsByCategory(id).subscribe({
       next: (ids) => this.categoryClientIds.set(new Set(ids)),
       error: () => { this.categoryClientIds.set(new Set()); this.snack.open('Error al cargar clientes de esta categoría', 'OK', { duration: 3000 }); },
     });
   }
+
+  onBulkCategoryChange(val: string): void { this.bulkCategoryId = val ? +val : null; }
 
   filteredClients() {
     const term = this.searchTerm.toLowerCase().trim();

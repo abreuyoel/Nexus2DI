@@ -177,20 +177,22 @@
             </span>
           </div>
           @if (ui.activeVisit()) {
-          <h5 class="text-base font-black text-white tracking-tight">{{ ui.activeVisit()?.pdv_nombre || 'PDV Activo' }}
-          </h5>
+          <h5 class="text-base font-black text-white tracking-tight">{{ ui.activeVisit()?.pdv_nombre || 'PDV Activo' }}</h5>
           <p class="text-xs text-white/70 mt-1 leading-relaxed">
             Cliente: <strong class="text-white">{{ ui.activeVisit()?.cliente || '—' }}</strong>
           </p>
           } @else if (pdvActivos().length > 0) {
-          <h5 class="text-base font-black text-white tracking-tight">{{ pdvActivos()[0].punto_nombre || 'PDV Activo' }}
-          </h5>
+          <h5 class="text-base font-black text-white tracking-tight">{{ pdvActivos()[0].punto_nombre || 'PDV Activo' }}</h5>
           <p class="text-xs text-white/70 mt-1 leading-relaxed">
             {{ pdvActivos()[0].ruta_nombre || 'Ruta activa' }}
             @if (pdvActivos()[0].clientes_pendientes?.length) {
-            · <strong class="text-white">{{ pdvActivos()[0].clientes_pendientes.length }} cliente(s)
-              pendiente(s)</strong>
+            · <strong class="text-white">{{ pdvActivos()[0].clientes_pendientes.length }} cliente(s) pendiente(s)</strong>
             }
+          </p>
+          } @else if (activeRouteData()) {
+          <h5 class="text-base font-black text-white tracking-tight">Ruta en Progreso: {{ activeRouteData()?.nombre }}</h5>
+          <p class="text-xs text-white/70 mt-1 leading-relaxed">
+            {{ activeRouteData()?.pdvs_visitados }} de {{ activeRouteData()?.pdvs_total }} PDVs completados · <strong class="text-white">Toca para continuar ruta</strong>
           </p>
           } @else {
           <h5 class="text-base font-black text-white tracking-tight">Ruta en Progreso</h5>

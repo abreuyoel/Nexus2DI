@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,15 +7,18 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-horas-promedio-ejecucion',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, SearchableSelectComponent],
   templateUrl: './horas-promedio-ejecucion.component.html',
   styleUrls: ['./horas-promedio-ejecucion.component.scss'],
 })
 export class HorasPromedioEjecucionComponent implements OnInit {
+  Math = Math;
+
   loading = signal(true);
   saving = signal(false);
   registros = signal<any[]>([]);
@@ -34,16 +37,54 @@ export class HorasPromedioEjecucionComponent implements OnInit {
     minutos_promedio: null as number | null,
   };
 
-  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) {}
+  // --- Options para selects searchables ---
+  clienteOptions = computed<SelectOption[]>(() =>
+    this.clientes().map((c) => ({ value: String(c.id), label: c.nombre }))
+  );
+  tipoNegocioOptions = computed<SelectOption[]>(() =>
+    this.tiposNegocio().map((t) => ({ value: String(t.id), label: t.nombre }))
+  );
+
+  get filtroClienteStr(): string { return this.filtroCliente() != null ? String(this.filtroCliente()) : ''; }
+  onFiltroClienteChange(val: string): void { this.filtroCliente.set(val ? +val : null); this.cargar(); }
+  get filtroTipoNegocioStr(): string { return this.filtroTipoNegocio() != null ? String(this.filtroTipoNegocio()) : ''; }
+  onFiltroTipoNegocioChange(val: string): void { this.filtroTipoNegocio.set(val ? +val : null); this.cargar(); }
+
+  get formClienteStr(): string { return this.form.id_cliente != null ? String(this.form.id_cliente) : ''; }
+  onFormClienteChange(val: string): void { this.form.id_cliente = val ? +val : null; }
+  get formTipoNegocioStr(): string { return this.form.id_tipo_negocio != null ? String(this.form.id_tipo_negocio) : ''; }
+  onFormTipoNegocioChange(val: string): void { this.form.id_tipo_negocio = val ? +val : null; }
+
+  // --- Paginación client-side — tabla de registros ---
+  registrosPage = signal(0);
+  registrosPageSize = signal(20);
+  paginatedRegistros = computed<any[]>(() => {
+    const size = this.registrosPageSize();
+    const start = this.registrosPage() * size;
+    return this.registros().slice(start, start + size);
+  });
+  get totalRegistroPages(): number { return Math.max(1, Math.ceil(this.registros().length / this.registrosPageSize())); }
+  get registroRangeLabel(): string {
+    const total = this.registros().length;
+    if (!total) return 'Mostrando 0–0 de 0';
+    const start = this.registrosPage() * this.registrosPageSize() + 1;
+    const end = Math.min((this.registrosPage() + 1) * this.registrosPageSize(), total);
+    return `Mostrando ${start}–${end} de ${total}`;
+  }
+  goRegistroPage(p: number): void { this.registrosPage.set(p); }
+  onRegistroPageSizeChange(val: number): void { this.registrosPageSize.set(val); this.registrosPage.set(0); }
+
+  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) { }
 
   ngOnInit(): void {
     this.cargar();
-    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => {} });
-    this.api.listCatalog('tipo-negocio').subscribe({ next: d => this.tiposNegocio.set(d), error: () => {} });
+    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => { } });
+    this.api.listCatalog('tipo-negocio').subscribe({ next: d => this.tiposNegocio.set(d), error: () => { } });
   }
 
   cargar(): void {
     this.loading.set(true);
+    this.registrosPage.set(0);
     const opts: any = {};
     if (this.filtroCliente() != null) opts.id_cliente = this.filtroCliente();
     if (this.filtroTipoNegocio() != null) opts.id_tipo_negocio = this.filtroTipoNegocio();

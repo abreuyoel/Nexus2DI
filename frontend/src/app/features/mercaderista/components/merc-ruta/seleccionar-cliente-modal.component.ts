@@ -177,13 +177,19 @@ export class SeleccionarClienteModalComponent implements OnInit {
 
     /** Carga clientes del PDV y los ordena por prioridad (IDÉNTICO al APK) */
     private loadClientes(): void {
+        // ⚡ INSTANT DISPLAY: Si el punto ya trae los clientes en memoria, cargarlos inmediatamente (0ms)
+        if (this.punto?.clients && this.punto.clients.length > 0) {
+            this.buildClientList(this.punto.clients);
+            this.loading.set(false);
+            return;
+        }
+
         this.loading.set(true);
 
-        // Usar método público getMercRutaPdvs
         const idRuta = Number(this.rutaId);
         if (!idRuta) {
-            // Fallback: usar clients del punto recibido
             this.buildFromPuntoClients();
+            this.loading.set(false);
             return;
         }
 

@@ -120,9 +120,16 @@ export class MercPdvActivosComponent implements OnInit {
   }
 
   cargar(): void {
-    this.loading.set(true);
+    if (this.ui.cachedPdvActivos) {
+      this.pdvs.set(this.ui.cachedPdvActivos);
+      this.loading.set(false);
+    } else {
+      this.loading.set(true);
+    }
+
     this.api.get<PdvActivo[]>('/api/merc/pdv-activos').subscribe({
       next: (res) => {
+        this.ui.cachedPdvActivos = res || [];
         this.pdvs.set(res || []);
         this.loading.set(false);
       },
@@ -155,6 +162,7 @@ export class MercPdvActivosComponent implements OnInit {
     try {
       await firstValueFrom(this.api.desactivarPdv(p.punto_id));
       this.snack.open(`PDV "${p.punto_nombre}" desactivado.`, 'OK', { duration: 3000 });
+      this.ui.invalidateAllCache();
       this.cargar();
     } catch (e: any) {
       const detail = e?.error?.detail || e?.error?.mensaje || e?.error;

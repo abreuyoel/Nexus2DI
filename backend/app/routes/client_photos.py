@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.services.visibility import client_route_ids
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Optional
 import logging
 
@@ -116,43 +116,66 @@ def get_client_dashboard(
 @router.get("/summary")
 def get_client_summary(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
+    fecha_inicio: Optional[date] = Query(None, description="Filtro opcional de inicio"),
+    fecha_fin: Optional[date] = Query(None, description="Filtro opcional de fin"),
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Obtener un resumen de actividad para el cliente."""
+    """Obtener un resumen de actividad para el cliente.
+
+    Optimizado: 3 agregaciones COUNT con JOIN directo (sin subqueries en Python)
+    y filtro por rango de fechas opcional. Las fotos y mensajes se cuentan dentro
+    del mismo rango de visitas, evitando barridos históricos completos.
+    """
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
 
-    query_visits = text("""
+    # Rango por defecto: últimos 30 días (para no cambiar el comportamiento actual).
+    if not fecha_inicio:
+        fecha_inicio = date.today() - timedelta(days=30)
+    if not fecha_fin:
+        fecha_fin = date.today()
+
+    # Filtro de fecha compartido por las 3 queries.
+    fecha_filter = "vm.fecha_visita >= :fecha_inicio AND vm.fecha_visita <= :fecha_fin"
+    params = {
+        "cliente_id": resolved_cliente_id,
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+    }
+
+    query_visits = text(f"""
         SELECT COUNT(*)
         FROM VISITAS_MERCADERISTA vm
         WHERE vm.id_cliente = :cliente_id
-          AND vm.fecha_visita >= DATEADD(day, -30, GETDATE())
+          AND {fecha_filter}
     """)
-    recent_visits = db.execute(query_visits, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    recent_visits = db.execute(query_visits, params).scalar() or 0
 
-    query_photos = text("""
+    query_photos = text(f"""
         SELECT COUNT(ft.id_foto)
         FROM FOTOS_TOTALES ft
         INNER JOIN VISITAS_MERCADERISTA vm ON ft.id_visita = vm.id_visita
         WHERE vm.id_cliente = :cliente_id
+          AND {fecha_filter}
           AND ft.Estado = 'Aprobada'
     """)
-    recent_photos = db.execute(query_photos, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    recent_photos = db.execute(query_photos, params).scalar() or 0
 
-    query_messages = text("""
+    query_messages = text(f"""
         SELECT COUNT(cm.id_mensaje)
         FROM CHAT_MENSAJES_CLIENTE cm
         INNER JOIN VISITAS_MERCADERISTA vm ON cm.id_visita = vm.id_visita
         WHERE vm.id_cliente = :cliente_id
+          AND {fecha_filter}
           AND cm.fecha_envio >= DATEADD(hour, -48, GETDATE())
     """)
-    recent_messages = db.execute(query_messages, {"cliente_id": resolved_cliente_id}).scalar() or 0
+    recent_messages = db.execute(query_messages, params).scalar() or 0
 
     return {
         "recent_visits": recent_visits,
         "recent_photos": recent_photos,
         "recent_messages": recent_messages,
-        "period": "Últimos 30 días"
+        "period": f"{fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}"
     }
 
 

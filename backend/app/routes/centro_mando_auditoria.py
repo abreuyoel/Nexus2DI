@@ -28,7 +28,12 @@ INDICADORES = [
 
 
 def _where_comun(desde, hasta, id_auditor, id_ruta, id_cliente, id_categoria):
-    where = "WHERE m.tipo = 'Auditor de Campo' AND v.fecha_visita >= :d AND v.fecha_visita < DATEADD(day, 1, :h)"
+    # Las filas de AUDITORIA_CATEGORIAS sólo las escribe el flujo de auditoría
+    # (guardar_auditoria_categoria), así que el JOIN a esa tabla ya garantiza
+    # que son datos de auditoría. NO filtramos por m.tipo: en QA los
+    # cuestionarios quedan asociados al mercaderista de la visita (tipo
+    # 'Mercaderista'), no a un mercaderista tipo 'Auditor'.
+    where = "WHERE v.fecha_visita >= :d AND v.fecha_visita < DATEADD(day, 1, :h)"
     params = {"d": desde, "h": hasta}
     if id_auditor:
         where += " AND m.id_mercaderista = :ida"
@@ -59,24 +64,19 @@ def get_filtros(db: Session = Depends(get_db), _: Usuario = Depends(require_perm
         FROM MERCADERISTAS m
         JOIN VISITAS_MERCADERISTA v ON v.id_mercaderista = m.id_mercaderista
         JOIN AUDITORIA_CATEGORIAS ac ON ac.id_visita = v.id_visita
-        WHERE m.tipo = 'Auditor de Campo'
         ORDER BY m.nombre
     """)).fetchall()
     rutas = db.execute(text("""
         SELECT DISTINCT rn.id_ruta, rn.ruta
         FROM RUTAS_NUEVAS rn
         JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rn.id_ruta
-        JOIN MERCADERISTAS m ON m.id_mercaderista = mr.id_mercaderista
-        WHERE m.tipo = 'Auditor de Campo'
         ORDER BY rn.ruta
     """)).fetchall()
     clientes = db.execute(text("""
         SELECT DISTINCT c.id_cliente, c.cliente
         FROM CLIENTES c
         JOIN VISITAS_MERCADERISTA v ON v.id_cliente = c.id_cliente
-        JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
         JOIN AUDITORIA_CATEGORIAS ac ON ac.id_visita = v.id_visita
-        WHERE m.tipo = 'Auditor de Campo'
         ORDER BY c.cliente
     """)).fetchall()
     categorias = db.execute(text("""
@@ -111,7 +111,10 @@ def get_resumen(
     try:
         hoy = date.today()
         if not desde:
-            desde = (hoy - timedelta(days=7)).isoformat()
+            # Ventana por defecto amplia: los cuestionarios de auditoría se
+            # registran de forma esporádica (en QA hay datos de junio/julio),
+            # así que 7 días casi siempre deja el tablero en 0.
+            desde = (hoy - timedelta(days=90)).isoformat()
         if not hasta:
             hasta = hoy.isoformat()
 
@@ -139,13 +142,18 @@ def get_resumen(
             JOIN CLIENTES c ON c.id_cliente = v.id_cliente
             JOIN PUNTOS_INTERES1 p ON p.identificador = v.identificador_punto_interes
             LEFT JOIN CATEGORIAS cat ON cat.id_categoria = ac.id_categoria
-            OUTER APPLY (
-                SELECT MIN(rn.ruta) AS ruta
-                FROM RUTA_PROGRAMACION rp JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
+            -- La ruta del auditor se pre-agrega UNA vez por (punto, mercaderista)
+            -- y se une con LEFT JOIN, en lugar del OUTER APPLY correlacionado
+            -- anterior que se re-ejecutaba por cada fila del log.
+            LEFT JOIN (
+                SELECT rp.id_punto_interes, mr.id_mercaderista, MIN(rn.ruta) AS ruta
+                FROM RUTA_PROGRAMACION rp
+                JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
                 JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
-                WHERE rp.activa = 1 AND rp.id_punto_interes = p.identificador
-                  AND mr.id_mercaderista = v.id_mercaderista
-            ) rinfo
+                WHERE rp.activa = 1
+                GROUP BY rp.id_punto_interes, mr.id_mercaderista
+            ) rinfo ON rinfo.id_punto_interes = p.identificador
+                    AND rinfo.id_mercaderista = v.id_mercaderista
             {where}
             ORDER BY v.fecha_visita DESC
         """), params).fetchall()

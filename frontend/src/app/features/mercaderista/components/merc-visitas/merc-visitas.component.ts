@@ -22,15 +22,15 @@ import { ConfirmService } from '../../../../shared/components/confirm-dialog/con
         <div class="flex gap-2 items-end">
           <div class="flex-1">
             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Desde</label>
-            <input type="date" [(ngModel)]="fechaDesde" (change)="cargar()"
+            <input type="date" [ngModel]="fechaDesde()" (ngModelChange)="fechaDesde.set($event); cargar()"
                    class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-all">
           </div>
           <div class="flex-1">
             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Hasta</label>
-            <input type="date" [(ngModel)]="fechaHasta" (change)="cargar()"
+            <input type="date" [ngModel]="fechaHasta()" (ngModelChange)="fechaHasta.set($event); cargar()"
                    class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-primary-500 transition-all">
           </div>
-          @if (fechaDesde || fechaHasta) {
+          @if (fechaDesde() || fechaHasta()) {
             <button (click)="limpiarFechas()" class="mb-0.5 p-2 text-slate-400 hover:text-rose-500 transition-colors rounded-xl hover:bg-rose-50 dark:hover:bg-rose-500/10">
               <mat-icon class="!text-lg">clear</mat-icon>
             </button>
@@ -40,13 +40,18 @@ import { ConfirmService } from '../../../../shared/components/confirm-dialog/con
         <!-- PDV Search -->
         <div class="relative">
           <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 !text-slate-400 !text-sm">search</mat-icon>
-          <input type="text" [(ngModel)]="pdvQuery"
-                 placeholder="Nombre del PDV (ej. Central Madeirense)..."
-                 class="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500 transition-all">
+          <input type="text" [ngModel]="pdvQuery()" (ngModelChange)="pdvQuery.set($event)"
+                 placeholder="Buscar por PDV o código (ej. Central Madeirense)..."
+                 class="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500 transition-all">
+          @if (pdvQuery()) {
+            <button (click)="pdvQuery.set('')" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <mat-icon class="!text-sm">close</mat-icon>
+            </button>
+          }
         </div>
 
         <!-- Cliente Filter -->
-        <select [(ngModel)]="filtroCliente"
+        <select [ngModel]="filtroCliente()" (ngModelChange)="filtroCliente.set($event)"
                 class="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-primary-500">
           <option value="">Todos los clientes</option>
           @for (c of clientesUnicos(); track c.id) {
@@ -196,10 +201,10 @@ export class MercVisitasComponent implements OnInit {
   visitasServidor = signal<any[]>([]);
   visitasLocales = signal<any[]>([]);
 
-  fechaDesde = this.getDefaultDesde();
-  fechaHasta = '';
-  pdvQuery = '';
-  filtroCliente = '';
+  fechaDesde = signal(this.getDefaultDesde());
+  fechaHasta = signal('');
+  pdvQuery = signal('');
+  filtroCliente = signal('');
 
   constructor() {
     effect(() => {
@@ -219,15 +224,16 @@ export class MercVisitasComponent implements OnInit {
   });
 
   visitasFiltradas = computed(() => {
-    const q = this.pdvQuery.toLowerCase();
-    const fc = String(this.filtroCliente);
+    const q = this.pdvQuery().trim().toLowerCase();
+    const fc = String(this.filtroCliente());
     return this.visitasServidor().filter(v => {
       // Excluir visitas en estado 'Pendiente' del historial
       if (v.estado === 'Pendiente') return false;
 
       const matchPdv = !q ||
         (v.pdv_nombre || '').toLowerCase().includes(q) ||
-        (v.identificador_punto_interes || '').toLowerCase().includes(q);
+        (v.identificador_punto_interes || '').toLowerCase().includes(q) ||
+        (v.cadena || '').toLowerCase().includes(q);
       const matchCliente = !fc || String(v.id_cliente) === fc;
       return matchPdv && matchCliente;
     });
@@ -244,7 +250,13 @@ export class MercVisitasComponent implements OnInit {
   }
 
   async cargar(): Promise<void> {
-    this.loading.set(true);
+    // ⚡ 0ms INSTANT LOAD: si tenemos cache previo, mostrarlo de inmediato
+    if (this.ui.cachedMisVisitas && !this.fechaHasta()) {
+      this.visitasServidor.set(this.ui.cachedMisVisitas);
+      this.loading.set(false);
+    } else {
+      this.loading.set(true);
+    }
 
     // Cargar cadenas offline locales pendientes
     try {
@@ -265,11 +277,16 @@ export class MercVisitasComponent implements OnInit {
 
     // Cargar historial del servidor
     const params: any = {};
-    if (this.fechaDesde) params.fecha_inicio = this.fechaDesde;
-    if (this.fechaHasta) params.fecha_fin = this.fechaHasta;
+    const desde = this.fechaDesde();
+    const hasta = this.fechaHasta();
+    if (desde) params.fecha_inicio = desde;
+    if (hasta) params.fecha_fin = hasta;
 
     this.api.getMercMisVisitas(params).subscribe({
       next: (res: any[]) => {
+        if (!this.fechaHasta()) {
+          this.ui.cachedMisVisitas = res || [];
+        }
         this.visitasServidor.set(res || []);
         this.sinConexion.set(false);
         this.loading.set(false);
@@ -282,8 +299,8 @@ export class MercVisitasComponent implements OnInit {
   }
 
   limpiarFechas(): void {
-    this.fechaDesde = '';
-    this.fechaHasta = '';
+    this.fechaDesde.set('');
+    this.fechaHasta.set('');
     this.cargar();
   }
 

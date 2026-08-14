@@ -11,6 +11,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { ApiService } from '../../../../../../core/services/api.service';
 import { OfflineQueueService } from '../../../../services/offline-queue.service';
+import { MercUiService } from '../../../../services/merc-ui.service';
 
 /**
  * Producto individual en el formulario de balance expandido.
@@ -104,9 +105,14 @@ interface ProductBalanceState {
         <div class="px-4 py-3 shrink-0">
           <div class="relative">
             <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</mat-icon>
-            <input type="text" [(ngModel)]="searchQuery" (ngModelChange)="onSearchChange($event)"
-                   placeholder="Buscar producto o fabricante..."
-                   class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white/5 rounded-2xl pl-10 pr-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all">
+            <input type="text" [ngModel]="searchQuery()" (ngModelChange)="onSearchChange($event)"
+                   placeholder="Buscar producto, SKU o fabricante..."
+                   class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white/5 rounded-2xl pl-10 pr-10 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all">
+            @if (searchQuery()) {
+              <button (click)="onSearchChange('')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <mat-icon class="!text-sm">close</mat-icon>
+              </button>
+            }
           </div>
         </div>
 
@@ -357,6 +363,7 @@ export class BalanceFormComponent implements OnInit {
   private api = inject(ApiService);
   private offline = inject(OfflineQueueService);
   private snack = inject(MatSnackBar);
+  private ui = inject(MercUiService);
 
   // ─── Modal state ───
   isOpen = signal(false);
@@ -364,7 +371,7 @@ export class BalanceFormComponent implements OnInit {
 
   // ─── Products and balances ───
   allProducts = signal<ProductBalanceState[]>([]);
-  searchQuery = '';
+  searchQuery = signal<string>('');
 
   // ─── Category expansion ───
   expandedCategories = signal<Record<string, boolean>>({});
@@ -382,13 +389,15 @@ export class BalanceFormComponent implements OnInit {
   });
 
   filteredProducts = computed(() => {
-    if (!this.searchQuery) {
+    const q = this.searchQuery().trim().toLowerCase();
+    if (!q) {
       return this.allProducts();
     }
-    const q = this.searchQuery.toLowerCase();
     return this.allProducts().filter(p =>
-      (p.nombre || p.sku || '').toLowerCase().includes(q) ||
-      (p.fabricante || '').toLowerCase().includes(q)
+      (p.nombre || '').toLowerCase().includes(q) ||
+      (p.sku || '').toLowerCase().includes(q) ||
+      (p.fabricante || '').toLowerCase().includes(q) ||
+      (p.categoria || '').toLowerCase().includes(q)
     );
   });
 
@@ -410,6 +419,10 @@ export class BalanceFormComponent implements OnInit {
   }
 
   isCategoryExpanded(cat: string): boolean {
+    // Si hay una búsqueda activa, auto-expandir todas las categorías con coincidencias
+    if (this.searchQuery().trim() !== '') {
+      return true;
+    }
     return this.expandedCategories()[cat] !== false;
   }
 
@@ -428,7 +441,7 @@ export class BalanceFormComponent implements OnInit {
 
   // ─── Search ───
   onSearchChange(val: string) {
-    this.searchQuery = val;
+    this.searchQuery.set(val || '');
   }
 
   // ─── Datepicker ───
@@ -456,52 +469,63 @@ export class BalanceFormComponent implements OnInit {
     this.isOpen.set(false);
   }
 
+  private _processProductsResponse(res: { categorias: any[]; total_productos: number }) {
+    const allItems: any[] = [];
+    for (const cat of res.categorias || []) {
+      if (cat.productos) allItems.push(...cat.productos);
+    }
+    const products: ProductBalanceState[] = allItems.map((p: any) => ({
+      id: p.id_producto || p.id,
+      sku: p.sku || '',
+      nombre: p.nombre || p.sku || '',
+      fabricante: p.fabricante || '',
+      categoria: p.categoria || 'Sin Categoría',
+      id_categoria: p.id_categoria || 0,
+      estado: 'normal' as const,
+      inv_inicial: 0,
+      inv_deposito: 0,
+      inv_final: 0,
+      caras: 0,
+      precio_bs: 0,
+      precio_ds: 0,
+      fifo: null,
+      isExpanded: false,
+      isSaved: false,
+      saving: false,
+    }));
+    this.allProducts.set(products);
+
+    // Expand first category by default
+    const nonEmpty = products.filter(p => p.categoria);
+    const firstCat = nonEmpty[0]?.categoria;
+    if (firstCat) {
+      this.expandedCategories.set({ [firstCat]: true });
+    }
+
+    this.loading.set(false);
+    this.loadExistingBalances();
+  }
+
   // ─── Load Products ───
   private loadProducts() {
-    this.loading.set(true);
+    // ⚡ 0ms INSTANT LOAD: si tenemos catalogo en cache, cargarlo de inmediato
+    const cached = this.ui.getCachedProductos(this.idCliente);
+    if (cached) {
+      this._processProductsResponse(cached);
+    } else {
+      this.loading.set(true);
+    }
+
     this.api.getMercProductosCliente(this.idCliente).subscribe({
       next: (res: { categorias: any[]; total_productos: number }) => {
-        // API returns { categorias: [{ productos: [...] }] }, flatten to plain list
-        const allItems: any[] = [];
-        for (const cat of res.categorias || []) {
-          if (cat.productos) allItems.push(...cat.productos);
-        }
-        const products: ProductBalanceState[] = allItems.map((p: any) => ({
-          id: p.id_producto || p.id,
-          sku: p.sku || '',
-          nombre: p.nombre || p.sku || '',
-          fabricante: p.fabricante || '',
-          categoria: p.categoria || 'Sin Categoría',
-          id_categoria: p.id_categoria || 0,
-          estado: 'normal' as const,
-          inv_inicial: 0,
-          inv_deposito: 0,
-          inv_final: 0,
-          caras: 0,
-          precio_bs: 0,
-          precio_ds: 0,
-          fifo: null,
-          isExpanded: false,
-          isSaved: false,
-          saving: false,
-        }));
-        this.allProducts.set(products);
-
-        // Expand first category by default
-        const nonEmpty = products.filter(p => p.categoria);
-        const firstCat = nonEmpty[0]?.categoria;
-        if (firstCat) {
-          this.expandedCategories.set({ [firstCat]: true });
-        }
-
-        this.loading.set(false);
-
-        // Now load existing balances for this visita
-        this.loadExistingBalances();
+        this.ui.setCachedProductos(this.idCliente, res);
+        this._processProductsResponse(res);
       },
       error: () => {
         this.loading.set(false);
-        this.snack.open('Error al cargar productos del cliente', 'OK', { duration: 3000 });
+        if (!this.ui.getCachedProductos(this.idCliente)) {
+          this.snack.open('Error al cargar productos del cliente', 'OK', { duration: 3000 });
+        }
       }
     });
   }

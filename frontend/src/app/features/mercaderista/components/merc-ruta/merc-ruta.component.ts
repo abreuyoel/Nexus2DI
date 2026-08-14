@@ -272,66 +272,65 @@ export class MercRutaComponent implements OnInit, OnDestroy {
     this.chainResolvedSub?.unsubscribe();
   }
 
+  private _processRutasResponse(res: any) {
+    const todasLasRutas = [
+      ...(res.rutas_fijas || []),
+      ...(res.rutas_variables || []),
+    ];
+
+    const filtradas = todasLasRutas.filter((r: any) =>
+      r.tipo.toLowerCase() === this.tipoRuta.toLowerCase()
+    );
+
+    const rutasConEstado: RutaDelDia[] = filtradas.map((r: any) => {
+      const pdvs = r.pdvs || [];
+      const puntos_count = pdvs.length;
+      const tieneClientesVisitados = pdvs.some((p: any) =>
+        (p.clientes || []).some((c: any) => c.visitado || c.id_visita)
+      );
+
+      let status: 'inactiva' | 'en_progreso' | 'finalizada' = 'inactiva';
+
+      if (r.finalizada === true) {
+        status = 'finalizada';
+      } else if (r.activada === true || tieneClientesVisitados) {
+        status = 'en_progreso';
+      }
+
+      return {
+        id_ruta: r.id_ruta,
+        nombre: r.nombre,
+        tipo: r.tipo,
+        pdvs,
+        status,
+        puntos_count,
+        finalizada: r.finalizada,
+      };
+    });
+
+    this.rutas.set(rutasConEstado);
+    this.loading.set(false);
+  }
+
   loadData(): void {
-    this.loading.set(true);
-    console.log(`[MercRuta] 🔄 Cargando rutas tipo="${this.tipoRuta}"...`);
+    // ⚡ 0ms INSTANT LOAD: si tenemos cache previo, mostrarlo inmediatamente
+    if (this.ui.cachedMisRutas) {
+      this._processRutasResponse(this.ui.cachedMisRutas);
+    } else {
+      this.loading.set(true);
+    }
+
+    // Background sync para actualizar estado
     this.api.getMercMiRuta().subscribe({
       next: (res) => {
-        console.log('[MercRuta] ✅ getMercMiRuta response:', res);
-
-        const todasLasRutas = [
-          ...(res.rutas_fijas || []),
-          ...(res.rutas_variables || []),
-        ];
-        console.log(`[MercRuta] Total rutas: ${todasLasRutas.length} (fijas:${(res.rutas_fijas || []).length}, variables:${(res.rutas_variables || []).length})`);
-
-        // Filtrar por tipo
-        const filtradas = todasLasRutas.filter((r: any) =>
-          r.tipo.toLowerCase() === this.tipoRuta.toLowerCase()
-        );
-        console.log(`[MercRuta] Rutas filtradas (tipo="${this.tipoRuta}"): ${filtradas.length}`);
-        filtradas.forEach((r: any) => {
-          const pdvs = r.pdvs || [];
-          console.log(`  Ruta ${r.id_ruta} "${r.nombre}" activada=${r.activada} pdvs=${pdvs.length}`);
-          pdvs.forEach((p: any) => {
-            const clientes = p.clientes || [];
-            console.log(`    PDV ${p.id_punto} "${p.nombre}" clientes=${clientes.length}`, clientes.map((c: any) => `id=${c.id_cliente} nombre="${c.nombre}" visitado=${c.visitado} id_visita=${c.id_visita}`));
-          });
-        });
-
-        // Derivar estado de cada ruta
-        const rutasConEstado: RutaDelDia[] = filtradas.map((r: any) => {
-          const pdvs = r.pdvs || [];
-          const puntos_count = pdvs.length;
-          const tieneClientesVisitados = pdvs.some((p: any) =>
-            (p.clientes || []).some((c: any) => c.visitado || c.id_visita)
-          );
-
-          let status: 'inactiva' | 'en_progreso' | 'finalizada' = 'inactiva';
-
-          if (r.finalizada === true) {
-            status = 'finalizada';
-          } else if (r.activada === true || tieneClientesVisitados) {
-            status = 'en_progreso';
-          }
-
-          return {
-            id_ruta: r.id_ruta,
-            nombre: r.nombre,
-            tipo: r.tipo,
-            pdvs,
-            status,
-            puntos_count,
-            finalizada: r.finalizada,
-          };
-        });
-
-        this.rutas.set(rutasConEstado);
-        this.loading.set(false);
+        this.ui.cachedMisRutas = res;
+        this._processRutasResponse(res);
       },
       error: () => {
         this.loading.set(false);
-        this.snack.open('Error al cargar datos', 'OK', { duration: 3000 });
+        if (!this.ui.cachedMisRutas) {
+          this.snack.open('Error al cargar datos', 'OK', { duration: 3000 });
+        }
       },
     });
   }

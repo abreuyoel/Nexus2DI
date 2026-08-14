@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -16,6 +16,7 @@ import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ClientCategoriesDialogComponent } from './client-categories-dialog.component';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-users',
@@ -24,7 +25,7 @@ import { ClientCategoriesDialogComponent } from './client-categories-dialog.comp
     CommonModule, ReactiveFormsModule, MatCardModule, MatTableModule,
     MatButtonModule, MatIconModule, MatFormFieldModule, MatInputModule,
     MatSelectModule, MatProgressSpinnerModule, MatSnackBarModule, MatTabsModule, MatTooltipModule, FormsModule,
-    MatDialogModule
+    MatDialogModule, SearchableSelectComponent
   ],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss']
@@ -39,16 +40,39 @@ export class UsersComponent implements OnInit {
   columns = ['id', 'username', 'email', 'rol', 'perfil', 'activo', 'acciones'];
 
   searchText = '';
+  pageSize = 20;
+  usersPage = signal(0);
+  analystsPage = signal(0);
+  clientsPage = signal(0);
+  mercaderistasPage = signal(0);
+  supervisorsPage = signal(0);
+  auditorsPage = signal(0);
+  encuestadoresPage = signal(0);
+
+  searchAnalyst = '';
+  searchClient = '';
+  searchMercaderista = '';
+  searchSupervisor = '';
+  searchAuditor = '';
+  searchEncuestador = '';
+
   get filteredUsers(): any[] {
     const q = this.searchText.trim().toLowerCase();
     if (!q) return this.users();
     return this.users().filter(u =>
       (u.username || '').toLowerCase().includes(q) ||
       (u.email || '').toLowerCase().includes(q) ||
+      (u.cedula || '').toLowerCase().includes(q) ||
       (u.rol_nombre || u.rol || '').toLowerCase().includes(q) ||
       (u.perfil_nombre || u.perfil || '').toLowerCase().includes(q)
     );
   }
+
+  get paginatedUsers(): any[] {
+    const start = this.usersPage() * this.pageSize;
+    return this.filteredUsers.slice(start, start + this.pageSize);
+  }
+  get totalUserPages(): number { return Math.max(1, Math.ceil(this.filteredUsers.length / this.pageSize)); }
 
   analysts = signal<any[]>([]);
   clients = signal<any[]>([]);
@@ -70,6 +94,7 @@ export class UsersComponent implements OnInit {
     { id: 7, nombre: 'Auditor' },
     { id: 14, nombre: 'Auditor de Campo' },
     { id: 12, nombre: 'Encuestador' },
+    { id: 13, nombre: 'Cliente Encuestador' },
   ];
 
   get realAnalysts(): any[] { return this.analysts().filter(a => (a.id_rol ?? 2) === 2); }
@@ -81,13 +106,119 @@ export class UsersComponent implements OnInit {
     });
   }
 
+  // --- Filtrado + paginación por pestaña ---
+  get filteredAnalysts(): any[] {
+    const q = this.searchAnalyst.trim().toLowerCase();
+    if (!q) return this.realAnalysts;
+    return this.realAnalysts.filter(a => (a.nombre_analista || a.nombre || '').toLowerCase().includes(q));
+  }
+  get paginatedAnalysts(): any[] {
+    const start = this.analystsPage() * this.pageSize;
+    return this.filteredAnalysts.slice(start, start + this.pageSize);
+  }
+  get totalAnalystPages(): number { return Math.max(1, Math.ceil(this.filteredAnalysts.length / this.pageSize)); }
+
+  get filteredClients(): any[] {
+    const q = this.searchClient.trim().toLowerCase();
+    const list = this.clients();
+    if (!q) return list;
+    return list.filter(c =>
+      (c.nombre || c.cliente || '').toLowerCase().includes(q) ||
+      (c.rif || '').toLowerCase().includes(q)
+    );
+  }
+  get paginatedClients(): any[] {
+    const start = this.clientsPage() * this.pageSize;
+    return this.filteredClients.slice(start, start + this.pageSize);
+  }
+  get totalClientPages(): number { return Math.max(1, Math.ceil(this.filteredClients.length / this.pageSize)); }
+
+  get filteredMercaderistas(): any[] {
+    const q = this.searchMercaderista.trim().toLowerCase();
+    const list = this.mercaderistas();
+    if (!q) return list;
+    return list.filter(m =>
+      (m.nombre || m.nombre_completo || '').toLowerCase().includes(q) ||
+      (m.cedula || '').toLowerCase().includes(q)
+    );
+  }
+  get paginatedMercaderistas(): any[] {
+    const start = this.mercaderistasPage() * this.pageSize;
+    return this.filteredMercaderistas.slice(start, start + this.pageSize);
+  }
+  get totalMercaderistaPages(): number { return Math.max(1, Math.ceil(this.filteredMercaderistas.length / this.pageSize)); }
+
+  get filteredSupervisors(): any[] {
+    const q = this.searchSupervisor.trim().toLowerCase();
+    const list = this.supervisors();
+    if (!q) return list;
+    return list.filter(s => (s.nombre || '').toLowerCase().includes(q));
+  }
+  get paginatedSupervisors(): any[] {
+    const start = this.supervisorsPage() * this.pageSize;
+    return this.filteredSupervisors.slice(start, start + this.pageSize);
+  }
+  get totalSupervisorPages(): number { return Math.max(1, Math.ceil(this.filteredSupervisors.length / this.pageSize)); }
+
+  get filteredAuditors(): any[] {
+    const q = this.searchAuditor.trim().toLowerCase();
+    const list = this.auditorsList;
+    if (!q) return list;
+    return list.filter(a =>
+      (a.nombre || '').toLowerCase().includes(q) ||
+      (a.cedula || '').toLowerCase().includes(q) ||
+      (a.tipo || '').toLowerCase().includes(q)
+    );
+  }
+  get paginatedAuditors(): any[] {
+    const start = this.auditorsPage() * this.pageSize;
+    return this.filteredAuditors.slice(start, start + this.pageSize);
+  }
+  get totalAuditorPages(): number { return Math.max(1, Math.ceil(this.filteredAuditors.length / this.pageSize)); }
+
+  get filteredEncuestadores(): any[] {
+    const q = this.searchEncuestador.trim().toLowerCase();
+    const list = this.encuestadores();
+    if (!q) return list;
+    return list.filter(e =>
+      (e.nombre || '').toLowerCase().includes(q) ||
+      String(e.cedula || '').toLowerCase().includes(q) ||
+      (e.username || '').toLowerCase().includes(q)
+    );
+  }
+  get paginatedEncuestadores(): any[] {
+    const start = this.encuestadoresPage() * this.pageSize;
+    return this.filteredEncuestadores.slice(start, start + this.pageSize);
+  }
+  get totalEncuestadorPages(): number { return Math.max(1, Math.ceil(this.filteredEncuestadores.length / this.pageSize)); }
+
+  // --- Opciones searchable ---
+  rolOptions = computed<SelectOption[]>(() =>
+    this.rolesDisponibles.map(r => ({ value: String(r.id), label: r.nombre }))
+  );
+  get perfilOptions(): SelectOption[] {
+    return this.getProfilesForSelectedRole().map((p: any) => ({
+      value: String(p.id),
+      label: p.nombre || p.cliente || p.nombre_completo || p.nombre_analista || String(p.id)
+    }));
+  }
+  tipoAuditorOptions: SelectOption[] = [
+    { value: 'Auditor de Campo', label: 'Auditor de Campo' },
+    { value: 'Auditor de Gestión', label: 'Auditor de Gestión' },
+  ];
+
+  createRolStr = '';
+  createPerfilStr = '';
+  auditorTipoStr = 'Auditor de Campo';
+
   tabHints: Record<string, string> = {
-    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador, cliente, mercaderista o auditor.',
+    usuarios: 'Accesos al sistema: administrador, analista, supervisor, coordinador, cliente, mercaderista, auditor o encuestador.',
     analistas: 'Analistas que revisan y gestionan las cuentas de clientes.',
     clientes: 'Cuentas / marcas del sistema.',
     mercaderistas: 'Personal de campo que ejecuta las visitas en los puntos de venta.',
-    supervisors: 'Supervisores de rutas y clientes.',
+    supervisores: 'Supervisores de rutas y clientes.',
     auditores: 'Personal auditor de campo y auditor de gestión encargados del control de calidad e inspecciones.',
+    encuestadores: 'Personal encuestador encargado de levantar y verificar información de salud y médicos en campo.',
   };
 
   quickAnalyst = '';
@@ -98,6 +229,7 @@ export class UsersComponent implements OnInit {
   createForm = this.fb.group({
     username: ['', Validators.required],
     email: [''],
+    cedula: [''],
     password: [''],
     id_rol: [2, Validators.required],
     id_perfil: [null as number | null],
@@ -149,6 +281,19 @@ export class UsersComponent implements OnInit {
     telefono: [''],
     tipo: ['Auditor de Campo', Validators.required],
     activo: [true]
+  });
+
+  // --- Encuestadores CRUD State ---
+  showEncuestadorForm = signal(false);
+  editingEncuestador = signal<any>(null);
+  encuestadorForm = this.fb.group({
+    nombre: ['', Validators.required],
+    cedula: ['', Validators.required],
+    telefono: [''],
+    email: [''],
+    activo: [true],
+    username: [''],
+    password: ['']
   });
 
   constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
@@ -205,7 +350,7 @@ export class UsersComponent implements OnInit {
     this.api.getClients().subscribe(data => this.clients.set(data));
     this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
     this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
-    this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => {} });
+    this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => { } });
   }
 
   getProfilesForSelectedRole() {
@@ -224,16 +369,33 @@ export class UsersComponent implements OnInit {
     return [1, 2, 3, 4, 5, 6, 7, 14, 12, 13].includes(rol || 0);
   }
 
+  onRolChange(val: string): void {
+    const rol = val ? +val : 2;
+    this.createForm.patchValue({ id_rol: rol, id_perfil: null });
+    this.createPerfilStr = '';
+  }
+
+  onPerfilChange(val: string): void {
+    this.createForm.patchValue({ id_perfil: val ? +val : null });
+  }
+
+  onAuditorTipoChange(val: string): void {
+    this.auditorForm.patchValue({ tipo: val });
+  }
+
   editUser(user: any): void {
     this.editingUser.set(user);
     this.showForm.set(true);
     this.createForm.patchValue({
       username: user.username,
       email: user.email,
+      cedula: user.cedula || '',
       id_rol: user.id_rol,
       id_perfil: user.id_perfil,
       activo: user.activo ?? true,
     });
+    this.createRolStr = user.id_rol != null ? String(user.id_rol) : '';
+    this.createPerfilStr = user.id_perfil != null ? String(user.id_perfil) : '';
     this.createForm.get('password')?.clearValidators();
     this.createForm.get('password')?.updateValueAndValidity();
   }
@@ -241,6 +403,8 @@ export class UsersComponent implements OnInit {
   openCreateForm(): void {
     this.editingUser.set(null);
     this.createForm.reset({ id_rol: 2, activo: true });
+    this.createRolStr = '2';
+    this.createPerfilStr = '';
     this.createForm.get('password')?.setValidators([Validators.required, Validators.minLength(6)]);
     this.createForm.get('password')?.updateValueAndValidity();
     this.showForm.set(true);
@@ -278,6 +442,94 @@ export class UsersComponent implements OnInit {
         this.snack.open(errorMsg, 'OK', { duration: 4000 });
       },
     });
+  }
+
+  // --- Encuestadores CRUD ---
+  openCreateEncuestadorForm(): void {
+    this.editingEncuestador.set(null);
+    this.encuestadorForm.reset({ activo: true });
+    this.showEncuestadorForm.set(true);
+  }
+
+  editEncuestador(enc: any): void {
+    this.editingEncuestador.set(enc);
+    this.encuestadorForm.patchValue({
+      nombre: enc.nombre,
+      cedula: enc.cedula,
+      telefono: enc.telefono || '',
+      email: enc.email || '',
+      activo: enc.activo ?? true,
+      username: enc.username || '',
+      password: ''
+    });
+    this.showEncuestadorForm.set(true);
+  }
+
+  saveEncuestador(): void {
+    if (this.encuestadorForm.invalid) {
+      this.encuestadorForm.markAllAsTouched();
+      this.snack.open('Por favor completa los campos obligatorios', 'OK', { duration: 3000 });
+      return;
+    }
+
+    this.saving.set(true);
+    const enc = this.editingEncuestador();
+    const val = this.encuestadorForm.value;
+    const data: any = {
+      nombre: val.nombre,
+      cedula: val.cedula ? +val.cedula : 0,
+      telefono: val.telefono ? val.telefono.trim() : null,
+      email: val.email ? val.email.trim() : null,
+      activo: val.activo ?? true,
+      username: val.username ? val.username.trim() : undefined,
+      password: val.password ? val.password.trim() : undefined
+    };
+
+    const req = enc
+      ? this.api.updateEncuestador(enc.id, data)
+      : this.api.createEncuestador(data);
+
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showEncuestadorForm.set(false);
+        this.editingEncuestador.set(null);
+        this.reloadEncuestadores();
+        this.loadData();
+        this.snack.open(enc ? 'Encuestador modificado exitosamente' : 'Encuestador creado exitosamente', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.snack.open(err.error?.detail ?? 'Error al guardar encuestador', 'OK', { duration: 3000 });
+      }
+    });
+  }
+
+  toggleActivoEncuestador(enc: any): void {
+    const nuevo = !enc.activo;
+    this.api.updateEncuestador(enc.id, { activo: nuevo }).subscribe({
+      next: () => {
+        this.reloadEncuestadores();
+        this.snack.open(nuevo ? 'Encuestador activado' : 'Encuestador desactivado', 'OK', { duration: 2500 });
+      },
+      error: () => this.snack.open('Error al cambiar estado', 'OK', { duration: 3000 })
+    });
+  }
+
+  deleteEncuestador(enc: any): void {
+    if (!confirm(`¿Deseas eliminar al encuestador ${enc.nombre}?`)) return;
+    this.api.deleteEncuestador(enc.id).subscribe({
+      next: () => {
+        this.reloadEncuestadores();
+        this.loadData();
+        this.snack.open('Encuestador eliminado', 'OK', { duration: 2500 });
+      },
+      error: () => this.snack.open('Error al eliminar encuestador', 'OK', { duration: 3000 })
+    });
+  }
+
+  reloadEncuestadores(): void {
+    this.api.getEncuestadores().subscribe(d => this.encuestadores.set(d || []));
   }
 
   // --- Analysts CRUD ---
@@ -479,6 +731,7 @@ export class UsersComponent implements OnInit {
   openCreateAuditorForm(): void {
     this.editingAuditor.set(null);
     this.auditorForm.reset({ tipo: 'Auditor de Campo', activo: true });
+    this.auditorTipoStr = 'Auditor de Campo';
     this.showAuditorForm.set(true);
   }
 
@@ -491,6 +744,7 @@ export class UsersComponent implements OnInit {
       tipo: auditor.tipo || 'Auditor de Campo',
       activo: auditor.activo ?? true
     });
+    this.auditorTipoStr = auditor.tipo || 'Auditor de Campo';
     this.showAuditorForm.set(true);
   }
 
@@ -565,4 +819,29 @@ export class UsersComponent implements OnInit {
   reloadSupervisors(): void {
     this.api.getSupervisorsWithAssignments().subscribe(d => this.supervisors.set(d));
   }
+
+  // --- Navegación de paginación ---
+  goUserPage(p: number): void { if (p < 0 || p >= this.totalUserPages) return; this.usersPage.set(p); }
+  goAnalystPage(p: number): void { if (p < 0 || p >= this.totalAnalystPages) return; this.analystsPage.set(p); }
+  goClientPage(p: number): void { if (p < 0 || p >= this.totalClientPages) return; this.clientsPage.set(p); }
+  goMercaderistaPage(p: number): void { if (p < 0 || p >= this.totalMercaderistaPages) return; this.mercaderistasPage.set(p); }
+  goSupervisorPage(p: number): void { if (p < 0 || p >= this.totalSupervisorPages) return; this.supervisorsPage.set(p); }
+  goAuditorPage(p: number): void { if (p < 0 || p >= this.totalAuditorPages) return; this.auditorsPage.set(p); }
+  goEncuestadorPage(p: number): void { if (p < 0 || p >= this.totalEncuestadorPages) return; this.encuestadoresPage.set(p); }
+  onPageSizeChange(): void {
+    this.usersPage.set(0);
+    this.analystsPage.set(0);
+    this.clientsPage.set(0);
+    this.mercaderistasPage.set(0);
+    this.supervisorsPage.set(0);
+    this.auditorsPage.set(0);
+    this.encuestadoresPage.set(0);
+  }
+  onSearchChange(): void { this.usersPage.set(0); }
+  onAnalystSearchChange(): void { this.analystsPage.set(0); }
+  onClientSearchChange(): void { this.clientsPage.set(0); }
+  onMercaderistaSearchChange(): void { this.mercaderistasPage.set(0); }
+  onSupervisorSearchChange(): void { this.supervisorsPage.set(0); }
+  onAuditorSearchChange(): void { this.auditorsPage.set(0); }
+  onEncuestadorSearchChange(): void { this.encuestadoresPage.set(0); }
 }

@@ -22,12 +22,22 @@ from app.routes import auth, users, merchandisers, visits, rutas, points, superv
 async def lifespan(app: FastAPI):
     from app.services.scheduler_service import start_scheduler, stop_scheduler
     from app.services.catalogos_init import ensure_catalog_tables
+    from app.services.plan_accion_service import ensure_plan_accion_tables
     import asyncio
     from app.services.realtime import set_loop
     try:
         ensure_catalog_tables()
     except Exception as e:
         logger.exception(f"Fallo inicializando catálogos: {e}")
+
+    # Plan de Acción: asegura la tabla PLAN_ACCION_PENDIENTES (idempotente) y,
+    # si quedó vacía en un ambiente nuevo (epran-qa), dispara un recálculo en
+    # background. Sin esto, GET /api/plan-accion/pendientes devuelve 500
+    # 'Invalid object name' la primera vez que se abre el módulo.
+    try:
+        ensure_plan_accion_tables()
+    except Exception as e:
+        logger.exception(f"Fallo inicializando Plan de Acción: {e}")
         
     # Pre-calentamiento del pool de conexiones (Punto B5 del Informe Optimización)
     try:

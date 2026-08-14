@@ -6,6 +6,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../../core/services/api.service';
+import { SearchableSelectComponent, SelectOption } from '../../client-visits/searchable-select.component';
 
 type CatalogKey = 'tipo-negocio' | 'subtipo-negocio' | 'alcance' | 'canal-venta' | 'departamentos' | 'ciudades';
 
@@ -30,7 +31,7 @@ interface TabDef {
 @Component({
   selector: 'app-catalogos',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule, SearchableSelectComponent],
   template: `
 <div class="space-y-5">
 
@@ -60,19 +61,16 @@ interface TabDef {
 
       <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
         @if (activeTab() === 'ciudades') {
-          <div class="space-y-1">
+          <div class="space-y-1 w-full md:w-64">
             <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-            <select [(ngModel)]="newCiudadDepId"
-              class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-              <option [ngValue]="null">— Selecciona —</option>
-              @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-            </select>
+            <app-searchable-select [options]="departamentoOpts()" [(value)]="newCiudadDepStr"
+              placeholder="— Selecciona —" searchPlaceholder="Buscar departamento..." allLabel="Sin asignar" icon="map"></app-searchable-select>
           </div>
         }
-        <div class="space-y-1">
+        <div class="space-y-1 flex-1">
           <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
           <input [(ngModel)]="newName" (keyup.enter)="add()" [placeholder]="'Nombre de ' + currentTab().label.toLowerCase()"
-            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full md:w-72">
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full">
         </div>
         <button (click)="add()" [disabled]="!canAdd() || saving()"
           class="flex items-center gap-2 px-5 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
@@ -83,18 +81,29 @@ interface TabDef {
     </div>
   </div>
 
-  <!-- Filtro de departamento (sólo ciudades) -->
-  @if (activeTab() === 'ciudades') {
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex items-center gap-3">
-      <mat-icon class="text-primary-500 !text-base">filter_list</mat-icon>
-      <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Filtrar por departamento</span>
-      <select [(ngModel)]="filterDepId" (ngModelChange)="loadList()"
-        class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-1.5 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-        <option [ngValue]="null">Todos</option>
-        @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
+  <!-- Búsqueda + filtros + paginación -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+    <div class="relative flex-1 min-w-52">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-base">search</mat-icon>
+      <input [(ngModel)]="searchText" (ngModelChange)="onSearchChange()" placeholder="Buscar..."
+        class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none">
+    </div>
+    @if (activeTab() === 'ciudades') {
+      <div class="w-full md:w-64">
+        <app-searchable-select [options]="departamentoOpts()" [(value)]="filterDepStr" (valueChange)="onFilterDepChange()"
+          placeholder="Todos los departamentos" searchPlaceholder="Buscar departamento..." allLabel="Todos" icon="filter_list"></app-searchable-select>
+      </div>
+    }
+    <div class="flex items-center gap-2 shrink-0">
+      <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Pág.</span>
+      <select [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()"
+        class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-2 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none">
+        <option [ngValue]="20">20</option>
+        <option [ngValue]="50">50</option>
+        <option [ngValue]="100">100</option>
       </select>
     </div>
-  }
+  </div>
 
   <!-- Lista -->
   @if (loading()) {
@@ -116,7 +125,7 @@ interface TabDef {
           </tr>
         </thead>
         <tbody>
-          @for (item of items(); track item.id) {
+          @for (item of paginatedItems(); track item.id) {
             <tr class="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5">
               <td class="px-4 py-3">
                 @if (editingId() === item.id) {
@@ -129,10 +138,8 @@ interface TabDef {
               @if (activeTab() === 'ciudades') {
                 <td class="px-4 py-3">
                   @if (editingId() === item.id) {
-                    <select [(ngModel)]="editDepId"
-                      class="bg-slate-50 dark:bg-slate-800 border border-primary-500 rounded-lg px-2 py-1 text-sm font-semibold text-slate-900 dark:text-white outline-none">
-                      @for (d of departamentos(); track d.id) { <option [ngValue]="d.id">{{ d.nombre }}</option> }
-                    </select>
+                    <app-searchable-select [options]="departamentoOpts()" [(value)]="editDepStr"
+                      placeholder="Departamento" searchPlaceholder="Buscar departamento..." allLabel="Sin asignar" icon="map"></app-searchable-select>
                   } @else {
                     <span class="text-xs text-slate-500">{{ asCiudad(item).departamento_nombre || '—' }}</span>
                   }
@@ -171,7 +178,7 @@ interface TabDef {
               </td>
             </tr>
           }
-          @if (items().length === 0) {
+          @if (paginatedItems().length === 0) {
             <tr>
               <td [attr.colspan]="activeTab() === 'ciudades' ? 4 : 3" class="py-16 text-center">
                 <div class="flex flex-col items-center gap-2 opacity-40">
@@ -184,6 +191,24 @@ interface TabDef {
           }
         </tbody>
       </table>
+      @if (totalPages() > 1) {
+        <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-slate-950/30">
+          <span class="text-xs font-semibold text-slate-500">
+            {{ filteredItems().length }} registros · pág. {{ page() + 1 }} de {{ totalPages() }}
+          </span>
+          <div class="flex items-center gap-2">
+            <button (click)="goPage(page() - 1)" [disabled]="page() <= 0"
+              class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+              <mat-icon class="!text-sm">chevron_left</mat-icon>
+            </button>
+            <span class="text-sm font-black text-slate-700 dark:text-white">{{ page() + 1 }} / {{ totalPages() }}</span>
+            <button (click)="goPage(page() + 1)" [disabled]="page() >= totalPages() - 1"
+              class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+              <mat-icon class="!text-sm">chevron_right</mat-icon>
+            </button>
+          </div>
+        </div>
+      }
     </div>
   }
 </div>
@@ -211,18 +236,63 @@ export class CatalogosComponent implements OnInit {
 
   editingId = signal<number | null>(null);
   editName = '';
-  editDepId: number | null = null;
+  editDepStr = '';
 
   newName = '';
-  newCiudadDepId: number | null = null;
-  filterDepId: number | null = null;
+  newCiudadDepStr = '';
+  filterDepStr = '';
+  searchText = '';
+  pageSize = 20;
+  page = signal(0);
+
+  departamentoOpts = computed<SelectOption[]>(() =>
+    this.departamentos().map(d => ({ value: String(d.id), label: d.nombre }))
+  );
 
   currentTab = computed(() => this.tabs.find(t => t.key === this.activeTab())!);
   canAdd = computed(() => {
     if (!this.newName.trim()) return false;
-    if (this.activeTab() === 'ciudades' && !this.newCiudadDepId) return false;
+    if (this.activeTab() === 'ciudades' && !this.newCiudadDepStr) return false;
     return true;
   });
+
+  filteredItems = computed(() => {
+    const q = this.searchText.trim().toLowerCase();
+    let list = this.items();
+    if (this.activeTab() === 'ciudades' && this.filterDepStr) {
+      const depId = +this.filterDepStr;
+      list = list.filter(it => this.asCiudad(it).departamento_id === depId);
+    }
+    if (q) {
+      list = list.filter(it => it.nombre.toLowerCase().includes(q));
+    }
+    return list;
+  });
+
+  paginatedItems = computed(() => {
+    const start = this.page() * this.pageSize;
+    return this.filteredItems().slice(start, start + this.pageSize);
+  });
+
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredItems().length / this.pageSize)));
+
+  onSearchChange(): void {
+    this.page.set(0);
+  }
+
+  onFilterDepChange(): void {
+    this.page.set(0);
+    this.loadList();
+  }
+
+  onPageSizeChange(): void {
+    this.page.set(0);
+  }
+
+  goPage(p: number): void {
+    if (p < 0 || p >= this.totalPages()) return;
+    this.page.set(p);
+  }
 
   ngOnInit(): void {
     this.loadDepartamentos();
@@ -237,21 +307,24 @@ export class CatalogosComponent implements OnInit {
     this.activeTab.set(key);
     this.editingId.set(null);
     this.newName = '';
-    this.filterDepId = null;
+    this.filterDepStr = '';
+    this.searchText = '';
+    this.page.set(0);
     this.loadList();
   }
 
   loadDepartamentos(): void {
     this.api.listCatalog('departamentos').subscribe({
       next: d => this.departamentos.set(d),
-      error: () => {}
+      error: () => { }
     });
   }
 
   loadList(): void {
     this.loading.set(true);
     if (this.activeTab() === 'ciudades') {
-      this.api.listCiudades(this.filterDepId ? { departamento_id: this.filterDepId } : {}).subscribe({
+      const depId = this.filterDepStr ? +this.filterDepStr : null;
+      this.api.listCiudades(depId ? { departamento_id: depId } : {}).subscribe({
         next: d => { this.items.set(d); this.loading.set(false); },
         error: () => this.loading.set(false)
       });
@@ -268,12 +341,13 @@ export class CatalogosComponent implements OnInit {
     this.saving.set(true);
     const nombre = this.newName.trim();
     const op = this.activeTab() === 'ciudades'
-      ? this.api.createCiudad({ nombre, departamento_id: this.newCiudadDepId! })
+      ? this.api.createCiudad({ nombre, departamento_id: +this.newCiudadDepStr })
       : this.api.createCatalogItem(this.activeTab(), { nombre });
     op.subscribe({
       next: () => {
         this.saving.set(false);
         this.newName = '';
+        this.newCiudadDepStr = '';
         // refrescar departamentos si se creó uno
         if (this.activeTab() === 'departamentos') this.loadDepartamentos();
         this.loadList();
@@ -289,20 +363,20 @@ export class CatalogosComponent implements OnInit {
   startEdit(item: CatalogItem | CiudadItem): void {
     this.editingId.set(item.id);
     this.editName = item.nombre;
-    if (this.activeTab() === 'ciudades') this.editDepId = (item as CiudadItem).departamento_id;
+    if (this.activeTab() === 'ciudades') this.editDepStr = String((item as CiudadItem).departamento_id ?? '');
   }
 
   cancelEdit(): void {
     this.editingId.set(null);
     this.editName = '';
-    this.editDepId = null;
+    this.editDepStr = '';
   }
 
   saveEdit(item: CatalogItem | CiudadItem): void {
     const nombre = this.editName.trim();
     if (!nombre) return;
     const op = this.activeTab() === 'ciudades'
-      ? this.api.updateCiudad(item.id, { nombre, departamento_id: this.editDepId ?? undefined })
+      ? this.api.updateCiudad(item.id, { nombre, departamento_id: this.editDepStr ? +this.editDepStr : undefined })
       : this.api.updateCatalogItem(this.activeTab(), item.id, { nombre });
     op.subscribe({
       next: () => {

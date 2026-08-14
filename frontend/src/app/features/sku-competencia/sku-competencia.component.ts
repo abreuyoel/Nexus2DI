@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,6 +7,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 interface Grupo {
   id_producto_cliente: number;
@@ -18,14 +19,36 @@ interface Grupo {
 @Component({
   selector: 'app-sku-competencia',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, SearchableSelectComponent],
   templateUrl: './sku-competencia.component.html',
 })
 export class SkuCompetenciaComponent implements OnInit {
+  // Expuesto para uso en el template (paginación)
+  Math = Math;
+
   loading = signal(false);
   clientes = signal<any[]>([]);
   clienteId: number | null = null;
   grupos = signal<Grupo[]>([]);
+
+  clienteOptions = computed<SelectOption[]>(() =>
+    this.clientes().map((c) => ({ value: String(c.id), label: c.nombre || c.cliente }))
+  );
+  get clienteIdStr(): string { return this.clienteId != null ? String(this.clienteId) : ''; }
+
+  // Paginación client-side sobre los grupos (SKU propios del cliente)
+  grupoPage = signal(0);
+  grupoPageSize = signal(20);
+  paginatedGrupos = computed<Grupo[]>(() => {
+    const size = this.grupoPageSize();
+    const start = this.grupoPage() * size;
+    return this.grupos().slice(start, start + size);
+  });
+  get totalGrupoPages(): number {
+    return Math.max(1, Math.ceil(this.grupos().length / this.grupoPageSize()));
+  }
+  goGrupoPage(p: number): void { this.grupoPage.set(p); }
+  onGrupoPageSizeChange(val: number): void { this.grupoPageSize.set(val); this.grupoPage.set(0); }
 
   // Buscador para agregar un SKU propio nuevo
   buscarPropio = '';
@@ -42,12 +65,17 @@ export class SkuCompetenciaComponent implements OnInit {
   seleccionCompetencia = new Set<number>();
   private buscarCompetencia$ = new Subject<string>();
 
-  constructor(private api: ApiService, private snack: MatSnackBar) {}
+  constructor(private api: ApiService, private snack: MatSnackBar) { }
 
   ngOnInit(): void {
-    this.api.getClients().subscribe({ next: (d) => this.clientes.set(d || []), error: () => {} });
+    this.api.getClients().subscribe({ next: (d) => this.clientes.set(d || []), error: () => { } });
     this.buscarPropio$.pipe(debounceTime(300), distinctUntilChanged()).subscribe((term) => this.ejecutarBusquedaPropio(term));
     this.buscarCompetencia$.pipe(debounceTime(300), distinctUntilChanged()).subscribe((term) => this.ejecutarBusquedaCompetencia(term));
+  }
+
+  onClienteSelectChange(val: string): void {
+    this.clienteId = val ? +val : null;
+    this.onClienteChange();
   }
 
   onClienteChange(): void {
@@ -60,6 +88,7 @@ export class SkuCompetenciaComponent implements OnInit {
   loadGrupos(): void {
     if (!this.clienteId) return;
     this.loading.set(true);
+    this.grupoPage.set(0);
     this.api.getSkuCompetenciaMapeos(this.clienteId).subscribe({
       next: (d) => { this.grupos.set(d || []); this.loading.set(false); },
       error: () => { this.grupos.set([]); this.loading.set(false); this.snack.open('Error al cargar los mapeos', 'OK', { duration: 3000 }); },
@@ -84,6 +113,7 @@ export class SkuCompetenciaComponent implements OnInit {
     }
     this.grupos.update((list) => [{ id_producto_cliente: p.id, producto_cliente: p.producto_gu, marca_cliente: p.marca ?? null, competencia: [] }, ...list]);
     this.buscarPropio = ''; this.resultadosPropio.set([]);
+    this.grupoPage.set(0);
     this.abrirBuscadorCompetencia(p.id);
   }
 

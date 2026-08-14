@@ -30,36 +30,40 @@ def get_report_summary(
     if not fecha_fin:
         fecha_fin = date.today()
 
-    query = db.query(Visita).filter(
+    from sqlalchemy import func, case
+
+    # Filtros compartidos entre visitas y fotos (evita duplicar lógica).
+    visita_filters = [
         Visita.fecha >= fecha_inicio,
         Visita.fecha <= fecha_fin,
-    )
+    ]
     if ruta_id:
-        query = query.filter(Visita.ruta_id == ruta_id)
+        visita_filters.append(Visita.ruta_id == ruta_id)
 
-    visitas = query.all()
-    total = len(visitas)
-    completadas = sum(1 for v in visitas if v.estado == "completada")
-    pendientes = sum(1 for v in visitas if v.estado == "pendiente")
+    # 1) Visitas: agregación SQL pura (una sola fila, sin traer objetos a memoria).
+    visitas_stats = db.query(
+        func.count(Visita.id).label("total"),
+        func.sum(case((Visita.estado == "completada", 1), else_=0)).label("completadas"),
+        func.sum(case((Visita.estado == "pendiente", 1), else_=0)).label("pendientes"),
+    ).filter(*visita_filters).first()
 
-    # Subquery en vez de una lista de ids en Python: con miles de visitas en
-    # el rango, un IN(...) con un id por parámetro superaba el límite de
-    # ~2100 parámetros de SQL Server (error "COUNT field incorrect").
-    visita_ids_subq = query.with_entities(Visita.id)
-    from sqlalchemy import func, case
-    if total:
-        counts = db.query(
-            func.count(Foto.id).label("total"),
-            func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
-            func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
-            func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes")
-        ).filter(Foto.visita_id.in_(visita_ids_subq)).first()
-        fotos_total = counts.total or 0
-        fotos_aprobadas = counts.aprobadas or 0
-        fotos_rechazadas = counts.rechazadas or 0
-        fotos_pendientes = counts.pendientes or 0
-    else:
-        fotos_total = fotos_aprobadas = fotos_rechazadas = fotos_pendientes = 0
+    total = int(visitas_stats.total or 0)
+    completadas = int(visitas_stats.completadas or 0)
+    pendientes = int(visitas_stats.pendientes or 0)
+
+    # 2) Fotos: JOIN directo contra las visitas del rango. Evita el IN(...)
+    #    gigante que rompía con más de ~2100 parámetros en SQL Server.
+    fotos_stats = db.query(
+        func.count(Foto.id).label("total"),
+        func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
+        func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
+        func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes"),
+    ).join(Visita, Foto.visita_id == Visita.id).filter(*visita_filters).first()
+
+    fotos_total = int(fotos_stats.total or 0)
+    fotos_aprobadas = int(fotos_stats.aprobadas or 0)
+    fotos_rechazadas = int(fotos_stats.rechazadas or 0)
+    fotos_pendientes = int(fotos_stats.pendientes or 0)
 
     return {
         "periodo": {"inicio": str(fecha_inicio), "fin": str(fecha_fin)},
