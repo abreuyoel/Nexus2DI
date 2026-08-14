@@ -155,12 +155,12 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Auto-refresh silencioso cada 60s SI hay eventos pendientes
+    // Auto-refresh silencioso cada 5 min SI hay eventos pendientes
     this.autoRefreshInterval = setInterval(() => {
       if (this.hasPendingUpdates()) {
         this.dismissAndRefresh();
       }
-    }, 60_000);
+    }, 300_000);
   }
 
   ngOnDestroy() {
