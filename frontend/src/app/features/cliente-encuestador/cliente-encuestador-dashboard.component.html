@@ -173,6 +173,11 @@
         <div class="flex items-center gap-2 mb-3">
           <mat-icon class="!text-base text-indigo-400">person</mat-icon>
           <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Médicos</span>
+          <mat-icon
+            class="!text-xs !w-3 !h-3 text-slate-600 hover:text-slate-400 cursor-help ml-auto"
+            matTooltip="Cantidad de médicos distintos registrados. No tiene por qué coincidir con Encuestas: una misma encuesta/visita puede registrar varios médicos de un mismo centro."
+            matTooltipPosition="above"
+          >info_outline</mat-icon>
         </div>
         <div class="text-3xl font-black text-white">{{ kpis.total_medicos }}</div>
       </div>
@@ -191,6 +196,11 @@
         <div class="flex items-center gap-2 mb-3">
           <mat-icon class="!text-base text-emerald-400">assignment</mat-icon>
           <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Encuestas</span>
+          <mat-icon
+            class="!text-xs !w-3 !h-3 text-slate-600 hover:text-slate-400 cursor-help ml-auto"
+            matTooltip="Cantidad de encuestas/visitas de verificación realizadas, no de médicos. Una encuesta puede registrar más de un médico, por eso este número no coincide con Médicos."
+            matTooltipPosition="above"
+          >info_outline</mat-icon>
         </div>
         <div class="text-3xl font-black text-white">{{ kpis.total_encuestas }}</div>
         <div class="text-[10px] text-emerald-400/60 mt-1.5 flex items-center gap-1">

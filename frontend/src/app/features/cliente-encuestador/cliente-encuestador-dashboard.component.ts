@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { environment } from '../../../environments/environment';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration, ChartData, ChartType, ChartOptions } from 'chart.js';
@@ -15,7 +16,7 @@ import { debounceTime } from 'rxjs/operators';
 @Component({
   selector: 'app-cliente-encuestador-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective, MatIconModule, MatFormFieldModule, MatSelectModule],
+  imports: [CommonModule, FormsModule, BaseChartDirective, MatIconModule, MatFormFieldModule, MatSelectModule, MatTooltipModule],
   templateUrl: './cliente-encuestador-dashboard.component.html',
   styles: [`
     .glass-panel {
