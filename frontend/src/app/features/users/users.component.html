@@ -33,15 +33,17 @@
     </div>
   </div>
 
+  @if (!isClientePuro()) {
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-2 overflow-x-auto mb-6">
-    <div class="flex gap-1 min-w-max">
-      <button (click)="activeTab.set('usuarios')" [ngClass]="activeTab() === 'usuarios' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Usuarios</button>
-      <button (click)="activeTab.set('analistas')" [ngClass]="activeTab() === 'analistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Analistas</button>
-      <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
-      <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
-      <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
+      <div class="flex gap-1 min-w-max">
+        <button (click)="activeTab.set('usuarios')" [ngClass]="activeTab() === 'usuarios' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Usuarios</button>
+        <button (click)="activeTab.set('analistas')" [ngClass]="activeTab() === 'analistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Analistas</button>
+        <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
+        <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
+        <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
+      </div>
     </div>
-  </div>
+  }
   @if (activeTab() === 'usuarios') {
       <div class="p-6 space-y-6">
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 flex flex-col md:flex-row md:items-end gap-4">
@@ -49,12 +51,14 @@
             <h2 class="text-xl font-black text-slate-900 dark:text-white">Usuarios</h2>
             <p class="text-xs text-slate-500 mt-1">{{ tabHints['usuarios'] }}</p>
           </div>
-          <button (click)="showForm() ? showForm.set(false) : openCreateForm()"
-            [ngClass]="showForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
-            class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
-            <mat-icon class="!text-base">{{ showForm() ? 'close' : 'person_add' }}</mat-icon>
-            {{ showForm() ? 'Cerrar' : 'Nuevo Usuario' }}
-          </button>
+          @if (!isClientePuro()) {
+            <button (click)="showForm() ? showForm.set(false) : openCreateForm()"
+              [ngClass]="showForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
+              class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
+              <mat-icon class="!text-base">{{ showForm() ? 'close' : 'person_add' }}</mat-icon>
+              {{ showForm() ? 'Cerrar' : 'Nuevo Usuario' }}
+            </button>
+          }
         </div>
 
         <div class="relative">
@@ -234,8 +238,8 @@
                 </td>
               </ng-container>
 
-              <tr mat-header-row *matHeaderRowDef="columns"></tr>
-              <tr mat-row *matRowDef="let row; columns: columns;" class="hover:bg-slate-50 transition-colors border-b border-slate-100"></tr>
+              <tr mat-header-row *matHeaderRowDef="columnsForRole"></tr>
+              <tr mat-row *matRowDef="let row; columns: columnsForRole;" class="hover:bg-slate-50 transition-colors border-b border-slate-100"></tr>
             </table>
           </div>
         }

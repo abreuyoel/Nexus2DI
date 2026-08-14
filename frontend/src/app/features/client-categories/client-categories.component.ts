@@ -9,6 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ClientCategoriesDialogComponent } from '../users/client-categories-dialog.component';
 import { HasPermDirective } from '../../core/directives/has-perm.directive';
 
@@ -65,12 +66,14 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
               <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">{{ filteredClients().length }} cliente(s) con esta categoría</span>
             }
           </div>
-          <button *hasPerm="'client-categories'; action:'write'" (click)="toggleBulkMode()"
-            [ngClass]="bulkMode() ? 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
-            class="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
-            <mat-icon class="!text-base">{{ bulkMode() ? 'close' : 'playlist_add_check' }}</mat-icon>
-            {{ bulkMode() ? 'Cancelar' : 'Asignación Masiva' }}
-          </button>
+          @if (!isClientePuro()) {
+            <button *hasPerm="'client-categories'; action:'write'" (click)="toggleBulkMode()"
+              [ngClass]="bulkMode() ? 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
+              class="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
+              <mat-icon class="!text-base">{{ bulkMode() ? 'close' : 'playlist_add_check' }}</mat-icon>
+              {{ bulkMode() ? 'Cancelar' : 'Asignación Masiva' }}
+            </button>
+          }
         </div>
 
         @if (bulkMode()) {
@@ -133,8 +136,9 @@ import { HasPermDirective } from '../../core/directives/has-perm.directive';
                         {{ bulkSelected().has(c.id) ? 'Seleccionado' : 'Seleccionar' }}
                       </button>
                     } @else {
-                      <button mat-flat-button color="primary" class="!rounded-xl !bg-indigo-600 hover:!bg-indigo-500 w-full" *hasPerm="'client-categories'; action:'write'" (click)="manageCategories(c)">
-                        <mat-icon class="mr-2">category</mat-icon> Gestionar Categorías
+                      <button mat-flat-button color="primary" class="!rounded-xl !bg-indigo-600 hover:!bg-indigo-500 w-full" (click)="manageCategories(c)">
+                        <mat-icon class="mr-2">{{ isClientePuro() ? 'visibility' : 'category' }}</mat-icon> 
+                        {{ isClientePuro() ? 'Ver Categorías' : 'Gestionar Categorías' }}
                       </button>
                     }
                   </div>
@@ -176,9 +180,12 @@ export class ClientCategoriesComponent implements OnInit {
   bulkSelected = signal<Set<number>>(new Set());
   bulkSaving = signal(false);
 
-  constructor(private api: ApiService, private dialog: MatDialog, private snack: MatSnackBar) {}
+  isClientePuro = signal(false);
+
+  constructor(private api: ApiService, private auth: AuthService, private dialog: MatDialog, private snack: MatSnackBar) {}
 
   ngOnInit() {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.api.getClients().subscribe(data => {
       this.clients.set(data);
       this.loading.set(false);
@@ -213,7 +220,15 @@ export class ClientCategoriesComponent implements OnInit {
   filteredClients() {
     const term = this.searchTerm.toLowerCase().trim();
     const catIds = this.categoryClientIds();
-    return this.clients().filter(c => {
+    let result = this.clients();
+
+    // El cliente puro solo ve su propio cliente
+    if (this.isClientePuro()) {
+      const myId = this.auth.currentUser()?.id_perfil;
+      result = result.filter(c => c.id === myId);
+    }
+
+    return result.filter(c => {
       if (catIds && !catIds.has(c.id)) return false;
       if (!term) return true;
       return (c.nombre && c.nombre.toLowerCase().includes(term)) ||
@@ -226,7 +241,7 @@ export class ClientCategoriesComponent implements OnInit {
     this.dialog.open(ClientCategoriesDialogComponent, {
       width: '760px',
       panelClass: 'premium-dialog-panel',
-      data: { cliente: c }
+      data: { cliente: c, readonly: this.isClientePuro() }
     });
   }
 

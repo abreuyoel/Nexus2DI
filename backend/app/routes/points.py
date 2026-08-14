@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import text
+from typing import List, Optional, Union
 from app.db.session import get_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.models.user import Usuario
@@ -8,14 +9,30 @@ from app.models.punto import PuntoInteres
 from app.models.catalogo import (
     TipoNegocio, SubtipoNegocio, Alcance, CanalVenta, DepartamentoGeo, Ciudad,
 )
-from app.schemas.cliente import PuntoInteresCreate, PuntoInteresUpdate, PuntoInteresResponse
+from app.schemas.cliente import PuntoInteresCreate, PuntoInteresUpdate, PuntoInteresResponse, PuntoInteresClienteResponse
 from app.services.audit_service import log_action
 from app.core.request_ip import get_client_ip
 
 router = APIRouter(prefix="/api/points", tags=["Puntos de Interés"])
 
 
-@router.get("/", response_model=List[PuntoInteresResponse])
+def _apply_client_pdv_filter(query, current_user: Usuario, db: Session):
+    """Si el usuario es cliente puro (id_rol=1), restringe la consulta de
+    PuntoInteres a los que están en RUTA_PROGRAMACION para su id_cliente
+    (USUARIOS.id_perfil). Retorna la query sin modificar para otros roles."""
+    if current_user.rol != "client" or not current_user.id_perfil:
+        return query
+    ids_pdv = db.execute(text("""
+        SELECT DISTINCT rp.id_punto_interes
+        FROM RUTA_PROGRAMACION rp
+        WHERE rp.id_cliente = :cid AND rp.activa = 1
+    """), {"cid": int(current_user.id_perfil)}).scalars().all()
+    if not ids_pdv:
+        return query.filter(PuntoInteres.id == None)  # noqa: E711
+    return query.filter(PuntoInteres.id.in_(ids_pdv))
+
+
+@router.get("/", response_model=List[Union[PuntoInteresResponse, PuntoInteresClienteResponse]])
 def list_points(
     region: Optional[str] = None,
     ciudad: Optional[str] = None,
@@ -27,9 +44,11 @@ def list_points(
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     query = db.query(PuntoInteres)
+    # Filtrar PDVs por cliente si es rol 'client'
+    query = _apply_client_pdv_filter(query, current_user, db)
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -47,7 +66,11 @@ def list_points(
             PuntoInteres.nombre.ilike(f"%{search}%") |
             PuntoInteres.id.ilike(f"%{search}%")
         )
-    return query.order_by(PuntoInteres.nombre).offset(skip).limit(limit).all()
+    rows = query.order_by(PuntoInteres.nombre).offset(skip).limit(limit).all()
+    # El cliente no recibe coordenadas geográficas
+    if current_user.rol == "client":
+        return [PuntoInteresClienteResponse.model_validate(r) for r in rows]
+    return rows
 
 
 @router.post("/", response_model=PuntoInteresResponse, status_code=201)
@@ -128,9 +151,10 @@ def count_points(
     nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     query = db.query(PuntoInteres)
+    query = _apply_client_pdv_filter(query, current_user, db)
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -151,15 +175,18 @@ def count_points(
     return {"total": query.count()}
 
 
-@router.get("/{point_id}", response_model=PuntoInteresResponse)
+@router.get("/{point_id}")
 def get_point(
     point_id: str,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(get_current_user),
 ):
     punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
+    # El cliente no recibe coordenadas geográficas
+    if current_user.rol == "client":
+        return PuntoInteresClienteResponse.model_validate(punto)
     return punto
 
 

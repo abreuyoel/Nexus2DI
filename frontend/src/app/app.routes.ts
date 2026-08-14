@@ -33,7 +33,7 @@ export const routes: Routes = [
         path: 'centro-mando',
         loadComponent: () => import('./features/centro-mando/centro-mando.component').then((m) => m.CentroMandoComponent),
         canActivate: [roleGuard],
-        data: { roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
+        data: { roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo', 'client'] },
       },
       {
         path: 'centro-mando-auditoria',
@@ -54,6 +54,8 @@ export const routes: Routes = [
       {
         path: 'points',
         loadComponent: () => import('./features/visits/points/points.component').then((m) => m.PointsComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'supervisor', 'atc', 'client'] },
       },
       {
         path: 'photos',
@@ -69,13 +71,13 @@ export const routes: Routes = [
         path: 'users',
         loadComponent: () => import('./features/users/users.component').then((m) => m.UsersComponent),
         canActivate: [roleGuard],
-        data: { roles: ['admin'] },
+        data: { roles: ['admin', 'client'] },
       },
       {
         path: 'client-categories',
         loadComponent: () => import('./features/client-categories/client-categories.component').then((m) => m.ClientCategoriesComponent),
         canActivate: [roleGuard],
-        data: { roles: ['admin'] },
+        data: { roles: ['admin', 'client'] },
       },
       {
         path: 'sku-competencia',
@@ -173,13 +175,13 @@ export const routes: Routes = [
         path: 'client',
         loadComponent: () => import('./features/client-photos/client-photos.component').then(m => m.ClientPhotosComponent),
         canActivate: [roleGuard],
-        data: { roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'] },
+        data: { roles: ['coordinador_exclusivo', 'coordinador_tradex'] },
       },
       {
         path: 'client/visits',
         loadComponent: () => import('./features/client-visits/client-visits.component').then(m => m.ClientVisitsComponent),
         canActivate: [roleGuard],
-        data: { roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'] },
+        data: { roles: ['coordinador_exclusivo', 'coordinador_tradex'] },
       },
 
       {
@@ -198,7 +200,7 @@ export const routes: Routes = [
         path: 'products',
         loadComponent: () => import('./features/products/products.component').then(m => m.ProductsComponent),
         canActivate: [roleGuard],
-        data: { roles: ['admin', 'atc'] },
+        data: { roles: ['admin', 'atc', 'client'] },
       },
       {
         path: 'data',

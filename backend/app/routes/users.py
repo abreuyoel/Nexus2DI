@@ -26,9 +26,9 @@ def list_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',))),
+    current_user: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',))),
 ):
-    users = db.query(
+    q = db.query(
         Usuario,
         Cliente.nombre.label('cliente_nombre'),
         Analista.nombre.label('analista_nombre'),
@@ -46,13 +46,24 @@ def list_users(
         Encuestador, (Usuario.id_perfil == Encuestador.id) & (Usuario.id_rol.in_((12, 13)))
     ).outerjoin(
         Ejecutivo, (Usuario.id_perfil == Ejecutivo.id) & (Usuario.id_rol == 15)
-    ).order_by(Usuario.id).offset(skip).limit(limit).all()
+    )
+
+    # El cliente puro (id_rol=1) solo ve otros usuarios de su mismo cliente
+    # (misma id_perfil = mismo id_cliente en CLIENTES).
+    if current_user.rol == "client":
+        q = q.filter(
+            Usuario.id_rol == 1,
+            Usuario.id_perfil == current_user.id_perfil,
+        )
+
+    users = q.order_by(Usuario.id).offset(skip).limit(limit).all()
 
     result = []
     for u, c_nombre, a_nombre, m_nombre, e_nombre, ej_nombre in users:
         u.perfil_nombre = c_nombre or a_nombre or m_nombre or e_nombre or ej_nombre
         result.append(u)
     return result
+
 
 
 @router.post("/", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)

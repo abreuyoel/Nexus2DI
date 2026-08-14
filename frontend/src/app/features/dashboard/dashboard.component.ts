@@ -4,7 +4,7 @@ import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatButtonModule } from '@angular/material/button';
-import { RouterLink } from '@angular/router';
+import { RouterLink, ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -40,10 +40,18 @@ export class DashboardComponent implements OnInit {
   constructor(
     private api: ApiService, 
     public auth: AuthService,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private route: ActivatedRoute
   ) {}
 
   ngOnInit(): void {
+    // Leer queryParam ?view=powerbi para activar directamente la pestaña Power BI
+    this.route.queryParams.subscribe(params => {
+      if (params['view'] === 'powerbi') {
+        this.activeView.set('powerbi');
+      }
+    });
+
     if (this.isClientUser()) {
       this.loadClientData();
     } else {
