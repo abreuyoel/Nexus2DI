@@ -57,6 +57,8 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   gestionPorDia   = signal<any>({ fechas: [], clientes: [] });
   clientes        = signal<any[]>([]);
 
+  isClientePuro   = signal(false);
+
   // ─── Horas Trabajadas (por mercaderista, de mayor a menor) ────────────────
   loadingHoras    = signal(false);
   horasTrabajadas = signal<any[]>([]);
@@ -134,6 +136,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   private rtSubscription?: Subscription;
 
   ngOnInit() {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.loadClientes();
     this.loadResumenDia();
     this.loadActivaciones();
@@ -181,7 +184,17 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   // ─── Cargas ───────────────────────────────────────────────────────────────
   loadClientes() {
     this.api.getCentroMandoClientes().subscribe({
-      next: (res) => { if (res.success) this.clientes.set(res.clientes); },
+      next: (res) => { 
+        if (res.success) {
+          if (this.isClientePuro()) {
+            const myId = this.auth.currentUser()?.id_perfil;
+            this.clientes.set(res.clientes.filter((c: any) => c.id_cliente === myId));
+            this.filtroCliente = myId || null;
+          } else {
+            this.clientes.set(res.clientes);
+          }
+        } 
+      },
       error: () => {}
     });
   }

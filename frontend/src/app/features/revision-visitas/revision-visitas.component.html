@@ -68,10 +68,12 @@
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <!-- Cliente primero: escopa rutas/puntos/mercaderistas de abajo -->
-      <select [(ngModel)]="filtroCliente" (ngModelChange)="onClienteFiltroChange()" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
-        <option value="">Todos los clientes</option>
-        @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
-      </select>
+      @if (!isClientePuro()) {
+        <select [(ngModel)]="filtroCliente" (ngModelChange)="onClienteFiltroChange()" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+          <option value="">Todos los clientes</option>
+          @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
+        </select>
+      }
 
       <!-- Rutas: multi-select -->
       <div class="relative flex-1 min-w-[140px]">

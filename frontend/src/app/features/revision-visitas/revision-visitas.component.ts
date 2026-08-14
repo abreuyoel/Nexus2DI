@@ -90,13 +90,23 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   private rtSubscription?: Subscription;
 
   ngOnInit(): void {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     const r = this.rangeFor('hoy');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
     this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
     this.api.getCentroMandoClientes().subscribe({
-      next: (r) => this.clientesCatalogo.set(r?.clientes || []),
+      next: (res) => {
+        if (this.isClientePuro()) {
+          const myId = this.auth.currentUser()?.id_perfil;
+          this.clientesCatalogo.set(res.clientes?.filter((c: any) => c.id_cliente === myId) || []);
+          this.filtroCliente = this.clientesCatalogo()[0]?.cliente || '';
+          this.onClienteFiltroChange();
+        } else {
+          this.clientesCatalogo.set(res?.clientes || []);
+        }
+      },
       error: () => {},
     });
     // Tiempo real: acumular eventos y mostrar indicador visual (pulse),

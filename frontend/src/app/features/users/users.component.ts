@@ -196,11 +196,17 @@ export class UsersComponent implements OnInit {
   }
 
   loadData(): void {
-    this.api.getUsers().subscribe(data => { this.users.set(data); this.loading.set(false); });
-    this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
-    this.api.getClients().subscribe(data => this.clients.set(data));
-    this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
-    this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
+    this.api.getUsers().subscribe({
+      next: data => { this.users.set(data); this.loading.set(false); },
+      error: () => { this.loading.set(false); }
+    });
+    
+    if (!this.isClientePuro()) {
+      this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
+      this.api.getClients().subscribe(data => this.clients.set(data));
+      this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
+      this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
+    }
   }
 
   getProfilesForSelectedRole() {
