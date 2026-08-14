@@ -9,7 +9,7 @@
   width: 100%;
   height: calc(100vh - 250px);
   min-height: 600px;
-  
+
   ::ng-deep iframe {
     position: absolute;
     top: 0;
@@ -19,4 +19,15 @@
     border: none !important;
     border-radius: 12px;
   }
+}
+
+/* Los inputs nativos type="date" no respetan las clases dark: de Tailwind en
+   todos los navegadores; forzamos el icono del calendario a ser visible en
+   ambos temas y el color del texto para que no se pierda en modo oscuro. */
+input[type='date'] {
+  color-scheme: light;
+}
+
+:host-context(.dark) input[type='date'] {
+  color-scheme: dark;
 }

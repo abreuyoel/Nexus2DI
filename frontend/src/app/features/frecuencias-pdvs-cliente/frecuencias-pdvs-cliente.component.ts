@@ -7,6 +7,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
   { valor: 5, texto: '5 = 5 días a la semana' },
@@ -19,12 +20,13 @@ const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
 @Component({
   selector: 'app-frecuencias-pdvs-cliente',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, SearchableSelectComponent],
   templateUrl: './frecuencias-pdvs-cliente.component.html',
   styleUrls: ['./frecuencias-pdvs-cliente.component.scss'],
 })
 export class FrecuenciasPdvsClienteComponent implements OnInit {
   readonly frecuenciaHints = FRECUENCIA_HINTS;
+  Math = Math;
 
   loading = signal(true);
   saving = signal(false);
@@ -37,7 +39,7 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
 
   showForm = signal(false);
   editing = signal<any>(null);
-  pdvFiltro = '';
+  pdvFiltro = signal('');
 
   form = {
     id_cliente: null as number | null,
@@ -47,12 +49,54 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     activo: true,
   };
 
+  // --- Options para selects searchables ---
+  clienteOptions = computed<SelectOption[]>(() =>
+    this.clientes().map((c) => ({ value: String(c.id), label: c.nombre }))
+  );
+  estadoOptions: SelectOption[] = [
+    { value: 'true', label: 'Activo' },
+    { value: 'false', label: 'Inactivo' },
+  ];
+
+  get filtroClienteStr(): string { return this.filtroCliente() != null ? String(this.filtroCliente()) : ''; }
+  onFiltroClienteChange(val: string): void { this.filtroCliente.set(val ? +val : null); this.cargar(); }
+  get filtroActivoStr(): string { return this.filtroActivo(); }
+  onFiltroActivoChange(val: string): void { this.filtroActivo.set(val); this.cargar(); }
+
+  // Form: cliente + PDV
+  get formClienteStr(): string { return this.form.id_cliente != null ? String(this.form.id_cliente) : ''; }
+  onFormClienteChange(val: string): void { this.form.id_cliente = val ? +val : null; }
+
   pdvsFiltrados = computed(() => {
-    const f = this.pdvFiltro.trim().toLowerCase();
+    const f = this.pdvFiltro().trim().toLowerCase();
     const list = this.pdvs();
     if (!f) return list.slice(0, 100);
     return list.filter(p => (p.nombre || '').toLowerCase().includes(f) || (p.id || '').toLowerCase().includes(f)).slice(0, 100);
   });
+  pdvOptions = computed<SelectOption[]>(() =>
+    this.pdvsFiltrados().map(p => ({ value: String(p.id), label: `${p.nombre} (${p.id})` }))
+  );
+  get formPdvStr(): string { return this.form.id_punto_interes ? String(this.form.id_punto_interes) : ''; }
+  onFormPdvChange(val: string): void { this.form.id_punto_interes = val; }
+
+  // --- Paginación client-side — tabla de registros ---
+  registrosPage = signal(0);
+  registrosPageSize = signal(20);
+  paginatedRegistros = computed<any[]>(() => {
+    const size = this.registrosPageSize();
+    const start = this.registrosPage() * size;
+    return this.registros().slice(start, start + size);
+  });
+  get totalRegistroPages(): number { return Math.max(1, Math.ceil(this.registros().length / this.registrosPageSize())); }
+  get registroRangeLabel(): string {
+    const total = this.registros().length;
+    if (!total) return 'Mostrando 0–0 de 0';
+    const start = this.registrosPage() * this.registrosPageSize() + 1;
+    const end = Math.min((this.registrosPage() + 1) * this.registrosPageSize(), total);
+    return `Mostrando ${start}–${end} de ${total}`;
+  }
+  goRegistroPage(p: number): void { this.registrosPage.set(p); }
+  onRegistroPageSizeChange(val: number): void { this.registrosPageSize.set(val); this.registrosPage.set(0); }
 
   // --- Carga masiva: cliente -> PDVs únicos de su programación de ruta ---
   showBulk = signal(false);
@@ -64,16 +108,38 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
 
   bulkPendientesCount = computed(() => this.bulkPdvs().filter(p => p.frecuencia_semanal != null).length);
 
-  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) {}
+  get bulkClienteStr(): string { return this.bulkCliente != null ? String(this.bulkCliente) : ''; }
+
+  // --- Paginación client-side — tabla de carga masiva ---
+  bulkPage = signal(0);
+  bulkPageSize = signal(20);
+  paginatedBulkPdvs = computed(() => {
+    const size = this.bulkPageSize();
+    const start = this.bulkPage() * size;
+    return this.bulkPdvs().slice(start, start + size);
+  });
+  get totalBulkPages(): number { return Math.max(1, Math.ceil(this.bulkPdvs().length / this.bulkPageSize())); }
+  get bulkRangeLabel(): string {
+    const total = this.bulkPdvs().length;
+    if (!total) return 'Mostrando 0–0 de 0';
+    const start = this.bulkPage() * this.bulkPageSize() + 1;
+    const end = Math.min((this.bulkPage() + 1) * this.bulkPageSize(), total);
+    return `Mostrando ${start}–${end} de ${total}`;
+  }
+  goBulkPage(p: number): void { this.bulkPage.set(p); }
+  onBulkPageSizeChange(val: number): void { this.bulkPageSize.set(val); this.bulkPage.set(0); }
+
+  constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) { }
 
   ngOnInit(): void {
     this.cargar();
-    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => {} });
-    this.api.getPDVList().subscribe({ next: d => this.pdvs.set(d), error: () => {} });
+    this.api.getClients().subscribe({ next: d => this.clientes.set(d), error: () => { } });
+    this.api.getPDVList().subscribe({ next: d => this.pdvs.set(d), error: () => { } });
   }
 
   cargar(): void {
     this.loading.set(true);
+    this.registrosPage.set(0);
     const opts: any = {};
     if (this.filtroCliente() != null) opts.id_cliente = this.filtroCliente();
     if (this.filtroActivo() !== '') opts.activo = this.filtroActivo() === 'true';
@@ -91,7 +157,7 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     this.showBulk.set(false);
     this.editing.set(null);
     this.form = { id_cliente: null, id_punto_interes: '', frecuencia_semanal: null, observaciones: '', activo: true };
-    this.pdvFiltro = '';
+    this.pdvFiltro.set('');
     this.showForm.set(true);
   }
 
@@ -101,7 +167,7 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
       id_cliente: r.id_cliente, id_punto_interes: r.id_punto_interes,
       frecuencia_semanal: r.frecuencia_semanal, observaciones: r.observaciones || '', activo: r.activo,
     };
-    this.pdvFiltro = r.pdv_nombre || r.id_punto_interes || '';
+    this.pdvFiltro.set(r.pdv_nombre || r.id_punto_interes || '');
     this.showForm.set(true);
   }
 
@@ -140,6 +206,7 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     this.bulkCliente = null;
     this.bulkPdvs.set([]);
     this.bulkAplicarTodos = null;
+    this.bulkPage.set(0);
     this.showBulk.set(true);
   }
 
@@ -147,8 +214,10 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     this.showBulk.set(false);
   }
 
-  onBulkClienteChange(): void {
+  onBulkClienteChange(val: string): void {
+    this.bulkCliente = val ? +val : null;
     this.bulkPdvs.set([]);
+    this.bulkPage.set(0);
     if (this.bulkCliente == null) return;
     this.bulkLoading.set(true);
     this.api.getPdvsDisponiblesParaFrecuencia(this.bulkCliente).subscribe({

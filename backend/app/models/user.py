@@ -29,6 +29,7 @@ class Usuario(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     password = Column("password_hash", String(255), nullable=False)
     email = Column(String(200), nullable=True)
+    cedula = Column(String(50), nullable=True)
     id_rol = Column(Integer, ForeignKey("ROLES.id_rol"), nullable=True)
     id_perfil = Column(Integer, nullable=True)
     activo = Column(Boolean, default=True)

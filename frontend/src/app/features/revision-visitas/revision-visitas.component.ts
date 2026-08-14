@@ -22,14 +22,15 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
   standalone: true,
   imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, MatDialogModule, AuthImgDirective],
   templateUrl: './revision-visitas.component.html',
+  styleUrls: ['./revision-visitas.component.scss'],
 })
 export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
 
   // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
-  pendingEvents      = signal(0);
-  hasPendingUpdates  = signal(false);
+  pendingEvents = signal(0);
+  hasPendingUpdates = signal(false);
   private autoRefreshInterval?: any;
   private audioCtx?: AudioContext;
   // Roster de mercaderistas (vía MERCADERISTAS -> MERCADERISTAS_RUTAS ->
@@ -59,6 +60,15 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   rutasDropdownOpen = signal(false);
   mercaderistasDropdownOpen = signal(false);
 
+  // ─── Paginación client-side ─────────────────────────────────────────────
+  // El backend ya trae todo el set filtrado por rango de fechas (y cliente
+  // cuando aplica). Paginar en el cliente evita re-consultar el servidor en
+  // cada cambio de página y mantiene la búsqueda/filtros instantáneos.
+  readonly PAGE_ROSTER = 12;    // tarjetas de mercaderistas por página
+  readonly PAGE_VISITAS = 9;    // tarjetas de visitas por página
+  rosterPage = signal(1);
+  visitasPage = signal(1);
+
   // Modal de revisión
   reviewOpen = signal(false);
   selectedVisita = signal<any>(null);
@@ -85,7 +95,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   constructor(
     private api: ApiService, private snack: MatSnackBar, private auth: AuthService, private realtime: RealtimeService,
     private dialog: MatDialog, private router: Router,
-  ) {}
+  ) { }
 
   private rtSubscription?: Subscription;
 
@@ -94,10 +104,10 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
     this.loadRoster();
-    this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => {} });
+    this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => { } });
     this.api.getCentroMandoClientes().subscribe({
       next: (r) => this.clientesCatalogo.set(r?.clientes || []),
-      error: () => {},
+      error: () => { },
     });
     // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
     // en vez de refrescar agresivamente cada 800ms.
@@ -130,9 +140,26 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   dismissAndRefresh(): void {
     this.pendingEvents.set(0);
     this.hasPendingUpdates.set(false);
+    this.resetPages();
     this.load();
     this.loadRoster();
   }
+
+  /** Redirige a Auditoría de Data (misma SPA, carga lazy → rápido). Si se pasa
+   *  una visita (o hay una en revisión), va directo a su revisión de data. */
+  openAuditoriaData(visita?: any): void {
+    const src = visita ?? this.selectedVisita();
+    const id = src?.id_visita ?? src?.id;
+    this.router.navigate(['/auditoria-data'], {
+      queryParams: id ? { visita: id } : {},
+    });
+  }
+
+  /** Vuelve a la página 1 de ambos niveles (roster y visitas). */
+  private resetPages(): void { this.rosterPage.set(1); this.visitasPage.set(1); }
+
+  goRosterPage(p: number): void { this.rosterPage.set(Math.max(1, Math.min(p, this.totalRosterPages))); }
+  goVisitasPage(p: number): void { this.visitasPage.set(Math.max(1, Math.min(p, this.totalVisitasPages))); }
 
   private playNotifSound(): void {
     try {
@@ -175,6 +202,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
 
   load(): void {
     this.loading.set(true);
+    this.visitasPage.set(1);
     this.api.getReviewList({ desde: this.desde, hasta: this.hasta }).subscribe({
       next: (d) => { this.visitas.set(d || []); this.loading.set(false); },
       error: () => { this.visitas.set([]); this.loading.set(false); },
@@ -187,6 +215,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
    * pantalla, ordenado en `rosterFiltrado` por quién tiene más sin revisar. */
   private loadRoster(clienteId?: number): void {
     this.loadingRoster.set(true);
+    this.rosterPage.set(1);
     this.api.getReviewMercaderistas(clienteId ? { cliente_id: clienteId } : {}).subscribe({
       next: (rs) => { this.mercaderistasRoster.set(rs || []); this.loadingRoster.set(false); },
       error: () => { this.mercaderistasRoster.set([]); this.loadingRoster.set(false); },
@@ -282,8 +311,26 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
     return [...roster, ...extra];
   }
 
+  /** Agrega las visitas por mercaderista+cliente en UNA sola pasada: así el
+   * `rosterFiltrado` no recorre el array completo de visitas por cada tarjeta
+   * (antes era O(roster × visitas), lo que se notaba lento con muchos datos). */
+  private get statsPorMercaderista(): Map<string, { visitas: number; fotos: number; aprobadas: number; sin_revisar: number }> {
+    const map = new Map<string, { visitas: number; fotos: number; aprobadas: number; sin_revisar: number }>();
+    for (const v of this.visitas()) {
+      const k = `${v.id_mercaderista}_${v.cliente}`;
+      const acc = map.get(k) || { visitas: 0, fotos: 0, aprobadas: 0, sin_revisar: 0 };
+      acc.visitas += 1;
+      acc.fotos += v.fotos_revisar || 0;
+      acc.aprobadas += v.aprobadas || 0;
+      acc.sin_revisar += v.sin_revisar || 0;
+      map.set(k, acc);
+    }
+    return map;
+  }
+
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
+    const stats = this.statsPorMercaderista;
     return this.rosterConVisitasHuerfanas
       .filter(r => {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
@@ -293,7 +340,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
         if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
         return true;
       })
-      .map(r => ({ ...r, _stats: this.statsDeRoster(r) }))
+      .map(r => ({ ...r, _stats: stats.get(`${r.id_mercaderista}_${r.cliente}`) || { visitas: 0, fotos: 0, aprobadas: 0, sin_revisar: 0 } }))
       .sort((a, b) => {
         if (b._stats.sin_revisar !== a._stats.sin_revisar) return b._stats.sin_revisar - a._stats.sin_revisar;
         if (b._stats.visitas !== a._stats.visitas) return b._stats.visitas - a._stats.visitas;
@@ -301,16 +348,24 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
       });
   }
 
-  private statsDeRoster(r: any) {
-    const vs = this.visitas().filter(v => v.id_mercaderista === r.id_mercaderista && v.cliente === r.cliente);
-    const fotos = vs.reduce((a, v) => a + (v.fotos_revisar || 0), 0);
-    const apr = vs.reduce((a, v) => a + (v.aprobadas || 0), 0);
-    const sin = vs.reduce((a, v) => a + (v.sin_revisar || 0), 0);
-    return { visitas: vs.length, fotos, aprobadas: apr, sin_revisar: sin };
+  // ── Paginación (roster y visitas) ──────────────────────────────────────
+  // El clamp implícito evita páginas vacías: si un filtro reduce el total,
+  // se aterriza automáticamente a la última página disponible.
+  get totalRosterPages(): number { return Math.max(1, Math.ceil(this.rosterFiltrado.length / this.PAGE_ROSTER)); }
+  get rosterPaginado(): any[] {
+    const page = Math.min(this.rosterPage(), this.totalRosterPages);
+    const start = (page - 1) * this.PAGE_ROSTER;
+    return this.rosterFiltrado.slice(start, start + this.PAGE_ROSTER);
+  }
+  get totalVisitasPages(): number { return Math.max(1, Math.ceil(this.filtered.length / this.PAGE_VISITAS)); }
+  get visitasPaginado(): any[] {
+    const page = Math.min(this.visitasPage(), this.totalVisitasPages);
+    const start = (page - 1) * this.PAGE_VISITAS;
+    return this.filtered.slice(start, start + this.PAGE_VISITAS);
   }
 
-  selectMercaderista(r: any): void { this.selectedMercaderista.set(r); }
-  backToRoster(): void { this.selectedMercaderista.set(null); }
+  selectMercaderista(r: any): void { this.selectedMercaderista.set(r); this.visitasPage.set(1); }
+  backToRoster(): void { this.selectedMercaderista.set(null); this.rosterPage.set(1); }
 
   toggleRutaFiltro(r: string): void {
     const i = this.filtroRutas.indexOf(r);
@@ -379,11 +434,11 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
 
   // Agrupación de tipos de foto (para no mostrar tantos chips)
   readonly GRUPOS: { key: string; label: string; icon: string; ids: number[]; revisable: boolean }[] = [
-    { key: 'gestion',      label: 'Gestión',              icon: 'photo_camera',  ids: [1, 2],  revisable: true  },
-    { key: 'exhibiciones', label: 'Exhibiciones',         icon: 'view_carousel', ids: [4, 7],  revisable: true  },
-    { key: 'pop',          label: 'Material POP',         icon: 'campaign',      ids: [8, 10], revisable: true  },
-    { key: 'precio',       label: 'Precio',               icon: 'sell',          ids: [3],     revisable: true  },
-    { key: 'activacion',   label: 'Activación / Desact.', icon: 'bolt',          ids: [5, 6],  revisable: false },
+    { key: 'gestion', label: 'Gestión', icon: 'photo_camera', ids: [1, 2], revisable: true },
+    { key: 'exhibiciones', label: 'Exhibiciones', icon: 'view_carousel', ids: [4, 7], revisable: true },
+    { key: 'pop', label: 'Material POP', icon: 'campaign', ids: [8, 10], revisable: true },
+    { key: 'precio', label: 'Precio', icon: 'sell', ids: [3], revisable: true },
+    { key: 'activacion', label: 'Activación / Desact.', icon: 'bolt', ids: [5, 6], revisable: false },
   ];
 
   /** Agrupa el desglose `v.tipos` en grupos con total/rechazadas, omitiendo los vacíos. */
@@ -555,10 +610,12 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
     });
     ref.afterClosed().subscribe(thread => {
       if (thread?.id_grupo) {
-        this.router.navigate(['/chat'], { queryParams: {
-          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
-          grupo_visita: thread.id_visita, titulo: thread.titulo,
-        } });
+        this.router.navigate(['/chat'], {
+          queryParams: {
+            grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+            grupo_visita: thread.id_visita, titulo: thread.titulo,
+          }
+        });
       }
     });
   }
@@ -606,7 +663,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get groupHasPairs(): boolean {
     const ph = this.photosByGrupo();
     return ph.some(f => this.ANTES_IDS.includes(f.id_tipo_foto)) &&
-           ph.some(f => this.DESPUES_IDS.includes(f.id_tipo_foto));
+      ph.some(f => this.DESPUES_IDS.includes(f.id_tipo_foto));
   }
 
   get showCompare(): boolean { return this.comparar && this.groupHasPairs; }

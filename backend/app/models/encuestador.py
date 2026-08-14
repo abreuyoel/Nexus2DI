@@ -12,6 +12,8 @@ class Encuestador(Base):
     id = Column("id_encuestador", Integer, primary_key=True, index=True)
     cedula = Column(Integer, unique=True, nullable=False, index=True)
     nombre = Column(String(200), nullable=False)
+    telefono = Column(String(50), nullable=True)
+    email = Column(String(200), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
@@ -109,8 +111,11 @@ class CatalogoEncuestador(Base):
     __tablename__ = "CATALOGOS_ENCUESTADOR"
 
     id = Column("id_catalogo", Integer, primary_key=True, index=True)
-    tipo = Column(String(50), nullable=False, index=True)  # 'especialidad', 'estado', 'ciudad'
+    tipo = Column(String(50), nullable=False, index=True)  # 'especialidad', 'subespecialidad', 'universidad', 'estado', 'ciudad'
     nombre = Column(String(150), nullable=False)
+    creado_por = Column(String(150), nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow, nullable=True)
+    modificado_en = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint('tipo', 'nombre', name='uq_tipo_nombre'),

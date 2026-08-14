@@ -1,6 +1,7 @@
 import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, FormArray } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -55,12 +56,19 @@ export class DataComponent implements OnInit {
   visitColumns = ['fecha', 'cliente', 'pdv', 'mercaderista', 'acciones'];
   balanceColumns = ['producto', 'categoria', 'inv_inicial', 'inv_final', 'inv_deposito', 'caras', 'precio_bs', 'precio_usd'];
 
+  /** ID de visita recibido por queryParam (?visita=N) para abrir su revisión
+   *  directamente al entrar a Auditoría de Data. */
+  private pendingVisitaId: number | null = null;
+
   constructor(
     private api: ApiService,
     private fb: FormBuilder,
-    private snack: MatSnackBar
+    private snack: MatSnackBar,
+    private route: ActivatedRoute,
   ) {
     this.balancesForm = this.fb.group({ balances: this.fb.array([]) });
+    const q = this.route.snapshot.queryParamMap.get('visita');
+    this.pendingVisitaId = q ? +q : null;
   }
 
   get balancesArray() { return this.balancesForm.get('balances') as FormArray; }
@@ -81,7 +89,15 @@ export class DataComponent implements OnInit {
     if (this.puntoSearch) opts.punto_id = this.puntoSearch;
 
     this.api.getVisitsWithBalances(opts).subscribe({
-      next: (data) => { this.visits.set(data); this.loadingVisits.set(false); },
+      next: (data) => {
+        this.visits.set(data);
+        this.loadingVisits.set(false);
+        if (this.pendingVisitaId != null) {
+          const found = (data as any[]).find((v: any) => Number(v.id) === Number(this.pendingVisitaId));
+          this.pendingVisitaId = null;
+          if (found) this.reviewVisit(found);
+        }
+      },
       error: () => this.loadingVisits.set(false)
     });
   }

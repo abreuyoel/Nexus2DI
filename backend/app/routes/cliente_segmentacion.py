@@ -203,7 +203,8 @@ def list_usuarios_cliente(db: Session = Depends(get_db), _: Usuario = Depends(ge
     id_perfil = id_cliente (relación con CLIENTES)."""
     rows = db.execute(text("""
         SELECT u.id_usuario, u.username, u.id_perfil AS id_cliente, c.cliente,
-               (SELECT COUNT(*) FROM CLIENTES_RUTAS cr WHERE cr.id_usuario = u.id_usuario) AS n_rutas
+               (SELECT COUNT(DISTINCT rp.id_ruta) FROM RUTA_PROGRAMACION rp
+                WHERE rp.id_cliente = u.id_perfil AND rp.activa = 1) AS n_rutas
         FROM USUARIOS u
         LEFT JOIN CLIENTES c ON c.id_cliente = u.id_perfil
         WHERE u.id_rol = 1 AND u.activo = 1
