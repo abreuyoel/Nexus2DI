@@ -156,7 +156,7 @@ def _to_float(val) -> float:
     return float(val)
 
 
-def calcular_pendientes(db: Session) -> list[dict]:
+def calcular_pendientes(db: Session, usar_modelo: bool = True) -> list[dict]:
     # CAST(GETDATE() AS DATE), no date.today(): el contenedor corre en UTC,
     # y date.today() ya se adelantaba de día (a partir de las 20:00 hora de
     # Caracas, UTC-4) frente a la hora real del negocio -- eso rompía
@@ -171,6 +171,23 @@ def calcular_pendientes(db: Session) -> list[dict]:
 
     universo = _execute_with_timeout(db, UNIVERSO_QUERY, (), timeout=30)
     visitas = _execute_with_timeout(db, VISITAS_QUERY, (inicio_mes,), timeout=30)
+
+    # Modelo entrenado (LightGBM) para el peso de riesgo, si ya existe uno --
+    # ver app/services/plan_accion_ml_service.py. Reemplaza PESO_TIPO
+    # (0.6/1.0 fijo a mano) por una probabilidad real cuando está disponible;
+    # si todavía no se entrenó ningún modelo (o algo falla al cargarlo), cae
+    # de vuelta a PESO_TIPO tal cual, sin romper el cálculo.
+    modelo_info = None
+    tasas_riesgo = None
+    if usar_modelo:
+        try:
+            from app.services import plan_accion_ml_service as ml
+            modelo_info = ml.cargar_modelo_vigente(db)
+            if modelo_info:
+                tasas_riesgo = ml.resolver_tasas_riesgo(db)
+        except Exception as e:
+            logger.warning(f"[PlanAccion] No se pudo cargar el modelo de riesgo, usando PESO_TIPO fijo: {e}")
+            modelo_info = None
 
     actividad: dict[tuple, dict] = defaultdict(lambda: {
         "hechas_semana": set(), "hechas_mes": set(),
@@ -234,10 +251,23 @@ def calcular_pendientes(db: Session) -> list[dict]:
 
         tipo_pendiente = "fotos_rechazadas" if tiene_rechazada else "nunca_visitado"
         peso_prioridad = _peso_prioridad(prioridad)
-        peso_tipo = PESO_TIPO[tipo_pendiente]
+
+        peso_riesgo_modelo = None
+        if modelo_info:
+            try:
+                from app.services import plan_accion_ml_service as ml
+                peso_riesgo_modelo = ml.predecir_peso_riesgo(
+                    modelo_info, tasas_riesgo, id_punto_interes, id_cliente, prioridad, frecuencia,
+                )
+            except Exception as e:
+                logger.warning(f"[PlanAccion] Fallo prediciendo riesgo para {id_punto_interes}/{id_cliente}: {e}")
+
+        peso_tipo = peso_riesgo_modelo if peso_riesgo_modelo is not None else PESO_TIPO[tipo_pendiente]
         score = urgencia * peso_prioridad * peso_tipo
 
         pendientes.append({
+            "peso_riesgo": round(peso_tipo, 4),
+            "riesgo_de_modelo": peso_riesgo_modelo is not None,
             "id_ruta": id_ruta,
             "ruta_nombre": ruta_nombre,
             "id_punto_interes": id_punto_interes,
@@ -266,7 +296,7 @@ _INSERT_COLS = [
     "id_ruta", "ruta_nombre", "id_punto_interes", "punto_de_interes", "departamento", "ciudad",
     "id_cliente", "cliente_nombre", "prioridad_ruta", "frecuencia_semanal", "periodo",
     "tipo_pendiente", "visitas_requeridas", "visitas_hechas", "visitas_faltantes",
-    "dias_disponibles", "urgencia", "score",
+    "dias_disponibles", "urgencia", "score", "peso_riesgo", "riesgo_de_modelo",
 ]
 
 _INSERT_SQL = f"""

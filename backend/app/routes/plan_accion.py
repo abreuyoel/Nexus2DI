@@ -61,7 +61,7 @@ def listar_pendientes(
                departamento, ciudad, id_cliente, cliente_nombre, prioridad_ruta,
                frecuencia_semanal, periodo, tipo_pendiente, visitas_requeridas,
                visitas_hechas, visitas_faltantes, dias_disponibles, urgencia, score,
-               fecha_calculo
+               peso_riesgo, riesgo_de_modelo, fecha_calculo
         FROM PLAN_ACCION_PENDIENTES
         {where}
         ORDER BY score DESC
@@ -71,7 +71,7 @@ def listar_pendientes(
             "departamento", "ciudad", "id_cliente", "cliente_nombre", "prioridad_ruta",
             "frecuencia_semanal", "periodo", "tipo_pendiente", "visitas_requeridas",
             "visitas_hechas", "visitas_faltantes", "dias_disponibles", "urgencia", "score",
-            "fecha_calculo"]
+            "peso_riesgo", "riesgo_de_modelo", "fecha_calculo"]
     items = [dict(zip(cols, row)) for row in rows]
 
     fecha_calculo = items[0]["fecha_calculo"] if items else None
@@ -108,6 +108,69 @@ def recalcular(
     # bloqueando de paso al resto de la app.
     background_tasks.add_task(_recalcular_background)
     return {"ok": True, "started": True}
+
+
+def _entrenar_background():
+    from app.services import plan_accion_ml_service as ml
+    db = SessionLocal()
+    try:
+        metricas = ml.entrenar_modelo(db)
+        logger.info(f"[PlanAccionML] Modelo entrenado manualmente: {metricas}")
+    except ValueError as e:
+        logger.warning(f"[PlanAccionML] No se entrenó (datos insuficientes): {e}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[PlanAccionML] Error entrenando: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/modelo/entrenar")
+def entrenar_modelo_riesgo(
+    background_tasks: BackgroundTasks,
+    sincrono: bool = False,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permission('plan-accion.recalcular', 'read')),
+):
+    """Entrena (o re-entrena) el modelo de riesgo que reemplaza PESO_TIPO en
+    calcular_pendientes(). sincrono=true devuelve las métricas reales en la
+    respuesta (útil para revisar antes de confiar en el modelo); por default
+    corre en background como /recalcular, porque el entrenamiento sobre ~20k
+    visitas puede tardar unos segundos y no debe bloquear el request."""
+    if sincrono:
+        from app.services import plan_accion_ml_service as ml
+        try:
+            metricas = ml.entrenar_modelo(db)
+            return {"ok": True, "metricas": metricas}
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    background_tasks.add_task(_entrenar_background)
+    return {"ok": True, "started": True}
+
+
+@router.get("/modelo/info")
+def info_modelo_riesgo(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
+):
+    """Métricas del último modelo entrenado (o ninguno todavía) -- para que
+    el admin vea si el score actual sale del modelo o del PESO_TIPO fijo de
+    respaldo, y qué tan confiable es (AUC/average precision reales de
+    validación, no del entrenamiento)."""
+    import json
+    row = _execute_with_timeout(db, """
+        SELECT TOP 1 fecha_entrenamiento, metricas_json, n_entrenamiento, n_validacion
+        FROM PLAN_ACCION_MODELO_RIESGO WHERE activo = 1 ORDER BY fecha_entrenamiento DESC
+    """, (), timeout=10)
+    if not row:
+        return {"entrenado": False}
+    fecha, metricas_json, n_train, n_val = row[0]
+    return {
+        "entrenado": True,
+        "fecha_entrenamiento": fecha.isoformat() if fecha else None,
+        "n_entrenamiento": n_train, "n_validacion": n_val,
+        "metricas": json.loads(metricas_json),
+    }
 
 
 @router.get("/clusters")
