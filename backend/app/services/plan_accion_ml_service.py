@@ -250,10 +250,10 @@ def resolver_tasas_riesgo(db: Session) -> dict:
 
 def predecir_peso_riesgo(modelo_info, tasas: dict, id_punto_interes: str, id_cliente: int,
                           prioridad: str | None, frecuencia_semanal: float) -> float:
-    """peso_riesgo: multiplicador centrado en 1.0 (mismo rango que el
-    PESO_TIPO 0.6/1.0 que reemplaza) -- prob_predicha / tasa_base_global,
-    acotado para que un PDV con historial chico (predicción más ruidosa) no
-    dispare el score a un extremo."""
+    """Predicción de UN solo pendiente -- no usar esto en un loop sobre
+    muchas filas, cada llamada paga el overhead de cruzar a C++ por
+    separado. Para calcular_pendientes() (que recorre potencialmente miles
+    de filas) usar predecir_peso_riesgo_batch()."""
     modelo, _features, tasa_base = modelo_info
     n_pc, rech_pc = tasas["por_pdv_cliente"].get((id_punto_interes, id_cliente), (0, 0))
     n_cl, rech_cl = tasas["por_cliente"].get(id_cliente, [0, 0])
@@ -264,3 +264,33 @@ def predecir_peso_riesgo(modelo_info, tasas: dict, id_punto_interes: str, id_cli
     prob = float(modelo.predict(x)[0])
     peso = prob / tasa_base if tasa_base > 0 else 1.0
     return max(0.3, min(peso, 3.0))
+
+
+def predecir_peso_riesgo_batch(modelo_info, tasas: dict, filas: list[tuple]) -> list[float]:
+    """Versión vectorizada: arma la matriz de features de TODOS los
+    pendientes de una vez y hace UNA sola llamada a modelo.predict() en vez
+    de una por fila. Con miles de pendientes reales, mil llamadas
+    individuales a un modelo de árboles (cada una cruzando a C++ y volviendo)
+    saturaban el único worker del proceso y bloqueaban la app ENTERA, no
+    solo Plan de Acción -- confirmado en vivo en producción (504 en cascada
+    en endpoints sin ninguna relación, como /auth/me, mientras corría
+    /recalcular). `filas` = [(id_punto_interes, id_cliente, prioridad,
+    frecuencia_semanal), ...]."""
+    modelo, _features, tasa_base = modelo_info
+    if not filas:
+        return []
+
+    X = np.empty((len(filas), 5), dtype=float)
+    for i, (id_punto_interes, id_cliente, prioridad, frecuencia_semanal) in enumerate(filas):
+        n_pc, rech_pc = tasas["por_pdv_cliente"].get((id_punto_interes, id_cliente), (0, 0))
+        n_cl, rech_cl = tasas["por_cliente"].get(id_cliente, [0, 0])
+        tasa_cl = (rech_cl / n_cl) if n_cl > 0 else TASA_BASE_PRIOR
+        tasa_pc = (rech_pc / n_pc) if n_pc > 0 else tasa_cl
+        X[i] = (_peso_prioridad_num(prioridad), frecuencia_semanal or 1.0, tasa_pc, tasa_cl, n_pc)
+
+    probs = modelo.predict(X)  # una sola llamada al modelo para las N filas
+    if tasa_base > 0:
+        pesos = probs / tasa_base
+    else:
+        pesos = np.ones(len(filas))
+    return [float(max(0.3, min(p, 3.0))) for p in pesos]
