@@ -265,5 +265,12 @@ def calcular_alertas(db: Session) -> dict:
     return {
         "balances_evaluados": int(len(actual)),
         "alertas_calculadas": int(len(filas_no_normales)),
-        "urgentes": int(actual["urgente"].sum()),
+        # OJO: contar sobre `actual` completo (como se hacía antes) infla
+        # este número con "Quiebre" urgentes -- que a propósito NUNCA se
+        # persisten (ver comentario arriba) -- y con filas sin
+        # id_product/id_cliente que el dropna() de arriba descartó. Hay que
+        # contar sobre filas_no_normales, lo que de verdad quedó insertado,
+        # para que este número coincida con lo que después devuelve
+        # GET /alertas?urgente=true.
+        "urgentes": int(filas_no_normales["urgente"].sum()),
     }
