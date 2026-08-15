@@ -233,6 +233,12 @@ def calcular_alertas(db: Session) -> dict:
     # tabla (confirmado contra datos reales: ~80% de las combinaciones
     # activas ya están en 0 ahora mismo) sin sumar información.
     filas_no_normales = actual[actual["riesgo"].isin(["Riesgo ALTO", "Riesgo MEDIO"])]
+    # id_product puede venir NULL en BALANCES_TOTALES (producto no
+    # identificado bien al escanear la etiqueta) -- confirmado en
+    # producción, tumbaba el int() sin protección. Sin id_product no hay
+    # forma de decir DE QUÉ producto es la alerta, así que se descartan acá
+    # en vez de forzarlas con un placeholder.
+    filas_no_normales = filas_no_normales.dropna(subset=["id_product", "id_cliente"])
     if len(filas_no_normales):
         def _f(v):
             return None if pd.isna(v) else float(v)
