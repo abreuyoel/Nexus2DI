@@ -1,9 +1,10 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartData, ChartOptions } from 'chart.js';
@@ -19,137 +20,21 @@ type DashboardData = {
   top_clientes: { cliente: string; pedidos: number; total: number }[];
 };
 
+type PuntoSerie = { semana: string; total: number };
+type PuntoPronostico = { semana: string; total_esperado: number; rango_bajo: number; rango_alto: number };
+type ClientePronostico = {
+  id_cliente: number; cliente: string;
+  semanas_con_historial: number; semanas_con_pedidos: number; total_historico: number;
+  serie_historica: PuntoSerie[];
+  suficiente_historial: boolean; semanas_faltantes: number;
+  pronostico: PuntoPronostico[];
+};
+
 @Component({
   selector: 'app-ventas-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, RouterLink, BaseChartDirective],
-  template: `
-<div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white">
-  <div class="bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-white/8 px-6 py-5">
-    <div class="flex items-center gap-3 max-w-6xl mx-auto">
-      <a routerLink="/ventas" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700"><mat-icon class="!text-base">arrow_back</mat-icon></a>
-      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-lg">
-        <mat-icon class="text-white">bar_chart</mat-icon>
-      </div>
-      <div class="flex-1">
-        <h1 class="text-xl font-black tracking-tight leading-none">Dashboard de Ventas</h1>
-        <p class="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{{ data()?.periodo?.desde }} → {{ data()?.periodo?.hasta }}</p>
-      </div>
-      <a routerLink="/pedidos-ventas" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1">
-        <mat-icon class="!text-base">receipt_long</mat-icon> Pedidos
-      </a>
-      <div class="flex items-center gap-2">
-        <input type="date" [(ngModel)]="desde" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs">
-        <span class="text-slate-400 text-xs">a</span>
-        <input type="date" [(ngModel)]="hasta" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs">
-      </div>
-    </div>
-  </div>
-
-  <div class="px-6 py-6 max-w-6xl mx-auto">
-    @if (loading()) {
-      <div class="flex justify-center py-24"><mat-spinner diameter="40"></mat-spinner></div>
-    } @else if (data()) {
-
-    <!-- RESUMEN -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
-        <p class="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Pedidos</p>
-        <p class="text-3xl font-black text-slate-800 dark:text-white mt-1">{{ data()!.resumen.pedidos }}</p>
-      </div>
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
-        <p class="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Total vendido</p>
-        <p class="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1">\${{ data()!.resumen.total_vendido.toFixed(2) }}</p>
-      </div>
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
-        <p class="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Ticket promedio</p>
-        <p class="text-3xl font-black text-slate-800 dark:text-white mt-1">\${{ data()!.resumen.ticket_promedio.toFixed(2) }}</p>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-      <!-- VENTAS POR DIA -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
-        <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white">Ventas por día</h3>
-        @if (porDiaChart.labels?.length) {
-          <div style="position:relative; height:220px; width:100%">
-            <canvas baseChart [data]="porDiaChart" [options]="lineOptions" type="line"></canvas>
-          </div>
-        } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
-      </div>
-
-      <!-- PEDIDOS POR ESTADO -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
-        <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white">Pedidos por estado</h3>
-        @if (porEstadoChart.labels?.length) {
-          <div style="position:relative; height:220px; width:100%">
-            <canvas baseChart [data]="porEstadoChart" [options]="doughnutOptions" type="doughnut"></canvas>
-          </div>
-        } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-      <!-- RANKING VENDEDORES -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
-        <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800 flex items-center gap-2">
-          <mat-icon class="!text-base text-amber-500">emoji_events</mat-icon>
-          <h3 class="font-black text-sm text-slate-800 dark:text-white">Ranking de vendedores</h3>
-        </div>
-        <div class="divide-y divide-slate-100 dark:divide-white/5">
-          @for (v of data()!.por_vendedor; track v.vendedor; let i = $index) {
-            <div class="px-5 py-3 flex items-center gap-3">
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
-                    [ngClass]="i===0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'">{{ i+1 }}</span>
-              <span class="flex-1 text-sm font-semibold truncate">{{ v.vendedor }}</span>
-              <span class="text-xs text-slate-400">{{ v.pedidos }} ped.</span>
-              <span class="font-black text-emerald-600 dark:text-emerald-400 text-sm">\${{ v.total.toFixed(0) }}</span>
-            </div>
-          }
-          @if (!data()!.por_vendedor.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
-        </div>
-      </div>
-
-      <!-- TOP PRODUCTOS -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
-        <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800">
-          <h3 class="font-black text-sm text-slate-800 dark:text-white">Productos más vendidos</h3>
-        </div>
-        <div class="divide-y divide-slate-100 dark:divide-white/5">
-          @for (p of data()!.top_productos; track p.producto) {
-            <div class="px-5 py-3 flex items-center gap-3">
-              <span class="flex-1 text-sm font-semibold truncate">{{ p.producto }}</span>
-              <span class="text-xs text-slate-400">{{ p.unidades }} u.</span>
-              <span class="font-black text-slate-700 dark:text-slate-200 text-sm">\${{ p.total.toFixed(0) }}</span>
-            </div>
-          }
-          @if (!data()!.top_productos.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
-        </div>
-      </div>
-    </div>
-
-    <!-- TOP CLIENTES -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
-      <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800">
-        <h3 class="font-black text-sm text-slate-800 dark:text-white">Clientes con más pedidos</h3>
-      </div>
-      <div class="divide-y divide-slate-100 dark:divide-white/5">
-        @for (c of data()!.top_clientes; track c.cliente) {
-          <div class="px-5 py-3 flex items-center gap-3">
-            <mat-icon class="!text-base text-slate-400">storefront</mat-icon>
-            <span class="flex-1 text-sm font-semibold truncate">{{ c.cliente }}</span>
-            <span class="text-xs text-slate-400">{{ c.pedidos }} ped.</span>
-            <span class="font-black text-emerald-600 dark:text-emerald-400 text-sm">\${{ c.total.toFixed(0) }}</span>
-          </div>
-        }
-        @if (!data()!.top_clientes.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
-      </div>
-    </div>
-
-    }
-  </div>
-</div>
-  `,
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, RouterLink, BaseChartDirective],
+  templateUrl: './ventas-dashboard.component.html',
 })
 export class VentasDashboardComponent implements OnInit {
   private http = inject(HttpClient);
@@ -164,13 +49,48 @@ export class VentasDashboardComponent implements OnInit {
   porDiaChart: ChartData<'line'> = { labels: [], datasets: [] };
   porEstadoChart: ChartData<'doughnut'> = { labels: [], datasets: [] };
 
-  lineOptions: ChartOptions<'line'> = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
-  doughnutOptions: ChartOptions<'doughnut'> = { responsive: true, maintainAspectRatio: false };
+  lineOptions: ChartOptions<'line'> = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.08)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.08)' }, beginAtZero: true },
+    },
+  };
+  doughnutOptions: ChartOptions<'doughnut'> = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 10, font: { size: 11 } } } },
+  };
 
-  ngOnInit() { this.cargar(); }
+  // ── Pronóstico de pedidos (roadmap predictivo, item S2) ─────────────────
+  loadingPronostico = signal(true);
+  pronosticoClientes = signal<ClientePronostico[]>([]);
+  pronosticoSeleccionado = signal<ClientePronostico | null>(null);
+  idClientePronostico: number | null = null;
+  pronosticoChart: ChartData<'line'> = { labels: [], datasets: [] };
+  pronosticoOptions: ChartOptions<'line'> = {
+    responsive: true, maintainAspectRatio: false, spanGaps: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: {
+      legend: {
+        display: true, position: 'bottom',
+        labels: {
+          color: '#94a3b8', boxWidth: 10, font: { size: 11 },
+          filter: (item) => !!item.text && !item.text.startsWith('_'),
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.08)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.08)' }, beginAtZero: true },
+    },
+  };
+
+  ngOnInit() { this.cargar(); this.cargarPronostico(); }
 
   private _isoHoy(): string { return new Date().toISOString().slice(0, 10); }
   private _isoHace(dias: number): string { const d = new Date(); d.setDate(d.getDate() - dias); return d.toISOString().slice(0, 10); }
+  private _fmtSemana(iso: string): string { return formatDate(iso, 'dd/MM', 'en-US'); }
 
   cargar() {
     this.loading.set(true);
@@ -179,15 +99,68 @@ export class VentasDashboardComponent implements OnInit {
         this.data.set(d);
         this.porDiaChart = {
           labels: d.por_dia.map(x => x.dia.slice(5)),
-          datasets: [{ data: d.por_dia.map(x => x.total), label: 'Ventas', borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.15)', fill: true, tension: 0.3 }],
+          datasets: [{ data: d.por_dia.map(x => x.total), label: 'Ventas', borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.15)', fill: true, tension: 0.3, pointRadius: 2 }],
         };
         this.porEstadoChart = {
           labels: d.por_estado.map(x => x.estado),
-          datasets: [{ data: d.por_estado.map(x => x.cantidad), backgroundColor: ['#94a3b8', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#14b8a6'] }],
+          datasets: [{ data: d.por_estado.map(x => x.cantidad), backgroundColor: ['#94a3b8', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#14b8a6'], borderWidth: 0 }],
         };
         this.loading.set(false);
       },
       error: () => { this.loading.set(false); },
     });
+  }
+
+  // Ventana propia de 6 semanas hacia adelante -- independiente del filtro
+  // Desde/Hasta de arriba, igual que la tendencia de competencia de
+  // Auditoría de Campo (una proyección necesita más historia que el rango
+  // corto que se usa para las tarjetas de resumen).
+  cargarPronostico() {
+    this.loadingPronostico.set(true);
+    this.http.get<any>(`${this.API}/pronostico`, { params: { horizonte_semanas: 6 } }).subscribe({
+      next: (res) => {
+        this.loadingPronostico.set(false);
+        const clientes: ClientePronostico[] = res?.clientes || [];
+        this.pronosticoClientes.set(clientes);
+        if (clientes.length) {
+          const preferido = clientes.find(c => c.suficiente_historial) || clientes[0];
+          this.idClientePronostico = preferido.id_cliente;
+          this.seleccionarPronostico(preferido.id_cliente);
+        }
+      },
+      error: () => { this.loadingPronostico.set(false); this.pronosticoClientes.set([]); },
+    });
+  }
+
+  seleccionarPronostico(idCliente: number | null) {
+    const c = this.pronosticoClientes().find(x => x.id_cliente === idCliente) || null;
+    this.pronosticoSeleccionado.set(c);
+    this.buildPronosticoChart(c);
+  }
+
+  private buildPronosticoChart(c: ClientePronostico | null): void {
+    if (!c || !c.suficiente_historial || !c.serie_historica.length) {
+      this.pronosticoChart = { labels: [], datasets: [] };
+      return;
+    }
+    const nHist = c.serie_historica.length;
+    const labels = [...c.serie_historica.map(p => this._fmtSemana(p.semana)), ...c.pronostico.map(p => this._fmtSemana(p.semana))];
+    const huecoAntesForecast = new Array(nHist - 1).fill(null);
+    const ultimoHistorico = c.serie_historica[nHist - 1].total;
+
+    const historico = [...c.serie_historica.map(p => p.total), ...new Array(c.pronostico.length).fill(null)];
+    const pronostico = [...huecoAntesForecast, ultimoHistorico, ...c.pronostico.map(p => p.total_esperado)];
+    const bandaAlta = [...huecoAntesForecast, ultimoHistorico, ...c.pronostico.map(p => p.rango_alto)];
+    const bandaBaja = [...huecoAntesForecast, ultimoHistorico, ...c.pronostico.map(p => p.rango_bajo)];
+
+    this.pronosticoChart = {
+      labels,
+      datasets: [
+        { data: bandaAlta, label: '_rango', borderColor: 'transparent', backgroundColor: 'rgba(16,185,129,0.12)', fill: '+1', pointRadius: 0, tension: 0.2 },
+        { data: bandaBaja, label: '_rango', borderColor: 'transparent', backgroundColor: 'transparent', fill: false, pointRadius: 0, tension: 0.2 },
+        { data: pronostico, label: 'Pronóstico', borderColor: '#10b981', borderDash: [6, 4], backgroundColor: 'transparent', tension: 0.2, pointRadius: 3, borderWidth: 2 },
+        { data: historico, label: 'Histórico', borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)', fill: true, tension: 0.25, pointRadius: 3, borderWidth: 2 },
+      ] as any,
+    };
   }
 }
