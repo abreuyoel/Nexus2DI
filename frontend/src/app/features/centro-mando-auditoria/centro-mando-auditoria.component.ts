@@ -78,6 +78,22 @@ export class CentroMandoAuditoriaComponent implements OnInit {
 
   porClienteCategoria: any[] = [];
 
+  // Tendencia de presencia de competencia (roadmap predictivo, item S7):
+  // ventana propia de semanas, independiente del desde/hasta de arriba (que
+  // por defecto son 7 días -- muy corto para una tendencia con sentido).
+  loadingTendencia = signal(true);
+  tendenciaSeries = signal<any[]>([]);
+  tendenciaChartData: ChartData<'line'> = { labels: [], datasets: [] };
+  tendenciaChartOptions: ChartOptions<'line'> = {
+    responsive: true, maintainAspectRatio: false, spanGaps: true,
+    plugins: { legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', boxWidth: 10, font: { size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, min: 0, suggestedMax: 100 },
+    },
+  };
+  private readonly TENDENCIA_COLORS = ['#f59e0b', '#f43f5e', '#8b5cf6', '#0ea5e9', '#22c55e', '#eab308'];
+
   constructor(private api: ApiService) {}
 
   ngOnInit(): void {
@@ -87,6 +103,7 @@ export class CentroMandoAuditoriaComponent implements OnInit {
     this.hasta = formatDate(hoy, 'yyyy-MM-dd', 'en-US');
     this.api.getCentroMandoAuditoriaFiltros().subscribe({ next: (d) => this.filtros.set(d), error: () => {} });
     this.load();
+    this.loadTendencia();
   }
 
   load(): void {
@@ -107,6 +124,42 @@ export class CentroMandoAuditoriaComponent implements OnInit {
       },
       error: () => { this.loading.set(false); this.resetEmpty(); },
     });
+    this.loadTendencia();
+  }
+
+  loadTendencia(): void {
+    this.loadingTendencia.set(true);
+    this.api.getCentroMandoAuditoriaTendenciaCompetencia({
+      id_ruta: this.idRuta ?? undefined, id_cliente: this.idCliente ?? undefined, id_categoria: this.idCategoria ?? undefined,
+    }).subscribe({
+      next: (res) => {
+        this.loadingTendencia.set(false);
+        if (!res?.success) { this.tendenciaSeries.set([]); this.tendenciaChartData = { labels: [], datasets: [] }; return; }
+        this.tendenciaSeries.set(res.series || []);
+        this.buildTendenciaChart(res.semanas || [], res.series || []);
+      },
+      error: () => { this.loadingTendencia.set(false); this.tendenciaSeries.set([]); this.tendenciaChartData = { labels: [], datasets: [] }; },
+    });
+  }
+
+  private buildTendenciaChart(semanas: string[], series: any[]): void {
+    const top = series.slice(0, 6);
+    this.tendenciaChartData = {
+      labels: semanas.map((s) => formatDate(s, 'dd/MM', 'en-US')),
+      datasets: top.map((s, i) => ({
+        data: s.media_movil, label: s.categoria,
+        borderColor: this.TENDENCIA_COLORS[i % this.TENDENCIA_COLORS.length],
+        backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, borderWidth: 2,
+      })),
+    };
+  }
+
+  tendenciaIcon(t: string): string {
+    return t === 'subiendo' ? 'trending_up' : t === 'bajando' ? 'trending_down' : 'trending_flat';
+  }
+  tendenciaColor(t: string): string {
+    // Sube presión de competencia = mala noticia (rojo); baja = buena (verde).
+    return t === 'subiendo' ? 'text-rose-500' : t === 'bajando' ? 'text-emerald-500' : 'text-slate-400';
   }
 
   private resetEmpty(): void {
