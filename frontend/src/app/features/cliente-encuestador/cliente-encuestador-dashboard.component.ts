@@ -12,6 +12,7 @@ import { ChartConfiguration, ChartData, ChartType, ChartOptions } from 'chart.js
 import * as maplibregl from 'maplibre-gl';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
+import { AuthService } from '../../core/services/auth.service';
 
 @Component({
   selector: 'app-cliente-encuestador-dashboard',
@@ -78,6 +79,7 @@ import { debounceTime } from 'rxjs/operators';
 })
 export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   private http = inject(HttpClient);
+  auth = inject(AuthService);
   private filterSubject = new Subject<void>();
   private filterSub!: Subscription;
   
@@ -190,6 +192,21 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   seleccionarZonaCobertura(estado: string): void {
     this.coberturaZonaSel = estado;
     this.buildCoberturaChart();
+  }
+
+  recalculandoCobertura = false;
+
+  /** El snapshot se recalcula solo 1x/día (scheduler) -- si un médico se
+   *  registró después del último cálculo, el número de esta curva puede
+   *  quedar por debajo de lo que ya muestran los otros gráficos (que sí son
+   *  en vivo). No es un bug de datos, es la naturaleza de un snapshot
+   *  periódico -- pero hay que poder refrescarlo a mano cuando hace falta. */
+  recalcularCobertura(): void {
+    this.recalculandoCobertura = true;
+    this.http.post<any>(`${environment.apiUrl}/api/cobertura-encuestas/recalcular`, {}, { params: { sincrono: true } }).subscribe({
+      next: () => { this.recalculandoCobertura = false; this.cargarCobertura(); },
+      error: () => { this.recalculandoCobertura = false; },
+    });
   }
 
   private buildCoberturaChart(): void {
@@ -350,7 +367,15 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
    *  categorías (28px por barra, mínimo 320) -- el contenedor scrollea, así
    *  que da igual si son 5 o 150: cada barra queda con alto legible. */
   espChartHeightPx(): number {
-    const n = this.espChartData.labels?.length || 0;
+    return this.barChartHeightPx(this.espChartData);
+  }
+
+  /** Mismo criterio para cualquier barra horizontal con cantidad variable de
+   *  categorías (especialidades, universidades, centros de salud): 28px por
+   *  barra, mínimo 320 -- el contenedor scrollea, así que da igual si son 5
+   *  o 150, cada barra queda con alto legible. */
+  barChartHeightPx(data: ChartData<'bar'>): number {
+    const n = data.labels?.length || 0;
     return Math.max(320, n * 28);
   }
 

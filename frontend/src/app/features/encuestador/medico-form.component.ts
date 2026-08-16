@@ -102,8 +102,16 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
               <input type="text" [(ngModel)]="medicoData.sub_especialidad" name="sub_especialidad" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
             </div>
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Universidad de graduación</label>
-              <input type="text" [(ngModel)]="medicoData.universidad_graduacion" name="universidad_graduacion" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+              <app-mutable-search-select
+                label="Universidad de graduación"
+                placeholder="Buscar universidad..."
+                [options]="universidadesList"
+                [(value)]="medicoData.universidad_graduacion"
+                tipo="universidad"
+                [required]="false"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
 
             <div class="md:col-span-1">
@@ -253,6 +261,7 @@ export class MedicoFormComponent implements OnInit {
   catalogos: any = { valor_consulta_rangos: [], promedio_pacientes_rangos: [] };
   isOnline = navigator.onLine;
   especialidadesList: string[] = [];
+  universidadesList: string[] = [];
 
   // Estandarizado a pedido del cliente (2026-08-13): antes Estado/Ciudad eran
   // texto libre vía app-mutable-search-select (cualquier encuestador podía
@@ -597,21 +606,27 @@ export class MedicoFormComponent implements OnInit {
 
   inicializarListasCatalogos() {
     this.especialidadesList = [...(this.catalogos.especialidades || [])];
+    this.universidadesList = [...(this.catalogos.universidades || [])];
   }
 
   // La firma acepta la unión completa que declara app-mutable-search-select
-  // (addNew: EventEmitter<{tipo: 'especialidad'|'estado'|'ciudad', ...}>)
-  // aunque hoy solo quede un uso (especialidad) -- Estado/Ciudad ya no usan
-  // ese componente, ver estadosParaMostrar()/ciudadesDisponibles() arriba.
-  async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'estado' | 'ciudad', value: string }) {
+  // (addNew: EventEmitter<{tipo: 'especialidad'|'estado'|'ciudad'|'universidad', ...}>)
+  // -- Estado/Ciudad ya no usan ese componente (ver estadosParaMostrar()/
+  // ciudadesDisponibles() arriba), quedan especialidad y universidad.
+  async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad', value: string }) {
     const { tipo, value } = event;
     const valorFormateado = value.trim();
     if (!valorFormateado) return;
 
+    // 'estado'/'ciudad' no llegan acá (esos ya no usan este componente),
+    // pero la firma completa sigue viva por compatibilidad con el @Output().
+    const listaKey = tipo === 'especialidad' ? 'especialidades' : tipo === 'universidad' ? 'universidades' : null;
+    const lista = tipo === 'especialidad' ? this.especialidadesList : tipo === 'universidad' ? this.universidadesList : null;
+
     // Añadir localmente si no existe para actualizar la lista de opciones
-    if (!this.especialidadesList.includes(valorFormateado)) {
-      this.especialidadesList.push(valorFormateado);
-      this.especialidadesList.sort();
+    if (lista && !lista.includes(valorFormateado)) {
+      lista.push(valorFormateado);
+      lista.sort();
     }
 
     // Encolar o enviar al backend
@@ -623,14 +638,16 @@ export class MedicoFormComponent implements OnInit {
       );
 
       // Actualizar el caché de catálogos local
-      const cached = await this.offline.cacheRead('catalogos');
-      if (cached) {
-        if (!cached.especialidades) cached.especialidades = [];
-        if (!cached.especialidades.includes(valorFormateado)) {
-          cached.especialidades.push(valorFormateado);
-          cached.especialidades.sort();
+      if (listaKey) {
+        const cached = await this.offline.cacheRead('catalogos');
+        if (cached) {
+          if (!cached[listaKey]) cached[listaKey] = [];
+          if (!cached[listaKey].includes(valorFormateado)) {
+            cached[listaKey].push(valorFormateado);
+            cached[listaKey].sort();
+          }
+          await this.offline.cacheWrite('catalogos', cached);
         }
-        await this.offline.cacheWrite('catalogos', cached);
       }
     } catch (err) {
       console.error('Error guardando catálogo:', err);

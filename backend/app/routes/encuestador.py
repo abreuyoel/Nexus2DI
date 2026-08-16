@@ -588,7 +588,8 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
     especialidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "especialidad").order_by(CatalogoEncuestador.nombre).all()
     estados = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre).all()
     ciudades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre).all()
-    
+    universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
+
     return {
         "valor_consulta_rangos": [
             "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
@@ -607,10 +608,11 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
         "especialidades": [e[0] for e in especialidades],
         "estados": [est[0] for est in estados],
         "ciudades": [c[0] for c in ciudades],
+        "universidades": [u[0] for u in universidades],
     }
 
 class CatalogoCreate(BaseModel):
-    tipo: str  # 'especialidad', 'estado', 'ciudad'
+    tipo: str  # 'especialidad', 'estado', 'ciudad', 'universidad'
     nombre: str
 
 @router.post("/catalogos")
@@ -620,7 +622,7 @@ def api_catalogos_create(req: CatalogoCreate, db: Session = Depends(get_db), cur
     tipo = req.tipo.strip().lower()
     nombre = req.nombre.strip()
     
-    if tipo not in ("especialidad", "estado", "ciudad"):
+    if tipo not in ("especialidad", "estado", "ciudad", "universidad"):
         raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")

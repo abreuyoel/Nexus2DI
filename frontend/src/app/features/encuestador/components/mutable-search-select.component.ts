@@ -95,19 +95,20 @@ const ACCENT_DICT: Record<string, string> = {
   template: `
     <div class="relative w-full">
       <label *ngIf="label" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-        {{ label }} <span class="text-red-500">*</span>
+        {{ label }} <span *ngIf="required" class="text-red-500">*</span>
       </label>
-      
+
       <!-- Select Input Box -->
       <div class="relative flex items-center">
+        <span class="material-icons absolute left-3 text-slate-400 pointer-events-none select-none !text-lg">search</span>
         <input
           type="text"
-          [placeholder]="placeholder || 'Seleccione...'"
+          [placeholder]="placeholder || 'Buscar...'"
           [(ngModel)]="searchQuery"
           (focus)="onFocus()"
           (input)="onInput()"
           [disabled]="disabled"
-          class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg pl-3 pr-10 py-2.5 text-sm text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-slate-800/50"
+          class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg pl-9 pr-10 py-2.5 text-sm text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none disabled:opacity-60 disabled:bg-gray-100 dark:disabled:bg-slate-800/50"
         />
         <span class="material-icons absolute right-3 text-slate-400 pointer-events-none select-none">
           {{ isOpen ? 'arrow_drop_up' : 'arrow_drop_down' }}
@@ -210,10 +211,11 @@ export class MutableSearchSelectComponent implements OnInit, OnChanges {
   @Input() placeholder: string = '';
   @Input() value: string = '';
   @Input() disabled: boolean = false;
-  @Input() tipo: 'especialidad' | 'estado' | 'ciudad' = 'especialidad';
+  @Input() required: boolean = true;
+  @Input() tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad' = 'especialidad';
 
   @Output() valueChange = new EventEmitter<string>();
-  @Output() addNew = new EventEmitter<{ tipo: 'especialidad' | 'estado' | 'ciudad', value: string }>();
+  @Output() addNew = new EventEmitter<{ tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad', value: string }>();
 
   searchQuery: string = '';
   isOpen: boolean = false;

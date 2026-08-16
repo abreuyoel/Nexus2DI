@@ -255,16 +255,26 @@
         <h3 class="text-sm font-bold text-white flex items-center gap-2">
           <mat-icon class="!text-base text-violet-400">show_chart</mat-icon> Curva de cobertura de médicos
         </h3>
-        <div class="flex items-center gap-1 bg-slate-950/60 border border-white/5 rounded-lg p-1" *ngIf="coberturaZonas.length > 1">
-          <button *ngFor="let z of coberturaZonas" (click)="seleccionarZonaCobertura(z.estado)"
-                  class="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
-                  [class.bg-violet-600]="coberturaZonaSel === z.estado" [class.text-white]="coberturaZonaSel === z.estado"
-                  [class.text-slate-400]="coberturaZonaSel !== z.estado">
-            {{ z.estado }}
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 bg-slate-950/60 border border-white/5 rounded-lg p-1" *ngIf="coberturaZonas.length > 1">
+            <button *ngFor="let z of coberturaZonas" (click)="seleccionarZonaCobertura(z.estado)"
+                    class="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
+                    [class.bg-violet-600]="coberturaZonaSel === z.estado" [class.text-white]="coberturaZonaSel === z.estado"
+                    [class.text-slate-400]="coberturaZonaSel !== z.estado">
+              {{ z.estado }}
+            </button>
+          </div>
+          <button *ngIf="auth.currentUser()?.is_admin" (click)="recalcularCobertura()" [disabled]="recalculandoCobertura"
+                  matTooltip="Recalcular ahora -- este gráfico se actualiza solo, una vez al día"
+                  class="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg bg-slate-950/60 border border-white/5 text-slate-400 hover:text-violet-400 hover:border-violet-500/30 transition-colors disabled:opacity-50">
+            <mat-icon class="!text-base" [class.animate-spin]="recalculandoCobertura">refresh</mat-icon>
           </button>
         </div>
       </div>
-      <p class="text-xs text-slate-500 mb-4">Médicos nuevos registrados por semana, acumulado -- proceso que se satura (universo finito de médicos por zona), por eso se proyecta con una curva logística en vez de una serie estacionaria.</p>
+      <p class="text-xs text-slate-500 mb-1">Médicos nuevos registrados por semana, acumulado -- proceso que se satura (universo finito de médicos por zona), por eso se proyecta con una curva logística en vez de una serie estacionaria.</p>
+      <p class="text-[10px] text-slate-600 mb-4" *ngIf="coberturaZonaActual as zf">
+        Última actualización: {{ zf.fecha_calculo | date:'dd/MM/yyyy HH:mm' }} -- se recalcula solo 1 vez al día, puede quedar unas horas detrás de los gráficos en vivo de arriba.
+      </p>
 
       <div *ngIf="loadingCobertura" class="flex items-center justify-center py-16">
         <div class="w-8 h-8 border-[3px] border-violet-500/30 border-t-violet-500 rounded-full animate-spin"></div>
@@ -409,7 +419,11 @@
           <mat-icon class="!text-base text-blue-400">school</mat-icon> Médicos por Universidad
           <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64 cursor-pointer"><canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onUniClick($event)"></canvas></div>
+        <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+          <div [style.height.px]="barChartHeightPx(uniChartData)" class="cursor-pointer">
+            <canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onUniClick($event)"></canvas>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -420,7 +434,11 @@
           <mat-icon class="!text-base text-teal-400">local_hospital</mat-icon> Médicos por Centro de Salud
           <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64 cursor-pointer"><canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onCenClick($event)"></canvas></div>
+        <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+          <div [style.height.px]="barChartHeightPx(cenChartData)" class="cursor-pointer">
+            <canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onCenClick($event)"></canvas>
+          </div>
+        </div>
       </div>
       <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-rose-500/20 transition-all">
         <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4">
