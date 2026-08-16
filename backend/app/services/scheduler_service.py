@@ -8,6 +8,7 @@ from app.models.ruta import RutaCambioFuturo, RutaProgramacion
 from app.core.config import settings
 from app.services.plan_accion_service import recalcular_plan_accion
 from app.services.quiebre_service import calcular_linea_base, calcular_alertas
+from app.services.cobertura_encuestas_service import calcular_cobertura
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler(timezone=settings.SCHEDULER_TIMEZONE)
@@ -112,6 +113,18 @@ def ejecutar_quiebre_alertas():
         db.close()
 
 
+def ejecutar_cobertura_encuestas():
+    db: Session = SessionLocal()
+    try:
+        r = calcular_cobertura(db)
+        logger.info(f"Cobertura de encuestas recalculada: {r}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando cobertura de encuestas: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     scheduler.add_job(
         ejecutar_cambios_futuros,
@@ -143,6 +156,13 @@ def start_scheduler():
         ejecutar_quiebre_alertas,
         trigger=IntervalTrigger(hours=settings.QUIEBRE_ALERTAS_INTERVAL_HOURS),
         id="ejecutar_quiebre_alertas",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        ejecutar_cobertura_encuestas,
+        trigger=IntervalTrigger(hours=settings.COBERTURA_ENCUESTAS_INTERVAL_HOURS),
+        id="ejecutar_cobertura_encuestas",
         replace_existing=True,
         max_instances=1,
     )

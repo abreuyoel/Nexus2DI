@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # que Plan de Acción como aproximación segura en vez de eso.
     QUIEBRE_LINEA_BASE_INTERVAL_HOURS: int = 24
     QUIEBRE_ALERTAS_INTERVAL_HOURS: int = 4
+    # Cobertura de encuestas médicas (S4): pocos cientos de médicos en
+    # total, cambia poco en el día -- una vez al día alcanza de sobra.
+    COBERTURA_ENCUESTAS_INTERVAL_HOURS: int = 24
 
     FRONTEND_URL: str = "http://localhost:4200"
 

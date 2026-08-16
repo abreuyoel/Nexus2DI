@@ -128,6 +128,26 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     }
   };
 
+  // Curva de cobertura de encuestas médicas (roadmap predictivo, S4):
+  // acumulado real de médicos registrados por semana en cada estado, más
+  // proyección logística cuando ya hay suficiente historial para ajustarla.
+  loadingCobertura = true;
+  coberturaZonas: any[] = [];
+  coberturaZonaSel: string | null = null;
+  coberturaChartData: ChartData<'line'> = { labels: [], datasets: [] };
+  coberturaChartOptions: ChartOptions<'line'> = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { color: '#94a3b8', filter: (item) => item.text !== '_rango' } } },
+    scales: {
+      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+    }
+  };
+
+  get coberturaZonaActual(): any {
+    return this.coberturaZonas.find(z => z.estado === this.coberturaZonaSel) || null;
+  }
+
   // Chart Data
   espChartData: ChartData<'bar'> = { labels: [], datasets: [] };
   valChartData: ChartData<'doughnut'> = { labels: [], datasets: [] };
@@ -146,9 +166,56 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadData();
     this.loadFilters();
+    this.cargarCobertura();
     this.filterSub = this.filterSubject.pipe(debounceTime(600)).subscribe(() => {
       this.loadData();
     });
+  }
+
+  cargarCobertura(): void {
+    this.loadingCobertura = true;
+    this.http.get<any>(`${environment.apiUrl}/api/cobertura-encuestas/curva`).subscribe({
+      next: (res) => {
+        this.loadingCobertura = false;
+        this.coberturaZonas = res?.zonas || [];
+        if (this.coberturaZonas.length && !this.coberturaZonaSel) {
+          this.coberturaZonaSel = this.coberturaZonas[0].estado;
+        }
+        this.buildCoberturaChart();
+      },
+      error: () => { this.loadingCobertura = false; this.coberturaZonas = []; },
+    });
+  }
+
+  seleccionarZonaCobertura(estado: string): void {
+    this.coberturaZonaSel = estado;
+    this.buildCoberturaChart();
+  }
+
+  private buildCoberturaChart(): void {
+    const z = this.coberturaZonaActual;
+    if (!z || !z.serie?.length) {
+      this.coberturaChartData = { labels: [], datasets: [] };
+      return;
+    }
+    const nHist = z.serie.length;
+    const proyeccion = z.curva_valida && z.proyeccion ? z.proyeccion : [];
+    const labels = [...z.serie.map((p: any) => p.semana), ...proyeccion.map((p: any) => p.semana)];
+    const hueco = new Array(nHist - 1).fill(null);
+    const ultimoReal = z.serie[nHist - 1].acumulado;
+
+    const real = [...z.serie.map((p: any) => p.acumulado), ...new Array(proyeccion.length).fill(null)];
+    const proyectado = proyeccion.length
+      ? [...hueco, ultimoReal, ...proyeccion.map((p: any) => p.proyectado)]
+      : [];
+
+    this.coberturaChartData = {
+      labels,
+      datasets: [
+        { data: real, label: 'Médicos registrados (acumulado)', borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.15)', fill: true, tension: 0.2, pointRadius: 3, borderWidth: 2 },
+        ...(proyectado.length ? [{ data: proyectado, label: 'Proyección logística', borderColor: '#10b981', borderDash: [6, 4], backgroundColor: 'transparent', tension: 0.2, pointRadius: 2, borderWidth: 2 }] : []),
+      ] as any,
+    };
   }
 
   ngOnDestroy() {

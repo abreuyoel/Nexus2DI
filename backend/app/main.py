@@ -221,6 +221,8 @@ from app.routes import supervisor_encuestadores
 app.include_router(supervisor_encuestadores.router)
 from app.routes import quiebre
 app.include_router(quiebre.router)
+from app.routes import cobertura_encuestas
+app.include_router(cobertura_encuestas.router)
 
 
 
