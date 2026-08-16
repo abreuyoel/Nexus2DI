@@ -37,6 +37,7 @@ class MedicoCentroCreate(BaseModel):
     especialidad: Optional[str] = None
     sub_especialidad: Optional[str] = None
     universidad_graduacion: Optional[str] = None
+    segunda_universidad_graduacion: Optional[str] = None
     nro_MPPS: Optional[str] = None
     nro_colegiado: Optional[str] = None
     ciudad: Optional[str] = None

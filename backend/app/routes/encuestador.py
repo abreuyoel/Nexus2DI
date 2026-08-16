@@ -341,6 +341,7 @@ def api_medicos_buscar(q: str = "", db: Session = Depends(get_db), current_user:
                 "especialidad": m.especialidad,
                 "sub_especialidad": m.sub_especialidad,
                 "universidad_graduacion": m.universidad_graduacion,
+                "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
                 "nro_MPPS": m.nro_MPPS,
                 "nro_colegiado": m.nro_colegiado,
                 "ciudad": m.ciudad,
@@ -402,6 +403,7 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
                 especialidad=req.especialidad,
                 sub_especialidad=req.sub_especialidad,
                 universidad_graduacion=req.universidad_graduacion,
+                segunda_universidad_graduacion=req.segunda_universidad_graduacion,
                 nro_MPPS=req.nro_MPPS,
                 nro_colegiado=req.nro_colegiado,
                 ciudad=req.ciudad,
@@ -509,6 +511,7 @@ def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_us
         "especialidad": medico.especialidad,
         "sub_especialidad": medico.sub_especialidad,
         "universidad_graduacion": medico.universidad_graduacion,
+        "segunda_universidad_graduacion": medico.segunda_universidad_graduacion,
         "nro_MPPS": medico.nro_MPPS,
         "nro_colegiado": medico.nro_colegiado,
         "ciudad": medico.ciudad,
@@ -553,6 +556,7 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
     medico.especialidad = req.especialidad
     medico.sub_especialidad = req.sub_especialidad
     medico.universidad_graduacion = req.universidad_graduacion
+    medico.segunda_universidad_graduacion = req.segunda_universidad_graduacion
     medico.nro_MPPS = req.nro_MPPS
     medico.nro_colegiado = req.nro_colegiado
     medico.ciudad = req.ciudad
@@ -696,6 +700,7 @@ def api_correcciones_pendientes(db: Session = Depends(get_db), current_user: Use
                     "especialidad": m.especialidad,
                     "sub_especialidad": m.sub_especialidad,
                     "universidad_graduacion": m.universidad_graduacion,
+                    "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
                     "nro_MPPS": m.nro_MPPS,
                     "nro_colegiado": m.nro_colegiado,
                     "ciudad": m.ciudad,
@@ -775,6 +780,7 @@ class MedicoCentroUpdateReq(BaseModel):
     especialidad: str
     sub_especialidad: Optional[str] = None
     universidad_graduacion: Optional[str] = None
+    segunda_universidad_graduacion: Optional[str] = None
     nro_MPPS: Optional[str] = None
     nro_colegiado: Optional[str] = None
     ciudad: str
@@ -818,6 +824,7 @@ def api_medico_corregir(
     m.especialidad = req.especialidad
     m.sub_especialidad = req.sub_especialidad
     m.universidad_graduacion = req.universidad_graduacion
+    m.segunda_universidad_graduacion = req.segunda_universidad_graduacion
     m.nro_MPPS = req.nro_MPPS
     m.nro_colegiado = req.nro_colegiado
     m.ciudad = req.ciudad

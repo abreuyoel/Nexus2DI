@@ -113,6 +113,18 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
                 (addNew)="onAddNewCatalogItem($event)"
               ></app-mutable-search-select>
             </div>
+            <div class="md:col-span-2">
+              <app-mutable-search-select
+                label="Segunda universidad de graduación"
+                placeholder="Buscar universidad..."
+                [options]="universidadesList"
+                [(value)]="medicoData.segunda_universidad_graduacion"
+                tipo="universidad"
+                [required]="false"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
+            </div>
 
             <div class="md:col-span-1">
               <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nº MPPS</label>
@@ -361,6 +373,7 @@ export class MedicoFormComponent implements OnInit {
           nombre1: res.nombre1, nombre2: res.nombre2,
           especialidad: res.especialidad, sub_especialidad: res.sub_especialidad,
           universidad_graduacion: res.universidad_graduacion,
+          segunda_universidad_graduacion: res.segunda_universidad_graduacion,
           nro_MPPS: res.nro_MPPS, nro_colegiado: res.nro_colegiado,
           ciudad: res.ciudad, estado: res.estado,
           telefono: res.telefono, whatsapp: res.whatsapp, email: res.email,
@@ -424,6 +437,7 @@ export class MedicoFormComponent implements OnInit {
       especialidad: '',
       sub_especialidad: '',
       universidad_graduacion: '',
+      segunda_universidad_graduacion: '',
       nro_MPPS: '',
       nro_colegiado: '',
       ciudad: '',
