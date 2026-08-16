@@ -13,6 +13,11 @@
           <span class="text-slate-300 dark:text-slate-600">{{ lineaBaseGrupos() }} grupo(s)</span>
         </div>
       }
+      <a href="/assets/docs/Ficha_Tecnica_Quiebre_Dinamico_Nexus2DI.pdf" download matTooltip="Descargar ficha técnica del módulo"
+        class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-black rounded-xl text-sm transition-all active:scale-95">
+        <mat-icon class="!text-base">picture_as_pdf</mat-icon>
+        Ficha técnica (PDF)
+      </a>
       @if (auth.can('plan-accion.recalcular')) {
         <button (click)="recalcularLineaBase()" [disabled]="recalculandoBase()" matTooltip="Recalcula los percentiles P10/P25 sobre los últimos 90 días -- corre solo una vez al día, es la operación pesada"
           class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-black rounded-xl text-sm transition-all active:scale-95">
