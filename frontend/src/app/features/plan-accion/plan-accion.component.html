@@ -25,6 +25,36 @@
     </div>
   </div>
 
+  <!-- Modelo de riesgo (N1) -->
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 flex flex-wrap items-center gap-3 shadow-sm">
+    <div class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center"
+      [ngClass]="modeloInfo()?.entrenado ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'">
+      <mat-icon class="!text-lg" [ngClass]="modeloInfo()?.entrenado ? 'text-emerald-500' : 'text-slate-400'">psychology</mat-icon>
+    </div>
+    <div class="min-w-0 flex-1">
+      @if (modeloInfo()?.entrenado) {
+        <div class="text-sm font-black text-slate-800 dark:text-white">
+          Modelo de riesgo entrenado
+          <span class="font-semibold text-slate-400">· AUC {{ modeloInfo()?.metricas?.auc_validacion | number:'1.2-2' }}</span>
+        </div>
+        <div class="text-xs text-slate-400">
+          Entrenado el {{ modeloInfo()?.fecha_entrenamiento | date:'dd/MM/yyyy HH:mm' }} ·
+          {{ modeloInfo()?.n_entrenamiento | number }} visitas de entrenamiento, {{ modeloInfo()?.n_validacion | number }} de validación
+        </div>
+      } @else {
+        <div class="text-sm font-black text-slate-800 dark:text-white">Modelo de riesgo aún no entrenado</div>
+        <div class="text-xs text-slate-400">El score usa la fórmula fija de respaldo (urgencia × prioridad × tipo) hasta que se entrene por primera vez.</div>
+      }
+    </div>
+    @if (auth.can('plan-accion.recalcular')) {
+      <button (click)="entrenarModelo()" [disabled]="entrenandoModelo()" matTooltip="Entrena (o re-entrena) el modelo con el historial real de visitas"
+        class="shrink-0 flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-black rounded-xl text-sm transition-all active:scale-95">
+        @if (entrenandoModelo()) { <mat-spinner diameter="16" strokeWidth="3"></mat-spinner> } @else { <mat-icon class="!text-base">model_training</mat-icon> }
+        {{ modeloInfo()?.entrenado ? 'Re-entrenar' : 'Entrenar ahora' }}
+      </button>
+    }
+  </div>
+
   <!-- Filtros -->
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-3 flex flex-wrap items-center gap-2 shadow-sm">
     <input [(ngModel)]="search" placeholder="Buscar PDV, cliente, ruta, departamento..."
@@ -211,7 +241,14 @@
                     </span>
                   </td>
                   <td class="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-200">{{ i.visitas_faltantes }} / {{ i.visitas_requeridas }}</td>
-                  <td class="px-4 py-3 text-center font-black" [ngClass]="scoreColor(i.score)">{{ i.score | number:'1.2-2' }}</td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="inline-flex items-center gap-1 font-black" [ngClass]="scoreColor(i.score)">
+                      {{ i.score | number:'1.2-2' }}
+                      @if (i.riesgo_de_modelo) {
+                        <mat-icon class="!text-sm text-emerald-500" matTooltip="Ponderado por el modelo entrenado (peso de riesgo: {{ i.peso_riesgo | number:'1.2-2' }})">psychology</mat-icon>
+                      }
+                    </span>
+                  </td>
                 </tr>
               }
             </tbody>

@@ -1,0 +1,144 @@
+<div class="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <!-- Header -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Quiebre Dinámico</h1>
+      <p class="text-slate-500 dark:text-slate-400 mt-1">Productos que van camino a llegar a 0 antes de la próxima visita programada -- no los que ya están en 0, esos ya se ven en Data.</p>
+    </div>
+    <div class="flex flex-wrap items-end gap-3">
+      @if (lineaBaseFecha()) {
+        <div class="text-xs text-slate-400 font-semibold text-right">
+          Línea base: {{ lineaBaseFecha() | date:'dd/MM/yyyy HH:mm' }}<br>
+          <span class="text-slate-300 dark:text-slate-600">{{ lineaBaseGrupos() }} grupo(s)</span>
+        </div>
+      }
+      @if (auth.can('plan-accion.recalcular')) {
+        <button (click)="recalcularLineaBase()" [disabled]="recalculandoBase()" matTooltip="Recalcula los percentiles P10/P25 sobre los últimos 90 días -- corre solo una vez al día, es la operación pesada"
+          class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-black rounded-xl text-sm transition-all active:scale-95">
+          @if (recalculandoBase()) { <mat-spinner diameter="16" strokeWidth="3"></mat-spinner> } @else { <mat-icon class="!text-base">query_stats</mat-icon> }
+          Línea base
+        </button>
+        <button (click)="recalcularAlertas()" [disabled]="recalculandoAlertas()"
+          class="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-all active:scale-95">
+          @if (recalculandoAlertas()) { <mat-spinner diameter="16" strokeWidth="3" class="!text-white"></mat-spinner> } @else { <mat-icon class="!text-base">refresh</mat-icon> }
+          Recalcular alertas
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (!lineaBaseCalculada() && !loading()) {
+    <div class="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 text-sm font-semibold">
+      <mat-icon class="!text-lg shrink-0">info</mat-icon>
+      Todavía no hay línea base calculada -- las alertas no van a poder clasificar riesgo hasta que corra al menos una vez.
+    </div>
+  }
+
+  <!-- Filtros -->
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-3 flex flex-wrap items-center gap-2 shadow-sm">
+    <input [(ngModel)]="search" placeholder="Buscar PDV, producto, cliente..."
+      class="flex-1 min-w-[200px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+    <select [(ngModel)]="filtroRiesgo" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todo riesgo</option>
+      <option [ngValue]="'Riesgo ALTO'">Riesgo ALTO</option>
+      <option [ngValue]="'Riesgo MEDIO'">Riesgo MEDIO</option>
+    </select>
+    <select [(ngModel)]="filtroCliente" class="flex-1 min-w-[160px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="null">Todos los clientes</option>
+      @for (c of clientesOpts(); track c) { <option [ngValue]="c">{{ c }}</option> }
+    </select>
+    <label class="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-sm font-semibold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+      <input type="checkbox" [(ngModel)]="filtroUrgente" class="accent-primary-600">
+      Solo urgentes
+    </label>
+    <button (click)="clearFilters()" matTooltip="Limpiar filtros"
+      class="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-300 transition-colors">
+      <mat-icon class="!text-base">close</mat-icon>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+      <p class="text-slate-400 font-medium">Cargando alertas de quiebre...</p>
+    </div>
+  } @else {
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-indigo-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalAlertas() }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Alertas activas</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-rose-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalUrgentes() }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Urgentes (llega a 0 antes de visita)</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-orange-500 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalRiesgoAlto() }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Riesgo ALTO</div>
+      </div>
+      <div class="bg-white dark:bg-slate-900 border-t-4 border-amber-400 rounded-2xl p-4 text-center shadow-sm">
+        <div class="text-2xl font-black text-slate-800 dark:text-white">{{ totalRiesgoMedio() }}</div>
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1">Riesgo MEDIO</div>
+      </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden">
+      @if (!filteredItems.length) {
+        <div class="py-16 text-center opacity-40">
+          <mat-icon class="!text-5xl">check_circle</mat-icon>
+          <p class="font-bold mt-2">No hay alertas con estos filtros.</p>
+        </div>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-100 dark:border-white/5 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                <th class="text-left px-4 py-3">PDV</th>
+                <th class="text-left px-4 py-3">Producto</th>
+                <th class="text-left px-4 py-3">Cliente</th>
+                <th class="text-center px-4 py-3">Caras</th>
+                <th class="text-center px-4 py-3">Tendencia</th>
+                <th class="text-center px-4 py-3">Riesgo</th>
+                <th class="text-center px-4 py-3">Próx. visita</th>
+                <th class="text-center px-4 py-3">Días a 0</th>
+                <th class="text-center px-4 py-3">Urgente</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (i of filteredItems; track i.id_alerta) {
+                <tr class="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  [ngClass]="i.urgente ? 'bg-rose-50/40 dark:bg-rose-900/10' : ''">
+                  <td class="px-4 py-3 font-bold text-slate-800 dark:text-white">{{ i.punto_de_interes || i.identificador_pdv }}</td>
+                  <td class="px-4 py-3 text-slate-600 dark:text-slate-300">{{ i.producto || '—' }}</td>
+                  <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ i.cliente || '—' }}</td>
+                  <td class="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-200">{{ i.caras_actual | number:'1.0-1' }}</td>
+                  <td class="px-4 py-3 text-center font-black" [ngClass]="tendenciaClass(i.tendencia)">
+                    @if (i.tendencia != null) { {{ i.tendencia > 0 ? '+' : '' }}{{ i.tendencia | number:'1.0-1' }} } @else { — }
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase" [ngClass]="riesgoBadgeClass(i.riesgo)">
+                      {{ i.riesgo }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-center text-slate-500 dark:text-slate-400">
+                    @if (i.dias_hasta_proxima_visita != null) { {{ i.dias_hasta_proxima_visita }} d } @else { <span class="opacity-40">sin ruta</span> }
+                  </td>
+                  <td class="px-4 py-3 text-center font-black" [ngClass]="diasClass(i.dias_para_llegar_a_cero)">
+                    @if (i.dias_para_llegar_a_cero != null) { {{ i.dias_para_llegar_a_cero | number:'1.0-1' }} d } @else { — }
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    @if (i.urgente) { <mat-icon class="!text-lg text-rose-500" matTooltip="Va a llegar a 0 antes de la próxima visita">warning</mat-icon> }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  }
+</div>

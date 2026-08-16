@@ -609,6 +609,26 @@ export class ApiService {
   confirmarRutaBck(items: any[], idMercaderista: number): Observable<any> {
     return this.http.post<any>(`${this.base}/api/plan-accion/clusters/confirmar`, { items, id_mercaderista: idMercaderista });
   }
+  entrenarModeloPlanAccion(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/plan-accion/modelo/entrenar`, {}, { params: this.params({ sincrono }) });
+  }
+  getModeloInfoPlanAccion(): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/plan-accion/modelo/info`);
+  }
+
+  // --- QUIEBRE DINÁMICO (N2) ---
+  getQuiebreAlertas(opts: { riesgo?: string; urgente?: boolean; id_cliente?: number; identificador_pdv?: string } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre/alertas`, { params: this.params(opts) });
+  }
+  getQuiebreLineaBaseInfo(): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre/linea-base/info`);
+  }
+  recalcularQuiebreLineaBase(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/quiebre/linea-base/recalcular`, {}, { params: this.params({ sincrono }) });
+  }
+  recalcularQuiebreAlertas(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/quiebre/alertas/recalcular`, {}, { params: this.params({ sincrono }) });
+  }
 
   // --- CLIENT CATEGORIES ---
   getClientCategories(clientId: number): Observable<any[]> {

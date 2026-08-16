@@ -92,6 +92,12 @@ export const routes: Routes = [
         data: { roles: ['admin', 'analyst'] },
       },
       {
+        path: 'quiebre',
+        loadComponent: () => import('./features/quiebre/quiebre.component').then((m) => m.QuiebreComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst'] },
+      },
+      {
         path: 'clientes-rutas',
         loadComponent: () => import('./features/clientes-rutas/clientes-rutas.component').then((m) => m.ClientesRutasComponent),
         canActivate: [roleGuard],
