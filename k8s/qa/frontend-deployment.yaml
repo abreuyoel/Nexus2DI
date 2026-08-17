@@ -23,6 +23,11 @@ spec:
         - name: nexus2di-frontend
           # Imagen con tag :qa — construida desde la rama qa
           image: ghcr.io/abreuyoel/nexus2di-frontend:qa
+          # Ver el comentario en k8s/qa/backend-deployment.yaml -- mismo
+          # problema: sin esto, "kubectl rollout restart" reusaba la imagen
+          # :qa vieja cacheada en el nodo en vez de bajar la que se acababa
+          # de pushear.
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
           ports:
