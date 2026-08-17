@@ -15,7 +15,7 @@ from app.services.photo_service import process_and_upload_photo
 router = APIRouter(prefix="/api/merchandisers", tags=["Mercaderistas"])
 
 
-@router.get("/", response_model=List[MercaderistaResponse])
+@router.get("", response_model=List[MercaderistaResponse])
 def list_mercaderistas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
@@ -23,7 +23,7 @@ def list_mercaderistas(
     return db.query(Mercaderista).filter(Mercaderista.activo == True).all()
 
 
-@router.post("/", response_model=MercaderistaResponse, status_code=201)
+@router.post("", response_model=MercaderistaResponse, status_code=201)
 def create_mercaderista(
     data: MercaderistaCreate,
     db: Session = Depends(get_db),

@@ -25,7 +25,7 @@ class SupervisorUpdate(BaseModel):
     nombre: str
 
 
-@router.post("/", status_code=201)
+@router.post("", status_code=201)
 def create_supervisor(
     data: SupervisorCreate,
     db: Session = Depends(get_db),
