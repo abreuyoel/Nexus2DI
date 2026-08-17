@@ -19,7 +19,7 @@ from datetime import datetime
 router = APIRouter(prefix="/api/visits", tags=["Visitas"])
 
 
-@router.get("/", response_model=List[VisitaResponse])
+@router.get("", response_model=List[VisitaResponse])
 def list_visits(
     ruta_id: Optional[int] = None,
     fecha: Optional[date] = None,
@@ -37,7 +37,7 @@ def list_visits(
     return query.order_by(Visita.fecha.desc()).all()
 
 
-@router.post("/", response_model=VisitaResponse, status_code=201)
+@router.post("", response_model=VisitaResponse, status_code=201)
 def create_visit(
     data: VisitaCreate,
     db: Session = Depends(get_db),

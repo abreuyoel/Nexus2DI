@@ -19,7 +19,7 @@ class RouteAssignment(BaseModel):
 
 from sqlalchemy import func
 
-@router.get("/")
+@router.get("")
 def list_mercaderistas_con_rutas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),

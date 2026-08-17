@@ -11,7 +11,7 @@ from app.schemas.cliente import ClienteResponse
 router = APIRouter(prefix="/api/clients", tags=["Clientes"])
 
 
-@router.get("/", response_model=List[ClienteResponse])
+@router.get("", response_model=List[ClienteResponse])
 def list_clients(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
@@ -30,7 +30,7 @@ from app.schemas.cliente import ClienteCreate, ClienteUpdate
 from app.core.dependencies import require_admin
 from fastapi import status
 
-@router.post("/", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
 def create_client(
     data: ClienteCreate,
     db: Session = Depends(get_db),
