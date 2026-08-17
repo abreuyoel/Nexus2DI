@@ -505,6 +505,12 @@ export class ApiService {
   bulkUpsertFrecuenciasPdvCliente(data: { id_cliente: number; items: object[] }): Observable<any> {
     return this.http.post<any>(`${this.base}/api/frecuencias-pdvs-cliente/bulk`, data);
   }
+  importFrecuenciasExcel(idCliente: number, file: File): Observable<any> {
+    const fd = new FormData();
+    fd.append('id_cliente', String(idCliente));
+    fd.append('file', file, file.name);
+    return this.http.post<any>(`${this.base}/api/frecuencias-pdvs-cliente/importar-excel`, fd);
+  }
 
   // --- HORAS PROMEDIO EJECUCIÓN ---
   getHorasPromedioEjecucion(opts: { id_cliente?: number; id_tipo_negocio?: number } = {}): Observable<any[]> {

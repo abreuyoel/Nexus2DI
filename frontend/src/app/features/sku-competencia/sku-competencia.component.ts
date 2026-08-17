@@ -31,6 +31,14 @@ export class SkuCompetenciaComponent implements OnInit {
   clienteId: number | null = null;
   grupos = signal<Grupo[]>([]);
 
+  // Filtros de productoras y categorías
+  cargandoFiltros = signal(false);
+  todasProductoras = signal<any[]>([]);
+  todasCategorias = signal<any[]>([]);
+  categoriasFiltradas = signal<any[]>([]);
+  productoraFiltroId: number | null = null;
+  categoriaFiltroId: number | null = null;
+
   clienteOptions = computed<SelectOption[]>(() =>
     this.clientes().map((c) => ({ value: String(c.id), label: c.nombre || c.cliente }))
   );

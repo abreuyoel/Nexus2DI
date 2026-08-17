@@ -93,89 +93,127 @@
   <!-- Carga masiva -->
   @if (showBulk()) {
   <div
-    class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-4">
-    <h3 class="text-sm font-black uppercase tracking-wide text-slate-500">Carga masiva por cliente</h3>
-    <p class="text-xs text-slate-400 -mt-2">Selecciona un cliente para traer los PDVs únicos de su programación de ruta
-      y asignarles la frecuencia rápidamente.</p>
+    class="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm space-y-6 animate-in fade-in duration-300">
+    
+    <div>
+      <h3 class="text-lg font-bold text-slate-800 dark:text-white">Carga masiva por plantilla Excel</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        Selecciona un cliente para descargar su lista de locales, asigna las frecuencias en Excel y vuelve a subir el archivo.
+      </p>
+    </div>
 
     <div class="w-full md:w-80">
+      <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Cliente Destino</label>
       <app-searchable-select [options]="clienteOptions()" [value]="bulkClienteStr"
-        (valueChange)="onBulkClienteChange($event)" placeholder="Cliente…" searchPlaceholder="Buscar cliente..."
+        (valueChange)="onBulkClienteChange($event)" placeholder="Seleccione un cliente…" searchPlaceholder="Buscar cliente..."
         allLabel="Cliente…" icon="storefront"></app-searchable-select>
     </div>
 
     @if (bulkLoading()) {
-    <div class="flex justify-center py-10"><mat-spinner diameter="32"></mat-spinner></div>
+      <div class="flex flex-col items-center justify-center py-16 gap-3">
+        <mat-spinner diameter="36"></mat-spinner>
+        <p class="text-slate-400 text-sm font-medium">Procesando datos...</p>
+      </div>
     } @else if (bulkCliente != null) {
-    @if (bulkPdvs().length) {
-    <div
-      class="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-white/5 rounded-2xl p-3">
-      <span class="text-xs font-bold text-slate-500 uppercase">Aplicar a todos:</span>
-      <input class="input !w-32" type="number" step="0.25" min="0" placeholder="Valor" [(ngModel)]="bulkAplicarTodos" />
-      <button mat-button class="!rounded-xl !font-bold" (click)="aplicarATodos()">Aplicar a todos</button>
-      <span class="text-xs text-slate-400 ml-auto">{{ bulkPendientesCount() }} de {{ bulkPdvs().length }} con frecuencia
-        asignada</span>
-    </div>
+      
+      <!-- Panel de Acciones Excel (Descargar / Subir) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Descargar -->
+        <div class="flex flex-col justify-between p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-white/5">
+          <div class="space-y-2">
+            <div class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <mat-icon class="!text-2xl">download_for_offline</mat-icon>
+              <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200">1. Descargar Plantilla</h4>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Descarga un documento Excel personalizado con los PDVs activos de este cliente. Incluye hojas de trabajo y una guía instructiva.
+            </p>
+          </div>
+          <div class="mt-4">
+            <button mat-flat-button color="primary" 
+              class="!rounded-xl !font-bold !bg-emerald-600 dark:!bg-emerald-500 !w-full md:!w-auto"
+              [disabled]="!bulkPdvs().length"
+              (click)="descargarPlantilla()">
+              <mat-icon class="align-middle mr-1">file_download</mat-icon>
+              Descargar Plantilla (.xlsx)
+            </button>
+            @if (!bulkPdvs().length) {
+              <p class="text-[10px] text-rose-500 dark:text-rose-400 mt-1">Este cliente no tiene PDVs activos en programación de ruta.</p>
+            }
+          </div>
+        </div>
 
-    <div class="max-h-[420px] overflow-y-auto rounded-2xl border border-slate-100 dark:border-white/5">
-      <table class="w-full text-sm">
-        <thead class="sticky top-0 bg-white dark:bg-slate-900">
-          <tr
-            class="border-b border-slate-200 dark:border-white/5 text-left text-[10px] font-black uppercase tracking-widest text-slate-400">
-            <th class="px-4 py-2">PDV</th>
-            <th class="px-4 py-2 w-32">Frecuencia/sem</th>
-            <th class="px-4 py-2">Observaciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (p of paginatedBulkPdvs(); track p.id_punto_interes) {
-          <tr class="border-b border-slate-100 dark:border-white/5">
-            <td class="px-4 py-2 text-slate-700 dark:text-slate-200">
-              {{ p.pdv_nombre }}
-              <span class="text-[10px] text-slate-400 block">{{ p.id_punto_interes }}</span>
-            </td>
-            <td class="px-4 py-2">
-              <input class="input" type="number" step="0.25" min="0" [(ngModel)]="p.frecuencia_semanal" />
-            </td>
-            <td class="px-4 py-2">
-              <input class="input" [(ngModel)]="p.observaciones" />
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+        <!-- Subir -->
+        <div class="flex flex-col justify-between p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-white/5">
+          <div class="space-y-2">
+            <div class="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              <mat-icon class="!text-2xl">cloud_upload</mat-icon>
+              <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200">2. Cargar Plantilla Modificada</h4>
+            </div>
+            
+            <!-- Zona Drag and Drop -->
+            <div 
+              class="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center min-h-[90px]"
+              [class]="dragOver() ? 'border-blue-500 bg-blue-500/10' : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500 bg-white/60 dark:bg-slate-900/30'"
+              (dragover)="onDragOver($event)"
+              (dragleave)="onDragLeave($event)"
+              (drop)="onDrop($event)"
+              (click)="fileInput.click()">
+              
+              <input type="file" #fileInput class="hidden" accept=".xlsx, .xls" (change)="onFileSelected($event)">
+              <mat-icon class="!text-3xl text-slate-400 mb-1">upload_file</mat-icon>
+              <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Arrastra tu archivo aquí o haz clic para buscar</span>
+              <span class="text-[10px] text-slate-400 mt-0.5">Soporta formatos .xlsx y .xls</span>
+            </div>
+          </div>
+        </div>
 
-    <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
-      <div class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-        <span>Filas por página</span>
-        <select class="input !w-auto !py-1.5" [ngModel]="bulkPageSize()" (ngModelChange)="onBulkPageSizeChange($event)">
-          <option [ngValue]="20">20</option>
-          <option [ngValue]="50">50</option>
-          <option [ngValue]="100">100</option>
-        </select>
-        <span>{{ bulkRangeLabel }}</span>
       </div>
-      <div class="flex items-center gap-2">
-        <button mat-button class="!rounded-xl !min-w-0 !px-3" [disabled]="bulkPage() <= 0"
-          (click)="goBulkPage(bulkPage() - 1)">Anterior</button>
-        <span class="text-sm text-slate-500 dark:text-slate-400">{{ bulkPage() + 1 }} / {{ totalBulkPages }}</span>
-        <button mat-button class="!rounded-xl !min-w-0 !px-3" [disabled]="bulkPage() >= totalBulkPages - 1"
-          (click)="goBulkPage(bulkPage() + 1)">Siguiente</button>
-      </div>
-    </div>
-    } @else {
-    <div class="py-10 text-center text-slate-400 text-sm">
-      Este cliente no tiene PDVs en su programación de ruta.
-    </div>
-    }
+
+      <!-- Errores de validación de Excel -->
+      @if (bulkErrors().length > 0) {
+        <div class="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-sm">
+            <mat-icon class="!text-lg align-middle">warning</mat-icon>
+            <span>Se encontraron inconsistencias en la plantilla:</span>
+          </div>
+          <ul class="text-xs text-rose-600 dark:text-rose-400 list-disc list-inside max-h-40 overflow-y-auto space-y-1">
+            @for (err of bulkErrors(); track err) {
+              <li>{{ err }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      <!-- Resumen del Archivo Cargado -->
+      @if (selectedFile) {
+        <div class="flex items-center gap-3 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 animate-in fade-in duration-300">
+          <mat-icon class="!text-3xl text-emerald-600 dark:text-emerald-400">task_alt</mat-icon>
+          <div>
+            <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200">Archivo de Plantilla Verificado</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Nombre: <span class="font-semibold">{{ selectedFile.name }}</span> · Tamaño: <span class="font-semibold">{{ (selectedFile.size / 1024).toFixed(1) }} KB</span>
+            </p>
+            <p class="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
+              Listo para procesar. Presione "Procesar Excel" para registrar los cambios en el servidor.
+            </p>
+          </div>
+        </div>
+      } @else {
+        <div class="py-6 text-center border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-50/50 dark:bg-slate-900/10 text-slate-400 text-xs">
+          <mat-icon class="!text-3xl block mx-auto mb-1 opacity-50">description</mat-icon>
+          Descargue la plantilla, complete las frecuencias y suba el archivo modificado para procesar la carga masiva.
+        </div>
+      }
     }
 
-    <div class="flex justify-end gap-3">
-      <button mat-button class="!rounded-xl" (click)="cancelarBulk()">Cancelar</button>
+    <div class="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-white/5">
+      <button mat-button class="!rounded-xl !font-bold" (click)="cancelarBulk()">Cancelar</button>
       <button mat-flat-button color="primary" class="!rounded-xl !font-bold !bg-emerald-500"
-        [disabled]="bulkSaving() || !bulkPdvs().length" (click)="guardarBulk()">
-        Guardar {{ bulkPendientesCount() ? '(' + bulkPendientesCount() + ')' : '' }}
+        [disabled]="bulkSaving() || !selectedFile || bulkErrors().length > 0" (click)="guardarBulk()">
+        <mat-icon class="align-middle mr-1">done_all</mat-icon>
+        Procesar Excel
       </button>
     </div>
   </div>
