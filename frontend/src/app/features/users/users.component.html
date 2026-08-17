@@ -57,6 +57,7 @@
         <button (click)="activeTab.set('analistas')" [ngClass]="activeTab() === 'analistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Analistas</button>
         <button (click)="activeTab.set('clientes')" [ngClass]="activeTab() === 'clientes' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Clientes</button>
         <button (click)="activeTab.set('mercaderistas')" [ngClass]="activeTab() === 'mercaderistas' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Mercaderistas</button>
+        <button (click)="activeTab.set('vendedores')" [ngClass]="activeTab() === 'vendedores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Vendedores</button>
         <button (click)="activeTab.set('supervisores')" [ngClass]="activeTab() === 'supervisores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Supervisores</button>
         <button (click)="activeTab.set('auditores')" [ngClass]="activeTab() === 'auditores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Auditores</button>
         <button (click)="activeTab.set('encuestadores')" [ngClass]="activeTab() === 'encuestadores' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5'" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all">Encuestadores</button>
@@ -188,20 +189,20 @@
           </div>
         } @else {
           <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-white/5">
-            <table mat-table [dataSource]="filteredUsers" class="w-full">
+            <table mat-table [dataSource]="paginatedUsers" class="w-full">
               <!-- Columns -->
               <ng-container matColumnDef="id">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">ID</th>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">ID</th>
                 <td mat-cell *matCellDef="let u" class="!py-4">
-                  <span class="text-xs font-mono text-slate-400">#{{ u.id }}</span>
+                  <span class="text-xs font-mono text-slate-400 dark:text-slate-500">#{{ u.id }}</span>
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="username">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Usuario</th>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Usuario</th>
                 <td mat-cell *matCellDef="let u" class="!py-4">
                   <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center font-bold">
+                    <div class="w-10 h-10 rounded-2xl bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold">
                       {{ u.username.charAt(0).toUpperCase() }}
                     </div>
                     <span class="font-bold text-slate-800 dark:text-white">{{ u.username }}</span>
@@ -210,12 +211,12 @@
               </ng-container>
 
               <ng-container matColumnDef="email">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-950/50 !text-slate-500 !font-bold !py-5">Email</th>
-                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600">{{ u.email || 'No asignado' }}</td>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Email</th>
+                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 dark:text-slate-300">{{ u.email || 'No asignado' }}</td>
               </ng-container>
 
               <ng-container matColumnDef="rol">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Rol</th>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Rol</th>
                 <td mat-cell *matCellDef="let u" class="!py-4">
                   <span [class]="getRoleClasses(u.id_rol)" class="px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider">
                     {{ u.rol_nombre || u.rol }}
@@ -224,275 +225,62 @@
               </ng-container>
 
               <ng-container matColumnDef="perfil">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Perfil Relacionado</th>
-                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 font-medium">
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Perfil Relacionado</th>
+                <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 dark:text-slate-300 font-medium">
                   {{ u.perfil_nombre || 'N/A' }}
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="activo">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5">Estado</th>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5">Estado</th>
                 <td mat-cell *matCellDef="let u" class="!py-4">
                   <div class="flex items-center gap-2">
-                    <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
-                    <span [class]="u.activo ? 'text-emerald-700' : 'text-slate-500'" class="text-sm font-medium">{{ u.activo ? 'Activo' : 'Inactivo' }}</span>
+                    <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'" class="w-2 h-2 rounded-full"></span>
+                    <span [class]="u.activo ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'" class="text-sm font-medium">{{ u.activo ? 'Activo' : 'Inactivo' }}</span>
                   </div>
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="acciones">
-                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 !text-slate-500 !font-bold !py-5 text-right px-6">Acciones</th>
+                <th mat-header-cell *matHeaderCellDef class="!bg-slate-50 dark:!bg-slate-800/80 !text-slate-500 dark:!text-slate-400 !font-bold !py-5 text-right px-6">Acciones</th>
                 <td mat-cell *matCellDef="let u" class="!py-4 text-right px-6">
                   <button mat-icon-button (click)="toggleActivo(u)"
                     [matTooltip]="u.activo ? 'Desactivar usuario' : 'Activar usuario'"
-                    [class]="u.activo ? 'hover:!bg-amber-50 !text-amber-500' : 'hover:!bg-emerald-50 !text-emerald-500'">
+                    [class]="u.activo ? 'hover:!bg-amber-50 dark:hover:!bg-amber-950/30 !text-amber-500' : 'hover:!bg-emerald-50 dark:hover:!bg-emerald-950/30 !text-emerald-500'">
                     <mat-icon>{{ u.activo ? 'toggle_on' : 'toggle_off' }}</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="editUser(u)" class="hover:!bg-slate-100 !text-slate-400">
+                  <button mat-icon-button (click)="editUser(u)" class="hover:!bg-slate-100 dark:hover:!bg-slate-800 !text-slate-400">
                     <mat-icon>edit_square</mat-icon>
                   </button>
-                  <button mat-icon-button (click)="deleteUser(u)" class="hover:!bg-rose-50 !text-rose-500">
+                  <button mat-icon-button (click)="deleteUser(u)" class="hover:!bg-rose-50 dark:hover:!bg-rose-950/30 !text-rose-500">
                     <mat-icon>delete_outline</mat-icon>
                   </button>
                 </td>
               </ng-container>
 
               <tr mat-header-row *matHeaderRowDef="columnsForRole"></tr>
-              <tr mat-row *matRowDef="let row; columns: columnsForRole;" class="hover:bg-slate-50 transition-colors border-b border-slate-100"></tr>
+              <tr mat-row *matRowDef="let row; columns: columnsForRole;" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-white/5"></tr>
             </table>
           </div>
->>>>>>> origin/main
+
+          @if (totalUserPages > 1) {
+            <div class="flex items-center justify-between gap-3 pt-3">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">pág. {{ usersPage() + 1 }} de {{ totalUserPages }}</span>
+              <div class="flex items-center gap-2">
+                <button (click)="usersPage.set(usersPage() - 1)" [disabled]="usersPage() <= 0"
+                  class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+                  <mat-icon class="!text-sm">chevron_left</mat-icon>
+                </button>
+                <span class="text-sm font-black text-slate-700 dark:text-white">{{ usersPage() + 1 }} / {{ totalUserPages }}</span>
+                <button (click)="usersPage.set(usersPage() + 1)" [disabled]="usersPage() >= totalUserPages - 1"
+                  class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+                  <mat-icon class="!text-sm">chevron_right</mat-icon>
+                </button>
+              </div>
+            </div>
+          }
         }
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Pág.</span>
-        <select [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()"
-          class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 rounded-xl px-2 py-2.5 text-sm font-semibold text-slate-800 dark:text-white outline-none">
-          <option [ngValue]="20">20</option>
-          <option [ngValue]="50">50</option>
-          <option [ngValue]="100">100</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Create/Edit User Form -->
-    @if (showForm()) {
-    <div
-      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
-      <div
-        class="bg-slate-50 dark:bg-slate-900/50 p-6 border-b border-slate-100 dark:border-white/5 flex items-center gap-3">
-        <div
-          class="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center">
-          <mat-icon>{{ editingUser() ? 'edit' : 'person_add' }}</mat-icon>
-        </div>
-        <div>
-          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingUser() ? 'Editar Usuario' : 'Nuevo
-            Usuario' }}</h3>
-          <p class="text-sm text-slate-500">Completa los campos a continuación para guardar el usuario.</p>
-        </div>
-      </div>
-      <div class="p-6">
-        <form [formGroup]="createForm" (ngSubmit)="saveUser()" class="space-y-5">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre
-                de Usuario <span class="text-rose-500">*</span></label>
-              <div class="relative">
-                <mat-icon
-                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">person_outline</mat-icon>
-                <input formControlName="username" placeholder="ej. jperez"
-                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-              </div>
-            </div>
-            <div>
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Email</label>
-              <div class="relative">
-                <mat-icon
-                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">mail_outline</mat-icon>
-                <input formControlName="email" type="email" placeholder="correo@empresa.com"
-                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-              </div>
-            </div>
-            <div>
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Cédula de Identidad</label>
-              <div class="relative">
-                <mat-icon
-                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
-                <input formControlName="cedula" type="text" placeholder="ej. 12345678"
-                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-              </div>
-            </div>
-            <div>
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Contraseña
-                <span class="text-rose-500" *ngIf="!editingUser()">*</span></label>
-              <div class="relative">
-                <mat-icon
-                  class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">lock_outline</mat-icon>
-                <input formControlName="password" type="password"
-                  [placeholder]="editingUser() ? 'Dejar en blanco para no cambiar' : '••••••••'"
-                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
-              </div>
-            </div>
-            <div>
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rol
-                Asignado <span class="text-rose-500">*</span></label>
-              <app-searchable-select [options]="rolOptions()" [value]="createRolStr" (valueChange)="onRolChange($event)"
-                placeholder="Selecciona rol..." searchPlaceholder="Buscar rol..." icon="badge"></app-searchable-select>
-            </div>
-            @if (showProfileSelect()) {
-            <div class="md:col-span-2">
-              <label
-                class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Perfil
-                Relacionado (Opcional)</label>
-              <app-searchable-select [options]="perfilOptions" [value]="createPerfilStr"
-                (valueChange)="onPerfilChange($event)" placeholder="Sin perfil asignado"
-                searchPlaceholder="Buscar perfil..." allLabel="Sin perfil" icon="link"></app-searchable-select>
-            </div>
-            }
-          </div>
-
-          <label class="flex items-center gap-2 cursor-pointer select-none w-fit">
-            <input type="checkbox" formControlName="activo" class="w-5 h-5 accent-primary-600 rounded">
-            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Usuario activo</span>
-            <span class="text-xs text-slate-400">— desmárcalo para desactivar su acceso</span>
-          </label>
-
-          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
-            <button type="button" (click)="showForm.set(false)"
-              class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
-            <button type="submit" [disabled]="createForm.invalid || saving()"
-              class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
-              @if (saving()) { <mat-spinner diameter="18"></mat-spinner> } @else { <mat-icon
-                class="!text-base">save</mat-icon> }
-              {{ editingUser() ? 'Guardar Cambios' : 'Crear Usuario' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-    }
-
-    <!-- Users Table -->
-    @if (loading()) {
-    <div class="flex flex-col items-center justify-center py-12 gap-4">
-      <mat-spinner diameter="48"></mat-spinner>
-    </div>
-    } @else {
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-white/5">
-      <table mat-table [dataSource]="paginatedUsers" class="w-full">
-        <!-- Columns -->
-        <ng-container matColumnDef="id">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">ID</th>
-          <td mat-cell *matCellDef="let u" class="!py-4">
-            <span class="text-xs font-mono text-slate-400">#{{ u.id }}</span>
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="username">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">Usuario</th>
-          <td mat-cell *matCellDef="let u" class="!py-4">
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-2xl bg-primary-50 text-primary-600 flex items-center justify-center font-bold">
-                {{ u.username.charAt(0).toUpperCase() }}
-              </div>
-              <div>
-                <span class="font-bold text-slate-800 dark:text-white block">{{ u.username }}</span>
-                <span *ngIf="u.cedula" class="text-[11px] text-slate-400 font-mono">CI: {{ u.cedula }}</span>
-              </div>
-            </div>
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="email">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">Email</th>
-          <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600">{{ u.email || 'No asignado' }}</td>
-        </ng-container>
-
-        <ng-container matColumnDef="rol">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">Rol</th>
-          <td mat-cell *matCellDef="let u" class="!py-4">
-            <span [class]="getRoleClasses(u.id_rol)"
-              class="px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider">
-              {{ u.rol_nombre || u.rol }}
-            </span>
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="perfil">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">Perfil Relacionado</th>
-          <td mat-cell *matCellDef="let u" class="!py-4 text-slate-600 font-medium">
-            {{ u.perfil_nombre || 'N/A' }}
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="activo">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5">Estado</th>
-          <td mat-cell *matCellDef="let u" class="!py-4">
-            <div class="flex items-center gap-2">
-              <span [class]="u.activo ? 'bg-emerald-500' : 'bg-slate-300'" class="w-2 h-2 rounded-full"></span>
-              <span [class]="u.activo ? 'text-emerald-700' : 'text-slate-500'" class="text-sm font-medium">{{ u.activo ?
-                'Activo' : 'Inactivo' }}</span>
-            </div>
-          </td>
-        </ng-container>
-
-        <ng-container matColumnDef="acciones">
-          <th mat-header-cell *matHeaderCellDef
-            class="!bg-slate-50 dark:!bg-slate-800 !text-slate-500 !font-bold !py-5 text-right px-6">Acciones</th>
-          <td mat-cell *matCellDef="let u" class="!py-4 text-right px-6">
-            <button mat-icon-button (click)="toggleActivo(u)"
-              [matTooltip]="u.activo ? 'Desactivar usuario' : 'Activar usuario'"
-              [class]="u.activo ? 'hover:!bg-amber-50 !text-amber-500' : 'hover:!bg-emerald-50 !text-emerald-500'">
-              <mat-icon>{{ u.activo ? 'toggle_on' : 'toggle_off' }}</mat-icon>
-            </button>
-            <button mat-icon-button (click)="editUser(u)" class="hover:!bg-slate-100 !text-slate-400">
-              <mat-icon>edit_square</mat-icon>
-            </button>
-            <button mat-icon-button (click)="deleteUser(u)" class="hover:!bg-rose-50 !text-rose-500">
-              <mat-icon>delete_outline</mat-icon>
-            </button>
-          </td>
-        </ng-container>
-
-        <tr mat-header-row *matHeaderRowDef="columns"></tr>
-        <tr mat-row *matRowDef="let row; columns: columns;"
-          class="hover:bg-slate-50 transition-colors border-b border-slate-100"></tr>
-      </table>
-      @if (totalUserPages > 1) {
-      <div
-        class="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-slate-950/30">
-        <span class="text-xs font-semibold text-slate-500">
-          {{ filteredUsers.length }} registros · pág. {{ usersPage() + 1 }} de {{ totalUserPages }}
-        </span>
-        <div class="flex items-center gap-2">
-          <button (click)="goUserPage(usersPage() - 1)" [disabled]="usersPage() <= 0"
-            class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
-            <mat-icon class="!text-sm">chevron_left</mat-icon>
-          </button>
-          <span class="text-sm font-black text-slate-700 dark:text-white">{{ usersPage() + 1 }} / {{ totalUserPages
-            }}</span>
-          <button (click)="goUserPage(usersPage() + 1)" [disabled]="usersPage() >= totalUserPages - 1"
-            class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
-            <mat-icon class="!text-sm">chevron_right</mat-icon>
-          </button>
-        </div>
-      </div>
-      }
-    </div>
-    }
-  </div>
   }
   @if (activeTab() === 'analistas') {
   <div class="p-6">
@@ -1393,6 +1181,176 @@
         </button>
         <span class="text-sm font-black text-slate-700 dark:text-white">{{ encuestadoresPage() + 1 }} / {{ totalEncuestadorPages }}</span>
         <button (click)="goEncuestadorPage(encuestadoresPage() + 1)" [disabled]="encuestadoresPage() >= totalEncuestadorPages - 1"
+          class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+          <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
+  </div>
+  }
+
+  @if (activeTab() === 'vendedores') {
+  <div class="p-6">
+    <div
+      class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-5 mb-6 flex flex-col md:flex-row md:items-end gap-4">
+      <div class="flex-1">
+        <h2 class="text-xl font-black text-slate-900 dark:text-white">Vendedores</h2>
+        <p class="text-xs text-slate-500 mt-1">{{ tabHints['vendedores'] }}</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+        <button (click)="showVendedorForm() ? showVendedorForm.set(false) : openVendedorForm()"
+          [ngClass]="showVendedorForm() ? 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300' : 'bg-primary-600 hover:bg-primary-500 text-white shadow-lg'"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-sm transition-all active:scale-95 whitespace-nowrap">
+          <mat-icon class="!text-base">{{ showVendedorForm() ? 'close' : 'person_add' }}</mat-icon>
+          {{ showVendedorForm() ? 'Cerrar' : 'Nuevo Vendedor' }}
+        </button>
+      </div>
+    </div>
+
+    @if (showVendedorForm()) {
+    <div
+      class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-white/5 overflow-hidden animate-in zoom-in-95 duration-300 mb-8">
+      <div
+        class="bg-emerald-50 dark:bg-emerald-900/30 p-5 border-b border-emerald-100 dark:border-emerald-900/50 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+          <mat-icon>{{ editingVendedor() ? 'edit' : 'point_of_sale' }}</mat-icon>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-white">{{ editingVendedor() ? 'Editar Vendedor' : 'Nuevo Vendedor' }}</h3>
+          <p class="text-xs text-slate-500">Ingresa las credenciales y datos del vendedor comercial.</p>
+        </div>
+      </div>
+      <div class="p-6">
+        <form [formGroup]="vendedorForm" (ngSubmit)="saveVendedor()" class="space-y-5">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Nombre de Usuario <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">person_outline</mat-icon>
+                <input formControlName="username" placeholder="ej. vendedor1"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Correo Electrónico</label>
+              <div class="relative">
+                <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">mail_outline</mat-icon>
+                <input formControlName="email" type="email" placeholder="vendedor@empresa.com"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Cédula / Identificación</label>
+              <div class="relative">
+                <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">badge</mat-icon>
+                <input formControlName="cedula" type="text" placeholder="ej. V12345678"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Contraseña <span class="text-rose-500" *ngIf="!editingVendedor()">*</span></label>
+              <div class="relative">
+                <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">lock_outline</mat-icon>
+                <input formControlName="password" type="password" [placeholder]="editingVendedor() ? 'Dejar en blanco para conservar actual' : '••••••••'"
+                  class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-3 py-3 text-sm font-semibold outline-none transition-colors">
+              </div>
+            </div>
+          </div>
+
+          <label class="flex items-center gap-2 cursor-pointer select-none w-fit">
+            <input type="checkbox" formControlName="activo" class="w-5 h-5 accent-emerald-600 rounded">
+            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Vendedor activo</span>
+            <span class="text-xs text-slate-400">— desmárcalo para suspender su acceso comercial</span>
+          </label>
+
+          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+            <button type="button" (click)="showVendedorForm.set(false)"
+              class="px-6 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Cancelar</button>
+            <button type="submit" [disabled]="vendedorForm.invalid || saving()"
+              class="flex items-center gap-2 px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-sm shadow-md transition-all active:scale-95">
+              @if (saving()) { <mat-spinner diameter="18"></mat-spinner> } @else { <mat-icon class="!text-base">save</mat-icon> }
+              {{ editingVendedor() ? 'Guardar Cambios' : 'Crear Vendedor' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    }
+
+    <div class="flex flex-col md:flex-row gap-3 items-stretch md:items-center mb-4">
+      <div class="relative flex-1 min-w-52">
+        <mat-icon
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">search</mat-icon>
+        <input [(ngModel)]="searchVendedor" (ngModelChange)="onVendedorSearchChange()" placeholder="Buscar vendedor por usuario, email o cédula..."
+          class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 focus:border-primary-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-10 pr-9 py-2.5 text-sm font-semibold outline-none transition-colors">
+        @if (searchVendedor) {
+        <button (click)="searchVendedor = ''; onVendedorSearchChange()"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+        }
+      </div>
+      <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">{{ filteredVendedores.length }} registros</span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      @for (v of paginatedVendedores; track v.id) {
+      <mat-card
+        class="!shadow-sm !rounded-2xl border border-slate-100 dark:border-white/5 dark:!bg-slate-800 relative group">
+        <mat-card-content class="!p-4 flex flex-col justify-between h-full gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 font-bold">
+              <mat-icon>point_of_sale</mat-icon>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="font-bold text-base text-slate-800 dark:text-white truncate">{{ v.username }}</div>
+              <div class="text-xs text-slate-400 dark:text-slate-500">Email: {{ v.email || 'Sin email' }}</div>
+              @if (v.cedula) {
+                <div class="text-[11px] text-slate-400 dark:text-slate-500 font-mono">CI: {{ v.cedula }}</div>
+              }
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/5 text-xs">
+            <span [class]="v.activo ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'"
+              class="px-2.5 py-1 rounded-lg font-bold">
+              {{ v.activo ? 'Activo' : 'Inactivo' }}
+            </span>
+            <div class="flex items-center gap-1">
+              <button mat-icon-button (click)="toggleActivo(v)" [matTooltip]="v.activo ? 'Desactivar' : 'Activar'"
+                class="hover:!bg-slate-100 dark:hover:!bg-slate-700">
+                <mat-icon [class]="v.activo ? 'text-amber-500' : 'text-emerald-500'">{{ v.activo ? 'toggle_on' : 'toggle_off' }}</mat-icon>
+              </button>
+              <button mat-icon-button (click)="editVendedor(v)" matTooltip="Editar" class="hover:!bg-slate-100 dark:hover:!bg-slate-700">
+                <mat-icon class="text-slate-400">edit</mat-icon>
+              </button>
+              <button mat-icon-button (click)="deleteUser(v)" matTooltip="Eliminar" class="hover:!bg-rose-50 dark:hover:!bg-rose-950/30">
+                <mat-icon class="text-rose-500">delete_outline</mat-icon>
+              </button>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+      }
+      @if (filteredVendedores.length === 0) {
+      <div class="col-span-full py-16 text-center text-slate-400">
+        <mat-icon class="!text-5xl opacity-40">storefront</mat-icon>
+        <p class="font-bold mt-2">No hay vendedores registrados.</p>
+      </div>
+      }
+    </div>
+
+    @if (totalVendedorPages > 1) {
+    <div class="flex items-center justify-between gap-3 pt-4">
+      <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">pág. {{ vendedoresPage() + 1 }} de {{ totalVendedorPages }}</span>
+      <div class="flex items-center gap-2">
+        <button (click)="goVendedorPage(vendedoresPage() - 1)" [disabled]="vendedoresPage() <= 0"
+          class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
+          <mat-icon class="!text-sm">chevron_left</mat-icon>
+        </button>
+        <span class="text-sm font-black text-slate-700 dark:text-white">{{ vendedoresPage() + 1 }} / {{ totalVendedorPages }}</span>
+        <button (click)="goVendedorPage(vendedoresPage() + 1)" [disabled]="vendedoresPage() >= totalVendedorPages - 1"
           class="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-40 hover:bg-slate-100 dark:hover:bg-white/5">
           <mat-icon class="!text-sm">chevron_right</mat-icon>
         </button>

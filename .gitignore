@@ -11,6 +11,7 @@ backend/.venv
 frontend/node_modules/
 frontend/dist/
 frontend/.angular/
+frontend/out-tsc/
 frontend/*.log
 
 .vscode/

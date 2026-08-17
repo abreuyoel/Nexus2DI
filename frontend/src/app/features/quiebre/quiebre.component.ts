@@ -7,11 +7,20 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-quiebre',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+    MatSnackBarModule,
+    MatTooltipModule,
+    SearchableSelectComponent,
+  ],
   templateUrl: './quiebre.component.html',
 })
 export class QuiebreComponent implements OnInit {
@@ -26,9 +35,9 @@ export class QuiebreComponent implements OnInit {
   lineaBaseFecha = signal<string | null>(null);
   lineaBaseGrupos = signal(0);
 
-  filtroRiesgo: string | null = null;
+  filtroRiesgo = '';
   filtroUrgente = false;
-  filtroCliente: string | null = null;
+  filtroCliente = '';
   search = '';
 
   constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) {}
@@ -38,14 +47,41 @@ export class QuiebreComponent implements OnInit {
     this.loadLineaBaseInfo();
   }
 
+  autoRecalculated = false;
+
   load(): void {
     this.loading.set(true);
     this.api.getQuiebreAlertas().subscribe({
       next: (res) => {
-        this.loading.set(false);
-        this.items.set(res?.items || []);
+        const list = res?.items || [];
+        this.items.set(list);
         this.totalAlertas.set(res?.total || 0);
         this.totalUrgentes.set(res?.urgentes || 0);
+
+        if (list.length === 0 && !this.autoRecalculated) {
+          this.autoRecalculated = true;
+          this.recalculandoAlertas.set(true);
+          this.api.recalcularQuiebreAlertas(true).subscribe({
+            next: () => {
+              this.recalculandoAlertas.set(false);
+              this.api.getQuiebreAlertas().subscribe({
+                next: (res2) => {
+                  this.loading.set(false);
+                  this.items.set(res2?.items || []);
+                  this.totalAlertas.set(res2?.total || 0);
+                  this.totalUrgentes.set(res2?.urgentes || 0);
+                },
+                error: () => this.loading.set(false),
+              });
+            },
+            error: () => {
+              this.recalculandoAlertas.set(false);
+              this.loading.set(false);
+            }
+          });
+        } else {
+          this.loading.set(false);
+        }
       },
       error: () => { this.loading.set(false); this.items.set([]); this.snack.open('Error al cargar las alertas de quiebre', 'OK', { duration: 3000 }); },
     });
@@ -63,8 +99,6 @@ export class QuiebreComponent implements OnInit {
   }
 
   recalcularAlertas(): void {
-    // Igual que Plan de Acción: el backend corre esto en background, el
-    // POST vuelve al toque -- esperamos unos segundos y recargamos solos.
     this.recalculandoAlertas.set(true);
     this.api.recalcularQuiebreAlertas().subscribe({
       next: () => {
@@ -86,7 +120,14 @@ export class QuiebreComponent implements OnInit {
     });
   }
 
-  clientesOpts = computed(() => Array.from(new Set(this.items().map((i) => i.cliente).filter(Boolean))).sort());
+  clientesOpts = computed<SelectOption[]>(() =>
+    Array.from(new Set(this.items().map((i) => i.cliente).filter(Boolean))).sort().map(c => ({ value: c, label: c }))
+  );
+  riesgoOpts: SelectOption[] = [
+    { value: 'Riesgo ALTO', label: 'Riesgo ALTO' },
+    { value: 'Riesgo MEDIO', label: 'Riesgo MEDIO' },
+  ];
+
   totalRiesgoAlto = computed(() => this.items().filter((i) => i.riesgo === 'Riesgo ALTO').length);
   totalRiesgoMedio = computed(() => this.items().filter((i) => i.riesgo === 'Riesgo MEDIO').length);
 
@@ -103,8 +144,29 @@ export class QuiebreComponent implements OnInit {
     });
   }
 
+  quiebrePage = signal(0);
+  pageSize = 20;
+
+  paginatedItems = computed(() => {
+    const list = this.filteredItems;
+    const start = this.quiebrePage() * this.pageSize;
+    return list.slice(start, start + this.pageSize);
+  });
+
+  totalQuiebrePages = computed(() => Math.ceil(this.filteredItems.length / this.pageSize) || 1);
+
+  goQuiebrePage(page: number): void {
+    if (page >= 0 && page < this.totalQuiebrePages()) {
+      this.quiebrePage.set(page);
+    }
+  }
+
   clearFilters(): void {
-    this.filtroRiesgo = null; this.filtroUrgente = false; this.filtroCliente = null; this.search = '';
+    this.filtroRiesgo = '';
+    this.filtroUrgente = false;
+    this.filtroCliente = '';
+    this.search = '';
+    this.quiebrePage.set(0);
   }
 
   riesgoBadgeClass(riesgo: string): string {
