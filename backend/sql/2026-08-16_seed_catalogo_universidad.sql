@@ -41,13 +41,20 @@ WHERE NOT EXISTS (
 
 -- Backfill: valores reales ya cargados que no estén en la lista curada de
 -- arriba -- así ningún médico existente "pierde" su universidad al pasar el
--- campo a catálogo.
+-- campo a catálogo. Las dos columnas (universidad_graduacion y
+-- segunda_universidad_graduacion) alimentan el MISMO catálogo -- la app usa
+-- una sola lista de universidades para ambos selectores -- así que se unen
+-- acá (UNION ya deduplica solapamientos entre las dos columnas).
 INSERT INTO CATALOGOS_ENCUESTADOR (tipo, nombre)
 SELECT 'universidad', m.uni
 FROM (
     SELECT DISTINCT LTRIM(RTRIM(universidad_graduacion)) AS uni
     FROM medicos
     WHERE universidad_graduacion IS NOT NULL AND LTRIM(RTRIM(universidad_graduacion)) <> ''
+    UNION
+    SELECT DISTINCT LTRIM(RTRIM(segunda_universidad_graduacion)) AS uni
+    FROM medicos
+    WHERE segunda_universidad_graduacion IS NOT NULL AND LTRIM(RTRIM(segunda_universidad_graduacion)) <> ''
 ) m
 WHERE NOT EXISTS (
     SELECT 1 FROM CATALOGOS_ENCUESTADOR c WHERE c.tipo = 'universidad' AND c.nombre = m.uni
