@@ -106,7 +106,7 @@ export class AuthService {
       admin: '/dashboard',
       analyst: '/dashboard',
       supervisor: '/supervisor',
-      client: '/client',
+      client: '/dashboard',
       mercaderista: '/mercaderista',
       auditor_campo: '/auditor-campo',
       vendedor: '/ventas',

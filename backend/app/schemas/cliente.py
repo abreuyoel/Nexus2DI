@@ -63,3 +63,22 @@ class PuntoInteresResponse(PuntoInteresBase):
 
     class Config:
         from_attributes = True
+
+
+class PuntoInteresClienteResponse(BaseModel):
+    """Response schema para el rol cliente: excluye latitud y longitud por seguridad."""
+    id: str
+    nombre: Optional[str] = None
+    direccion: Optional[str] = None
+    departamento: Optional[str] = None
+    ciudad: Optional[str] = None
+    cadena: Optional[str] = None
+    jerarquia_n2: Optional[str] = None
+    jerarquia_n2_2: Optional[str] = None
+    nivel_de_alcance: Optional[str] = None
+    rif: Optional[str] = None
+    radio: Optional[str] = None
+    fecha_creado: Optional[str] = None
+
+    class Config:
+        from_attributes = True

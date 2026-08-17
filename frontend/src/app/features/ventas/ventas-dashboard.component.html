@@ -1,0 +1,189 @@
+<div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white">
+  <div class="bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-white/8 px-6 py-5">
+    <div class="flex flex-wrap items-center gap-3 max-w-6xl mx-auto">
+      <a routerLink="/ventas" matTooltip="Volver a Ventas" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><mat-icon class="!text-base">arrow_back</mat-icon></a>
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <mat-icon class="text-white">bar_chart</mat-icon>
+      </div>
+      <div class="flex-1 min-w-[160px]">
+        <h1 class="text-xl font-black tracking-tight leading-none">Dashboard de Ventas</h1>
+        <p class="text-slate-500 dark:text-slate-400 text-xs mt-0.5">{{ data()?.periodo?.desde }} → {{ data()?.periodo?.hasta }}</p>
+      </div>
+      <a routerLink="/pedidos-ventas" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold flex items-center gap-1 transition-colors">
+        <mat-icon class="!text-base">receipt_long</mat-icon> Pedidos
+      </a>
+      <div class="flex items-center gap-2">
+        <input type="date" [(ngModel)]="desde" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-emerald-500">
+        <span class="text-slate-400 text-xs">a</span>
+        <input type="date" [(ngModel)]="hasta" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-emerald-500">
+      </div>
+    </div>
+  </div>
+
+  <div class="px-6 py-6 max-w-6xl mx-auto">
+    @if (loading()) {
+      <div class="flex justify-center py-24"><mat-spinner diameter="40"></mat-spinner></div>
+    } @else if (data()) {
+
+    <!-- RESUMEN -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="relative overflow-hidden bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-950 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-500 to-violet-500"></div>
+        <div class="flex items-center gap-2 mb-2">
+          <mat-icon class="!text-base text-indigo-500">receipt_long</mat-icon>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-black uppercase tracking-wider">Pedidos</p>
+        </div>
+        <p class="text-3xl font-black text-slate-800 dark:text-white">{{ data()!.resumen.pedidos }}</p>
+      </div>
+      <div class="relative overflow-hidden bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-950 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+        <div class="flex items-center gap-2 mb-2">
+          <mat-icon class="!text-base text-emerald-500">payments</mat-icon>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-black uppercase tracking-wider">Total vendido</p>
+        </div>
+        <p class="text-3xl font-black text-emerald-600 dark:text-emerald-400">\${{ data()!.resumen.total_vendido.toFixed(2) }}</p>
+      </div>
+      <div class="relative overflow-hidden bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-slate-950 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+        <div class="flex items-center gap-2 mb-2">
+          <mat-icon class="!text-base text-amber-500">confirmation_number</mat-icon>
+          <p class="text-[10px] text-slate-500 dark:text-slate-400 font-black uppercase tracking-wider">Ticket promedio</p>
+        </div>
+        <p class="text-3xl font-black text-slate-800 dark:text-white">\${{ data()!.resumen.ticket_promedio.toFixed(2) }}</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- VENTAS POR DIA -->
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
+        <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-emerald-500">show_chart</mat-icon> Ventas por día
+        </h3>
+        @if (porDiaChart.labels?.length) {
+          <div style="position:relative; height:220px; width:100%">
+            <canvas baseChart [data]="porDiaChart" [options]="lineOptions" type="line"></canvas>
+          </div>
+        } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
+      </div>
+
+      <!-- PEDIDOS POR ESTADO -->
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm">
+        <h3 class="font-black text-sm mb-3 text-slate-800 dark:text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-sky-500">donut_small</mat-icon> Pedidos por estado
+        </h3>
+        @if (porEstadoChart.labels?.length) {
+          <div style="position:relative; height:220px; width:100%">
+            <canvas baseChart [data]="porEstadoChart" [options]="doughnutOptions" type="doughnut"></canvas>
+          </div>
+        } @else { <p class="text-center text-slate-400 py-12 text-sm">Sin datos en el período</p> }
+      </div>
+    </div>
+
+    <!-- PRONÓSTICO DE PEDIDOS -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-5 shadow-sm mb-6">
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-1">
+        <h3 class="font-black text-sm text-slate-800 dark:text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-emerald-500">insights</mat-icon> Pronóstico de pedidos
+        </h3>
+        @if (pronosticoClientes().length > 1) {
+          <select [(ngModel)]="idClientePronostico" (ngModelChange)="seleccionarPronostico($event)"
+            class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-emerald-500">
+            @for (c of pronosticoClientes(); track c.id_cliente) {
+              <option [ngValue]="c.id_cliente">{{ c.cliente }}{{ c.suficiente_historial ? '' : ' (sin datos suficientes)' }}</option>
+            }
+          </select>
+        }
+      </div>
+      <p class="text-xs text-slate-400 mb-4 max-w-2xl">Proyección de las próximas 6 semanas por cliente, sobre pedidos confirmados (no borradores). Ventana propia, no depende del rango "Desde/Hasta" de arriba.</p>
+
+      @if (loadingPronostico()) {
+        <div class="h-64 flex items-center justify-center"><mat-spinner diameter="32" strokeWidth="3"></mat-spinner></div>
+      } @else if (!pronosticoClientes().length) {
+        <div class="h-64 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-2">
+          <mat-icon class="!text-3xl">receipt_long</mat-icon>
+          <span class="text-xs font-bold">Todavía no hay pedidos confirmados para proyectar</span>
+        </div>
+      } @else if (pronosticoSeleccionado() && !pronosticoSeleccionado()!.suficiente_historial) {
+        <div class="h-64 flex flex-col items-center justify-center text-center gap-2 px-6">
+          <mat-icon class="!text-3xl text-amber-400">hourglass_empty</mat-icon>
+          <span class="text-sm font-bold text-slate-600 dark:text-slate-300">Todavía no hay suficiente historial para {{ pronosticoSeleccionado()!.cliente }}</span>
+          <span class="text-xs text-slate-400 max-w-md">
+            {{ pronosticoSeleccionado()!.semanas_con_pedidos }} semana(s) con pedidos confirmados de las 8 mínimas que hacen falta
+            @if (pronosticoSeleccionado()!.semanas_faltantes > 0) { (faltan ~{{ pronosticoSeleccionado()!.semanas_faltantes }} semana(s) de calendario) }.
+            El pronóstico se activa solo, sin tocar nada, en cuanto haya suficiente historial.
+          </span>
+        </div>
+      } @else if (pronosticoSeleccionado()) {
+        <div style="position:relative; height:260px; width:100%">
+          <canvas baseChart [data]="pronosticoChart" [options]="pronosticoOptions" type="line"></canvas>
+        </div>
+        <div class="flex flex-wrap gap-4 mt-4 text-xs text-slate-400">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-indigo-500 inline-block"></span> Histórico ({{ pronosticoSeleccionado()!.semanas_con_historial }} semanas)</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-emerald-500 inline-block" style="border-top: 2px dashed #10b981; background: none;"></span> Pronóstico (6 semanas)</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-emerald-500/20 inline-block"></span> Rango esperado</span>
+        </div>
+      }
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- RANKING VENDEDORES -->
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
+        <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800 flex items-center gap-2">
+          <mat-icon class="!text-base text-amber-500">emoji_events</mat-icon>
+          <h3 class="font-black text-sm text-slate-800 dark:text-white">Ranking de vendedores</h3>
+        </div>
+        <div class="divide-y divide-slate-100 dark:divide-white/5">
+          @for (v of data()!.por_vendedor; track v.vendedor; let i = $index) {
+            <div class="px-5 py-3 flex items-center gap-3">
+              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
+                    [ngClass]="i===0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'">{{ i+1 }}</span>
+              <span class="flex-1 text-sm font-semibold truncate">{{ v.vendedor }}</span>
+              <span class="text-xs text-slate-400">{{ v.pedidos }} ped.</span>
+              <span class="font-black text-emerald-600 dark:text-emerald-400 text-sm">\${{ v.total.toFixed(0) }}</span>
+            </div>
+          }
+          @if (!data()!.por_vendedor.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
+        </div>
+      </div>
+
+      <!-- TOP PRODUCTOS -->
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
+        <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800 flex items-center gap-2">
+          <mat-icon class="!text-base text-violet-500">inventory_2</mat-icon>
+          <h3 class="font-black text-sm text-slate-800 dark:text-white">Productos más vendidos</h3>
+        </div>
+        <div class="divide-y divide-slate-100 dark:divide-white/5">
+          @for (p of data()!.top_productos; track p.producto) {
+            <div class="px-5 py-3 flex items-center gap-3">
+              <span class="flex-1 text-sm font-semibold truncate">{{ p.producto }}</span>
+              <span class="text-xs text-slate-400">{{ p.unidades }} u.</span>
+              <span class="font-black text-slate-700 dark:text-slate-200 text-sm">\${{ p.total.toFixed(0) }}</span>
+            </div>
+          }
+          @if (!data()!.top_productos.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
+        </div>
+      </div>
+    </div>
+
+    <!-- TOP CLIENTES -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
+      <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800 flex items-center gap-2">
+        <mat-icon class="!text-base text-teal-500">storefront</mat-icon>
+        <h3 class="font-black text-sm text-slate-800 dark:text-white">Clientes con más pedidos</h3>
+      </div>
+      <div class="divide-y divide-slate-100 dark:divide-white/5">
+        @for (c of data()!.top_clientes; track c.cliente) {
+          <div class="px-5 py-3 flex items-center gap-3">
+            <mat-icon class="!text-base text-slate-400">storefront</mat-icon>
+            <span class="flex-1 text-sm font-semibold truncate">{{ c.cliente }}</span>
+            <span class="text-xs text-slate-400">{{ c.pedidos }} ped.</span>
+            <span class="font-black text-emerald-600 dark:text-emerald-400 text-sm">\${{ c.total.toFixed(0) }}</span>
+          </div>
+        }
+        @if (!data()!.top_clientes.length) { <p class="text-center text-slate-400 py-8 text-sm">Sin datos</p> }
+      </div>
+    </div>
+
+    }
+  </div>
+</div>

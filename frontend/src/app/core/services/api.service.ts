@@ -201,6 +201,7 @@ export class ApiService {
   getCentroMandoAuditoriaFiltros(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/filtros`); }
   getCentroMandoAuditoriaResumen(opts: { desde?: string; hasta?: string; id_auditor?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/resumen`, { params: this.params(opts) }); }
   getAuditoriaUsuarios(opts: { skip?: number; limit?: number; accion?: string; ejecutor?: string; search?: string; fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/auditoria-usuarios`, { params: this.params(opts) }); }
+  getCentroMandoAuditoriaTendenciaCompetencia(opts: { semanas?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/tendencia-competencia`, { params: this.params(opts) }); }
   deleteMercFoto(fotoId: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/merc/foto/${fotoId}`); }
 
   // --- DATA / BALANCES ---
@@ -612,6 +613,26 @@ export class ApiService {
   }
   confirmarRutaBck(items: any[], idMercaderista: number): Observable<any> {
     return this.http.post<any>(`${this.base}/api/plan-accion/clusters/confirmar`, { items, id_mercaderista: idMercaderista });
+  }
+  entrenarModeloPlanAccion(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/plan-accion/modelo/entrenar`, {}, { params: this.params({ sincrono }) });
+  }
+  getModeloInfoPlanAccion(): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/plan-accion/modelo/info`);
+  }
+
+  // --- QUIEBRE DINÁMICO (N2) ---
+  getQuiebreAlertas(opts: { riesgo?: string; urgente?: boolean; id_cliente?: number; identificador_pdv?: string } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre/alertas`, { params: this.params(opts) });
+  }
+  getQuiebreLineaBaseInfo(): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre/linea-base/info`);
+  }
+  recalcularQuiebreLineaBase(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/quiebre/linea-base/recalcular`, {}, { params: this.params({ sincrono }) });
+  }
+  recalcularQuiebreAlertas(sincrono = false): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/quiebre/alertas/recalcular`, {}, { params: this.params({ sincrono }) });
   }
 
   // --- CLIENT CATEGORIES ---

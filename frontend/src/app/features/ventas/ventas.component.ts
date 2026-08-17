@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { AuthService } from '../../core/services/auth.service';
@@ -29,7 +30,7 @@ type ProductoOcrPropuesto = {
 @Component({
   selector: 'app-ventas',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, RouterLink],
+  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule, RouterLink],
   template: `
 <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white">
   <!-- HEADER -->
@@ -72,8 +73,11 @@ type ProductoOcrPropuesto = {
     } @else if (!jornadaActiva()) {
 
     <!-- SIN JORNADA -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-8 text-center mt-8 shadow-sm">
-      <mat-icon class="!text-5xl text-emerald-500 dark:text-emerald-400">place</mat-icon>
+    <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-8 text-center mt-8 shadow-sm">
+      <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center mb-1">
+        <mat-icon class="!text-4xl text-emerald-500 dark:text-emerald-400">place</mat-icon>
+      </div>
       <h2 class="text-lg font-black mt-3 mb-1 text-slate-800 dark:text-white">¿Listo para trabajar?</h2>
       <p class="text-slate-500 dark:text-slate-400 text-sm mb-6">Activa tu ruta para comenzar a registrar tus visitas y pedidos del día.</p>
       <button (click)="activarJornada()" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-black flex items-center justify-center gap-2">
@@ -84,17 +88,27 @@ type ProductoOcrPropuesto = {
     } @else {
 
     <!-- BARRA DE JORNADA -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-4 mb-4 flex items-center justify-between gap-2 shadow-sm">
+    <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl p-4 mb-4 flex items-center justify-between gap-2 shadow-sm">
+      <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
       <div class="text-xs text-slate-500 dark:text-slate-400">
         <span class="text-emerald-600 dark:text-emerald-400 font-bold"><mat-icon class="!text-sm align-middle">check_circle</mat-icon> Ruta activa</span><br>
         Iniciada: {{ fmtHora(jornadaActiva().fecha_inicio) }}
       </div>
       <div class="flex items-center gap-2">
         <span class="text-xs px-2 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-full font-bold" title="Visitas registradas">{{ jornadaActiva().visitas || 0 }}</span>
-        <button (click)="verVisitas()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white"><mat-icon class="!text-base">receipt_long</mat-icon></button>
-        <button (click)="finalizarJornada()" class="px-3 py-2 bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-xs font-bold">Finalizar</button>
+        <button (click)="verVisitas()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-white transition-colors"><mat-icon class="!text-base">receipt_long</mat-icon></button>
+        <button (click)="finalizarJornada()" class="px-3 py-2 bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-xs font-bold transition-colors">Finalizar</button>
       </div>
     </div>
+
+    <!-- PROGRESO DEL FLUJO (PDV -> Cliente -> Decisión -> Catálogo/OCR -> Carrito) -->
+    @if (pasoNumero() > 0) {
+      <div class="flex items-center gap-2 mb-5" [matTooltip]="'Paso ' + pasoNumero() + ' de 5'">
+        @for (n of [1,2,3,4,5]; track n) {
+          <div class="flex-1 h-1 rounded-full transition-colors duration-300" [ngClass]="n <= pasoNumero() ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-800'"></div>
+        }
+      </div>
+    }
 
     <!-- STEP: PDVs -->
     @if (step() === 'pdvs') {
@@ -229,13 +243,15 @@ type ProductoOcrPropuesto = {
             </div>
             <div class="flex-1 min-w-0">
               <p class="font-bold text-sm truncate text-slate-800 dark:text-white">{{ p.nombre }}</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400">{{ p.categoria }} · \${{ p.precio_unitario.toFixed(2) }}
+              <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ p.categoria }} · \${{ p.precio_unitario.toFixed(2) }}</span>
                 @if (p.stock_disponible !== null) {
-                  <span [ngClass]="p.stock_disponible > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400 font-bold'">
-                    · {{ p.stock_disponible > 0 ? p.stock_disponible + ' disp.' : 'Sin stock' }}
+                  <span class="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                    [ngClass]="p.stock_disponible > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'">
+                    {{ p.stock_disponible > 0 ? p.stock_disponible + ' disp.' : 'Sin stock' }}
                   </span>
                 }
-              </p>
+              </div>
             </div>
             <button (click)="agregarAlCarrito(p)" [disabled]="p.stock_disponible === 0" class="w-9 h-9 flex items-center justify-center rounded-full bg-emerald-600 dark:bg-emerald-700 text-white disabled:opacity-30 shrink-0">
               <mat-icon class="!text-base">add</mat-icon>
@@ -410,6 +426,14 @@ export class VentasComponent implements OnInit {
   crumb() {
     return [this.pdvSel()?.nombre, this.clienteSel()?.nombre].filter(Boolean).join('  ›  ');
   }
+
+  /** Posición del paso actual en el flujo PDV → Cliente → Decisión →
+   *  Catálogo/OCR → Carrito, para la barra de progreso. 0 = no mostrarla
+   *  (ocr-revision cuelga de "decisión", cuenta como el mismo paso 4). */
+  private readonly PASOS: Record<string, number> = {
+    pdvs: 1, clientes: 2, decision: 3, catalogo: 4, 'ocr-revision': 4, carrito: 5,
+  };
+  pasoNumero(): number { return this.PASOS[this.step()] || 0; }
 
   fmtHora(iso: string): string {
     if (!iso) return '—';

@@ -111,10 +111,24 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
             <div class="md:col-span-2">
               <app-mutable-search-select
                 label="Universidad de graduación"
-                placeholder="Seleccione universidad..."
+                placeholder="Buscar universidad..."
                 [options]="universidadesList"
                 [(value)]="medicoData.universidad_graduacion"
                 tipo="universidad"
+                [required]="false"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
+            </div>
+            <div class="md:col-span-2">
+              <app-mutable-search-select
+                label="Segunda universidad de graduación"
+                placeholder="Buscar universidad..."
+                [options]="universidadesList"
+                [(value)]="medicoData.segunda_universidad_graduacion"
+                tipo="universidad"
+                [required]="false"
+>>>>>>> origin/main
                 [disabled]="medicoExistente"
                 (addNew)="onAddNewCatalogItem($event)"
               ></app-mutable-search-select>
@@ -129,26 +143,20 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
               <input type="text" [(ngModel)]="medicoData.nro_colegiado" name="colegiado" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
             </div>
             <div class="md:col-span-1">
-              <app-mutable-search-select
-                label="Ciudad"
-                placeholder="Seleccione ciudad..."
-                [options]="ciudadesList"
-                [(value)]="medicoData.ciudad"
-                tipo="ciudad"
-                [disabled]="medicoExistente"
-                (addNew)="onAddNewCatalogItem($event)"
-              ></app-mutable-search-select>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Estado</label>
+              <select [(ngModel)]="medicoData.estado" name="estado" (ngModelChange)="onEstadoChange()" [disabled]="medicoExistente"
+                class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+                <option value="" disabled>Seleccione estado...</option>
+                @for (e of estadosParaMostrar(); track e) { <option [value]="e">{{ e }}</option> }
+              </select>
             </div>
             <div class="md:col-span-1">
-              <app-mutable-search-select
-                label="Estado"
-                placeholder="Seleccione estado..."
-                [options]="estadosList"
-                [(value)]="medicoData.estado"
-                tipo="estado"
-                [disabled]="medicoExistente"
-                (addNew)="onAddNewCatalogItem($event)"
-              ></app-mutable-search-select>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Ciudad</label>
+              <select [(ngModel)]="medicoData.ciudad" name="ciudad" [disabled]="medicoExistente || !medicoData.estado"
+                class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+                <option value="" disabled>Seleccione ciudad...</option>
+                @for (c of ciudadesDisponibles(); track c) { <option [value]="c">{{ c }}</option> }
+              </select>
             </div>
 
             <div class="md:col-span-1">
@@ -275,8 +283,44 @@ export class MedicoFormComponent implements OnInit {
   especialidadesList: string[] = [];
   subespecialidadesList: string[] = [];
   universidadesList: string[] = [];
-  estadosList: string[] = [];
-  ciudadesList: string[] = [];
+
+  // Estandarizado a pedido del cliente (2026-08-13): antes Estado/Ciudad eran
+  // texto libre vía app-mutable-search-select (cualquier encuestador podía
+  // escribir un valor nuevo y quedaba agregado al catálogo para siempre) --
+  // el BI terminó con 9 "estados" y 12 "ciudades" distintos, en su mayoría
+  // variaciones/typos de las mismas 2+4 zonas donde en verdad se releva
+  // información. Ahora es una lista cerrada, sin opción de agregar.
+  readonly ESTADOS = ['Distrito Capital', 'Miranda'];
+  readonly CIUDADES_POR_ESTADO: Record<string, string[]> = {
+    'Distrito Capital': ['Caracas'],
+    'Miranda': ['Caracas', 'Los Teques', 'Guarenas', 'Guatire'],
+  };
+
+  /** Estados para el <select> -- agrega el valor actual del médico al final
+   *  si no está en la lista estándar (dato histórico de antes de
+   *  estandarizar, ej. médicos cargados cuando el campo era texto libre).
+   *  Así no desaparece silenciosamente al ver/editar un registro viejo, sin
+   *  reabrir la puerta a escribir valores nuevos arbitrarios. */
+  estadosParaMostrar(): string[] {
+    const est = this.medicoData?.estado;
+    return est && !this.ESTADOS.includes(est) ? [...this.ESTADOS, est] : this.ESTADOS;
+  }
+
+  ciudadesDisponibles(): string[] {
+    const base = this.CIUDADES_POR_ESTADO[this.medicoData?.estado] || [];
+    const ciudad = this.medicoData?.ciudad;
+    return ciudad && !base.includes(ciudad) ? [...base, ciudad] : base;
+  }
+
+  onEstadoChange() {
+    // Si la ciudad ya elegida no es válida para el nuevo estado (o el
+    // estado cambió), se limpia -- evita guardar una combinación
+    // estado/ciudad inconsistente (ej. Miranda + una ciudad que no existe
+    // en ese estado).
+    if (!this.ciudadesDisponibles().includes(this.medicoData.ciudad)) {
+      this.medicoData.ciudad = '';
+    }
+  }
 
   // Modo edición: se llega acá con /encuestador/medico/:idMedico (ej. desde
   // "Editar" en Gestión de Centro) en vez de /encuestador/medico (alta). El
@@ -338,6 +382,7 @@ export class MedicoFormComponent implements OnInit {
           nombre1: res.nombre1, nombre2: res.nombre2,
           especialidad: res.especialidad, sub_especialidad: res.sub_especialidad,
           universidad_graduacion: res.universidad_graduacion,
+          segunda_universidad_graduacion: res.segunda_universidad_graduacion,
           nro_MPPS: res.nro_MPPS, nro_colegiado: res.nro_colegiado,
           ciudad: res.ciudad, estado: res.estado,
           telefono: res.telefono, whatsapp: res.whatsapp, email: res.email,
@@ -401,6 +446,7 @@ export class MedicoFormComponent implements OnInit {
       especialidad: '',
       sub_especialidad: '',
       universidad_graduacion: '',
+      segunda_universidad_graduacion: '',
       nro_MPPS: '',
       nro_colegiado: '',
       ciudad: '',
@@ -460,7 +506,10 @@ export class MedicoFormComponent implements OnInit {
     this.medicosResult = [];
     this.searchQuery = m.id_medico_externo;
 
-    // Asegurar que el valor del médico seleccionado esté en la lista temporal para que se muestre en el select
+    // Asegurar que el valor de especialidad del médico seleccionado esté en
+    // la lista temporal para que se muestre en el select -- Estado/Ciudad ya
+    // no lo necesitan: estadosParaMostrar()/ciudadesDisponibles() agregan el
+    // valor actual solas si es un dato histórico fuera de la lista estándar.
     if (m.especialidad && !this.especialidadesList.includes(m.especialidad)) {
       this.especialidadesList.push(m.especialidad);
     }
@@ -469,12 +518,6 @@ export class MedicoFormComponent implements OnInit {
     }
     if (m.universidad_graduacion && !this.universidadesList.includes(m.universidad_graduacion)) {
       this.universidadesList.push(m.universidad_graduacion);
-    }
-    if (m.estado && !this.estadosList.includes(m.estado)) {
-      this.estadosList.push(m.estado);
-    }
-    if (m.ciudad && !this.ciudadesList.includes(m.ciudad)) {
-      this.ciudadesList.push(m.ciudad);
     }
   }
 
@@ -594,8 +637,6 @@ export class MedicoFormComponent implements OnInit {
     this.especialidadesList = [...(this.catalogos.especialidades || [])];
     this.subespecialidadesList = [...(this.catalogos.subespecialidades || [])];
     this.universidadesList = [...(this.catalogos.universidades || [])];
-    this.estadosList = [...(this.catalogos.estados || [])];
-    this.ciudadesList = [...(this.catalogos.ciudades || [])];
   }
 
   async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad', value: string }) {
@@ -603,32 +644,13 @@ export class MedicoFormComponent implements OnInit {
     const valorFormateado = value.trim();
     if (!valorFormateado) return;
 
+    const listaKey = tipo === 'especialidad' ? 'especialidades' : tipo === 'subespecialidad' ? 'subespecialidades' : tipo === 'universidad' ? 'universidades' : null;
+    const lista = tipo === 'especialidad' ? this.especialidadesList : tipo === 'subespecialidad' ? this.subespecialidadesList : tipo === 'universidad' ? this.universidadesList : null;
+
     // Añadir localmente si no existe para actualizar la lista de opciones
-    if (tipo === 'especialidad') {
-      if (!this.especialidadesList.includes(valorFormateado)) {
-        this.especialidadesList.push(valorFormateado);
-        this.especialidadesList.sort();
-      }
-    } else if (tipo === 'subespecialidad') {
-      if (!this.subespecialidadesList.includes(valorFormateado)) {
-        this.subespecialidadesList.push(valorFormateado);
-        this.subespecialidadesList.sort();
-      }
-    } else if (tipo === 'universidad') {
-      if (!this.universidadesList.includes(valorFormateado)) {
-        this.universidadesList.push(valorFormateado);
-        this.universidadesList.sort();
-      }
-    } else if (tipo === 'estado') {
-      if (!this.estadosList.includes(valorFormateado)) {
-        this.estadosList.push(valorFormateado);
-        this.estadosList.sort();
-      }
-    } else if (tipo === 'ciudad') {
-      if (!this.ciudadesList.includes(valorFormateado)) {
-        this.ciudadesList.push(valorFormateado);
-        this.ciudadesList.sort();
-      }
+    if (lista && !lista.includes(valorFormateado)) {
+      lista.push(valorFormateado);
+      lista.sort();
     }
 
     // Encolar o enviar al backend
@@ -638,23 +660,15 @@ export class MedicoFormComponent implements OnInit {
         { tipo, nombre: valorFormateado },
         { label: `Agregar ${tipo}: ${valorFormateado}` }
       );
-      
+
       // Actualizar el caché de catálogos local
-      const cached = await this.offline.cacheRead('catalogos');
-      if (cached) {
-        const keyMap: Record<string, string> = {
-          'especialidad': 'especialidades',
-          'subespecialidad': 'subespecialidades',
-          'universidad': 'universidades',
-          'estado': 'estados',
-          'ciudad': 'ciudades'
-        };
-        const key = keyMap[tipo];
-        if (key) {
-          if (!cached[key]) cached[key] = [];
-          if (!cached[key].includes(valorFormateado)) {
-            cached[key].push(valorFormateado);
-            cached[key].sort();
+      if (listaKey) {
+        const cached = await this.offline.cacheRead('catalogos');
+        if (cached) {
+          if (!cached[listaKey]) cached[listaKey] = [];
+          if (!cached[listaKey].includes(valorFormateado)) {
+            cached[listaKey].push(valorFormateado);
+            cached[listaKey].sort();
           }
           await this.offline.cacheWrite('catalogos', cached);
         }

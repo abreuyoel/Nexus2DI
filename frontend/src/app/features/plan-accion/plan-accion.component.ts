@@ -40,11 +40,31 @@ export class PlanAccionComponent implements OnInit {
   filtroPrioridad = '';
   search = '';
 
-  constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) { }
+  modeloInfo = signal<any>(null);
+  entrenandoModelo = signal(false);
+
+  constructor(private api: ApiService, private snack: MatSnackBar, public auth: AuthService) {}
 
   ngOnInit(): void {
     this.load();
-    this.api.getMercaderistas().subscribe({ next: (d) => this.mercaderistas.set(d || []), error: () => { } });
+    this.api.getMercaderistas().subscribe({ next: (d) => this.mercaderistas.set(d || []), error: () => {} });
+    this.loadModeloInfo();
+  }
+
+  loadModeloInfo(): void {
+    this.api.getModeloInfoPlanAccion().subscribe({ next: (res) => this.modeloInfo.set(res), error: () => {} });
+  }
+
+  entrenarModelo(): void {
+    // Igual que recalcular(): corre en background porque entrenar sobre
+    // ~20k visitas puede tardar unos segundos.
+    this.entrenandoModelo.set(true);
+    this.api.entrenarModeloPlanAccion().subscribe({
+      next: () => {
+        this.snack.open('Entrenando modelo en background, actualizando en unos segundos...', 'OK', { duration: 4000 });
+        setTimeout(() => { this.entrenandoModelo.set(false); this.loadModeloInfo(); }, 15000);
+      },
+    });
   }
 
   load(): void {

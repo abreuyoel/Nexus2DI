@@ -45,42 +45,44 @@ import { ApiService } from '../../core/services/api.service';
         } @else {
           <div class="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
             <!-- Left Column: Available Categories (Multi-select) -->
-            <div class="flex-1 flex flex-col min-h-0 bg-slate-900/60 rounded-2xl border border-white/5 p-4 shadow-inner">
-              <label class="block text-[11px] font-black text-indigo-400/80 uppercase tracking-widest mb-3 shrink-0">Disponibles</label>
-              
-              <!-- Search Bar -->
-              <div class="relative mb-3 shrink-0">
-                <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-[18px]">search</mat-icon>
-                <input [(ngModel)]="searchAvailable" placeholder="Buscar categoría..." 
-                       class="w-full bg-slate-950 border border-white/10 focus:border-indigo-500 text-white rounded-xl pl-9 pr-3 py-2 text-sm font-semibold outline-none transition-colors shadow-sm">
-                @if (searchAvailable) {
-                  <button (click)="searchAvailable = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
-                    <mat-icon class="!text-[16px]">close</mat-icon>
-                  </button>
-                }
-              </div>
+            @if (!data.readonly) {
+              <div class="flex-1 flex flex-col min-h-0 bg-slate-900/60 rounded-2xl border border-white/5 p-4 shadow-inner">
+                <label class="block text-[11px] font-black text-indigo-400/80 uppercase tracking-widest mb-3 shrink-0">Disponibles</label>
+                
+                <!-- Search Bar -->
+                <div class="relative mb-3 shrink-0">
+                  <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-[18px]">search</mat-icon>
+                  <input [(ngModel)]="searchAvailable" placeholder="Buscar categoría..." 
+                         class="w-full bg-slate-950 border border-white/10 focus:border-indigo-500 text-white rounded-xl pl-9 pr-3 py-2 text-sm font-semibold outline-none transition-colors shadow-sm">
+                  @if (searchAvailable) {
+                    <button (click)="searchAvailable = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                      <mat-icon class="!text-[16px]">close</mat-icon>
+                    </button>
+                  }
+                </div>
 
-              <!-- Available List -->
-              <div class="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-1 mb-3">
-                @if (filteredAvailable().length === 0) {
-                  <div class="py-6 text-center text-slate-500">
-                    <p class="text-xs font-semibold">No se encontraron categorías</p>
-                  </div>
-                }
-                @for (cat of filteredAvailable(); track cat.id_categoria) {
-                  <label class="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors border border-transparent hover:border-white/5">
-                    <input type="checkbox" [checked]="isSelected(cat.id_categoria)" (change)="toggleSelection(cat.id_categoria)" 
-                           class="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900">
-                    <span class="text-sm font-bold text-slate-300 select-none">{{ cat.nombre }}</span>
-                  </label>
-                }
+                <!-- Available List -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-1 mb-3">
+                  @if (filteredAvailable().length === 0) {
+                    <div class="py-6 text-center text-slate-500">
+                      <p class="text-xs font-semibold">No se encontraron categorías</p>
+                    </div>
+                  }
+                  @for (cat of filteredAvailable(); track cat.id_categoria) {
+                    <label class="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-colors border border-transparent hover:border-white/5">
+                      <input type="checkbox" [checked]="isSelected(cat.id_categoria)" (change)="toggleSelection(cat.id_categoria)" 
+                             class="w-4 h-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-slate-900">
+                      <span class="text-sm font-bold text-slate-300 select-none">{{ cat.nombre }}</span>
+                    </label>
+                  }
+                </div>
+                
+                <button (click)="addSelectedCategories()" [disabled]="selectedIds.length === 0 || saving()"
+                        class="shrink-0 flex items-center justify-center gap-2 w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:grayscale text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">
+                  <mat-icon class="!text-[18px]">add_task</mat-icon> Asignar ({{ selectedIds.length }})
+                </button>
               </div>
-              
-              <button (click)="addSelectedCategories()" [disabled]="selectedIds.length === 0 || saving()"
-                      class="shrink-0 flex items-center justify-center gap-2 w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 disabled:grayscale text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">
-                <mat-icon class="!text-[18px]">add_task</mat-icon> Asignar ({{ selectedIds.length }})
-              </button>
-            </div>
+            }
 
             <!-- Right Column: Assigned Categories -->
             <div class="flex-1 flex flex-col min-h-0 bg-slate-900/40 rounded-2xl border border-white/5 p-4">
@@ -112,10 +114,12 @@ import { ApiService } from '../../core/services/api.service';
                         </div>
                         <span class="font-bold text-xs text-slate-300 group-hover:text-white transition-colors">{{ cat.categoria_nombre }}</span>
                       </div>
-                      <button (click)="removeCategory(cat.id_categoria)" [disabled]="saving()"
-                              class="!w-7 !h-7 rounded-lg bg-slate-900 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-60 group-hover:opacity-100">
-                        <mat-icon class="!text-[16px]">close</mat-icon>
-                      </button>
+                      @if (!data.readonly) {
+                        <button (click)="removeCategory(cat.id_categoria)" [disabled]="saving()"
+                                class="!w-7 !h-7 rounded-lg bg-slate-900 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-60 group-hover:opacity-100">
+                          <mat-icon class="!text-[16px]">close</mat-icon>
+                        </button>
+                      }
                     </div>
                   }
                 }
@@ -152,7 +156,7 @@ export class ClientCategoriesDialogComponent implements OnInit {
   selectedIds: number[] = [];
 
   constructor(
-    @Inject(MAT_DIALOG_DATA) public data: { cliente: any },
+    @Inject(MAT_DIALOG_DATA) public data: { cliente: any; readonly?: boolean },
     private dialogRef: MatDialogRef<ClientCategoriesDialogComponent>,
     private api: ApiService,
     private snack: MatSnackBar

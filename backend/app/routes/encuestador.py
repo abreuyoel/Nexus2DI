@@ -341,6 +341,7 @@ def api_medicos_buscar(q: str = "", db: Session = Depends(get_db), current_user:
                 "especialidad": m.especialidad,
                 "sub_especialidad": m.sub_especialidad,
                 "universidad_graduacion": m.universidad_graduacion,
+                "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
                 "nro_MPPS": m.nro_MPPS,
                 "nro_colegiado": m.nro_colegiado,
                 "ciudad": m.ciudad,
@@ -402,6 +403,7 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
                 especialidad=req.especialidad,
                 sub_especialidad=req.sub_especialidad,
                 universidad_graduacion=req.universidad_graduacion,
+                segunda_universidad_graduacion=req.segunda_universidad_graduacion,
                 nro_MPPS=req.nro_MPPS,
                 nro_colegiado=req.nro_colegiado,
                 ciudad=req.ciudad,
@@ -509,6 +511,7 @@ def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_us
         "especialidad": medico.especialidad,
         "sub_especialidad": medico.sub_especialidad,
         "universidad_graduacion": medico.universidad_graduacion,
+        "segunda_universidad_graduacion": medico.segunda_universidad_graduacion,
         "nro_MPPS": medico.nro_MPPS,
         "nro_colegiado": medico.nro_colegiado,
         "ciudad": medico.ciudad,
@@ -553,6 +556,7 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
     medico.especialidad = req.especialidad
     medico.sub_especialidad = req.sub_especialidad
     medico.universidad_graduacion = req.universidad_graduacion
+    medico.segunda_universidad_graduacion = req.segunda_universidad_graduacion
     medico.nro_MPPS = req.nro_MPPS
     medico.nro_colegiado = req.nro_colegiado
     medico.ciudad = req.ciudad
@@ -590,7 +594,8 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
     universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
     estados = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre).all()
     ciudades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre).all()
-    
+    universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
+
     return {
         "valor_consulta_rangos": [
             "Gratuito", "Menos de 30$", "Entre 30$ a 50$", "Entre 50$ a 60$",
@@ -611,6 +616,7 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
         "universidades": [u[0] for u in universidades],
         "estados": [est[0] for est in estados],
         "ciudades": [c[0] for c in ciudades],
+        "universidades": [u[0] for u in universidades],
     }
 
 class CatalogoCreate(BaseModel):
@@ -816,6 +822,7 @@ def api_correcciones_pendientes(db: Session = Depends(get_db), current_user: Use
                     "especialidad": m.especialidad,
                     "sub_especialidad": m.sub_especialidad,
                     "universidad_graduacion": m.universidad_graduacion,
+                    "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
                     "nro_MPPS": m.nro_MPPS,
                     "nro_colegiado": m.nro_colegiado,
                     "ciudad": m.ciudad,
@@ -895,6 +902,7 @@ class MedicoCentroUpdateReq(BaseModel):
     especialidad: str
     sub_especialidad: Optional[str] = None
     universidad_graduacion: Optional[str] = None
+    segunda_universidad_graduacion: Optional[str] = None
     nro_MPPS: Optional[str] = None
     nro_colegiado: Optional[str] = None
     ciudad: str
@@ -938,6 +946,7 @@ def api_medico_corregir(
     m.especialidad = req.especialidad
     m.sub_especialidad = req.sub_especialidad
     m.universidad_graduacion = req.universidad_graduacion
+    m.segunda_universidad_graduacion = req.segunda_universidad_graduacion
     m.nro_MPPS = req.nro_MPPS
     m.nro_colegiado = req.nro_colegiado
     m.ciudad = req.ciudad

@@ -75,6 +75,7 @@ class Medico(Base):
     especialidad = Column(String(100), nullable=False)
     sub_especialidad = Column(String(100), nullable=True)
     universidad_graduacion = Column(String(255), nullable=True)
+    segunda_universidad_graduacion = Column(String(200), nullable=True)
     nro_MPPS = Column(String(50), nullable=True)
     nro_colegiado = Column(String(50), nullable=True)
     ciudad = Column(String(100), nullable=False)

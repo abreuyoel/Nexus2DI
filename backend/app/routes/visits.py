@@ -524,17 +524,17 @@ async def approve_photos(
 
 
 async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: Foto, motivo: str,
-                                   current_user: Usuario) -> None:
-    """Postea un mensaje de sistema con la foto rechazada SOLO en el
-    sub-hilo de esa visita (CHAT_MENSAJES_GRUPO_VISITA, tipo_grupo='operativo')
-    -- a diferencia de v1, que lo duplica también en el chat general del
-    grupo. Decisión explícita: el chat general es para cosas generales del
-    equipo, el aviso de una foto rechazada es sobre ESA visita puntual.
-    Best-effort: no debe tumbar el rechazo de la foto (ya persistido antes
-    de llamar esto)."""
+                                   current_user: Usuario, tipo_grupo: str = "operativo") -> None:
+    """Postea un mensaje de sistema con la foto rechazada en el sub-hilo de esa
+    visita (CHAT_MENSAJES_GRUPO_VISITA) para el tipo_grupo indicado.
+    - Analista rechaza → tipo_grupo='operativo' (solo equipo interno)
+    - Cliente rechaza  → tipo_grupo='operativo_cliente' (equipo + cliente)
+    Best-effort: no debe tumbar el rechazo (ya persistido antes de llamar)."""
     if not visita or not visita.id_cliente:
         return
     texto = f"Foto rechazada: {motivo}" if motivo else "Foto rechazada"
+    if current_user.rol == "client":
+        texto = f"⚠️ Cliente rechazó foto: {motivo}" if motivo else "⚠️ Cliente rechazó foto"
     ahora = datetime.now()
 
     try:
@@ -544,13 +544,14 @@ async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: F
             INSERT INTO CHAT_MENSAJES_GRUPO_VISITA
                 (id_cliente, tipo_grupo, id_visita, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
             OUTPUT INSERTED.id_mensaje
-            VALUES (:cid, 'operativo', :vid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
-        """), {"cid": visita.id_cliente, "vid": visita.id, "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
+            VALUES (:cid, :tipo, :vid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
+        """), {"cid": visita.id_cliente, "tipo": tipo_grupo, "vid": visita.id,
+               "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
         db.commit()
         from app.services.azure_service import azure_service
         _foto_proxy = azure_service.get_proxy_url(foto.blob_path) if foto.blob_path else None
-        await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_operativo_{visita.id}", {
-            "id_mensaje": ins[0], "id_cliente": visita.id_cliente, "tipo_grupo": "operativo", "id_visita": visita.id,
+        await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_{tipo_grupo}_{visita.id}", {
+            "id_mensaje": ins[0], "id_cliente": visita.id_cliente, "tipo_grupo": tipo_grupo, "id_visita": visita.id,
             "id_usuario": None, "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
             "fecha_envio": str(ahora), "foto_adjunta": _foto_proxy, "leido_por": [],
         })
@@ -658,7 +659,16 @@ async def reject_photo(
     await _post_rejection_to_chat(db, visita, foto, motivo, current_user)
 
     notify_event("photo.decided", {"foto_id": foto.id, "estado": "Rechazada", "visita_id": foto.visita_id})
+
+    # Determinar a qué chat de grupo va el rechazo:
+    # - Analista/admin → grupo 'operativo' (equipo interno)
+    # - Cliente       → grupo 'operativo_cliente' (equipo + cliente)
+    if current_user.rol == "client":
+        await _post_rejection_to_chat(db, visita, foto, motivo, current_user, tipo_grupo="operativo_cliente")
+    # (si no es cliente, la llamada sin parámetro de arriba ya usó 'operativo' por defecto)
+
     return {"message": "Foto rechazada", "foto_id": foto.id, "razones": razones_nombres}
+
 
 
 @router.post("/save-decisions")

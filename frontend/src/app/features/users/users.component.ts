@@ -14,6 +14,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ClientCategoriesDialogComponent } from './client-categories-dialog.component';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
@@ -38,6 +39,15 @@ export class UsersComponent implements OnInit {
   showForm = signal(false);
   editingUser = signal<any>(null);
   columns = ['id', 'username', 'email', 'rol', 'perfil', 'activo', 'acciones'];
+
+  /** Modo solo-lectura para el rol cliente (id_rol=1) */
+  isClientePuro = signal(false);
+  get columnsForRole(): string[] {
+    // El cliente solo ve info básica, sin columna acciones
+    return this.isClientePuro()
+      ? ['id', 'username', 'email', 'rol', 'perfil', 'activo']
+      : this.columns;
+  }
 
   searchText = '';
   pageSize = 20;
@@ -296,13 +306,16 @@ export class UsersComponent implements OnInit {
     password: ['']
   });
 
-  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
+  constructor(private api: ApiService, private auth: AuthService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
 
   ngOnInit(): void {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.loadData();
-    this.realtime.events$.subscribe(ev => {
-      if (ev.tipo.startsWith('user.') || ev.tipo.startsWith('client.')) this.loadData();
-    });
+    if (!this.isClientePuro()) {
+      this.realtime.events$.subscribe(ev => {
+        if (ev.tipo.startsWith('user.') || ev.tipo.startsWith('client.')) this.loadData();
+      });
+    }
   }
 
   addQuickAnalyst(): void {
@@ -345,12 +358,18 @@ export class UsersComponent implements OnInit {
   }
 
   loadData(): void {
-    this.api.getUsers().subscribe(data => { this.users.set(data); this.loading.set(false); });
-    this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
-    this.api.getClients().subscribe(data => this.clients.set(data));
-    this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
-    this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
-    this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => { } });
+    this.api.getUsers().subscribe({
+      next: data => { this.users.set(data); this.loading.set(false); },
+      error: () => { this.loading.set(false); }
+    });
+    
+    if (!this.isClientePuro()) {
+      this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
+      this.api.getClients().subscribe(data => this.clients.set(data));
+      this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
+      this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
+      this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => { } });
+    }
   }
 
   getProfilesForSelectedRole() {

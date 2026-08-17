@@ -22,9 +22,12 @@
     </div>
 
     <!-- Navigation List -->
-    <nav class="flex-1 py-8 px-3 space-y-2 overflow-y-auto custom-scrollbar">
+    <nav class="flex-1 py-8 px-3 space-y-1 overflow-y-auto custom-scrollbar">
       @for (item of visibleNavItems(); track item.route) {
-      <a [routerLink]="item.route" routerLinkActive="bg-white/5 text-white !border-primary-500/30 shadow-inner"
+      <!-- Ítem principal -->
+      <a [routerLink]="item.route.split('?')[0]"
+        [queryParams]="item.route.includes('?') ? parseQueryParams(item.route) : {}"
+        routerLinkActive="bg-white/5 text-white !border-primary-500/30 shadow-inner"
         class="flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-transparent transition-all duration-300 hover:bg-white/5 hover:text-white group relative overflow-hidden h-[52px]"
         [matTooltip]="!sidenavOpen() ? item.label : ''" matTooltipPosition="right">
         <!-- Active Indicator -->
@@ -41,6 +44,18 @@
           {{ item.label }}
         </span>
       </a>
+      <!-- Sub-ítems (e.g. Power BI bajo Dashboard) -->
+      @if (item.children && item.children.length > 0 && sidenavOpen()) {
+        @for (child of item.children; track child.route) {
+        <a [routerLink]="child.route.split('?')[0]"
+          [queryParams]="child.route.includes('?') ? parseQueryParams(child.route) : {}"
+          routerLinkActive="bg-primary-500/10 text-primary-400"
+          class="flex items-center gap-3 pl-12 pr-4 py-2.5 rounded-xl border border-transparent transition-all duration-200 hover:bg-white/5 hover:text-white group ml-2">
+          <mat-icon class="shrink-0 !text-[18px] text-slate-500 group-hover:text-primary-400" routerLinkActive="!text-primary-400">{{ child.icon }}</mat-icon>
+          <span class="text-sm font-semibold text-slate-400 group-hover:text-white tracking-tight whitespace-nowrap">{{ child.label }}</span>
+        </a>
+        }
+      }
       }
     </nav>
 
