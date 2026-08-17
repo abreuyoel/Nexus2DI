@@ -8,6 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject, debounceTime, distinctUntilChanged, forkJoin } from 'rxjs';
 import maplibregl from 'maplibre-gl';
 import { ApiService } from '../../../core/services/api.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { PuntoInteres } from '../../../core/models/visita.model';
 import { CatalogosComponent } from './catalogos.component';
 import { SearchableSelectComponent, SelectOption } from '../../client-visits/searchable-select.component';
@@ -38,7 +39,7 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
       </p>
     </div>
     <div class="flex items-center gap-2">
-      <!-- Toggle vista -->
+      <!-- Toggle vista: Catálogos oculto para cliente -->
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-xl p-1 flex shadow-sm">
         <button (click)="view.set('pdvs')"
           [class.bg-primary-600]="view() === 'pdvs'" [class.text-white]="view() === 'pdvs'"
@@ -46,12 +47,14 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all">
           <mat-icon class="!text-base">storefront</mat-icon> PDVs
         </button>
-        <button (click)="view.set('catalogos')"
-          [class.bg-primary-600]="view() === 'catalogos'" [class.text-white]="view() === 'catalogos'"
-          [class.text-slate-500]="view() !== 'catalogos'"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all">
-          <mat-icon class="!text-base">tune</mat-icon> Catálogos
-        </button>
+        @if (!isClientePuro()) {
+          <button (click)="view.set('catalogos')"
+            [class.bg-primary-600]="view() === 'catalogos'" [class.text-white]="view() === 'catalogos'"
+            [class.text-slate-500]="view() !== 'catalogos'"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all">
+            <mat-icon class="!text-base">tune</mat-icon> Catálogos
+          </button>
+        }
       </div>
       @if (view() === 'pdvs') {
         <button (click)="loadAll()"
@@ -524,9 +527,13 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 })
 export class PointsComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
+  private auth = inject(AuthService);
   private snack = inject(MatSnackBar);
   private fb = inject(FormBuilder);
   private confirmSvc = inject(ConfirmService);
+
+  /** El usuario es cliente puro (id_rol=1): solo lectura, sin catálogos, sin coordenadas */
+  isClientePuro = signal(false);
 
   view = signal<'pdvs' | 'catalogos'>('pdvs');
   loading = signal(false);
@@ -587,6 +594,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.loadAll();
     this.loadDropdowns();
     this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => {

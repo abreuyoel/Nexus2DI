@@ -14,6 +14,7 @@ import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { ClientCategoriesDialogComponent } from './client-categories-dialog.component';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
@@ -38,6 +39,15 @@ export class UsersComponent implements OnInit {
   showForm = signal(false);
   editingUser = signal<any>(null);
   columns = ['id', 'username', 'email', 'rol', 'perfil', 'activo', 'acciones'];
+
+  /** Modo solo-lectura para el rol cliente (id_rol=1) */
+  isClientePuro = signal(false);
+  get columnsForRole(): string[] {
+    // El cliente solo ve info básica, sin columna acciones
+    return this.isClientePuro()
+      ? ['id', 'username', 'email', 'rol', 'perfil', 'activo']
+      : this.columns;
+  }
 
   searchText = '';
   pageSize = 20;
@@ -192,6 +202,31 @@ export class UsersComponent implements OnInit {
   }
   get totalEncuestadorPages(): number { return Math.max(1, Math.ceil(this.filteredEncuestadores.length / this.pageSize)); }
 
+  vendedoresPage = signal(0);
+  searchVendedor = '';
+
+  get vendedoresUsers(): any[] {
+    return this.users().filter(u => u.id_rol === 9 || (u.rol_nombre || u.rol || '').toLowerCase().includes('vendedor'));
+  }
+  get filteredVendedores(): any[] {
+    const q = this.searchVendedor.trim().toLowerCase();
+    if (!q) return this.vendedoresUsers;
+    return this.vendedoresUsers.filter(v =>
+      (v.username || '').toLowerCase().includes(q) ||
+      (v.email || '').toLowerCase().includes(q) ||
+      String(v.cedula || '').toLowerCase().includes(q)
+    );
+  }
+  get paginatedVendedores(): any[] {
+    const start = this.vendedoresPage() * this.pageSize;
+    return this.filteredVendedores.slice(start, start + this.pageSize);
+  }
+  get totalVendedorPages(): number { return Math.max(1, Math.ceil(this.filteredVendedores.length / this.pageSize)); }
+  onVendedorSearchChange(): void { this.vendedoresPage.set(0); }
+  goVendedorPage(p: number): void {
+    if (p >= 0 && p < this.totalVendedorPages) this.vendedoresPage.set(p);
+  }
+
   // --- Opciones searchable ---
   rolOptions = computed<SelectOption[]>(() =>
     this.rolesDisponibles.map(r => ({ value: String(r.id), label: r.nombre }))
@@ -216,6 +251,7 @@ export class UsersComponent implements OnInit {
     analistas: 'Analistas que revisan y gestionan las cuentas de clientes.',
     clientes: 'Cuentas / marcas del sistema.',
     mercaderistas: 'Personal de campo que ejecuta las visitas en los puntos de venta.',
+    vendedores: 'Personal de ventas encargados de tomar pedidos en campo y gestión comercial.',
     supervisores: 'Supervisores de rutas y clientes.',
     auditores: 'Personal auditor de campo y auditor de gestión encargados del control de calidad e inspecciones.',
     encuestadores: 'Personal encuestador encargado de levantar y verificar información de salud y médicos en campo.',
@@ -225,6 +261,36 @@ export class UsersComponent implements OnInit {
   quickSupervisor = '';
   quickClienteNombre = '';
   quickClienteRif = '';
+  quickVendedorUsername = '';
+  quickVendedorPassword = '';
+
+  addQuickVendedor(): void {
+    const username = this.quickVendedorUsername.trim();
+    const password = this.quickVendedorPassword.trim();
+    if (!username || !password) {
+      this.snack.open('Nombre de usuario y contraseña son obligatorios', 'OK', { duration: 3000 });
+      return;
+    }
+    this.saving.set(true);
+    this.api.createUser({
+      username: username,
+      password: password,
+      id_rol: 9,
+      activo: true
+    }).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.quickVendedorUsername = '';
+        this.quickVendedorPassword = '';
+        this.loadData();
+        this.snack.open('Vendedor creado exitosamente', 'OK', { duration: 2500 });
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.snack.open(err?.error?.detail || 'Error al crear vendedor', 'OK', { duration: 3000 });
+      }
+    });
+  }
 
   createForm = this.fb.group({
     username: ['', Validators.required],
@@ -235,6 +301,72 @@ export class UsersComponent implements OnInit {
     id_perfil: [null as number | null],
     activo: [true],
   });
+
+  // --- Vendedores CRUD State ---
+  showVendedorForm = signal(false);
+  editingVendedor = signal<any>(null);
+  vendedorForm = this.fb.group({
+    username: ['', Validators.required],
+    email: [''],
+    cedula: [''],
+    password: [''],
+    activo: [true],
+  });
+
+  openVendedorForm(): void {
+    this.editingVendedor.set(null);
+    this.vendedorForm.reset({ username: '', email: '', cedula: '', password: '', activo: true });
+    this.showVendedorForm.set(true);
+  }
+
+  editVendedor(v: any): void {
+    this.editingVendedor.set(v);
+    this.vendedorForm.patchValue({
+      username: v.username || '',
+      email: v.email || '',
+      cedula: v.cedula || '',
+      password: '',
+      activo: v.activo ?? true,
+    });
+    this.showVendedorForm.set(true);
+  }
+
+  saveVendedor(): void {
+    if (this.vendedorForm.invalid) return;
+    const val = this.vendedorForm.value;
+    const ed = this.editingVendedor();
+
+    if (!ed && !val.password?.trim()) {
+      this.snack.open('La contraseña es requerida para un nuevo vendedor', 'OK', { duration: 3000 });
+      return;
+    }
+
+    this.saving.set(true);
+    const data: any = {
+      username: val.username || '',
+      email: val.email || '',
+      cedula: val.cedula || '',
+      activo: val.activo ?? true,
+      id_rol: 9,
+    };
+    if (val.password?.trim()) {
+      data.password = val.password.trim();
+    }
+
+    const req = ed ? this.api.updateUser(ed.id, data) : this.api.createUser(data);
+    req.subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.showVendedorForm.set(false);
+        this.loadData();
+        this.snack.open(ed ? 'Vendedor actualizado' : 'Vendedor creado', 'OK', { duration: 2500 });
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.snack.open(err?.error?.detail || 'Error al guardar vendedor', 'OK', { duration: 3000 });
+      }
+    });
+  }
 
   // --- Analysts CRUD State ---
   showAnalystForm = signal(false);
@@ -296,13 +428,16 @@ export class UsersComponent implements OnInit {
     password: ['']
   });
 
-  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
+  constructor(private api: ApiService, private auth: AuthService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
 
   ngOnInit(): void {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.loadData();
-    this.realtime.events$.subscribe(ev => {
-      if (ev.tipo.startsWith('user.') || ev.tipo.startsWith('client.')) this.loadData();
-    });
+    if (!this.isClientePuro()) {
+      this.realtime.events$.subscribe(ev => {
+        if (ev.tipo.startsWith('user.') || ev.tipo.startsWith('client.')) this.loadData();
+      });
+    }
   }
 
   addQuickAnalyst(): void {
@@ -345,12 +480,18 @@ export class UsersComponent implements OnInit {
   }
 
   loadData(): void {
-    this.api.getUsers().subscribe(data => { this.users.set(data); this.loading.set(false); });
-    this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
-    this.api.getClients().subscribe(data => this.clients.set(data));
-    this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
-    this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
-    this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => { } });
+    this.api.getUsers().subscribe({
+      next: data => { this.users.set(data); this.loading.set(false); },
+      error: () => { this.loading.set(false); }
+    });
+    
+    if (!this.isClientePuro()) {
+      this.api.getAnalystsList().subscribe(data => this.analysts.set(data));
+      this.api.getClients().subscribe(data => this.clients.set(data));
+      this.api.getMercaderistas().subscribe(data => this.mercaderistas.set(data));
+      this.api.getSupervisorsWithAssignments().subscribe(data => this.supervisors.set(data));
+      this.api.getEncuestadores().subscribe({ next: data => this.encuestadores.set(data || []), error: () => { } });
+    }
   }
 
   getProfilesForSelectedRole() {

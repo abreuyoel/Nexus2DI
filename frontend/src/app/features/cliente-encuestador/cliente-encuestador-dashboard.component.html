@@ -173,6 +173,11 @@
         <div class="flex items-center gap-2 mb-3">
           <mat-icon class="!text-base text-indigo-400">person</mat-icon>
           <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Médicos</span>
+          <mat-icon
+            class="!text-xs !w-3 !h-3 text-slate-600 hover:text-slate-400 cursor-help ml-auto"
+            matTooltip="Cantidad de médicos distintos registrados. No tiene por qué coincidir con Encuestas: una misma encuesta/visita puede registrar varios médicos de un mismo centro."
+            matTooltipPosition="above"
+          >info_outline</mat-icon>
         </div>
         <div class="text-3xl font-black text-white">{{ kpis.total_medicos }}</div>
       </div>
@@ -191,6 +196,11 @@
         <div class="flex items-center gap-2 mb-3">
           <mat-icon class="!text-base text-emerald-400">assignment</mat-icon>
           <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Encuestas</span>
+          <mat-icon
+            class="!text-xs !w-3 !h-3 text-slate-600 hover:text-slate-400 cursor-help ml-auto"
+            matTooltip="Cantidad de encuestas/visitas de verificación realizadas, no de médicos. Una encuesta puede registrar más de un médico, por eso este número no coincide con Médicos."
+            matTooltipPosition="above"
+          >info_outline</mat-icon>
         </div>
         <div class="text-3xl font-black text-white">{{ kpis.total_encuestas }}</div>
         <div class="text-[10px] text-emerald-400/60 mt-1.5 flex items-center gap-1">
@@ -237,6 +247,71 @@
         <div class="text-3xl font-black text-white">{{ kpis.pct_whatsapp }}%</div>
         <div class="text-[10px] text-slate-500 mt-1.5">WA {{kpis.pct_whatsapp}}% · Email {{kpis.pct_email}}%</div>
       </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ CURVA DE COBERTURA (S4) ═══ -->
+    <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-violet-500/20 transition-all">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-violet-400">show_chart</mat-icon> Curva de cobertura de médicos
+        </h3>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1 bg-slate-950/60 border border-white/5 rounded-lg p-1" *ngIf="coberturaZonas.length > 1">
+            <button *ngFor="let z of coberturaZonas" (click)="seleccionarZonaCobertura(z.estado)"
+                    class="px-3 py-1.5 rounded-md text-xs font-bold transition-all"
+                    [class.bg-violet-600]="coberturaZonaSel === z.estado" [class.text-white]="coberturaZonaSel === z.estado"
+                    [class.text-slate-400]="coberturaZonaSel !== z.estado">
+              {{ z.estado }}
+            </button>
+          </div>
+          <button *ngIf="auth.currentUser()?.is_admin" (click)="recalcularCobertura()" [disabled]="recalculandoCobertura"
+                  matTooltip="Recalcular ahora -- este gráfico se actualiza solo, una vez al día"
+                  class="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg bg-slate-950/60 border border-white/5 text-slate-400 hover:text-violet-400 hover:border-violet-500/30 transition-colors disabled:opacity-50">
+            <mat-icon class="!text-base" [class.animate-spin]="recalculandoCobertura">refresh</mat-icon>
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mb-1">Médicos nuevos registrados por semana, acumulado -- proceso que se satura (universo finito de médicos por zona), por eso se proyecta con una curva logística en vez de una serie estacionaria.</p>
+      <p class="text-[10px] text-slate-600 mb-4" *ngIf="coberturaZonaActual as zf">
+        Última actualización: {{ zf.fecha_calculo | date:'dd/MM/yyyy HH:mm' }} -- se recalcula solo 1 vez al día, puede quedar unas horas detrás de los gráficos en vivo de arriba.
+      </p>
+
+      <div *ngIf="loadingCobertura" class="flex items-center justify-center py-16">
+        <div class="w-8 h-8 border-[3px] border-violet-500/30 border-t-violet-500 rounded-full animate-spin"></div>
+      </div>
+
+      <div *ngIf="!loadingCobertura && !coberturaZonas.length" class="text-center py-12 text-slate-600">
+        <mat-icon class="!text-4xl opacity-30">show_chart</mat-icon>
+        <p class="text-sm mt-2">Todavía no hay curva calculada.</p>
+      </div>
+
+      <ng-container *ngIf="!loadingCobertura && coberturaZonaActual as z">
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <div class="bg-slate-950/60 rounded-xl p-3 text-center">
+            <div class="text-xl font-black text-white">{{ z.n_medicos_total }}</div>
+            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Médicos en la zona</div>
+          </div>
+          <div class="bg-slate-950/60 rounded-xl p-3 text-center">
+            <div class="text-xl font-black text-white">{{ z.n_semanas_historial }}</div>
+            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Semanas de historial</div>
+          </div>
+          <div class="bg-slate-950/60 rounded-xl p-3 text-center">
+            <div class="text-xl font-black" [class.text-emerald-400]="z.curva_valida" [class.text-slate-500]="!z.curva_valida">
+              {{ z.curva_valida ? (z.asintota_l | number:'1.0-0') : '—' }}
+            </div>
+            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Techo estimado (L)</div>
+          </div>
+        </div>
+
+        <div *ngIf="!z.curva_valida" class="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold mb-4">
+          <mat-icon class="!text-base shrink-0">info</mat-icon>
+          Acumulando historial todavía -- hacen falta al menos 8 semanas de registros para poder ajustar la curva de proyección con confianza. El gráfico de abajo ya muestra lo real.
+        </div>
+
+        <div class="h-72">
+          <canvas baseChart [data]="coberturaChartData" [options]="coberturaChartOptions" [type]="'line'"></canvas>
+        </div>
+      </ng-container>
     </div>
 
     <!-- ═══════════════════════════════════ NEW CHARTS: MAP & RANKING ═══ -->
@@ -344,7 +419,11 @@
           <mat-icon class="!text-base text-blue-400">school</mat-icon> Médicos por Universidad
           <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64 cursor-pointer"><canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onUniClick($event)"></canvas></div>
+        <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+          <div [style.height.px]="barChartHeightPx(uniChartData)" class="cursor-pointer">
+            <canvas baseChart [data]="uniChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onUniClick($event)"></canvas>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -355,7 +434,11 @@
           <mat-icon class="!text-base text-teal-400">local_hospital</mat-icon> Médicos por Centro de Salud
           <span class="text-[9px] font-normal text-slate-500 ml-auto">click para filtrar</span>
         </h3>
-        <div class="h-64 cursor-pointer"><canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onCenClick($event)"></canvas></div>
+        <div class="max-h-[28rem] overflow-y-auto custom-scrollbar">
+          <div [style.height.px]="barChartHeightPx(cenChartData)" class="cursor-pointer">
+            <canvas baseChart [data]="cenChartData" [options]="horizontalBarOptions" [type]="'bar'" (chartClick)="onCenClick($event)"></canvas>
+          </div>
+        </div>
       </div>
       <div class="rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-white/5 p-6 hover:border-rose-500/20 transition-all">
         <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-4">

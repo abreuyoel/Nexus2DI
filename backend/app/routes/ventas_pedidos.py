@@ -599,3 +599,116 @@ def dashboard(
         "por_estado": [{"estado": r.estado, "cantidad": r.cantidad} for r in por_estado],
         "top_clientes": [{"cliente": r.cliente, "pedidos": r.pedidos, "total": float(r.total)} for r in top_clientes],
     }
+
+
+# ════════════════════════════════════════════════════════════════════
+# PRONÓSTICO (roadmap predictivo, item S2)
+# ════════════════════════════════════════════════════════════════════
+
+MIN_SEMANAS_PRONOSTICO = 8  # semanas de historial (huecos incluidos) antes de intentar ajustar un modelo
+MIN_PEDIDOS_PRONOSTICO = 3  # semanas CON al menos un pedido confirmado -- 8 semanas de calendario con solo 2 pedidos reales no es tendencia, es ruido
+
+
+@router.get("/pronostico")
+def pronostico_pedidos(
+    id_cliente: Optional[int] = None, horizonte_semanas: int = 4,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """Proyecta el volumen de pedidos (monto total) de las próximas semanas
+    por cliente. Agrega PEDIDOS confirmados (no Borrador, no Rechazado -- un
+    borrador todavía puede cambiar o nunca enviarse) por semana calendario y
+    ajusta un suavizado exponencial con tendencia amortiguada (Holt, vía
+    statsmodels) por cliente -- sin componente estacional: con pocos meses de
+    historial no hay ciclos suficientes para estimarla en serio, se agrega
+    más adelante cuando haya un año+ de datos reales.
+
+    Clientes por debajo de MIN_SEMANAS_PRONOSTICO/MIN_PEDIDOS_PRONOSTICO no
+    se pronostican -- se devuelven igual con suficiente_historial=False y
+    cuánto falta, para que el frontend explique el motivo en vez de mostrar
+    un gráfico vacío sin contexto (mismo criterio que la tendencia de
+    competencia de Auditoría de Campo)."""
+    _check_acceso_ventas(current_user)
+    horizonte_semanas = max(1, min(horizonte_semanas, 12))
+
+    where = ["pe.estado NOT IN ('Borrador', 'Rechazado')"]
+    params: dict = {}
+    if not _puede_gestionar(current_user):
+        where.append("pe.id_usuario_vendedor = :uid")
+        params["uid"] = current_user.id
+    if id_cliente:
+        where.append("pe.id_cliente = :cliente")
+        params["cliente"] = id_cliente
+    where_sql = " AND ".join(where)
+
+    rows = db.execute(text(f"""
+        SELECT pe.id_cliente, c.cliente, pe.fecha, pe.total
+        FROM PEDIDOS pe JOIN CLIENTES c ON c.id_cliente = pe.id_cliente
+        WHERE {where_sql}
+        ORDER BY pe.fecha
+    """), params).fetchall()
+
+    por_cliente: dict = {}
+    for r in rows:
+        fecha = r.fecha.date() if hasattr(r.fecha, "date") else r.fecha
+        lunes = fecha - timedelta(days=fecha.weekday())
+        info = por_cliente.setdefault(r.id_cliente, {"nombre": r.cliente, "semanas": {}})
+        info["semanas"][lunes] = info["semanas"].get(lunes, 0.0) + float(r.total)
+
+    resultados = []
+    for id_cli, info in por_cliente.items():
+        semanas_ordenadas = sorted(info["semanas"].keys())
+        primera, ultima = semanas_ordenadas[0], semanas_ordenadas[-1]
+
+        # Grilla completa de semanas: los huecos cuentan como $0 vendido, no
+        # como semanas ausentes -- si no, la tendencia queda inflada al
+        # ignorar las semanas flojas.
+        grid, cursor = [], primera
+        while cursor <= ultima:
+            grid.append(cursor)
+            cursor += timedelta(weeks=1)
+        serie = [info["semanas"].get(s, 0.0) for s in grid]
+        n_semanas_con_pedido = sum(1 for v in serie if v > 0)
+
+        historial = {
+            "id_cliente": id_cli, "cliente": info["nombre"],
+            "semanas_con_historial": len(grid), "semanas_con_pedidos": n_semanas_con_pedido,
+            "total_historico": round(sum(serie), 2),
+            "serie_historica": [{"semana": s.isoformat(), "total": round(v, 2)} for s, v in zip(grid, serie)],
+        }
+
+        if len(grid) < MIN_SEMANAS_PRONOSTICO or n_semanas_con_pedido < MIN_PEDIDOS_PRONOSTICO:
+            resultados.append({
+                **historial, "suficiente_historial": False,
+                "semanas_faltantes": max(0, MIN_SEMANAS_PRONOSTICO - len(grid)),
+                "pronostico": [],
+            })
+            continue
+
+        try:
+            import numpy as np
+            from statsmodels.tsa.holtwinters import ExponentialSmoothing
+            y = np.array(serie, dtype=float)
+            modelo = ExponentialSmoothing(y, trend="add", damped_trend=True, initialization_method="estimated").fit()
+            pred = [max(0.0, round(float(v), 2)) for v in modelo.forecast(horizonte_semanas)]
+            residuos = y - modelo.fittedvalues
+            desviacion = float(np.std(residuos)) if len(residuos) > 1 else 0.0
+
+            semanas_futuras, cursor = [], ultima + timedelta(weeks=1)
+            for _ in range(horizonte_semanas):
+                semanas_futuras.append(cursor)
+                cursor += timedelta(weeks=1)
+
+            resultados.append({
+                **historial, "suficiente_historial": True,
+                "pronostico": [
+                    {"semana": s.isoformat(), "total_esperado": v,
+                     "rango_bajo": max(0.0, round(v - desviacion, 2)), "rango_alto": round(v + desviacion, 2)}
+                    for s, v in zip(semanas_futuras, pred)
+                ],
+            })
+        except Exception as e:
+            logger.warning(f"[Pronostico] Fallo el ajuste para cliente {id_cli}: {e}")
+            resultados.append({**historial, "suficiente_historial": False, "semanas_faltantes": 0, "pronostico": [], "error_modelo": True})
+
+    resultados.sort(key=lambda r: r["total_historico"], reverse=True)
+    return {"success": True, "minimo_semanas_requerido": MIN_SEMANAS_PRONOSTICO, "minimo_pedidos_requerido": MIN_PEDIDOS_PRONOSTICO, "clientes": resultados}

@@ -94,6 +94,44 @@
     </div>
   </div>
 
+    <!-- Tendencia de presencia de competencia -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm mb-4">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <h3 class="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2">
+          <mat-icon class="!text-base text-rose-500">insights</mat-icon> Tendencia de presencia de competencia
+        </h3>
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Media móvil · 4 semanas</span>
+      </div>
+      <p class="text-xs text-slate-400 mb-4 max-w-2xl">Proporción de auditorías por categoría donde se marcó alguna señal de competencia (actividad, material POP o impulsadora). Ventana propia de 16 semanas, independiente del rango "Desde/Hasta" de arriba -- una tendencia necesita más historia que 7 días.</p>
+
+      @if (loadingTendencia()) {
+        <div class="h-72 flex items-center justify-center"><mat-spinner diameter="32" strokeWidth="3"></mat-spinner></div>
+      } @else if (!tendenciaSeries().length) {
+        <div class="h-72 flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 gap-2">
+          <mat-icon class="!text-3xl">show_chart</mat-icon>
+          <span class="text-xs font-bold">Todavía no hay suficientes auditorías para calcular una tendencia</span>
+        </div>
+      } @else {
+        <div class="h-72"><canvas baseChart [data]="tendenciaChartData" [options]="tendenciaChartOptions" [type]="'line'"></canvas></div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-5">
+          @for (s of tendenciaSeries(); track s.id_categoria) {
+            <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5"
+              [matTooltip]="s.tendencia === 'subiendo' ? 'Subió ' + s.total_auditorias + ' auditorías en la ventana' : s.tendencia === 'bajando' ? 'Bajó en la ventana' : 'Sin cambio relevante en la ventana'">
+              <div class="min-w-0">
+                <div class="font-bold text-xs text-slate-800 dark:text-white truncate">{{ s.categoria }}</div>
+                <div class="text-[10px] text-slate-400">{{ s.total_auditorias }} auditoría(s)</div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0 ml-2" [ngClass]="tendenciaColor(s.tendencia)">
+                <mat-icon class="!text-base">{{ tendenciaIcon(s.tendencia) }}</mat-icon>
+                <span class="text-sm font-black">{{ s.ultimo_valor }}%</span>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
   <!-- Gráficos -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm">

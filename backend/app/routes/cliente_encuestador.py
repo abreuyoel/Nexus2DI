@@ -205,17 +205,22 @@ def api_kpis(request: Request, db: Session = Depends(get_db), current_user: User
     def pct(x): return round((x * 100.0) / total_medicos, 1) if total_medicos else 0.0
     
     # --- CHART DATA ---
+    # Ordenado descendente por valor -- sin esto, el orden salía el que
+    # devolviera SQL Server para el GROUP BY (no determinista en la
+    # práctica), así que especialidad/centro/universidad con más médicos
+    # podía aparecer al final de la lista. Con 10+ barras eso hacía muy
+    # difícil escanear el gráfico de un vistazo.
     esp_data = q.with_entities(Medico.especialidad, func.count(func.distinct(Medico.id_medico))).group_by(Medico.especialidad).all()
-    esp_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in esp_data]
+    esp_chart = sorted([{"name": r[0] or "N/A", "value": r[1]} for r in esp_data], key=lambda x: -x["value"])
 
     est_data = q.with_entities(Medico.estado, func.count(func.distinct(Medico.id_medico))).group_by(Medico.estado).all()
-    est_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in est_data]
+    est_chart = sorted([{"name": r[0] or "N/A", "value": r[1]} for r in est_data], key=lambda x: -x["value"])
 
     uni_data = q.with_entities(Medico.universidad_graduacion, func.count(func.distinct(Medico.id_medico))).group_by(Medico.universidad_graduacion).all()
-    uni_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in uni_data]
+    uni_chart = sorted([{"name": r[0] or "N/A", "value": r[1]} for r in uni_data], key=lambda x: -x["value"])
 
     cen_data = q.with_entities(CentroSalud.nombre_centro, func.count(func.distinct(Medico.id_medico))).group_by(CentroSalud.nombre_centro).all()
-    cen_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in cen_data]
+    cen_chart = sorted([{"name": r[0] or "N/A", "value": r[1]} for r in cen_data], key=lambda x: -x["value"])
 
     val_data = q.with_entities(pc.c.valor_consulta_rango, func.count(func.distinct(Medico.id_medico))).group_by(pc.c.valor_consulta_rango).all()
     val_chart = [{"name": r[0] or "N/A", "value": r[1]} for r in val_data]

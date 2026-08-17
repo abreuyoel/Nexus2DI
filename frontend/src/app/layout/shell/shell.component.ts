@@ -28,6 +28,8 @@ interface NavItem {
   // como canAccess() da acceso total a admin sin importar `roles`, sin esto
   // le aparecían igual en el sidebar aunque no tenga sentido para su flujo.
   hideForAdmin?: boolean;
+  // Sub-ítems del sidebar (p.ej. Power BI bajo Dashboard)
+  children?: NavItem[];
 }
 
 @Component({
@@ -53,10 +55,15 @@ export class ShellComponent implements OnInit {
   hasClientDashboard = signal(false);
 
   private navItems: NavItem[] = [
-    { label: 'Dashboard', icon: 'dashboard', route: '/dashboard', roles: ['admin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo'] },
+    // --- Items admin/analyst/supervisor/coordinador ---
+    {
+      label: 'Dashboard', icon: 'dashboard', route: '/dashboard',
+      roles: ['admin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo'],
+    },
     { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
     { label: 'Plan de Acción', icon: 'assignment_late', route: '/plan-accion', roles: ['admin', 'analyst'] },
+    { label: 'Quiebre Dinámico', icon: 'trending_down', route: '/quiebre', roles: ['admin', 'analyst'] },
     { label: 'Rutas', icon: 'route', route: '/routes', roles: ['admin', 'analyst'], module: 'rutas' },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['admin', 'supervisor', 'atc'] },
     { label: 'Usuarios', icon: 'people', route: '/users', roles: ['admin'], module: 'users' },
@@ -77,28 +84,58 @@ export class ShellComponent implements OnInit {
     { label: 'Solicitudes', icon: 'support_agent', route: '/atencion-cliente', roles: ['admin', 'atc', 'analyst'] },
     { label: 'Auditoría Logs', icon: 'fact_check', route: '/audit', roles: ['admin'] },
     { label: 'Grupos de Chat', icon: 'forum', route: '/admin/chat-grupos', roles: ['admin'] },
+    // Mis Fotos solo para coordinadores (no para cliente puro)
     { label: 'Mis Fotos', icon: 'photo_library', route: '/client', roles: ['coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
-    { label: 'Mis Visitas', icon: 'today', route: '/client/visits', roles: ['client', 'coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
-    { label: 'Data', icon: 'table_chart', route: '/data', roles: ['admin', 'analyst', 'client', 'coordinador_exclusivo', 'coordinador_tradex', 'coordinador_general'] },
+    { label: 'Mis Visitas', icon: 'today', route: '/client/visits', roles: ['coordinador_exclusivo', 'coordinador_tradex'], hideForAdmin: true },
+    { label: 'Data', icon: 'table_chart', route: '/data', roles: ['admin', 'analyst', 'coordinador_exclusivo', 'coordinador_tradex', 'coordinador_general'] },
     { label: 'Encuestador', icon: 'assignment', route: '/encuestador', roles: ['encuestador', 'admin'] },
     { label: 'Catálogos Encuestador', icon: 'settings', route: '/encuestador/configuracion', roles: ['encuestador', 'admin'] },
     { label: 'BI Encuestas', icon: 'pie_chart', route: '/cliente-encuestador', roles: ['cliente_encuestador', 'admin'] },
     { label: 'Supervisor Encuestadores', icon: 'supervisor_account', route: '/supervisor-encuestadores', roles: ['admin', 'supervisor'] },
     { label: 'Ventas', icon: 'point_of_sale', route: '/ventas', roles: ['vendedor', 'admin'] },
+
+    // --- Items exclusivos para rol cliente (id_rol=1) ---
+    {
+      // El sub-ítem "Power BI" que vivía acá se quitó: quedaba redundante
+      // con las pestañas "Resumen | Power BI" que ya tiene la propia página
+      // del dashboard (dashboard.component.ts, activeView) -- "Power BI"
+      // aparecía dos veces en pantalla a la vez. Esa pestaña interna sigue
+      // siendo la única forma de llegar a la vista Power BI.
+      label: 'Dashboard', icon: 'dashboard', route: '/dashboard',
+      roles: ['client'], hideForAdmin: true,
+    },
+    { label: 'Centro de Mando', icon: 'bolt', route: '/centro-mando', roles: ['client'], hideForAdmin: true },
+    { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['client'], hideForAdmin: true },
+    { label: 'Productos', icon: 'inventory_2', route: '/products', roles: ['client'], hideForAdmin: true },
+    { label: 'Data', icon: 'table_chart', route: '/data', roles: ['client'], hideForAdmin: true },
+    { label: 'Chat', icon: 'chat', route: '/chat', roles: ['client'], module: 'chat', hideForAdmin: true },
+    { label: 'Usuarios', icon: 'people', route: '/users', roles: ['client'], module: 'users', hideForAdmin: true },
+    { label: 'Categorías', icon: 'category', route: '/client-categories', roles: ['client'], hideForAdmin: true },
   ];
 
   visibleNavItems = computed(() => {
     const u = this.user();
     if (!u) return [];
     const isAdmin = !!u.is_admin || u.rol === 'admin';
+    const isClient = u.rol === 'client';
 
-    return this.navItems.filter((item) => {
-      if (isAdmin && item.hideForAdmin) return false;
-      // Admin ve todo su set; si el usuario tiene permisos configurados manda el
-      // permiso (can_read de la clave del módulo); si no, se cae al rol.
-      const clave = AuthService.claveFromRoute(item.route);
-      return this.auth.canAccess(clave, item.roles);
-    });
+    return this.navItems
+      .filter((item) => {
+        if (isAdmin && item.hideForAdmin) return false;
+        // El cliente puro (rol=client) NO ve los ítems genéricos (sin hideForAdmin)
+        // que corresponden a admin/analyst; SOLO ve los marcados hideForAdmin=true con rol 'client'
+        if (isClient && !item.hideForAdmin) return false;
+        const clave = AuthService.claveFromRoute(item.route);
+        return this.auth.canAccess(clave, item.roles);
+      })
+      .map(item => ({
+        ...item,
+        // Filtrar sub-ítems visibles
+        children: (item.children || []).filter(child => {
+          const clave = AuthService.claveFromRoute(child.route);
+          return this.auth.canAccess(clave, child.roles);
+        }),
+      }));
   });
 
   constructor(
@@ -135,6 +172,13 @@ export class ShellComponent implements OnInit {
         this.sidenavOpen.set(false);
       }
     });
+  }
+
+  /** Convierte 'ruta?key=val&k2=v2' en { key: 'val', k2: 'v2' } para [queryParams] */
+  parseQueryParams(route: string): Record<string, string> {
+    const qs = route.split('?')[1];
+    if (!qs) return {};
+    return Object.fromEntries(qs.split('&').map(kv => kv.split('=')));
   }
 
   private checkClientDashboard(): void {

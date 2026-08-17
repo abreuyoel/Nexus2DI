@@ -282,3 +282,116 @@ def get_resumen(
         }
     except Exception as e:
         return {"success": False, "message": str(e), "kpis": {}, "charts": {}, "alertas_vencimiento": [], "log": []}
+
+
+@router.get("/tendencia-competencia")
+def get_tendencia_competencia(
+    semanas: int = Query(16, ge=4, le=52),
+    id_cliente: Optional[int] = None,
+    id_ruta: Optional[int] = None,
+    id_categoria: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read')),
+):
+    """Tendencia de presión competitiva por categoría (roadmap predictivo, item
+    S7): a diferencia de /resumen -- que da un % puntual del rango de fechas
+    elegido -- esto bucketiza por semana calendario y calcula una media móvil de
+    4 semanas sobre la proporción de auditorías con alguna señal de competencia
+    marcada (competencia_actividad / material_pop / impulsadora). El % semanal
+    crudo es ruidoso porque hay pocas auditorías por semana en muchas categorías,
+    la media móvil es la que de verdad muestra si está subiendo o bajando.
+
+    Ventana propia (no usa el desde/hasta de /resumen, que por defecto son 7
+    días -- muy corto para una tendencia). Todas las categorías comparten la
+    misma grilla de semanas (aunque alguna no tenga auditorías esa semana
+    puntual) para que las líneas del gráfico queden alineadas en el frontend."""
+    try:
+        hoy = date.today()
+        hoy_lunes = hoy - timedelta(days=hoy.weekday())
+        primer_lunes = hoy_lunes - timedelta(weeks=semanas - 1)
+        desde = primer_lunes.isoformat()
+        hasta = hoy.isoformat()
+        where, params = _where_comun(desde, hasta, None, id_ruta, id_cliente, id_categoria)
+
+        rows = db.execute(text(f"""
+            SELECT v.fecha_visita, ac.id_categoria,
+                   ISNULL(cat.nombre, CONCAT('Categoría ', ac.id_categoria)) AS categoria,
+                   ac.competencia_actividad, ac.competencia_material_pop, ac.competencia_impulsadora
+            FROM AUDITORIA_CATEGORIAS ac
+            JOIN VISITAS_MERCADERISTA v ON v.id_visita = ac.id_visita
+            JOIN MERCADERISTAS m ON m.id_mercaderista = v.id_mercaderista
+            JOIN CLIENTES c ON c.id_cliente = v.id_cliente
+            JOIN PUNTOS_INTERES1 p ON p.identificador = v.identificador_punto_interes
+            LEFT JOIN CATEGORIAS cat ON cat.id_categoria = ac.id_categoria
+            {where}
+        """), params).fetchall()
+
+        # Grilla canónica de semanas (lunes) -- todas las categorías se miden
+        # contra estos mismos puntos en X, tengan o no auditorías esa semana.
+        semanas_grid = []
+        cursor = primer_lunes
+        while cursor <= hoy_lunes:
+            semanas_grid.append(cursor)
+            cursor += timedelta(weeks=1)
+
+        buckets: dict = {}
+        nombres_categoria: dict = {}
+        for r in rows:
+            d = dict(r._mapping)
+            fecha = d["fecha_visita"]
+            fecha_d = fecha.date() if hasattr(fecha, "date") else fecha
+            lunes = fecha_d - timedelta(days=fecha_d.weekday())
+            cat_id = d["id_categoria"]
+            nombres_categoria[cat_id] = d["categoria"]
+            b = buckets.setdefault((cat_id, lunes), {"total": 0, "con_competencia": 0})
+            b["total"] += 1
+            if d.get("competencia_actividad") or d.get("competencia_material_pop") or d.get("competencia_impulsadora"):
+                b["con_competencia"] += 1
+
+        VENTANA_MA = 4
+        series = []
+        for cat_id, categoria in nombres_categoria.items():
+            pct_crudo, total_auditorias = [], 0
+            for lunes in semanas_grid:
+                b = buckets.get((cat_id, lunes))
+                if b and b["total"]:
+                    pct_crudo.append(round(b["con_competencia"] / b["total"] * 100, 1))
+                    total_auditorias += b["total"]
+                else:
+                    pct_crudo.append(None)
+
+            if total_auditorias < 4:
+                continue  # muy poca data en la ventana para que la tendencia signifique algo
+
+            media_movil = []
+            for i in range(len(pct_crudo)):
+                ventana = [v for v in pct_crudo[max(0, i - VENTANA_MA + 1):i + 1] if v is not None]
+                media_movil.append(round(sum(ventana) / len(ventana), 1) if ventana else None)
+
+            valores = [v for v in media_movil if v is not None]
+            tendencia = "estable"
+            if len(valores) >= 2:
+                delta = valores[-1] - valores[0]
+                if delta >= 5:
+                    tendencia = "subiendo"
+                elif delta <= -5:
+                    tendencia = "bajando"
+
+            series.append({
+                "id_categoria": cat_id, "categoria": categoria,
+                "pct_crudo": pct_crudo, "media_movil": media_movil,
+                "tendencia": tendencia,
+                "ultimo_valor": valores[-1] if valores else 0,
+                "total_auditorias": total_auditorias,
+            })
+
+        series.sort(key=lambda s: s["ultimo_valor"], reverse=True)
+
+        return {
+            "success": True,
+            "semanas": [d.isoformat() for d in semanas_grid],
+            "ventana_media_movil": VENTANA_MA,
+            "series": series,
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e), "semanas": [], "series": []}

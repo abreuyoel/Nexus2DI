@@ -347,6 +347,19 @@ def _producto_join(db: Session, current_user: Optional[Usuario] = None):
                 db.query(CategoriaCliente.id_categoria).filter(CategoriaCliente.id_cliente.in_(ids_cliente))
             )
         )
+    # Cliente puro (id_rol=1): solo ve productos de sus categorías asignadas en CATEGORIAS_CLIENTES.
+    # id_perfil = id_cliente en CLIENTES.
+    elif current_user is not None and current_user.rol == "client" and current_user.id_perfil:
+        q = q.filter(
+            Categoria.id_categoria.in_(
+                db.query(CategoriaCliente.id_categoria).filter(
+                    CategoriaCliente.id_cliente == int(current_user.id_perfil)
+                )
+            )
+        )
+    elif current_user is not None and current_user.rol == "client" and not current_user.id_perfil:
+        # Cliente sin id_perfil configurado → sin acceso a productos
+        return q.filter(Producto.id_producto == None)  # noqa: E711
     return q
 
 

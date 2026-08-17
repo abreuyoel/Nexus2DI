@@ -157,7 +157,7 @@ def _to_float(val) -> float:
     return float(val)
 
 
-def calcular_pendientes(db: Session) -> list[dict]:
+def calcular_pendientes(db: Session, usar_modelo: bool = True) -> list[dict]:
     # CAST(GETDATE() AS DATE), no date.today(): el contenedor corre en UTC,
     # y date.today() ya se adelantaba de día (a partir de las 20:00 hora de
     # Caracas, UTC-4) frente a la hora real del negocio -- eso rompía
@@ -172,6 +172,23 @@ def calcular_pendientes(db: Session) -> list[dict]:
 
     universo = _execute_with_timeout(db, UNIVERSO_QUERY, (), timeout=30)
     visitas = _execute_with_timeout(db, VISITAS_QUERY, (inicio_mes,), timeout=30)
+
+    # Modelo entrenado (LightGBM) para el peso de riesgo, si ya existe uno --
+    # ver app/services/plan_accion_ml_service.py. Reemplaza PESO_TIPO
+    # (0.6/1.0 fijo a mano) por una probabilidad real cuando está disponible;
+    # si todavía no se entrenó ningún modelo (o algo falla al cargarlo), cae
+    # de vuelta a PESO_TIPO tal cual, sin romper el cálculo.
+    modelo_info = None
+    tasas_riesgo = None
+    if usar_modelo:
+        try:
+            from app.services import plan_accion_ml_service as ml
+            modelo_info = ml.cargar_modelo_vigente(db)
+            if modelo_info:
+                tasas_riesgo = ml.resolver_tasas_riesgo(db)
+        except Exception as e:
+            logger.warning(f"[PlanAccion] No se pudo cargar el modelo de riesgo, usando PESO_TIPO fijo: {e}")
+            modelo_info = None
 
     actividad: dict[tuple, dict] = defaultdict(lambda: {
         "hechas_semana": set(), "hechas_mes": set(),
@@ -199,6 +216,16 @@ def calcular_pendientes(db: Session) -> list[dict]:
                 info["rechazada_semana"] = True
 
     pendientes: list[dict] = []
+    # Alineada por índice con `pendientes` -- se arma en el mismo loop pero
+    # la predicción del modelo se hace UNA sola vez, en bloque, después del
+    # loop (ver más abajo). Antes se llamaba a ml.predecir_peso_riesgo() una
+    # vez POR FILA dentro de este loop: con miles de pendientes reales eso
+    # significaba miles de llamadas individuales a LightGBM en el único
+    # worker del proceso, y bloqueaba el proceso entero -- no solo Plan de
+    # Acción, TODA la app, confirmado en vivo en producción (504 en cascada
+    # en /auth/me, /api/routes/, etc. mientras corría /recalcular).
+    filas_para_modelo: list[tuple] = []
+
     for (id_ruta, ruta_nombre, id_punto_interes, punto_de_interes, departamento, ciudad,
          id_cliente, cliente_nombre, prioridad, dias_programados, frecuencia_semanal) in universo:
         frecuencia = frecuencia_semanal
@@ -235,8 +262,6 @@ def calcular_pendientes(db: Session) -> list[dict]:
 
         tipo_pendiente = "fotos_rechazadas" if tiene_rechazada else "nunca_visitado"
         peso_prioridad = _peso_prioridad(prioridad)
-        peso_tipo = PESO_TIPO[tipo_pendiente]
-        score = urgencia * peso_prioridad * peso_tipo
 
         pendientes.append({
             "id_ruta": id_ruta,
@@ -256,8 +281,30 @@ def calcular_pendientes(db: Session) -> list[dict]:
             "visitas_faltantes": faltantes,
             "dias_disponibles": dias_disponibles,
             "urgencia": round(urgencia, 4),
-            "score": round(score, 4),
+            # Se completan después del loop, en bloque:
+            "peso_riesgo": None, "riesgo_de_modelo": False, "score": None,
+            "_peso_prioridad": peso_prioridad, "_urgencia": urgencia,
+            "_peso_tipo_fallback": PESO_TIPO[tipo_pendiente],
         })
+        filas_para_modelo.append((id_punto_interes, id_cliente, prioridad, frecuencia))
+
+    # Predicción de riesgo EN BLOQUE: una sola llamada al modelo para todos
+    # los pendientes a la vez (vectorizado), no una por fila.
+    pesos_modelo = None
+    if modelo_info and filas_para_modelo:
+        try:
+            from app.services import plan_accion_ml_service as ml
+            pesos_modelo = ml.predecir_peso_riesgo_batch(modelo_info, tasas_riesgo, filas_para_modelo)
+        except Exception as e:
+            logger.warning(f"[PlanAccion] Falló el batch de predicción de riesgo, usando PESO_TIPO fijo: {e}")
+            pesos_modelo = None
+
+    for i, p in enumerate(pendientes):
+        peso_riesgo = pesos_modelo[i] if pesos_modelo is not None else p["_peso_tipo_fallback"]
+        p["peso_riesgo"] = round(peso_riesgo, 4)
+        p["riesgo_de_modelo"] = pesos_modelo is not None
+        p["score"] = round(p["_urgencia"] * p["_peso_prioridad"] * peso_riesgo, 4)
+        del p["_peso_prioridad"], p["_urgencia"], p["_peso_tipo_fallback"]
 
     pendientes.sort(key=lambda p: p["score"], reverse=True)
     return pendientes
@@ -267,7 +314,7 @@ _INSERT_COLS = [
     "id_ruta", "ruta_nombre", "id_punto_interes", "punto_de_interes", "departamento", "ciudad",
     "id_cliente", "cliente_nombre", "prioridad_ruta", "frecuencia_semanal", "periodo",
     "tipo_pendiente", "visitas_requeridas", "visitas_hechas", "visitas_faltantes",
-    "dias_disponibles", "urgencia", "score",
+    "dias_disponibles", "urgencia", "score", "peso_riesgo", "riesgo_de_modelo",
 ]
 
 _INSERT_SQL = f"""

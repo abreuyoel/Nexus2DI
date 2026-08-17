@@ -34,20 +34,18 @@
 
     <div class="cm-header-right">
       <!-- Selector Cliente -->
-      <div class="cm-select-wrap">
-        <mat-icon class="cm-select-icon">business</mat-icon>
-        <select #clienteSelect [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
-          <option [ngValue]="null">Todos los clientes</option>
-          @for (c of clientes(); track c.id_cliente) {
-          <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
-          }
-        </select>
-        <!-- Icono decorativo aparte del <select> (appearance:none le saca la
-             flecha nativa) -- sin este click no abría nada, porque el icono
-             no forma parte del elemento <select>. showPicker() es la forma
-             estándar de abrir el desplegable nativo desde otro elemento. -->
-        <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
-      </div>
+      @if (!isClientePuro()) {
+        <div class="cm-select-wrap">
+          <mat-icon class="cm-select-icon">business</mat-icon>
+          <select #clienteSelect [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
+            <option [ngValue]="null">Todos los clientes</option>
+            @for (c of clientes(); track c.id_cliente) {
+              <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
+            }
+          </select>
+          <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
+        </div>
+      }
 
       <!-- Rango de Fechas Global -->
       <div class="cm-date-range-box">

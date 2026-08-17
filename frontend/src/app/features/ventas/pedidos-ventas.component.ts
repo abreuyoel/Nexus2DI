@@ -35,16 +35,21 @@ const ESTADO_COLOR: Record<string, string> = {
   template: `
 <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white">
   <div class="bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-white/8 px-6 py-5">
-    <div class="flex items-center gap-3 max-w-6xl mx-auto">
-      <a routerLink="/ventas-dashboard" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700"><mat-icon class="!text-base">arrow_back</mat-icon></a>
-      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-lg">
+    <div class="flex flex-wrap items-center gap-3 max-w-6xl mx-auto">
+      <a routerLink="/ventas-dashboard" class="w-9 h-9 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"><mat-icon class="!text-base">arrow_back</mat-icon></a>
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
         <mat-icon class="text-white">receipt_long</mat-icon>
       </div>
-      <div class="flex-1">
+      <div class="flex-1 min-w-[140px]">
         <h1 class="text-xl font-black tracking-tight leading-none">Pedidos</h1>
         <p class="text-slate-500 dark:text-slate-400 text-xs mt-0.5">Gestión y aprobación</p>
       </div>
-      <select [(ngModel)]="filtroEstado" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <div class="relative">
+        <mat-icon class="!text-base absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</mat-icon>
+        <input [(ngModel)]="search" placeholder="Buscar N°, cliente, vendedor..."
+          class="pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm w-56 outline-none focus:border-emerald-500">
+      </div>
+      <select [(ngModel)]="filtroEstado" (change)="cargar()" class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500">
         <option value="">Todos los estados</option>
         @for (e of estados; track e) { <option [value]="e">{{ e }}</option> }
       </select>
@@ -55,7 +60,33 @@ const ESTADO_COLOR: Record<string, string> = {
     @if (loading()) {
       <div class="flex justify-center py-24"><mat-spinner diameter="40"></mat-spinner></div>
     } @else {
+
+    <!-- RESUMEN -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+      <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-4">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-500 to-violet-500"></div>
+        <p class="text-[10px] text-slate-400 font-black uppercase tracking-wider">Pedidos</p>
+        <p class="text-2xl font-black">{{ pedidosFiltrados().length }}</p>
+      </div>
+      <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-4">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+        <p class="text-[10px] text-slate-400 font-black uppercase tracking-wider">Total</p>
+        <p class="text-2xl font-black text-emerald-600 dark:text-emerald-400">\${{ totalFiltrado().toFixed(0) }}</p>
+      </div>
+      <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-4">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-amber-500 to-orange-500"></div>
+        <p class="text-[10px] text-slate-400 font-black uppercase tracking-wider">Pendientes</p>
+        <p class="text-2xl font-black">{{ contarPorEstado('Enviado') }}</p>
+      </div>
+      <div class="relative overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-xl p-4">
+        <div class="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-rose-500 to-red-500"></div>
+        <p class="text-[10px] text-slate-400 font-black uppercase tracking-wider">Rechazados</p>
+        <p class="text-2xl font-black">{{ contarPorEstado('Rechazado') }}</p>
+      </div>
+    </div>
+
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-slate-50 dark:bg-slate-800 text-xs uppercase text-slate-500 dark:text-slate-400">
             <tr>
@@ -69,8 +100,8 @@ const ESTADO_COLOR: Record<string, string> = {
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-white/5">
-            @for (p of pedidos(); track p.id_pedido) {
-              <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer" (click)="abrirDetalle(p.id_pedido)">
+            @for (p of pedidosFiltrados(); track p.id_pedido) {
+              <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors" (click)="abrirDetalle(p.id_pedido)">
                 <td class="px-4 py-3 font-bold">{{ p.numero_pedido }}</td>
                 <td class="px-4 py-3">{{ p.cliente }}</td>
                 <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ p.vendedor }}</td>
@@ -82,53 +113,57 @@ const ESTADO_COLOR: Record<string, string> = {
                 </td>
               </tr>
             }
-            @if (!pedidos().length) {
-              <tr><td colspan="7" class="text-center py-16 text-slate-400">No hay pedidos con ese filtro</td></tr>
+            @if (!pedidosFiltrados().length) {
+              <tr><td colspan="7" class="text-center py-16 text-slate-400">
+                <mat-icon class="!text-3xl block mx-auto mb-2 opacity-40">receipt_long</mat-icon>
+                No hay pedidos con ese filtro
+              </td></tr>
             }
           </tbody>
         </table>
+        </div>
       </div>
     }
   </div>
 
   <!-- DETALLE (drawer) -->
   @if (detalle()) {
-    <div class="fixed inset-0 bg-black/40 z-40" (click)="detalle.set(null)"></div>
-    <div class="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-slate-900 z-50 shadow-2xl overflow-y-auto">
-      <div class="p-5 border-b border-slate-200 dark:border-white/8 flex items-start justify-between">
+    <div class="fixed inset-0 bg-black/40 z-40 backdrop-blur-[2px]" (click)="detalle.set(null)"></div>
+    <div class="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-slate-900 z-50 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
+      <div class="p-5 border-b border-slate-200 dark:border-white/8 flex items-start justify-between bg-slate-50 dark:bg-slate-800/50">
         <div>
           <h2 class="text-lg font-black">{{ detalle()!.numero_pedido }}</h2>
-          <p class="text-sm text-slate-500 dark:text-slate-400">{{ detalle()!.cliente }} · {{ fmtFecha(detalle()!.fecha) }}</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5"><mat-icon class="!text-sm">storefront</mat-icon> {{ detalle()!.cliente }} · {{ fmtFecha(detalle()!.fecha) }}</p>
           <span class="inline-block mt-2 px-2 py-1 rounded-full text-xs font-bold" [ngClass]="ESTADO_COLOR[detalle()!.estado]">{{ detalle()!.estado }}</span>
         </div>
-        <button (click)="detalle.set(null)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800"><mat-icon class="!text-base">close</mat-icon></button>
+        <button (click)="detalle.set(null)" class="w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 hover:border-rose-300 hover:text-rose-500 transition-colors"><mat-icon class="!text-base">close</mat-icon></button>
       </div>
 
       <div class="p-5">
-        <h3 class="text-xs font-black uppercase text-slate-400 mb-2">Líneas</h3>
+        <h3 class="text-xs font-black uppercase text-slate-400 mb-2 flex items-center gap-1.5"><mat-icon class="!text-sm">shopping_cart</mat-icon> Líneas</h3>
         <div class="space-y-2 mb-4">
           @for (l of detalle()!.lineas; track l.id_linea) {
-            <div class="flex items-center justify-between text-sm bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
+            <div class="flex items-center justify-between text-sm bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-white/5">
               <div class="flex-1"><p class="font-semibold">{{ l.nombre_producto }}</p><p class="text-xs text-slate-500">{{ l.cantidad }} × \${{ l.precio_unitario.toFixed(2) }}</p></div>
               <p class="font-bold">\${{ l.subtotal_linea.toFixed(2) }}</p>
             </div>
           }
         </div>
 
-        <div class="space-y-1 text-sm mb-4">
+        <div class="space-y-1 text-sm mb-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3">
           <div class="flex justify-between"><span class="text-slate-500">Subtotal</span><span>\${{ detalle()!.subtotal.toFixed(2) }}</span></div>
           <div class="flex justify-between"><span class="text-slate-500">Descuento</span><span>-\${{ detalle()!.descuento_total.toFixed(2) }}</span></div>
           <div class="flex justify-between font-black text-base border-t border-slate-200 dark:border-white/8 pt-2 mt-2"><span>Total</span><span class="text-emerald-600 dark:text-emerald-400">\${{ detalle()!.total.toFixed(2) }}</span></div>
         </div>
 
         @if (detalle()!.notas) {
-          <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg p-3 mb-4 text-sm">
-            <mat-icon class="!text-sm align-middle text-amber-600">sticky_note_2</mat-icon> {{ detalle()!.notas }}
+          <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg p-3 mb-4 text-sm flex items-start gap-2">
+            <mat-icon class="!text-sm text-amber-600 mt-0.5 shrink-0">sticky_note_2</mat-icon> <span>{{ detalle()!.notas }}</span>
           </div>
         }
 
         <!-- FIRMA -->
-        <h3 class="text-xs font-black uppercase text-slate-400 mb-2">Conformidad del cliente</h3>
+        <h3 class="text-xs font-black uppercase text-slate-400 mb-2 flex items-center gap-1.5"><mat-icon class="!text-sm">draw</mat-icon> Conformidad del cliente</h3>
         @if (detalle()!.firma_cliente_url) {
           <img [src]="detalle()!.firma_cliente_url" class="w-full rounded-lg border border-slate-200 dark:border-white/8 mb-4">
         } @else {
@@ -140,12 +175,14 @@ const ESTADO_COLOR: Record<string, string> = {
 
         <!-- ACCIONES DE ESTADO -->
         @if (accionesDisponibles().length) {
-          <h3 class="text-xs font-black uppercase text-slate-400 mb-2">Acciones</h3>
+          <h3 class="text-xs font-black uppercase text-slate-400 mb-2 flex items-center gap-1.5"><mat-icon class="!text-sm">bolt</mat-icon> Acciones</h3>
           <div class="flex flex-wrap gap-2">
             @for (a of accionesDisponibles(); track a) {
               <button (click)="cambiarEstado(a)" [disabled]="cambiandoEstado()"
-                class="px-4 py-2 rounded-xl text-sm font-bold text-white"
-                [ngClass]="a === 'Rechazado' ? 'bg-red-600' : 'bg-emerald-600'">
+                class="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5 disabled:opacity-50 shadow-sm transition-transform active:scale-95"
+                [ngClass]="a === 'Rechazado' ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'">
+                @if (cambiandoEstado()) { <mat-spinner diameter="14" strokeWidth="2" class="!text-white"></mat-spinner> }
+                @else { <mat-icon class="!text-base">{{ a === 'Rechazado' ? 'cancel' : 'check_circle' }}</mat-icon> }
                 {{ a }}
               </button>
             }
@@ -167,6 +204,7 @@ export class PedidosVentasComponent implements OnInit {
   ESTADO_COLOR = ESTADO_COLOR;
   estados = ['Borrador', 'Enviado', 'Aprobado', 'Rechazado', 'Facturado', 'Despachado', 'Entregado'];
   filtroEstado = '';
+  search = '';
 
   loading = signal(true);
   pedidos = signal<PedidoResumen[]>([]);
@@ -193,6 +231,17 @@ export class PedidosVentasComponent implements OnInit {
       error: () => { this.loading.set(false); this.snack.open('Error cargando pedidos', 'OK', { duration: 3000 }); },
     });
   }
+
+  pedidosFiltrados(): PedidoResumen[] {
+    const q = this.search.trim().toLowerCase();
+    if (!q) return this.pedidos();
+    return this.pedidos().filter(p =>
+      p.numero_pedido.toLowerCase().includes(q) || p.cliente.toLowerCase().includes(q) || p.vendedor.toLowerCase().includes(q),
+    );
+  }
+
+  totalFiltrado(): number { return this.pedidosFiltrados().reduce((a, p) => a + p.total, 0); }
+  contarPorEstado(estado: string): number { return this.pedidosFiltrados().filter(p => p.estado === estado).length; }
 
   fmtFecha(iso: string): string {
     try { return new Date(iso).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }

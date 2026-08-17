@@ -8,6 +8,8 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
+import { exportFrecuenciaTemplate, parseFrecuenciaTemplate } from '../../shared/utils/excel.utils';
+
 
 const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
   { valor: 5, texto: '5 = 5 días a la semana' },
@@ -71,7 +73,12 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     const f = this.pdvFiltro().trim().toLowerCase();
     const list = this.pdvs();
     if (!f) return list.slice(0, 100);
-    return list.filter(p => (p.nombre || '').toLowerCase().includes(f) || (p.id || '').toLowerCase().includes(f)).slice(0, 100);
+    return list.filter(p => {
+      const nombre = (p.nombre || '').trim();
+      const primeraPalabra = nombre.split(/\s+/)[0].toLowerCase();
+      const id = (p.id || '').toLowerCase();
+      return primeraPalabra.includes(f) || id.includes(f);
+    }).slice(0, 100);
   });
   pdvOptions = computed<SelectOption[]>(() =>
     this.pdvsFiltrados().map(p => ({ value: String(p.id), label: `${p.nombre} (${p.id})` }))
@@ -104,30 +111,11 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
   bulkLoading = signal(false);
   bulkSaving = signal(false);
   bulkPdvs = signal<{ id_punto_interes: string; pdv_nombre: string; id_frecuencia: number | null; frecuencia_semanal: number | null; observaciones: string | null }[]>([]);
-  bulkAplicarTodos: number | null = null;
-
-  bulkPendientesCount = computed(() => this.bulkPdvs().filter(p => p.frecuencia_semanal != null).length);
+  bulkErrors = signal<string[]>([]);
+  dragOver = signal(false);
+  selectedFile: File | null = null;
 
   get bulkClienteStr(): string { return this.bulkCliente != null ? String(this.bulkCliente) : ''; }
-
-  // --- Paginación client-side — tabla de carga masiva ---
-  bulkPage = signal(0);
-  bulkPageSize = signal(20);
-  paginatedBulkPdvs = computed(() => {
-    const size = this.bulkPageSize();
-    const start = this.bulkPage() * size;
-    return this.bulkPdvs().slice(start, start + size);
-  });
-  get totalBulkPages(): number { return Math.max(1, Math.ceil(this.bulkPdvs().length / this.bulkPageSize())); }
-  get bulkRangeLabel(): string {
-    const total = this.bulkPdvs().length;
-    if (!total) return 'Mostrando 0–0 de 0';
-    const start = this.bulkPage() * this.bulkPageSize() + 1;
-    const end = Math.min((this.bulkPage() + 1) * this.bulkPageSize(), total);
-    return `Mostrando ${start}–${end} de ${total}`;
-  }
-  goBulkPage(p: number): void { this.bulkPage.set(p); }
-  onBulkPageSizeChange(val: number): void { this.bulkPageSize.set(val); this.bulkPage.set(0); }
 
   constructor(private api: ApiService, private snack: MatSnackBar, private confirmSvc: ConfirmService) { }
 
@@ -205,8 +193,8 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     this.showForm.set(false);
     this.bulkCliente = null;
     this.bulkPdvs.set([]);
-    this.bulkAplicarTodos = null;
-    this.bulkPage.set(0);
+    this.bulkErrors.set([]);
+    this.selectedFile = null;
     this.showBulk.set(true);
   }
 
@@ -217,7 +205,8 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
   onBulkClienteChange(val: string): void {
     this.bulkCliente = val ? +val : null;
     this.bulkPdvs.set([]);
-    this.bulkPage.set(0);
+    this.bulkErrors.set([]);
+    this.selectedFile = null;
     if (this.bulkCliente == null) return;
     this.bulkLoading.set(true);
     this.api.getPdvsDisponiblesParaFrecuencia(this.bulkCliente).subscribe({
@@ -226,33 +215,108 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
     });
   }
 
-  aplicarATodos(): void {
-    if (this.bulkAplicarTodos == null) return;
-    const valor = this.bulkAplicarTodos;
-    this.bulkPdvs.update(list => list.map(p => ({ ...p, frecuencia_semanal: valor })));
+  descargarPlantilla(): void {
+    if (this.bulkCliente == null) return;
+    const clientName = this.clienteNombre(this.bulkCliente) || `Cliente_${this.bulkCliente}`;
+    exportFrecuenciaTemplate(clientName, this.bulkCliente, this.bulkPdvs());
+  }
+
+  onDragOver(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  onDragLeave(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(false);
+  }
+
+  onDrop(event: DragEvent): void {
+    event.preventDefault();
+    this.dragOver.set(false);
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+      this.procesarArchivo(files[0]);
+    }
+  }
+
+  onFileSelected(event: any): void {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      this.procesarArchivo(files[0]);
+      event.target.value = ''; // Resetear input
+    }
+  }
+
+  async procesarArchivo(file: File): Promise<void> {
+    if (this.bulkCliente == null) {
+      this.snack.open('Debe seleccionar un cliente antes de cargar la plantilla', 'OK', { duration: 3000 });
+      return;
+    }
+    this.bulkLoading.set(true);
+    this.bulkErrors.set([]);
+    this.selectedFile = null;
+
+    try {
+      const res = await parseFrecuenciaTemplate(file);
+      if (res.errors.length > 0 && res.idCliente === 0) {
+        this.bulkErrors.set(res.errors);
+        this.snack.open('Error al leer el archivo Excel', 'OK', { duration: 3000 });
+        this.bulkLoading.set(false);
+        return;
+      }
+
+      if (res.idCliente !== this.bulkCliente) {
+        const expectedName = this.clienteNombre(this.bulkCliente);
+        const actualName = this.clienteNombre(res.idCliente) || `ID: ${res.idCliente}`;
+        this.bulkErrors.set([
+          `El archivo cargado corresponde al cliente "${actualName}" (ID: ${res.idCliente}), pero ha seleccionado el cliente "${expectedName}" (ID: ${this.bulkCliente}).`
+        ]);
+        this.snack.open('Cliente no coincide', 'OK', { duration: 4000 });
+        this.bulkLoading.set(false);
+        return;
+      }
+
+      // Validar si hay filas válidas
+      if (res.items.length === 0) {
+        this.bulkErrors.set(["El archivo no contiene registros de PDVs válidos para procesar."]);
+        this.bulkLoading.set(false);
+        return;
+      }
+
+      this.selectedFile = file;
+      this.bulkErrors.set(res.errors);
+
+      if (res.errors.length > 0) {
+        this.snack.open(`Archivo verificado con ${res.errors.length} advertencias`, 'OK', { duration: 4000 });
+      } else {
+        this.snack.open('Archivo Excel verificado con éxito', 'OK', { duration: 3000 });
+      }
+    } catch (err) {
+      this.snack.open('Error al procesar el archivo', 'OK', { duration: 3000 });
+      this.bulkErrors.set(['No se pudo procesar el archivo Excel. Asegúrese de que sea un formato válido (.xlsx).']);
+    } finally {
+      this.bulkLoading.set(false);
+    }
   }
 
   guardarBulk(): void {
-    const cliente = this.bulkCliente;
-    if (!cliente) return;
-    const items = this.bulkPdvs()
-      .filter(p => p.frecuencia_semanal != null)
-      .map(p => ({ id_punto_interes: p.id_punto_interes, frecuencia_semanal: p.frecuencia_semanal, observaciones: p.observaciones }));
-    if (!items.length) {
-      this.snack.open('Asigna al menos una frecuencia antes de guardar', 'OK', { duration: 3000 });
+    if (this.bulkCliente == null || !this.selectedFile) {
+      this.snack.open('Debe cargar una plantilla de Excel válida antes de procesar', 'OK', { duration: 3000 });
       return;
     }
     this.bulkSaving.set(true);
-    this.api.bulkUpsertFrecuenciasPdvCliente({ id_cliente: cliente, items }).subscribe({
+    this.api.importFrecuenciasExcel(this.bulkCliente, this.selectedFile).subscribe({
       next: (res) => {
         this.bulkSaving.set(false);
         this.showBulk.set(false);
-        this.snack.open(`Guardado: ${res.creados} creados, ${res.actualizados} actualizados`, 'OK', { duration: 3000 });
+        this.selectedFile = null;
+        this.snack.open(`Procesado con éxito: ${res.creados} creados, ${res.actualizados} actualizados`, 'OK', { duration: 4000 });
         this.cargar();
       },
       error: (err) => {
         this.bulkSaving.set(false);
-        this.snack.open(err?.error?.detail || 'Error al guardar la carga masiva', 'OK', { duration: 3000 });
+        this.snack.open(err?.error?.detail || 'Error al procesar el archivo Excel', 'OK', { duration: 4000 });
       },
     });
   }

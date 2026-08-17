@@ -7,6 +7,8 @@ from app.db.session import SessionLocal
 from app.models.ruta import RutaCambioFuturo, RutaProgramacion
 from app.core.config import settings
 from app.services.plan_accion_service import recalcular_plan_accion
+from app.services.quiebre_service import calcular_linea_base, calcular_alertas
+from app.services.cobertura_encuestas_service import calcular_cobertura
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler(timezone=settings.SCHEDULER_TIMEZONE)
@@ -87,6 +89,42 @@ def ejecutar_plan_accion():
         db.close()
 
 
+def ejecutar_quiebre_linea_base():
+    db: Session = SessionLocal()
+    try:
+        r = calcular_linea_base(db)
+        logger.info(f"Quiebre -- línea base recalculada: {r}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando línea base de quiebre: {e}")
+    finally:
+        db.close()
+
+
+def ejecutar_quiebre_alertas():
+    db: Session = SessionLocal()
+    try:
+        r = calcular_alertas(db)
+        logger.info(f"Quiebre -- alertas recalculadas: {r}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando alertas de quiebre: {e}")
+    finally:
+        db.close()
+
+
+def ejecutar_cobertura_encuestas():
+    db: Session = SessionLocal()
+    try:
+        r = calcular_cobertura(db)
+        logger.info(f"Cobertura de encuestas recalculada: {r}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error recalculando cobertura de encuestas: {e}")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     scheduler.add_job(
         ejecutar_cambios_futuros,
@@ -99,6 +137,32 @@ def start_scheduler():
         ejecutar_plan_accion,
         trigger=IntervalTrigger(hours=settings.PLAN_ACCION_INTERVAL_HOURS),
         id="ejecutar_plan_accion",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        ejecutar_quiebre_linea_base,
+        trigger=IntervalTrigger(hours=settings.QUIEBRE_LINEA_BASE_INTERVAL_HOURS),
+        id="ejecutar_quiebre_linea_base",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        # Capa 2 depende de que ya haya línea base calculada (si no, esas
+        # filas quedan sin p10/p25 y no disparan riesgo). IntervalTrigger no
+        # corre en el instante del arranque, así que esto nunca compite con
+        # un arranque en frío -- y la tabla QUIEBRE_LINEA_BASE ya tiene datos
+        # de la corrida manual inicial de todos modos.
+        ejecutar_quiebre_alertas,
+        trigger=IntervalTrigger(hours=settings.QUIEBRE_ALERTAS_INTERVAL_HOURS),
+        id="ejecutar_quiebre_alertas",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        ejecutar_cobertura_encuestas,
+        trigger=IntervalTrigger(hours=settings.COBERTURA_ENCUESTAS_INTERVAL_HOURS),
+        id="ejecutar_cobertura_encuestas",
         replace_existing=True,
         max_instances=1,
     )

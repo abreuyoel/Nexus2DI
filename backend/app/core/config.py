@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     SCHEDULER_INTERVAL_MINUTES: int = 60
     SCHEDULER_TIMEZONE: str = "America/Caracas"
     PLAN_ACCION_INTERVAL_HOURS: int = 4
+    # Quiebre dinámico (N2): Capa 1 (línea base de percentiles) es cara --
+    # agrega sobre 90 días de balances -- y cambia poco día a día, así que
+    # corre una vez al día. Capa 2 (alertas) es barata y depende de balances
+    # frescos; correrla más seguido que Capa 1 tiene sentido. El diseño
+    # original decía "en cada sync de balance", pero enganchar esto al
+    # endpoint de sync de cada mercaderista es justo el patrón que ya tumbó
+    # el sitio una vez con Plan de Acción (N1) -- se usa el mismo intervalo
+    # que Plan de Acción como aproximación segura en vez de eso.
+    QUIEBRE_LINEA_BASE_INTERVAL_HOURS: int = 24
+    QUIEBRE_ALERTAS_INTERVAL_HOURS: int = 4
+    # Cobertura de encuestas médicas (S4): pocos cientos de médicos en
+    # total, cambia poco en el día -- una vez al día alcanza de sobra.
+    COBERTURA_ENCUESTAS_INTERVAL_HOURS: int = 24
 
     FRONTEND_URL: str = "http://localhost:4200"
 

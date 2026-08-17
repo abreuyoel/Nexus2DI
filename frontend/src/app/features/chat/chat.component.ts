@@ -118,16 +118,24 @@ export class ChatComponent implements OnInit, OnDestroy {
   // comportamiento sin que nadie lo pidiera.
   soloEquipoOperativo = computed(() => {
     const r = this.auth.currentUser()?.id_rol;
-    // 1 = Cliente, 12 = Encuestador, 13 = IQVIA. Los tres son completamente
-    // ajenos al sistema de grupos por cliente (operativo_cliente) -- para
-    // 12/13 ni siquiera existe ese contenido (ver get_grupos_de_usuario en
-    // chat_grupos_membresia.py, que los resuelve aparte).
-    return r === 1 || r === 12 || r === 13;
+    // 12 = Encuestador, 13 = IQVIA: ven solo equipo operativo (grupo encuestador).
+    // El cliente puro (1) ya NO está aquí -- tiene su propia lógica abajo.
+    return r === 12 || r === 13;
   });
-  // Nunca renderiza contenido de la pestaña Cliente para esos roles, sin
-  // importar cómo haya quedado activeChatTab -- defensa en profundidad además
-  // de ocultar el botón y forzar el default en ngOnInit.
-  tabEfectivo = computed<'cliente' | 'equipo'>(() => this.soloEquipoOperativo() ? 'equipo' : this.activeChatTab());
+
+  // El cliente puro (id_rol=1) SOLO ve la pestaña "Equipo + Cliente" (operativo_cliente)
+  // y NO puede crear chats nuevos.
+  isClientePuro = computed(() => this.auth.currentUser()?.id_rol === 1);
+
+  // canCrearChat: solo roles internos (no cliente, no encuestador) pueden crear chats
+  canCrearChat = computed(() => !this.isClientePuro() && !this.soloEquipoOperativo());
+
+  // El tab efectivo: cliente puro → siempre 'cliente'; encuestador → siempre 'equipo'; resto: el elegido.
+  tabEfectivo = computed<'cliente' | 'equipo'>(() => {
+    if (this.isClientePuro()) return 'cliente';  // cliente solo ve operativo_cliente
+    if (this.soloEquipoOperativo()) return 'equipo';
+    return this.activeChatTab();
+  });
   // El grupo único de encuestadores ('encuestador') es, en espíritu, un
   // grupo operativo más -- vive en la misma pestaña "Equipo Operativo".
   gruposOperativo = computed(() => this.grupos().filter(g => g.tipo_grupo === 'operativo' || g.tipo_grupo === 'encuestador'));

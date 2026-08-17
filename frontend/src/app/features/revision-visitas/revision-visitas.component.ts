@@ -27,6 +27,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
 export class RevisionVisitasComponent implements OnInit, OnDestroy {
   loading = signal(true);
   visitas = signal<any[]>([]);
+  isClientePuro = signal(false);
 
   // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
   pendingEvents = signal(0);
@@ -100,14 +101,24 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   private rtSubscription?: Subscription;
 
   ngOnInit(): void {
+    this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     const r = this.rangeFor('hoy');
     this.desde = r.desde; this.hasta = r.hasta;
     this.load();
     this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => { } });
     this.api.getCentroMandoClientes().subscribe({
-      next: (r) => this.clientesCatalogo.set(r?.clientes || []),
-      error: () => { },
+      next: (res) => {
+        if (this.isClientePuro()) {
+          const myId = this.auth.currentUser()?.id_perfil;
+          this.clientesCatalogo.set(res.clientes?.filter((c: any) => c.id_cliente === myId) || []);
+          this.filtroCliente = this.clientesCatalogo()[0]?.cliente || '';
+          this.onClienteFiltroChange();
+        } else {
+          this.clientesCatalogo.set(res?.clientes || []);
+        }
+      },
+      error: () => {},
     });
     // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
     // en vez de refrescar agresivamente cada 800ms.
@@ -499,7 +510,10 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   }
 
   setGrupoSel(key: string): void { this.grupoSel = key; this.photoFilter = 'todas'; }
-  isReviewable(f: any): boolean { return ![5, 6].includes(f.id_tipo_foto); }
+  // Cliente puro: en este panel solo ve fotos ya Aprobadas (comprobante de
+  // visita), no tiene sentido ofrecerle Aprobar/Rechazar acá aunque el
+  // backend técnicamente se lo permita sobre fotos de su propio cliente.
+  isReviewable(f: any): boolean { return !this.isClientePuro() && ![5, 6].includes(f.id_tipo_foto); }
 
   /** Fila sintética que inserta el auto-cierre de las 7pm cuando el
    *  mercaderista no desactivó el PDV a mano -- no tiene foto real
@@ -631,6 +645,11 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
 
   get filteredPhotos(): any[] {
     const ph = this.photosByGrupo();
+    // Cliente puro: solo ve las fotos ya Aprobadas -- es una vista de
+    // comprobante de visita, no el flujo de revisión interno. Ignora el
+    // toggle de photoFilter por completo (ese toggle ni se muestra para
+    // este rol, ver template).
+    if (this.isClientePuro()) return ph.filter(f => this.isAprobada(f));
     if (this.photoFilter === 'todas') return ph;
     return ph.filter(f => {
       const e = this.estadoDe(f);
@@ -672,6 +691,28 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get comparePairs(): { antes: any; despues: any }[] {
     const ph = this.photosByGrupo();
     const byId = (a: any, b: any) => (a.id || 0) - (b.id || 0);
+    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto)).sort(byId);
+    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto)).sort(byId);
+    const n = Math.max(antes.length, despues.length);
+    const pairs: { antes: any; despues: any }[] = [];
+
+    if (this.isClientePuro()) {
+      // Cliente puro: cada lado del par se muestra SOLO si está Aprobado --
+      // si no existe todavía o existe pero sigue pendiente/rechazada, se
+      // reemplaza por un marcador { _pendiente: true } para que la tarjeta
+      // diga "Pendiente por revisión" en vez de mostrar la foto real (que
+      // el cliente no debe ver antes de la aprobación) o el genérico
+      // "Sin foto" (que no distingue "no existe" de "existe pero no
+      // aprobada" -- desde la óptica del cliente es lo mismo: no está listo).
+      for (let i = 0; i < n; i++) {
+        const a = antes[i] || null, d = despues[i] || null;
+        const aApr = a && this.isAprobada(a), dApr = d && this.isAprobada(d);
+        if (!aApr && !dApr) continue; // nada aprobado en este par -- no se muestra
+        pairs.push({ antes: aApr ? a : { _pendiente: true }, despues: dApr ? d : { _pendiente: true } });
+      }
+      return pairs;
+    }
+
     // El filtro de estado se aplica DESPUÉS de emparejar, no antes. Filtrar
     // cada lista por separado (como estaba) rompía los pares: al elegir
     // "Aprobadas", un Antes aprobado cuyo Después seguía pendiente quedaba
@@ -679,10 +720,6 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
     // aunque la foto sí existiera -- de ahí los reportes de "solo salen
     // fotos de antes y no de después" en la pantalla de revisión.
     // Se conserva el par completo si CUALQUIERA de las dos matchea el filtro.
-    const antes = ph.filter(f => this.ANTES_IDS.includes(f.id_tipo_foto)).sort(byId);
-    const despues = ph.filter(f => this.DESPUES_IDS.includes(f.id_tipo_foto)).sort(byId);
-    const n = Math.max(antes.length, despues.length);
-    const pairs: { antes: any; despues: any }[] = [];
     for (let i = 0; i < n; i++) {
       const par = { antes: antes[i] || null, despues: despues[i] || null };
       const matchea = (par.antes && this.estadoMatch(par.antes)) || (par.despues && this.estadoMatch(par.despues));
