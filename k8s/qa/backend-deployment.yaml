@@ -24,6 +24,14 @@ spec:
         - name: nexus2di-backend
           # Imagen con tag :qa — construida desde la rama qa
           image: ghcr.io/abreuyoel/nexus2di-backend:qa
+          # Sin esto, kubectl rollout restart no vuelve a bajar la imagen: con
+          # un tag fijo (no :latest) el default es IfNotPresent, y como el
+          # nodo ya tiene :qa cacheado localmente desde el primer deploy, cada
+          # "restart" posterior levantaba pods NUEVOS corriendo el código
+          # VIEJO -- el deploy de QA reportaba éxito sin que el código
+          # cambiara nunca en el cluster (confirmado 2026-08-17: el módulo de
+          # mercaderista llevaba días en la rama qa sin aparecer ahí).
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
           ports:
