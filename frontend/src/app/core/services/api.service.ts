@@ -22,12 +22,13 @@ export class ApiService {
     return p;
   }
 
-  // --- USUARIOS ---
-  // limit alto a propósito: /api/users pagina con 100 por defecto, y las
-  // pantallas que listan usuarios (ej. selector de permisos) necesitan
-  // TODOS -- con 400+ mercaderistas, sin esto solo traía los primeros 100
-  // por id_usuario y el resto no aparecía en ningún dropdown.
-  getUsers(limit = 2000): Observable<User[]> { return this.http.get<User[]>(`${this.base}/api/users`, { params: { limit } }); }
+  getUsers(limit = 150, search?: string, id_rol?: number, rol?: string): Observable<User[]> {
+    const params: any = { limit };
+    if (search) params.q = search;
+    if (id_rol) params.id_rol = id_rol;
+    if (rol) params.rol = rol;
+    return this.http.get<User[]>(`${this.base}/api/users`, { params });
+  }
   createUser(data: object): Observable<User> { return this.http.post<User>(`${this.base}/api/users`, data); }
   updateUser(id: number, data: object): Observable<User> { return this.http.patch<User>(`${this.base}/api/users/${id}`, data); }
   deleteUser(id: number): Observable<object> { return this.http.delete<object>(`${this.base}/api/users/${id}`); }

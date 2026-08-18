@@ -37,6 +37,7 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
         <div class="w-64 sm:w-80">
           <app-searchable-select [options]="userOptions()" [value]="selectedUserStr"
             (valueChange)="onUserSelectChange($event)"
+            (searchChange)="onUserSearch($event)"
             placeholder="— Selecciona un usuario ({{ filteredUsers().length }}) —"
             searchPlaceholder="Buscar usuario..." allLabel="Seleccionar usuario..." icon="person" align="right"></app-searchable-select>
         </div>
@@ -187,11 +188,39 @@ export class PermissionsComponent implements OnInit {
 
   roots = computed(() => this.modulos().filter(m => !m.id_padre).sort((a, b) => a.orden - b.orden));
 
+  userSearchTerm = '';
+  private searchTimeout: any = null;
+
   constructor(private api: ApiService, private snack: MatSnackBar) { }
 
   ngOnInit(): void {
-    this.api.getUsers().subscribe(u => this.users.set(u));
+    this.loadUsers();
     this.api.getModulos().subscribe(m => { this.modulos.set(m); this.ensurePerms(); });
+  }
+
+  loadUsers(search?: string, role?: string | null): void {
+    const r = role || undefined;
+    this.api.getUsers(150, search, undefined, r).subscribe({
+      next: (newUsers) => {
+        const currentSelectedId = this.selectedUserId;
+        if (currentSelectedId) {
+          const selUser = this.users().find(u => u.id === currentSelectedId);
+          if (selUser && !newUsers.some(u => u.id === currentSelectedId)) {
+            newUsers.unshift(selUser);
+          }
+        }
+        this.users.set(newUsers);
+      },
+      error: (err) => console.error('Error cargando usuarios:', err)
+    });
+  }
+
+  onUserSearch(term: string): void {
+    this.userSearchTerm = term;
+    if (this.searchTimeout) clearTimeout(this.searchTimeout);
+    this.searchTimeout = setTimeout(() => {
+      this.loadUsers(term, this.roleFilter());
+    }, 250);
   }
 
   hijos(idPadre: number): Modulo[] {
@@ -207,6 +236,7 @@ export class PermissionsComponent implements OnInit {
   onRoleFilterChange(val: string): void {
     this.roleFilterStr = val;
     this.roleFilter.set(val || null);
+    this.loadUsers(this.userSearchTerm, val || null);
   }
 
   onUserSelectChange(val: string): void {

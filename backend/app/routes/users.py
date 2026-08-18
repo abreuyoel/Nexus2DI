@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, func
 from typing import List
 from app.db.session import get_db
 from app.core.dependencies import require_admin, get_current_user, require_permission
@@ -7,7 +8,7 @@ from app.core.security import get_password_hash
 from app.models.mercaderista import Mercaderista
 from app.models.cliente import Cliente
 from app.models.encuestador import Encuestador
-from app.models.user import Usuario, UserPermission
+from app.models.user import Usuario, UserPermission, ROL_MAP
 from app.schemas.user import UsuarioCreate, UsuarioUpdate, UsuarioResponse, UpdatePermissionsRequest, PermissionResponse
 from app.schemas.cliente import ClienteCreate, ClienteResponse
 from app.services.audit_service import log_action
@@ -26,9 +27,14 @@ from app.models.ejecutivo import Ejecutivo
 def list_users(
     skip: int = 0,
     limit: int = 100,
+    search: str = Query(None, alias="q"),
+    id_rol: int = Query(None),
+    rol: str = Query(None),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',))),
 ):
+    effective_limit = min(max(1, limit), 300)
+
     q = db.query(
         Usuario,
         Cliente.nombre.label('cliente_nombre'),
@@ -50,14 +56,36 @@ def list_users(
     )
 
     # El cliente puro (id_rol=1) solo ve otros usuarios de su mismo cliente
-    # (misma id_perfil = mismo id_cliente en CLIENTES).
     if current_user.rol == "client":
         q = q.filter(
             Usuario.id_rol == 1,
             Usuario.id_perfil == current_user.id_perfil,
         )
 
-    users = q.order_by(Usuario.id).offset(skip).limit(limit).all()
+    if id_rol:
+        q = q.filter(Usuario.id_rol == id_rol)
+    elif rol:
+        target_rol = rol.strip().lower()
+        matching_ids = [k for k, v in ROL_MAP.items() if v.lower() == target_rol]
+        if matching_ids:
+            q = q.filter(Usuario.id_rol.in_(matching_ids))
+
+    if search:
+        term = f"%{search.strip().lower()}%"
+        q = q.filter(
+            or_(
+                func.lower(Usuario.username).like(term),
+                func.lower(Usuario.email).like(term),
+                func.lower(Usuario.cedula).like(term),
+                func.lower(Cliente.nombre).like(term),
+                func.lower(Analista.nombre).like(term),
+                func.lower(Mercaderista.nombre).like(term),
+                func.lower(Encuestador.nombre).like(term),
+                func.lower(Ejecutivo.nombre).like(term),
+            )
+        )
+
+    users = q.order_by(Usuario.id).offset(skip).limit(effective_limit).all()
 
     result = []
     for u, c_nombre, a_nombre, m_nombre, e_nombre, ej_nombre in users:
