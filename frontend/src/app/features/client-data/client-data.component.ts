@@ -3,8 +3,8 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormControl, FormGroup } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatTableModule, MatTableDataSource } from '@angular/material/table';
-import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
-import { MatSort, MatSortModule } from '@angular/material/sort';
+import { MatPaginator, MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSort, MatSortModule, Sort } from '@angular/material/sort';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
@@ -43,7 +43,12 @@ export class ClientDataComponent implements OnInit {
   @ViewChild(MatPaginator) paginator!: MatPaginator;
   @ViewChild(MatSort) sort!: MatSort;
 
+  // Total real que matchea el filtro (para el "X de Y" del paginator) --
+  // dataSource.data solo tiene la página actual, ya no todo el resultado.
+  totalItems = signal(0);
+
   loading = signal(false);
+  exporting = signal(false);
 
   // Fase 3: dos vistas — consolidada (tabla) o tarjetas para revisar
   viewMode = signal<'consolidada' | 'tarjetas'>('consolidada');
@@ -110,10 +115,10 @@ export class ClientDataComponent implements OnInit {
     });
   }
 
-  loadData(): void {
-    this.loading.set(true);
+  /** Solo los filtros del formulario -- compartido entre loadData() (una
+   * página) y exportExcel() (todo lo filtrado, export_all=true). */
+  private buildFilterParams(): any {
     const formVals = this.filterForm.value;
-    
     const params: any = {};
     if (formVals.fecha_inicio) params.fecha_inicio = this.datePipe.transform(formVals.fecha_inicio, 'yyyy-MM-dd');
     if (formVals.fecha_fin) params.fecha_fin = this.datePipe.transform(formVals.fecha_fin, 'yyyy-MM-dd');
@@ -127,12 +132,30 @@ export class ClientDataComponent implements OnInit {
     if (formVals.departamento) params.departamento = formVals.departamento;
     if (formVals.cuadrante) params.cuadrante = formVals.cuadrante;
     if (formVals.estado) params.estado = formVals.estado;
+    return params;
+  }
+
+  /** Trae SOLO la página actual -- antes traía el resultado completo del
+   * filtro (podían ser decenas de miles de filas) y paginaba en el
+   * navegador con todo ya en memoria, que era la razón real de la demora al
+   * aplicar filtros. paginator/sort todavía no existen en el primer llamado
+   * (viene desde ngOnInit, antes de AfterViewInit) -- de ahí los `?? `. */
+  loadData(): void {
+    this.loading.set(true);
+    const params: any = {
+      ...this.buildFilterParams(),
+      page: this.paginator?.pageIndex ?? 0,
+      page_size: this.paginator?.pageSize ?? 50,
+    };
+    if (this.sort?.active && this.sort.direction) {
+      params.sort_by = this.sort.active;
+      params.sort_dir = this.sort.direction;
+    }
 
     this.api.getClientDataBalances(params).subscribe({
-      next: (data) => {
-        this.dataSource = new MatTableDataSource(data);
-        this.dataSource.paginator = this.paginator;
-        this.dataSource.sort = this.sort;
+      next: (res) => {
+        this.dataSource.data = res.items;
+        this.totalItems.set(res.total);
         this.loading.set(false);
       },
       error: () => {
@@ -141,7 +164,21 @@ export class ClientDataComponent implements OnInit {
     });
   }
 
+  /** Se llama desde (page) del mat-paginator -- Angular Material ya movió
+   * pageIndex/pageSize antes de emitir el evento, loadData() los toma de ahí. */
+  onPageChange(_event: PageEvent): void {
+    this.loadData();
+  }
+
+  /** Se llama desde (matSortChange) -- vuelve a página 0, si no se puede
+   * quedar "viendo" una página que ya no corresponde al nuevo orden. */
+  onSortChange(_sort: Sort): void {
+    if (this.paginator) this.paginator.pageIndex = 0;
+    this.loadData();
+  }
+
   applyFilters(): void {
+    if (this.paginator) this.paginator.pageIndex = 0;
     this.loadData();
   }
 
@@ -149,7 +186,7 @@ export class ClientDataComponent implements OnInit {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - 30);
-    
+
     this.filterForm.reset({
       fecha_inicio: startDate,
       fecha_fin: endDate,
@@ -164,6 +201,7 @@ export class ClientDataComponent implements OnInit {
       cuadrante: '',
       estado: ''
     });
+    if (this.paginator) this.paginator.pageIndex = 0;
     this.loadData();
   }
 
@@ -232,30 +270,44 @@ export class ClientDataComponent implements OnInit {
     XLSX.writeFile(wb, `Visita_${v.visita_id}_${this.datePipe.transform(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
   }
 
+  /** dataSource.data ya no sirve acá -- solo tiene la página visible. Pide
+   * TODO lo que matchea el filtro actual (export_all=true, el backend
+   * ignora el paginado en ese caso) en un único llamado aparte, solo cuando
+   * el usuario realmente pide el Excel -- no en cada aplicación de filtro. */
   exportExcel(): void {
-    // Generate an Excel sheet from the current data source
-    const dataToExport = this.dataSource.data.map(item => ({
-      'Visita ID': item.visita_id,
-      'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
-      'Región': item.region,
-      'Cadena': item.cadena,
-      'PDV': item.pdv_nombre,
-      'Mercaderista': item.mercaderista,
-      'Producto': item.producto,
-      'Categoría': item.categoria,
-      'Departamento': item.departamento,
-      'Cuadrante': item.cuadrante,
-      'Estado': item.estado,
-      'Inventario Inicial': item.inv_inicial,
-      'Inventario Final': item.inv_final,
-      'Caras': item.caras,
-      'Precio Bs': item.precio_bs,
-      'Precio $': item.precio_ds
-    }));
+    this.exporting.set(true);
+    const params = { ...this.buildFilterParams(), export_all: true };
+    this.api.getClientDataBalances(params).subscribe({
+      next: (res) => {
+        const dataToExport = res.items.map(item => ({
+          'Visita ID': item.visita_id,
+          'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
+          'Región': item.region,
+          'Cadena': item.cadena,
+          'PDV': item.pdv_nombre,
+          'Mercaderista': item.mercaderista,
+          'Producto': item.producto,
+          'Categoría': item.categoria,
+          'Departamento': item.departamento,
+          'Cuadrante': item.cuadrante,
+          'Estado': item.estado,
+          'Inventario Inicial': item.inv_inicial,
+          'Inventario Final': item.inv_final,
+          'Caras': item.caras,
+          'Precio Bs': item.precio_bs,
+          'Precio $': item.precio_ds
+        }));
 
-    const ws: XLSX.WorkSheet = XLSX.utils.json_to_sheet(dataToExport);
-    const wb: XLSX.WorkBook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Balances');
-    XLSX.writeFile(wb, `Data_Balances_${this.datePipe.transform(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+        const ws: XLSX.WorkSheet = XLSX.utils.json_to_sheet(dataToExport);
+        const wb: XLSX.WorkBook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Balances');
+        XLSX.writeFile(wb, `Data_Balances_${this.datePipe.transform(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+        this.exporting.set(false);
+      },
+      error: () => {
+        this.snack.open('Error al generar el Excel', 'OK', { duration: 3500 });
+        this.exporting.set(false);
+      }
+    });
   }
 }

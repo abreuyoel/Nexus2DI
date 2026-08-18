@@ -218,8 +218,11 @@ export class ApiService {
     return this.http.get<any>(`${this.base}/api/client-data/filters`);
   }
 
-  getClientDataBalances(filters: any): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/api/client-data/balances`, { params: this.params(filters) });
+  // Paginado en el servidor -- ver client-data.component.ts. { total, items }
+  // en vez de un array plano: la tabla puede mostrar "X de Y" sin traer Y
+  // filas completas.
+  getClientDataBalances(filters: any): Observable<{ total: number; items: any[] }> {
+    return this.http.get<{ total: number; items: any[] }>(`${this.base}/api/client-data/balances`, { params: this.params(filters) });
   }
 
   // --- REPORTE DE EXCEL ---

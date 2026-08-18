@@ -183,6 +183,25 @@ def get_client_data_filters(
         "estados": sorted(estados)
     }
 
+# Columnas ordenables desde la UI (mat-sort-header, uno por matColumnDef en
+# client-data.component.html) -> expresión SQL real. Whitelist explícita:
+# sort_by viaja como query param del cliente, nunca se interpola directo en
+# el ORDER BY.
+_SORT_COLUMNS = {
+    "fecha_balance": "b.fecha_balance",
+    "visita_id": "b.id_visita",
+    "region": "p.jerarquia_nivel_2_2",
+    "cadena": "p.jerarquia_nivel_2",
+    "pdv_nombre": "p.punto_de_interes",
+    "mercaderista": "b.mercaderista",
+    "producto": "b.producto",
+    "inv_inicial": "b.inv_inicial",
+    "inv_final": "b.inv_final",
+    "caras": "b.caras",
+    "precio_bs": "b.precio_bs",
+}
+
+
 @router.get("/balances")
 def get_client_balances(
     fecha_inicio: Optional[date] = None,
@@ -197,6 +216,14 @@ def get_client_balances(
     departamento: Optional[str] = None,
     cuadrante: Optional[str] = None,
     estado: Optional[str] = None,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(50, ge=1, le=500),
+    sort_by: Optional[str] = None,
+    sort_dir: str = Query("desc"),
+    # Solo para el botón "Excel" (exporta TODO lo filtrado, no una página) --
+    # la tabla en pantalla nunca lo pide. Con page_size limitado a 500 arriba,
+    # sin esta vía de escape el export quedaría cortado a 500 filas.
+    export_all: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
@@ -208,7 +235,100 @@ def get_client_balances(
         fecha_fin = date.today()
         fecha_inicio = fecha_fin - timedelta(days=30)
 
-    query_str = """
+    # FROM/JOINs/WHERE compartidos entre el COUNT y el SELECT paginado -- así
+    # ambos filtran exactamente lo mismo sin duplicar la lógica de filtros.
+    base_query = """
+        FROM BALANCES_TOTALES b
+        LEFT JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
+        LEFT JOIN (
+            SELECT rp.id_punto_interes, MIN(rn.cuadrante) AS cuadrante
+            FROM RUTA_PROGRAMACION rp
+            JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
+            WHERE rp.activa = 1 AND rn.cuadrante IS NOT NULL
+            GROUP BY rp.id_punto_interes
+        ) rc ON rc.id_punto_interes = p.identificador
+        LEFT JOIN VISITAS_MERCADERISTA v ON b.id_visita = v.id_visita
+        WHERE 1=1
+    """
+
+    params = {}
+
+    if visible_ids is not None:
+        if not visible_ids:
+            return {"total": 0, "items": []}
+        base_query += f" AND b.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
+
+    af, ap = _analyst_filter(current_user)
+    base_query += af
+    params.update(ap)
+
+    cf, cp = _client_route_filter(current_user, db)
+    base_query += cf
+    params.update(cp)
+
+    if fecha_inicio:
+        base_query += " AND b.fecha_balance >= :fecha_inicio"
+        params["fecha_inicio"] = fecha_inicio
+
+    if fecha_fin:
+        # Add 1 day to include the entire end date
+        base_query += " AND b.fecha_balance < :fecha_fin_plus_one"
+        params["fecha_fin_plus_one"] = fecha_fin + timedelta(days=1)
+
+    if producto:
+        base_query += " AND b.producto = :producto"
+        params["producto"] = producto
+
+    if cadena:
+        base_query += " AND p.jerarquia_nivel_2 = :cadena"
+        params["cadena"] = cadena
+
+    if region:
+        base_query += " AND p.jerarquia_nivel_2_2 = :region"
+        params["region"] = region
+
+    if pdv:
+        base_query += " AND b.identificador_pdv = :pdv"
+        params["pdv"] = pdv
+
+    if mercaderista:
+        base_query += " AND b.mercaderista = :mercaderista"
+        params["mercaderista"] = mercaderista
+
+    if visita_id:
+        base_query += " AND b.id_visita = :visita_id"
+        params["visita_id"] = visita_id
+
+    if categoria:
+        base_query += " AND b.categoria = :categoria"
+        params["categoria"] = categoria
+
+    if departamento:
+        base_query += " AND p.departamento = :departamento"
+        params["departamento"] = departamento
+
+    if cuadrante:
+        base_query += " AND rc.cuadrante = :cuadrante"
+        params["cuadrante"] = cuadrante
+
+    if estado:
+        base_query += " AND v.estado = :estado"
+        params["estado"] = estado
+    elif current_user.is_client:
+        # El cliente (incluye coordinador_exclusivo/tradex/general — is_client
+        # los agrupa) solo debe ver balances de visitas ya aprobadas/revisadas
+        # por el analista. Antes no había ningún filtro por defecto acá: un
+        # cliente veía balances de visitas Pendiente/En Progreso igual que
+        # Revisado. Admin/analyst no se filtran (necesitan ver/editar
+        # balances antes de que la visita quede Revisado).
+        base_query += " AND v.estado = 'Revisado'"
+
+    total = db.execute(text(f"SELECT COUNT(*) AS total {base_query}"), params).scalar() or 0
+
+    order_col = _SORT_COLUMNS.get(sort_by or "", "b.fecha_balance")
+    order_dir = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
+
+    data_query = f"""
         SELECT
             b.id_balance,
             b.fecha_balance,
@@ -228,94 +348,15 @@ def get_client_balances(
             b.caras,
             b.precio_bs,
             b.precio_ds
-        FROM BALANCES_TOTALES b
-        LEFT JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
-        LEFT JOIN (
-            SELECT rp.id_punto_interes, MIN(rn.cuadrante) AS cuadrante
-            FROM RUTA_PROGRAMACION rp
-            JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
-            WHERE rp.activa = 1 AND rn.cuadrante IS NOT NULL
-            GROUP BY rp.id_punto_interes
-        ) rc ON rc.id_punto_interes = p.identificador
-        LEFT JOIN VISITAS_MERCADERISTA v ON b.id_visita = v.id_visita
-        WHERE 1=1
+        {base_query}
+        ORDER BY {order_col} {order_dir}
     """
-    
-    params = {}
+    if not export_all:
+        data_query += " OFFSET :skip ROWS FETCH NEXT :page_size ROWS ONLY"
+        params["skip"] = page * page_size
+        params["page_size"] = page_size
 
-    if visible_ids is not None:
-        if not visible_ids:
-            return []
-        query_str += f" AND b.id_cliente IN ({','.join(str(int(i)) for i in visible_ids)})"
-
-    af, ap = _analyst_filter(current_user)
-    query_str += af
-    params.update(ap)
-
-    cf, cp = _client_route_filter(current_user, db)
-    query_str += cf
-    params.update(cp)
-
-    if fecha_inicio:
-        query_str += " AND b.fecha_balance >= :fecha_inicio"
-        params["fecha_inicio"] = fecha_inicio
-        
-    if fecha_fin:
-        # Add 1 day to include the entire end date
-        query_str += " AND b.fecha_balance < :fecha_fin_plus_one"
-        params["fecha_fin_plus_one"] = fecha_fin + timedelta(days=1)
-        
-    if producto:
-        query_str += " AND b.producto = :producto"
-        params["producto"] = producto
-        
-    if cadena:
-        query_str += " AND p.jerarquia_nivel_2 = :cadena"
-        params["cadena"] = cadena
-        
-    if region:
-        query_str += " AND p.jerarquia_nivel_2_2 = :region"
-        params["region"] = region
-        
-    if pdv:
-        query_str += " AND b.identificador_pdv = :pdv"
-        params["pdv"] = pdv
-        
-    if mercaderista:
-        query_str += " AND b.mercaderista = :mercaderista"
-        params["mercaderista"] = mercaderista
-        
-    if visita_id:
-        query_str += " AND b.id_visita = :visita_id"
-        params["visita_id"] = visita_id
-
-    if categoria:
-        query_str += " AND b.categoria = :categoria"
-        params["categoria"] = categoria
-
-    if departamento:
-        query_str += " AND p.departamento = :departamento"
-        params["departamento"] = departamento
-
-    if cuadrante:
-        query_str += " AND rc.cuadrante = :cuadrante"
-        params["cuadrante"] = cuadrante
-
-    if estado:
-        query_str += " AND v.estado = :estado"
-        params["estado"] = estado
-    elif current_user.is_client:
-        # El cliente (incluye coordinador_exclusivo/tradex/general — is_client
-        # los agrupa) solo debe ver balances de visitas ya aprobadas/revisadas
-        # por el analista. Antes no había ningún filtro por defecto acá: un
-        # cliente veía balances de visitas Pendiente/En Progreso igual que
-        # Revisado. Admin/analyst no se filtran (necesitan ver/editar
-        # balances antes de que la visita quede Revisado).
-        query_str += " AND v.estado = 'Revisado'"
-
-    query_str += " ORDER BY b.fecha_balance DESC"
-
-    rows = db.execute(text(query_str), params).fetchall()
+    rows = db.execute(text(data_query), params).fetchall()
 
     results = []
     for row in rows:
@@ -339,5 +380,5 @@ def get_client_balances(
             "precio_bs": row.precio_bs,
             "precio_ds": row.precio_ds
         })
-        
-    return results
+
+    return {"total": total, "items": results}
