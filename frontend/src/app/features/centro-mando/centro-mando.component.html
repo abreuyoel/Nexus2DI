@@ -33,17 +33,18 @@
     </div>
 
     <div class="cm-header-right">
-      <!-- Selector Cliente -->
+      <!-- Selector Cliente Searchable -->
       @if (!isClientePuro()) {
-      <div class="cm-select-wrap">
-        <mat-icon class="cm-select-icon">business</mat-icon>
-        <select #clienteSelect [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
-          <option [ngValue]="null">Todos los clientes</option>
-          @for (c of clientes(); track c.id_cliente) {
-          <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
-          }
-        </select>
-        <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
+      <div class="w-56 sm:w-64">
+        <app-searchable-select
+          [options]="clienteOptions()"
+          [value]="filtroClienteStr"
+          (valueChange)="onClienteFilterChange($event)"
+          placeholder="Todos los clientes"
+          searchPlaceholder="Buscar cliente..."
+          allLabel="Todos los clientes"
+          icon="business">
+        </app-searchable-select>
       </div>
       }
 
@@ -119,6 +120,11 @@
       <div class="cm-stat-body">
         <div class="cm-stat-num">{{ resumenDia().mercaderistas.activos_hoy }}</div>
         <div class="cm-stat-label">ACTIVARON {{ labelPeriodo }}</div>
+        @if (resumenDia().mercaderistas.activos_no_planificados > 0) {
+        <div class="cm-stat-sub text-emerald-600 dark:text-emerald-400 font-semibold">
+          +{{ resumenDia().mercaderistas.activos_no_planificados }} no planif.
+        </div>
+        }
         <button class="cm-detail-link" (click)="toggleDetalle('activos')">
           Ver detalle <mat-icon class="!text-[14px]">expand_more</mat-icon>
         </button>
@@ -467,7 +473,7 @@
     </div>
     }
     <div class="cm-merc-grid">
-      @for (m of filteredMercaderistas; track m.id_mercaderista) {
+      @for (m of paginatedMercaderistas; track m.id_mercaderista) {
       <div class="cm-merc-card">
         <div class="cm-merc-top">
           <div class="cm-avatar">{{ (m.nombre || '?').charAt(0).toUpperCase() }}</div>
@@ -550,6 +556,25 @@
       </div>
       }
     </div>
+
+    @if (filteredMercaderistas.length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-6 px-4 py-3 bg-[#161b22] border border-white/10 rounded-xl text-xs text-[#8b949e]">
+      <div>
+        Mostrando {{ (pageMercaderistas - 1) * pageSize + 1 }} - {{ getMin(pageMercaderistas * pageSize, filteredMercaderistas.length) }} de {{ filteredMercaderistas.length }} mercaderistas
+      </div>
+      <div class="flex items-center gap-2">
+        <button (click)="pageMercaderistas = pageMercaderistas - 1" [disabled]="pageMercaderistas <= 1"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="font-bold text-white px-2">Página {{ pageMercaderistas }} de {{ totalPagesMercaderistas }}</span>
+        <button (click)="pageMercaderistas = pageMercaderistas + 1" [disabled]="pageMercaderistas >= totalPagesMercaderistas"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
     }
 
     <!-- ─── GESTIÓN POR DÍA TAB ───────────────────────────────── -->
@@ -577,7 +602,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (c of gestionPorDia().clientes; track c.cliente) {
+          @for (c of paginatedGestion; track c.cliente) {
           <tr>
             <td class="sticky-col name-col" [title]="c.cliente">{{ c.cliente }}</td>
             @for (f of gestionPorDia().fechas; track f) {
@@ -597,6 +622,25 @@
         </tbody>
       </table>
     </div>
+
+    @if (gestionPorDia()?.clientes?.length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-4 px-4 py-3 bg-[#161b22] border border-white/10 rounded-xl text-xs text-[#8b949e]">
+      <div>
+        Mostrando {{ (pageGestion - 1) * pageSize + 1 }} - {{ getMin(pageGestion * pageSize, gestionPorDia().clientes.length) }} de {{ gestionPorDia().clientes.length }} clientes
+      </div>
+      <div class="flex items-center gap-2">
+        <button (click)="pageGestion = pageGestion - 1" [disabled]="pageGestion <= 1"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="font-bold text-white px-2">Página {{ pageGestion }} de {{ totalPagesGestion }}</span>
+        <button (click)="pageGestion = pageGestion + 1" [disabled]="pageGestion >= totalPagesGestion"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
     }
     }
 
@@ -614,7 +658,7 @@
     </div>
     }
     <div class="cm-pend-grid">
-      @for (group of pendientesGroupedByMerc; track group.mercaderista) {
+      @for (group of paginatedPendientes; track group.mercaderista) {
       <div class="cm-pend-card">
         <div class="cm-pend-head">
           <span>{{ group.mercaderista }}</span>
@@ -634,6 +678,25 @@
       </div>
       }
     </div>
+
+    @if (pendientesGroupedByMerc.length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-6 px-4 py-3 bg-[#161b22] border border-white/10 rounded-xl text-xs text-[#8b949e]">
+      <div>
+        Mostrando {{ (pagePendientes - 1) * pageSize + 1 }} - {{ getMin(pagePendientes * pageSize, pendientesGroupedByMerc.length) }} de {{ pendientesGroupedByMerc.length }} grupos
+      </div>
+      <div class="flex items-center gap-2">
+        <button (click)="pagePendientes = pagePendientes - 1" [disabled]="pagePendientes <= 1"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="font-bold text-white px-2">Página {{ pagePendientes }} de {{ totalPagesPendientes }}</span>
+        <button (click)="pagePendientes = pagePendientes + 1" [disabled]="pagePendientes >= totalPagesPendientes"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
     }
 
     <!-- ─── LISTA VISITAS TAB ─────────────────────────────────── -->
@@ -665,7 +728,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (v of filteredLista; track v.id_visita) {
+          @for (v of paginatedLista; track v.id_visita) {
           <tr>
             <td>
               @if (v.estado_presencia === 'completa') {
@@ -706,6 +769,25 @@
         </tbody>
       </table>
     </div>
+
+    @if (filteredLista.length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-4 px-4 py-3 bg-[#161b22] border border-white/10 rounded-xl text-xs text-[#8b949e]">
+      <div>
+        Mostrando {{ (pageLista - 1) * pageSize + 1 }} - {{ getMin(pageLista * pageSize, filteredLista.length) }} de {{ filteredLista.length }} visitas
+      </div>
+      <div class="flex items-center gap-2">
+        <button (click)="pageLista = pageLista - 1" [disabled]="pageLista <= 1"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="font-bold text-white px-2">Página {{ pageLista }} de {{ totalPagesLista }}</span>
+        <button (click)="pageLista = pageLista + 1" [disabled]="pageLista >= totalPagesLista"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
     }
 
     <!-- ─── HORAS TRABAJADAS TAB ──────────────────────────────── -->
@@ -743,9 +825,9 @@
           </tr>
         </thead>
         <tbody>
-          @for (m of filteredHoras; track m.id_mercaderista; let i = $index) {
+          @for (m of paginatedHoras; track m.id_mercaderista; let i = $index) {
           <tr>
-            <td class="mono">{{ i + 1 }}</td>
+            <td class="mono">{{ (pageHoras - 1) * pageSize + i + 1 }}</td>
             <td class="fw">{{ m.mercaderista }}</td>
             <td class="text-right mono">{{ m.horas_trabajadas }} h</td>
             <td class="text-right mono">{{ m.horas_promedio_dia }} h</td>
@@ -758,6 +840,25 @@
         </tbody>
       </table>
     </div>
+
+    @if (filteredHoras.length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-4 mt-4 px-4 py-3 bg-[#161b22] border border-white/10 rounded-xl text-xs text-[#8b949e]">
+      <div>
+        Mostrando {{ (pageHoras - 1) * pageSize + 1 }} - {{ getMin(pageHoras * pageSize, filteredHoras.length) }} de {{ filteredHoras.length }} mercaderistas
+      </div>
+      <div class="flex items-center gap-2">
+        <button (click)="pageHoras = pageHoras - 1" [disabled]="pageHoras <= 1"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          <mat-icon class="!text-sm">chevron_left</mat-icon> Anterior
+        </button>
+        <span class="font-bold text-white px-2">Página {{ pageHoras }} de {{ totalPagesHoras }}</span>
+        <button (click)="pageHoras = pageHoras + 1" [disabled]="pageHoras >= totalPagesHoras"
+          class="px-3 py-1.5 rounded-lg border border-white/10 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white transition-all flex items-center gap-1">
+          Siguiente <mat-icon class="!text-sm">chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+    }
     }
     }
 

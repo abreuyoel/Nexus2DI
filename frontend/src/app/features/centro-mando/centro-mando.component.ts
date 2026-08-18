@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, HostListener, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, HostListener, inject, computed } from '@angular/core';
 import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -15,6 +15,7 @@ import { RevisionVisitasComponent } from '../revision-visitas/revision-visitas.c
 import { VisitThreadDialogComponent } from '../chat/visit-thread-dialog.component';
 import { AuthImgDirective } from '../../shared/directives/auth-img.directive';
 import { AuthImageCacheService } from '../../core/services/auth-image-cache.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-centro-mando',
@@ -23,7 +24,7 @@ import { AuthImageCacheService } from '../../core/services/auth-image-cache.serv
     CommonModule, FormsModule,
     MatIconModule, MatButtonModule,
     MatProgressSpinnerModule, MatTooltipModule, MatDialogModule,
-    RevisionVisitasComponent, AuthImgDirective
+    RevisionVisitasComponent, AuthImgDirective, SearchableSelectComponent
   ],
   templateUrl: './centro-mando.component.html',
   styleUrls: ['./centro-mando.component.scss']
@@ -75,6 +76,14 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   }
 
   filtroCliente: number | null = null;
+  filtroClienteStr = '';
+
+  clienteOptions = computed<SelectOption[]>(() => {
+    return (this.clientes() || []).map((c: any) => ({
+      value: String(c.id_cliente),
+      label: c.cliente
+    }));
+  });
 
   // ─── Filtros Rango (Global) ────────────────────────────────────────────────
   filtroDesde: string = this.todayStr();
@@ -144,6 +153,13 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
+    
+    const savedCliente = sessionStorage.getItem('cm_filtro_cliente');
+    if (savedCliente) {
+      this.filtroCliente = Number(savedCliente);
+      this.filtroClienteStr = savedCliente;
+    }
+
     this.loadClientes();
     this.loadResumenDia();
     this.loadActivaciones();
@@ -200,8 +216,12 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
             const myId = this.auth.currentUser()?.id_perfil;
             this.clientes.set(res.clientes.filter((c: any) => c.id_cliente === myId));
             this.filtroCliente = myId || null;
+            this.filtroClienteStr = myId ? String(myId) : '';
           } else {
             this.clientes.set(res.clientes);
+            if (this.filtroCliente) {
+              this.filtroClienteStr = String(this.filtroCliente);
+            }
           }
         } 
       },
@@ -299,6 +319,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   }
 
   refresh() {
+    this.resetPages();
     this.loadResumenDia();
     this.loadActivaciones();
     // Solo recargar horas si ya fueron cargadas (la pestaña se abrió antes);
@@ -382,6 +403,17 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     }
   }
 
+  onClienteFilterChange(val: string) {
+    this.filtroClienteStr = val;
+    this.filtroCliente = val ? Number(val) : null;
+    if (val) {
+      sessionStorage.setItem('cm_filtro_cliente', val);
+    } else {
+      sessionStorage.removeItem('cm_filtro_cliente');
+    }
+    this.refresh();
+  }
+
   onClienteChange() {
     this.refresh();
   }
@@ -399,8 +431,29 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
       this.showDetalle = tipo;
       const r = this.resumenDia();
       if (!r) return;
-      this.detalleList = tipo === 'activos' ? r.mercaderistas.activos : r.mercaderistas.faltantes;
+    this.detalleList = tipo === 'activos' ? r.mercaderistas.activos : r.mercaderistas.faltantes;
     }
+  }
+
+  // ─── Paginación ─────────────────────────────────────────────────────────────
+  pageSize = 20;
+
+  pageMercaderistas = 1;
+  pagePendientes = 1;
+  pageLista = 1;
+  pageHoras = 1;
+  pageGestion = 1;
+
+  getMin(a: number, b: number): number {
+    return Math.min(a, b);
+  }
+
+  resetPages(): void {
+    this.pageMercaderistas = 1;
+    this.pagePendientes = 1;
+    this.pageLista = 1;
+    this.pageHoras = 1;
+    this.pageGestion = 1;
   }
 
   // ─── Modal PDVs ───────────────────────────────────────────────────────────
@@ -466,12 +519,30 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     );
   }
 
+  get totalPagesMercaderistas(): number {
+    return Math.ceil(this.filteredMercaderistas.length / this.pageSize) || 1;
+  }
+
+  get paginatedMercaderistas(): any[] {
+    const start = (this.pageMercaderistas - 1) * this.pageSize;
+    return this.filteredMercaderistas.slice(start, start + this.pageSize);
+  }
+
   /** Ya viene ordenado de mayor a menor por horas_trabajadas desde el backend. */
   get filteredHoras() {
     const q = this.searchText.toLowerCase();
     return this.horasTrabajadas().filter(m =>
       !q || (m.mercaderista || '').toLowerCase().includes(q)
     );
+  }
+
+  get totalPagesHoras(): number {
+    return Math.ceil(this.filteredHoras.length / this.pageSize) || 1;
+  }
+
+  get paginatedHoras(): any[] {
+    const start = (this.pageHoras - 1) * this.pageSize;
+    return this.filteredHoras.slice(start, start + this.pageSize);
   }
 
   /** PDV/clientes pendientes (sin activación) del mercaderista del modal. */
@@ -555,6 +626,15 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     );
   }
 
+  get totalPagesLista(): number {
+    return Math.ceil(this.filteredLista.length / this.pageSize) || 1;
+  }
+
+  get paginatedLista(): any[] {
+    const start = (this.pageLista - 1) * this.pageSize;
+    return this.filteredLista.slice(start, start + this.pageSize);
+  }
+
   get pendientesGroupedByMerc() {
     const groups: { [k: string]: any[] } = {};
     for (const p of this.filteredPendientes) {
@@ -563,6 +643,26 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
       groups[k].push(p);
     }
     return Object.keys(groups).sort().map(k => ({ mercaderista: k, items: groups[k] }));
+  }
+
+  get totalPagesPendientes(): number {
+    return Math.ceil(this.pendientesGroupedByMerc.length / this.pageSize) || 1;
+  }
+
+  get paginatedPendientes(): any[] {
+    const start = (this.pagePendientes - 1) * this.pageSize;
+    return this.pendientesGroupedByMerc.slice(start, start + this.pageSize);
+  }
+
+  get totalPagesGestion(): number {
+    const items = this.gestionPorDia()?.clientes || [];
+    return Math.ceil(items.length / this.pageSize) || 1;
+  }
+
+  get paginatedGestion(): any[] {
+    const items = this.gestionPorDia()?.clientes || [];
+    const start = (this.pageGestion - 1) * this.pageSize;
+    return items.slice(start, start + this.pageSize);
   }
 
   getCompletadoForId(id: any, type: 'punto' | 'cliente'): any {
