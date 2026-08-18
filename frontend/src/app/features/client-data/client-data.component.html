@@ -24,7 +24,7 @@
     <!-- Stats row -->
     <div class="relative z-10 flex gap-4 flex-wrap">
       <div class="stat-card">
-        <span class="stat-value">{{ dataSource.data.length }}</span>
+        <span class="stat-value">{{ totalItems() }}</span>
         <span class="stat-label">Registros</span>
       </div>
       <div class="stat-card">
@@ -37,11 +37,11 @@
       </div>
       <button
         (click)="exportExcel()"
-        [disabled]="dataSource.data.length === 0"
+        [disabled]="totalItems() === 0 || exporting()"
         class="export-btn"
       >
         <mat-icon>download</mat-icon>
-        <span>Excel</span>
+        <span>{{ exporting() ? 'Generando…' : 'Excel' }}</span>
       </button>
     </div>
   </div>
@@ -275,7 +275,7 @@
         <mat-spinner diameter="44" class="indigo-spinner"></mat-spinner>
         <p>Cargando datos...</p>
       </div>
-    } @else if (dataSource.data.length === 0) {
+    } @else if (totalItems() === 0) {
       <div class="empty-state">
         <div class="empty-icon">
           <mat-icon>inbox</mat-icon>
@@ -285,7 +285,7 @@
       </div>
     } @else if (viewMode() === 'consolidada') {
       <div class="overflow-x-auto">
-        <table mat-table [dataSource]="dataSource" matSort class="data-table">
+        <table mat-table [dataSource]="dataSource" matSort (matSortChange)="onSortChange($event)" class="data-table">
 
           <!-- Fecha -->
           <ng-container matColumnDef="fecha_balance">
@@ -384,6 +384,8 @@
       <mat-paginator
         [pageSizeOptions]="[25, 50, 100, 200]"
         [pageSize]="50"
+        [length]="totalItems()"
+        (page)="onPageChange($event)"
         showFirstLastButtons
         class="table-paginator"
       ></mat-paginator>
