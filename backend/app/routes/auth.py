@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from app.db.session import get_db
 from app.core.security import verify_password, create_access_token, get_password_hash
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, _cache_invalidate
 from app.core.config import settings
 from app.models.user import Usuario
 from app.models.mercaderista import Mercaderista
@@ -137,6 +138,9 @@ def logout(request: Request, current_user: Usuario = Depends(get_current_user), 
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     ip = get_client_ip(request)
 
+    # Invalidar el cache de autenticación inmediatamente
+    _cache_invalidate(token)
+
     db.query(SesionActiva).filter(
         SesionActiva.session_token == token,
         SesionActiva.activa == True,
@@ -154,12 +158,27 @@ def logout(request: Request, current_user: Usuario = Depends(get_current_user), 
 
 
 @router.get("/me", response_model=UsuarioCurrentResponse)
-def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_me(
+    credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.core.dependencies import _cache_get
     from app.models.user import UserPermission
-    try:
-        permisos = db.query(UserPermission).filter(UserPermission.user_id == current_user.id).all()
-    except Exception:
-        permisos = []
+    from fastapi.security import HTTPBearer as _HTTPBearer
+
+    # Intentar obtener permisos del cache antes de ir a DB
+    token = credentials.credentials if credentials else None
+    perms = None
+    if token:
+        _, perms = _cache_get(token)
+    if perms is None:
+        try:
+            perms = db.query(UserPermission).filter(
+                UserPermission.user_id == current_user.id
+            ).all()
+        except Exception:
+            perms = []
 
     nombre = None
     cedula = None
@@ -196,7 +215,7 @@ def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depe
         is_coordinador_exclusivo=current_user.is_coordinador_exclusivo,
         is_coordinador_tradex=current_user.is_coordinador_tradex,
         is_ejecutivo_cuenta=current_user.is_ejecutivo_cuenta,
-        permisos=permisos,
+        permisos=perms,
         nombre=nombre,
         cedula=cedula,
     )

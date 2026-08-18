@@ -116,6 +116,12 @@ export const routes: Routes = [
         data: { roles: ['admin'] },
       },
       {
+        path: 'cargas-powerbi',
+        loadComponent: () => import('./features/cargas-powerbi/cargas-powerbi.component').then((m) => m.CargasPowerbiComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'superadmin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo', 'coordinador_tradex', 'atc'] },
+      },
+      {
         path: 'permissions',
         loadComponent: () => import('./features/admin/permissions.component').then((m) => m.PermissionsComponent),
         canActivate: [roleGuard],

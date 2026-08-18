@@ -59,7 +59,7 @@ export class ShellComponent implements OnInit {
     // --- Items admin/analyst/supervisor/coordinador ---
     {
       label: 'Dashboard', icon: 'dashboard', route: '/dashboard',
-      roles: ['admin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo'],
+      roles: ['admin', 'superadmin', 'analyst', 'supervisor', 'coordinador_general', 'coordinador_exclusivo', 'coordinador_tradex'],
     },
     { label: 'Centro de Mando Gestión', icon: 'bolt', route: '/centro-mando', roles: ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo'] },
     { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
@@ -117,7 +117,7 @@ export class ShellComponent implements OnInit {
   visibleNavItems = computed(() => {
     const u = this.user();
     if (!u) return [];
-    const isAdmin = !!u.is_admin || u.rol === 'admin';
+    const isAdmin = !!u.is_admin || u.rol === 'admin' || u.rol === 'superadmin';
     const isClient = u.rol === 'client';
 
     return this.navItems

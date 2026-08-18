@@ -181,6 +181,7 @@ export class SearchableSelectComponent {
   allLabel = input<string>('Todos');
   icon = input<string>('list');
   align = input<'left' | 'right'>('left');
+  disabled = input<boolean>(false);
   @Output() valueChange = new EventEmitter<string>();
   @Output() searchChange = new EventEmitter<string>();
 
@@ -215,6 +216,7 @@ export class SearchableSelectComponent {
   }
 
   toggle(): void {
+    if (this.disabled()) return;
     this.open.update(v => !v);
     if (this.open()) {
       this.onSearchInput('');
