@@ -99,7 +99,6 @@ app = FastAPI(
     description="Sistema de gestión de visitas y merchandising",
     version="2.0.0",
     lifespan=lifespan,
-    redirect_slashes=False,
 )
 
 app.state.limiter = limiter

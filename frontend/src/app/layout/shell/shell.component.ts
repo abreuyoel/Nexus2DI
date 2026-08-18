@@ -3,6 +3,7 @@ import { Component, computed, signal, HostListener, OnInit } from '@angular/core
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatListModule } from '@angular/material/list';
@@ -36,7 +37,7 @@ interface NavItem {
   selector: 'app-shell',
   standalone: true,
   imports: [
-    CommonModule, RouterOutlet, RouterLink, RouterLinkActive,
+    CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive,
     MatToolbarModule, MatSidenavModule, MatListModule,
     MatIconModule, MatButtonModule, MatMenuModule, MatBadgeModule, MatTooltipModule,
     ConfirmDialogComponent,
@@ -136,6 +137,19 @@ export class ShellComponent implements OnInit {
           return this.auth.canAccess(clave, child.roles);
         }),
       }));
+  });
+
+  // Búsqueda en el sidebar por nombre de módulo (y sub-ítems)
+  navSearch = signal('');
+
+  filteredNavItems = computed(() => {
+    const q = this.navSearch().trim().toLowerCase();
+    const items = this.visibleNavItems();
+    if (!q) return items;
+    return items.filter(item =>
+      item.label.toLowerCase().includes(q) ||
+      (item.children || []).some(c => c.label.toLowerCase().includes(q))
+    );
   });
 
   constructor(
