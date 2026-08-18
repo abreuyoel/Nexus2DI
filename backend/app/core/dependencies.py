@@ -140,6 +140,20 @@ def get_current_user(
         UserPermission.user_id == usuario.id
     ).all()
 
+    # expunge: usuario/perms quedan en _auth_cache (memoria del proceso) mucho
+    # más allá del ciclo de vida de esta sesión de request -- sin esto,
+    # cualquier commit posterior en ESTA MISMA sesión (de cualquier endpoint,
+    # no solo este) expira sus atributos (expire_on_commit=True, default de
+    # SQLAlchemy), y el próximo request que reutilice el cache y toque un
+    # atributo todavía no accedido (ej. current_user.id_rol en
+    # require_permission) revienta con DetachedInstanceError. Confirmado en
+    # producción 2026-08-19 -- tumbaba /api/cargas-powerbi/summary, pero
+    # afecta a cualquier endpoint detrás de require_permission según qué
+    # atributo toque primero.
+    db.expunge(usuario)
+    for p in perms:
+        db.expunge(p)
+
     # Guardar en cache para los siguientes requests
     _cache_set(token, usuario, perms)
 
