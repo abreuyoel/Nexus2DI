@@ -289,6 +289,22 @@ export class SupervisorEncuestadoresComponent implements OnInit {
     window.close();
   }
 
+  /** Refresco a usar después de CUALQUIER guardado/aprobación/borrado --
+   * loadData() sola no alcanza en la ventana standalone (la que se abre con
+   * "Ver detalle" en una pestaña nueva, ?jornadaId=X): esa vista se pinta
+   * desde currentJornadaDetail, no desde jornadas()/encuestas()/medicos(),
+   * así que editar ahí guardaba bien en el servidor pero la pantalla seguía
+   * mostrando los datos viejos hasta cerrar y volver a abrir la ventana
+   * (que recién ahí volvía a pedir el detalle). Confirmado 2026-08-19: eso
+   * era "tengo que salir y volver a entrar para que la edición funcione". */
+  private refreshAfterEdit(): void {
+    if (this.isStandaloneDetailView && this.currentJornadaDetail) {
+      this.verDetalleJornadaStandalone(this.currentJornadaDetail.id_jornada);
+    } else {
+      this.loadData();
+    }
+  }
+
   verDetalleMedico(m: any): void {
     this.currentMedicoDetail = JSON.parse(JSON.stringify(m));
     this.showMedicoDetailModal = true;
@@ -379,7 +395,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
         this.http.put(`${this.API}/jornadas/${id}`, updated).subscribe({
           next: () => {
             this.snack.open('Jornada aprobada con éxito', 'OK', { duration: 2000 });
-            this.loadData();
+            this.refreshAfterEdit();
           },
           error: () => {
             this.snack.open('Error al aprobar jornada', 'OK', { duration: 3000 });
@@ -406,7 +422,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       this.http.put(`${this.API}/encuestas/${e.id_encuesta}`, updated).subscribe({
         next: () => {
           this.snack.open('Encuesta aprobada con éxito', 'OK', { duration: 2000 });
-          this.loadData();
+          this.refreshAfterEdit();
         },
         error: () => {
           this.snack.open('Error al aprobar encuesta', 'OK', { duration: 3000 });
@@ -548,7 +564,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       next: () => {
         this.snack.open(`Jornada ${isEdit ? 'actualizada' : 'creada'} con éxito`, 'OK', { duration: 2000 });
         this.showJornadaModal = false;
-        this.loadData();
+        this.refreshAfterEdit();
       },
       error: (err) => {
         this.snack.open('Error al guardar la jornada: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 });
@@ -567,7 +583,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       this.http.delete(`${this.API}/jornadas/${id}`).subscribe({
         next: () => {
           this.snack.open('Jornada eliminada', 'OK', { duration: 2000 });
-          this.loadData();
+          this.refreshAfterEdit();
         },
         error: () => {
           this.snack.open('Error al eliminar jornada', 'OK', { duration: 3000 });
@@ -622,7 +638,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       next: () => {
         this.snack.open(`Encuesta ${isEdit ? 'actualizada' : 'creada'} exitosamente`, 'OK', { duration: 2000 });
         this.showEncuestaModal = false;
-        this.loadData();
+        this.refreshAfterEdit();
       },
       error: (err) => {
         this.snack.open('Error al guardar encuesta: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 });
@@ -641,7 +657,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       this.http.delete(`${this.API}/encuestas/${id}`).subscribe({
         next: () => {
           this.snack.open('Encuesta eliminada', 'OK', { duration: 2000 });
-          this.loadData();
+          this.refreshAfterEdit();
         },
         error: () => {
           this.snack.open('Error al eliminar la encuesta', 'OK', { duration: 3000 });
@@ -767,7 +783,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       next: () => {
         this.snack.open(`Médico ${isEdit ? 'actualizado' : 'registrado'} con éxito`, 'OK', { duration: 2000 });
         this.showMedicoModal = false;
-        this.loadData();
+        this.refreshAfterEdit();
       },
       error: (err) => {
         this.snack.open('Error al guardar médico: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 });
@@ -786,7 +802,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       this.http.delete(`${this.API}/medicos/${idMedico}?id_encuesta=${idEncuesta}`).subscribe({
         next: () => {
           this.snack.open('Médico desvinculado de la encuesta', 'OK', { duration: 2000 });
-          this.loadData();
+          this.refreshAfterEdit();
         },
         error: () => {
           this.snack.open('Error al desvincular médico', 'OK', { duration: 3000 });

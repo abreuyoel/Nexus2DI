@@ -10,7 +10,7 @@ import { environment } from '../../../environments/environment';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration, ChartData, ChartType, ChartOptions } from 'chart.js';
 import * as maplibregl from 'maplibre-gl';
-import { Subject, Subscription } from 'rxjs';
+import { Subject, Subscription, interval } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 import { AuthService } from '../../core/services/auth.service';
 
@@ -82,6 +82,7 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
   auth = inject(AuthService);
   private filterSubject = new Subject<void>();
   private filterSub!: Subscription;
+  private pollSub!: Subscription;
   
   loading = true;
   exportando = false;
@@ -172,6 +173,27 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
     this.filterSub = this.filterSubject.pipe(debounceTime(600)).subscribe(() => {
       this.loadData();
     });
+
+    // El alta de médicos/encuestas la hace la APK vía epran_backend (Node) --
+    // un stack de tiempo real completamente separado del de este portal
+    // (FastAPI/WS propio, ver realtime.service.ts), así que no hay forma
+    // limpia de empujar un evento hasta acá. Polling liviano en su lugar:
+    // solo re-pide /kpis (trae ranking_encuestadores + el resto de charts)
+    // sin tocar `loading` ni volver a pedir los 1000 médicos / reinicializar
+    // el mapa -- loadData() completo sería demasiado pesado para correr
+    // cada 45s.
+    this.pollSub = interval(45000).subscribe(() => this.refreshKpisSilently());
+  }
+
+  private refreshKpisSilently(): void {
+    const params = this.buildFilterParams();
+    this.http.get<any>(`${environment.apiUrl}/api/cliente-encuestador/kpis?${params.toString()}`).subscribe({
+      next: (res: any) => {
+        this.kpis = res;
+        if (res.charts) this.buildCharts(res.charts);
+      },
+      error: () => {}, // best-effort -- no molestar con errores de un refresco de fondo
+    });
   }
 
   cargarCobertura(): void {
@@ -237,6 +259,7 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.filterSub) this.filterSub.unsubscribe();
+    if (this.pollSub) this.pollSub.unsubscribe();
   }
 
   onFilterChange() {
@@ -549,7 +572,11 @@ export class ClienteEncuestadorDashboardComponent implements OnInit, OnDestroy {
         filter: ['has', 'point_count'],
         layout: {
           'text-field': '{point_count}',
-          'text-font': ['Open Sans Regular', 'Arial HTML5'],
+          // 'Open Sans Regular'/'Arial HTML5' no existen en el servidor de
+          // glyphs de openfreemap (404 confirmado con curl) -- 'Noto Sans
+          // Bold' sí está hosteado ahí, es el set de fuentes estándar de
+          // OpenMapTiles/Protomaps.
+          'text-font': ['Noto Sans Bold'],
           'text-size': 12
         },
         paint: {
