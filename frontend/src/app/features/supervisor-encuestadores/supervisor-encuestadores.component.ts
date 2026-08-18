@@ -66,6 +66,10 @@ export class SupervisorEncuestadoresComponent implements OnInit {
 
   // Búsqueda de médicos
   searchQueryMedicos = '';
+  medicoSuggestions = signal<any[]>([]);
+  showMedicoDropdown = false;
+  medicoSearchLoading = signal(false);
+  private medicoDebounceTimer: any = null;
 
   // Control de Modales
   showJornadaModal = false;
@@ -441,6 +445,55 @@ export class SupervisorEncuestadoresComponent implements OnInit {
         error: () => { this.snack.open('Error al cargar médicos', 'OK', { duration: 3000 }); this.loading.set(false); }
       });
     }
+  }
+
+  /** Autocomplete del buscador de médicos: sugiere al escribir (con debounce)
+   *  y permite abrir el detalle directo sin recargar toda la grilla. */
+  onMedicoSearchInput(): void {
+    if (this.medicoDebounceTimer) clearTimeout(this.medicoDebounceTimer);
+    const q = this.searchQueryMedicos.trim();
+    if (q.length < 2) {
+      this.medicoSuggestions.set([]);
+      this.showMedicoDropdown = false;
+      this.medicoSearchLoading.set(false);
+      return;
+    }
+    this.showMedicoDropdown = true;
+    this.medicoSearchLoading.set(true);
+    this.medicoDebounceTimer = setTimeout(() => {
+      this.http.get<any[]>(`${this.API}/medicos`, { params: { q } }).subscribe({
+        next: (res) => {
+          this.medicoSuggestions.set((res || []).slice(0, 8));
+          this.medicoSearchLoading.set(false);
+        },
+        error: () => {
+          this.medicoSuggestions.set([]);
+          this.medicoSearchLoading.set(false);
+        }
+      });
+    }, 250);
+  }
+
+  selectMedicoSuggestion(m: any): void {
+    const nombre = [m.apellido1, m.apellido2, m.nombre1, m.nombre2].filter(Boolean).join(' ');
+    this.searchQueryMedicos = `${m.id_medico_externo} — ${nombre}`;
+    this.showMedicoDropdown = false;
+    this.medicoSuggestions.set([]);
+    this.verDetalleMedico(m);
+  }
+
+  clearMedicoSearch(): void {
+    this.searchQueryMedicos = '';
+    this.medicoSuggestions.set([]);
+    this.showMedicoDropdown = false;
+    this.loadData();
+  }
+
+  closeMedicoDropdown(): void {
+    // Pequeño retraso para que el click en una sugerencia se registre antes de cerrar
+    setTimeout(() => {
+      this.showMedicoDropdown = false;
+    }, 150);
   }
 
   onFilterChange(userId: any): void {
