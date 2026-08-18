@@ -118,7 +118,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
           this.clientesCatalogo.set(res?.clientes || []);
         }
       },
-      error: () => {},
+      error: () => { },
     });
     // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
     // en vez de refrescar agresivamente cada 800ms.
@@ -342,13 +342,36 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
     const stats = this.statsPorMercaderista;
+    // Claves mercaderista+cliente cuyas visitas matchean la búsqueda (por
+    // número de visita, punto, ruta, etc.). El roster por defecto solo
+    // filtraba por nombre de mercaderista/cliente, así que buscar por "nro
+    // de visita" devolvía "0 resultados" aunque la visita existiera y su
+    // mercaderista sí estuviera en el roster.
+    const matchKeys = new Set<string>();
+    if (s) {
+      for (const v of this.visitas()) {
+        if (
+          (v.cliente || '').toLowerCase().includes(s) ||
+          (v.mercaderista || '').toLowerCase().includes(s) ||
+          (v.punto_de_interes || '').toLowerCase().includes(s) ||
+          (v.ruta || '').toLowerCase().includes(s) ||
+          String(v.id_visita).includes(s)
+        ) {
+          matchKeys.add(`${v.id_mercaderista}_${v.cliente}`);
+        }
+      }
+    }
     return this.rosterConVisitasHuerfanas
       .filter(r => {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
         if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
         if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(r.mercaderista)) return false;
         if (this.filtroDepartamento && !(r.departamentos || '').split(',').map((d: string) => d.trim()).includes(this.filtroDepartamento)) return false;
-        if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
+        if (s) {
+          const nameMatch = (r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s);
+          const visitaMatch = matchKeys.has(`${r.id_mercaderista}_${r.cliente}`);
+          if (!nameMatch && !visitaMatch) return false;
+        }
         return true;
       })
       .map(r => ({ ...r, _stats: stats.get(`${r.id_mercaderista}_${r.cliente}`) || { visitas: 0, fotos: 0, aprobadas: 0, sin_revisar: 0 } }))

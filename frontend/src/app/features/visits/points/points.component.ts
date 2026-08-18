@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -314,24 +314,29 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
               class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
           </div>
 
-          <div class="grid grid-cols-3 gap-4">
+          <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
               <input formControlName="departamento" placeholder="Ej: Zulia" list="dept-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="dept-list">@for (r of regions(); track r) { <option [value]="r"> }</datalist>
+              <datalist id="dept-list">@for (r of regions(); track $index) { <option [value]="r">{{ r }}</option> }</datalist>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
               <input formControlName="ciudad" placeholder="Ej: Maracaibo" list="city-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="city-list">@for (c of cities(); track c) { <option [value]="c"> }</datalist>
+              <datalist id="city-list">@for (c of formCities(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Localidad</label>
+              <input formControlName="localidad" placeholder="Ej: Centro"
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta</label>
               <input formControlName="cadena" placeholder="Ej: Moderno" list="canal-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="canal-list">@for (c of chains(); track c) { <option [value]="c"> }</datalist>
+              <datalist id="canal-list">@for (c of chains(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
             </div>
           </div>
 
@@ -340,19 +345,19 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
               <input formControlName="jerarquia_n2" placeholder="Ej: Supermercado" list="jn2-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn2-list">@for (j of jerarquias(); track j) { <option [value]="j"> }</datalist>
+              <datalist id="jn2-list">@for (j of jerarquias(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio</label>
               <input formControlName="jerarquia_n2_2" placeholder="Ej: Alkosto" list="jn22-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn22-list">@for (j of jerarquias2(); track j) { <option [value]="j"> }</datalist>
+              <datalist id="jn22-list">@for (j of jerarquias2(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance</label>
               <input formControlName="nivel_de_alcance" placeholder="Ej: Regional" list="alcance-list"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="alcance-list">@for (n of nivelesAlcance(); track n) { <option [value]="n"> }</datalist>
+              <datalist id="alcance-list">@for (n of nivelesAlcance(); track $index) { <option [value]="n">{{ n }}</option> }</datalist>
             </div>
           </div>
 
@@ -514,7 +519,7 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
           class="flex-1 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl font-bold text-sm transition-all">
           Cerrar
         </button>
-        <button type="button" *hasPerm="'points'; action:'write'" (click)="closeDetails(); openPanel(detailPoint())"
+        <button type="button" *hasPerm="'points'; action:'write'" (click)="editFromDetails()"
           class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
           <mat-icon class="!text-base">edit</mat-icon>
           Editar
@@ -531,6 +536,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   private snack = inject(MatSnackBar);
   private fb = inject(FormBuilder);
   private confirmSvc = inject(ConfirmService);
+  private ngZone = inject(NgZone);
 
   /** El usuario es cliente puro (id_rol=1): solo lectura, sin catálogos, sin coordenadas */
   isClientePuro = signal(false);
@@ -549,7 +555,8 @@ export class PointsComponent implements OnInit, OnDestroy {
   pageSize = signal(20);
 
   regions = signal<string[]>([]);
-  cities = signal<string[]>([]);
+  filterCities = signal<string[]>([]);
+  formCities = signal<string[]>([]);
   chains = signal<string[]>([]);
   jerarquias = signal<string[]>([]);
   jerarquias2 = signal<string[]>([]);
@@ -564,7 +571,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   searchText = signal('');
 
   regionOpts = computed<SelectOption[]>(() => this.regions().map(r => ({ value: r, label: r })));
-  ciudadOpts = computed<SelectOption[]>(() => this.cities().map(c => ({ value: c, label: c })));
+  ciudadOpts = computed<SelectOption[]>(() => this.filterCities().map(c => ({ value: c, label: c })));
   jerarquiaOpts = computed<SelectOption[]>(() => this.jerarquias().map(j => ({ value: j, label: j })));
   jerarquia2Opts = computed<SelectOption[]>(() => this.jerarquias2().map(j => ({ value: j, label: j })));
   nivelAlcanceOpts = computed<SelectOption[]>(() => this.nivelesAlcance().map(n => ({ value: n, label: n })));
@@ -583,6 +590,7 @@ export class PointsComponent implements OnInit, OnDestroy {
     direccion: [''],
     departamento: [''],
     ciudad: [''],
+    localidad: [''],
     cadena: [''],
     jerarquia_n2: [''],
     jerarquia_n2_2: [''],
@@ -594,22 +602,39 @@ export class PointsComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
+    console.log('[PointsComponent] ngOnInit initialized. User is client pure:', this.auth.currentUser()?.id_rol === 1);
     this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
     this.loadAll();
     this.loadDropdowns();
-    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe(() => {
+    this.search$.pipe(debounceTime(350), distinctUntilChanged()).subscribe((q) => {
+      console.log('[PointsComponent] Search triggered:', q);
       this.skip.set(0); this.reload();
     });
 
     // Al cambiar departamento en el form, recargar ciudades de ese departamento
-    this.form.get('departamento')?.valueChanges.subscribe((dep) => {
-      this.api.getCities(dep || undefined).subscribe({
-        next: d => this.cities.set(d), error: () => { }
+    this.form.get('departamento')?.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe((dep) => {
+      const depStr = typeof dep === 'string' ? dep.trim() : '';
+      console.log('[PointsComponent] Form departamento changed:', depStr);
+      if (!depStr) {
+        this.formCities.set([]);
+        return;
+      }
+      this.api.getCities(depStr).subscribe({
+        next: d => {
+          const list = Array.isArray(d) ? d.filter(x => typeof x === 'string') : [];
+          console.log('[PointsComponent] Form cities updated:', list.length);
+          this.formCities.set(list);
+        },
+        error: (err) => console.error('[PointsComponent] Error fetching form cities:', err)
       });
     });
   }
 
   ngOnDestroy(): void {
+    console.log('[PointsComponent] ngOnDestroy - destroying map');
     this.destroyMap();
   }
 
@@ -626,48 +651,79 @@ export class PointsComponent implements OnInit, OnDestroy {
   }
 
   loadAll(): void {
+    const params = this.filterParams();
+    console.log('[PointsComponent] loadAll called with params:', params, 'skip:', this.skip(), 'limit:', this.pageSize());
     this.loading.set(true);
     forkJoin({
-      items: this.api.getPoints({ ...this.filterParams(), skip: this.skip(), limit: this.pageSize() }),
-      count: this.api.getPointsCount(this.filterParams())
+      items: this.api.getPoints({ ...params, skip: this.skip(), limit: this.pageSize() }),
+      count: this.api.getPointsCount(params)
     }).subscribe({
       next: ({ items, count }) => {
-        this.points.set(items);
-        this.total.set(count.total);
+        console.log('[PointsComponent] loadAll success. Received items:', items?.length, 'total count:', count?.total);
+        this.points.set(items || []);
+        this.total.set(count?.total || 0);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false)
+      error: (err) => {
+        console.error('[PointsComponent] loadAll error:', err);
+        this.loading.set(false);
+      }
     });
   }
 
-  reload(): void { this.skip.set(0); this.loadAll(); }
+  reload(): void {
+    console.log('[PointsComponent] reload - resetting skip to 0');
+    this.skip.set(0);
+    this.loadAll();
+  }
 
   loadDropdowns(): void {
-    this.api.getRegions().subscribe({ next: d => this.regions.set(d), error: () => { } });
-    this.api.getCities(this.filterRegion() || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
-    this.api.getChains().subscribe({ next: d => this.chains.set(d), error: () => { } });
-    this.api.getJerarquiaN2().subscribe({ next: d => this.jerarquias.set(d), error: () => { } });
-    this.api.getJerarquiaN2_2().subscribe({ next: d => this.jerarquias2.set(d), error: () => { } });
-    this.api.getNivelesAlcance().subscribe({ next: d => this.nivelesAlcance.set(d), error: () => { } });
+    console.log('[PointsComponent] loadDropdowns called');
+    this.api.getRegions().subscribe({
+      next: d => { console.log('[PointsComponent] Regions loaded:', d?.length); this.regions.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading regions:', err)
+    });
+    this.api.getCities(this.filterRegion() || undefined).subscribe({
+      next: d => { console.log('[PointsComponent] Cities loaded:', d?.length); this.filterCities.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading cities:', err)
+    });
+    this.api.getChains().subscribe({
+      next: d => { console.log('[PointsComponent] Chains loaded:', d?.length); this.chains.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading chains:', err)
+    });
+    this.api.getJerarquiaN2().subscribe({
+      next: d => { console.log('[PointsComponent] JerarquiaN2 loaded:', d?.length); this.jerarquias.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading JerarquiaN2:', err)
+    });
+    this.api.getJerarquiaN2_2().subscribe({
+      next: d => { console.log('[PointsComponent] JerarquiaN2_2 loaded:', d?.length); this.jerarquias2.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading JerarquiaN2_2:', err)
+    });
+    this.api.getNivelesAlcance().subscribe({
+      next: d => { console.log('[PointsComponent] NivelesAlcance loaded:', d?.length); this.nivelesAlcance.set(d || []); },
+      error: err => console.error('[PointsComponent] Error loading NivelesAlcance:', err)
+    });
   }
 
   onSearch(val: string): void { this.searchText.set(val); this.search$.next(val); }
   onFilterRegionChange(val: string): void {
+    console.log('[PointsComponent] Filter region changed:', val);
     this.filterRegion.set(val);
     this.filterCiudad.set('');
-    this.api.getCities(val || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
+    this.api.getCities(val || undefined).subscribe({ next: d => this.filterCities.set(d || []), error: () => { } });
     this.reload();
   }
-  onCiudadChange(val: string): void { this.filterCiudad.set(val); this.reload(); }
-  onJerarquiaChange(val: string): void { this.filterJerarquia.set(val); this.reload(); }
-  onJerarquia2Change(val: string): void { this.filterJerarquia2.set(val); this.reload(); }
-  onNivelAlcanceChange(val: string): void { this.filterNivelAlcance.set(val); this.reload(); }
-  onCadenaChange(val: string): void { this.filterCadena.set(val); this.reload(); }
+  onCiudadChange(val: string): void { console.log('[PointsComponent] Filter city changed:', val); this.filterCiudad.set(val); this.reload(); }
+  onJerarquiaChange(val: string): void { console.log('[PointsComponent] Filter jerarquia changed:', val); this.filterJerarquia.set(val); this.reload(); }
+  onJerarquia2Change(val: string): void { console.log('[PointsComponent] Filter jerarquia2 changed:', val); this.filterJerarquia2.set(val); this.reload(); }
+  onNivelAlcanceChange(val: string): void { console.log('[PointsComponent] Filter nivelAlcance changed:', val); this.filterNivelAlcance.set(val); this.reload(); }
+  onCadenaChange(val: string): void { console.log('[PointsComponent] Filter cadena changed:', val); this.filterCadena.set(val); this.reload(); }
   clearFilters(): void {
+    console.log('[PointsComponent] Clearing all filters');
     this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set('');
     this.filterJerarquia2.set(''); this.filterNivelAlcance.set(''); this.filterCadena.set('');
     this.searchText.set('');
-    this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => { } });
+    this.api.getCities().subscribe({ next: d => this.filterCities.set(d || []), error: () => { } });
     this.reload();
   }
   prevPage(): void { this.skip.update(v => Math.max(0, v - this.pageSize())); this.loadAll(); }
@@ -675,10 +731,12 @@ export class PointsComponent implements OnInit, OnDestroy {
   onPageSizeChange(size: number): void { this.pageSize.set(+size); this.skip.set(0); this.loadAll(); }
 
   openPanel(p: PuntoInteres | null): void {
+    console.log('[PointsComponent] openPanel called. Point:', p);
     this.editingId.set(p?.id ?? null);
     this.form.reset({
       id: p?.id ?? '', nombre: p?.nombre ?? '', direccion: p?.direccion ?? '',
-      departamento: p?.departamento ?? '', ciudad: p?.ciudad ?? '', cadena: p?.cadena ?? '',
+      departamento: p?.departamento ?? '', ciudad: p?.ciudad ?? '', localidad: p?.localidad ?? '',
+      cadena: p?.cadena ?? '',
       jerarquia_n2: p?.jerarquia_n2 ?? '', jerarquia_n2_2: p?.jerarquia_n2_2 ?? '',
       nivel_de_alcance: p?.nivel_de_alcance ?? '', latitud: p?.latitud ?? '',
       longitud: p?.longitud ?? '', rif: p?.rif ?? '', radio: p?.radio ?? ''
@@ -688,12 +746,14 @@ export class PointsComponent implements OnInit, OnDestroy {
   }
 
   closePanel(): void {
-    try { this.destroyMap(); } catch (e) { this.mapInstance = null; this.mapMarker = null; }
+    console.log('[PointsComponent] closePanel called');
+    try { this.destroyMap(); } catch (e) { console.warn('[PointsComponent] Error in destroyMap catch:', e); this.mapInstance = null; this.mapMarker = null; }
     this.editingId.set(null);
     this.panelOpen.set(false);
   }
 
   openDetails(p: PuntoInteres): void {
+    console.log('[PointsComponent] openDetails called. Point:', p);
     this.detailPoint.set(p);
     this.detailsOpen.set(true);
     this.buildMapTiles();
@@ -704,6 +764,7 @@ export class PointsComponent implements OnInit, OnDestroy {
     const latStr = this.normCoord(p?.latitud);
     const lngStr = this.normCoord(p?.longitud);
     if (!latStr || !lngStr || isNaN(+latStr) || isNaN(+lngStr)) {
+      console.log('[PointsComponent] buildMapTiles - No valid coords for details point');
       this.mapTileInfo.set(null);
       return;
     }
@@ -726,7 +787,7 @@ export class PointsComponent implements OnInit, OnDestroy {
     return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
   }
 
-  private normCoord(v: string | undefined | null): string {
+  private normCoord(v: string | number | undefined | null): string {
     return ((v ?? '').toString().trim()).replace(',', '.');
   }
 
@@ -740,14 +801,30 @@ export class PointsComponent implements OnInit, OnDestroy {
   }
 
   closeDetails(): void {
+    console.log('[PointsComponent] closeDetails called');
     this.detailPoint.set(null);
     this.detailsOpen.set(false);
   }
 
+  editFromDetails(): void {
+    const p = this.detailPoint();
+    console.log('[PointsComponent] editFromDetails called. Point:', p);
+    this.closeDetails();
+    if (p) {
+      this.openPanel(p);
+    }
+  }
+
   initMap(): void {
-    if (!this.panelOpen()) return;
+    if (!this.panelOpen()) {
+      console.log('[PointsComponent] initMap skipped - panel not open');
+      return;
+    }
     const el = document.getElementById('punto-map');
-    if (!el) return;
+    if (!el) {
+      console.warn('[PointsComponent] initMap skipped - #punto-map container element not found in DOM');
+      return;
+    }
     this.destroyMap();
 
     const latStr = this.normCoord(this.form.get('latitud')?.value as string);
@@ -757,44 +834,89 @@ export class PointsComponent implements OnInit, OnDestroy {
     const lng = hasCoords ? +lngStr : -66.90;
     const nombre = this.form.get('nombre')?.value || 'PDV';
 
-    this.mapInstance = new maplibregl.Map({
-      container: el,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [lng, lat],
-      zoom: hasCoords ? 15 : 7,
-    });
+    console.log('[PointsComponent] initMap starting for container #punto-map. Coords:', { lat, lng, hasCoords });
 
-    this.mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    this.ngZone.runOutsideAngular(() => {
+      try {
+        this.mapInstance = new maplibregl.Map({
+          container: el,
+          style: {
+            version: 8,
+            sources: {
+              'osm-tiles': {
+                type: 'raster',
+                tiles: [
+                  'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                ],
+                tileSize: 256,
+                attribution: 'OpenStreetMap'
+              }
+            },
+            layers: [
+              {
+                id: 'osm-tiles-layer',
+                type: 'raster',
+                source: 'osm-tiles',
+                minzoom: 0,
+                maxzoom: 19
+              }
+            ]
+          },
+          center: [lng, lat],
+          zoom: hasCoords ? 15 : 7,
+          scrollZoom: false,
+          cooperativeGestures: true
+        });
 
-    if (hasCoords) {
-      const popup = new maplibregl.Popup({ offset: 42, closeButton: false })
-        .setHTML(this.popupHtml(nombre, latStr, lngStr));
+        this.mapInstance.on('error', (err) => {
+          console.warn('[PointsComponent] MapLibre suppressed error:', err);
+        });
 
-      this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
-        .setLngLat([lng, lat])
-        .setPopup(popup)
-        .addTo(this.mapInstance);
+        this.mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-      this.mapMarker.togglePopup();
-    }
+        if (hasCoords) {
+          const popup = new maplibregl.Popup({ offset: 42, closeButton: false })
+            .setHTML(this.popupHtml(nombre, latStr, lngStr));
 
-    this.mapInstance.on('click', (e: maplibregl.MapMouseEvent) => {
-      const newLat = e.lngLat.lat.toFixed(6);
-      const newLng = e.lngLat.lng.toFixed(6);
-      this.form.patchValue({ latitud: newLat, longitud: newLng });
-      const n = this.form.get('nombre')?.value || 'PDV';
-      if (this.mapMarker) {
-        this.mapMarker.setLngLat([+newLng, +newLat]);
-        this.mapMarker.getPopup()?.setHTML(this.popupHtml(n, newLat, newLng));
-        if (!this.mapMarker.getPopup()?.isOpen()) this.mapMarker.togglePopup();
-      } else {
-        const p = new maplibregl.Popup({ offset: 42, closeButton: false })
-          .setHTML(this.popupHtml(n, newLat, newLng));
-        this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
-          .setLngLat([+newLng, +newLat])
-          .setPopup(p)
-          .addTo(this.mapInstance!);
-        this.mapMarker.togglePopup();
+          this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
+            .setLngLat([lng, lat])
+            .setPopup(popup)
+            .addTo(this.mapInstance);
+
+          this.mapMarker.togglePopup();
+        }
+
+        this.mapInstance.on('click', (e: maplibregl.MapMouseEvent) => {
+          const newLat = e.lngLat.lat.toFixed(6);
+          const newLng = e.lngLat.lng.toFixed(6);
+          console.log('[PointsComponent] Map clicked. Selected coords:', { newLat, newLng });
+
+          this.ngZone.run(() => {
+            this.form.patchValue({ latitud: newLat, longitud: newLng });
+          });
+
+          const n = this.form.get('nombre')?.value || 'PDV';
+          if (this.mapMarker) {
+            this.mapMarker.setLngLat([+newLng, +newLat]);
+            this.mapMarker.getPopup()?.setHTML(this.popupHtml(n, newLat, newLng));
+            if (!this.mapMarker.getPopup()?.isOpen()) this.mapMarker.togglePopup();
+          } else {
+            const p = new maplibregl.Popup({ offset: 42, closeButton: false })
+              .setHTML(this.popupHtml(n, newLat, newLng));
+            this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
+              .setLngLat([+newLng, +newLat])
+              .setPopup(p)
+              .addTo(this.mapInstance!);
+            this.mapMarker.togglePopup();
+          }
+        });
+        console.log('[PointsComponent] MapLibre instance created successfully.');
+      } catch (err) {
+        console.error('[PointsComponent] initMap catch block ERROR:', err);
+        this.mapInstance = null;
+        this.mapMarker = null;
       }
     });
   }
@@ -809,56 +931,99 @@ export class PointsComponent implements OnInit, OnDestroy {
   syncMapCenter(): void {
     const latStr = this.form.get('latitud')?.value?.trim() ?? '';
     const lngStr = this.form.get('longitud')?.value?.trim() ?? '';
+    console.log('[PointsComponent] syncMapCenter called with coords:', { latStr, lngStr });
     if (!this.mapInstance || !latStr || !lngStr || isNaN(+latStr) || isNaN(+lngStr)) return;
     const lat = +latStr;
     const lng = +lngStr;
     const nombre = this.form.get('nombre')?.value || 'PDV';
-    this.mapInstance.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
-    if (this.mapMarker) {
-      this.mapMarker.setLngLat([lng, lat]);
-      this.mapMarker.getPopup()?.setHTML(this.popupHtml(nombre, latStr, lngStr));
-    } else {
-      const popup = new maplibregl.Popup({ offset: 42, closeButton: false })
-        .setHTML(this.popupHtml(nombre, latStr, lngStr));
-      this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
-        .setLngLat([lng, lat])
-        .setPopup(popup)
-        .addTo(this.mapInstance);
-      this.mapMarker.togglePopup();
-    }
+    this.ngZone.runOutsideAngular(() => {
+      try {
+        this.mapInstance!.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
+        if (this.mapMarker) {
+          this.mapMarker.setLngLat([lng, lat]);
+          this.mapMarker.getPopup()?.setHTML(this.popupHtml(nombre, latStr, lngStr));
+        } else {
+          const popup = new maplibregl.Popup({ offset: 42, closeButton: false })
+            .setHTML(this.popupHtml(nombre, latStr, lngStr));
+          this.mapMarker = new maplibregl.Marker({ color: '#7c3aed', scale: 1.2 })
+            .setLngLat([lng, lat])
+            .setPopup(popup)
+            .addTo(this.mapInstance!);
+          this.mapMarker.togglePopup();
+        }
+      } catch (e) {
+        console.warn('[PointsComponent] syncMapCenter failed:', e);
+      }
+    });
   }
 
   destroyMap(): void {
-    if (this.mapInstance) { this.mapInstance.remove(); this.mapInstance = null; this.mapMarker = null; }
+    if (this.mapInstance) {
+      console.log('[PointsComponent] destroyMap - removing map instance');
+      this.ngZone.runOutsideAngular(() => {
+        try {
+          this.mapInstance?.remove();
+        } catch (e) {
+          console.warn('[PointsComponent] Error removing map instance:', e);
+        } finally {
+          this.mapInstance = null;
+          this.mapMarker = null;
+        }
+      });
+    }
   }
 
   async deletePoint(p: PuntoInteres): Promise<void> {
+    console.log('[PointsComponent] deletePoint called for point:', p);
     const ok = await this.confirmSvc.confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`, {
       title: 'Eliminar punto de venta', confirmText: 'Eliminar', cancelText: 'Cancelar', danger: true,
     });
     if (!ok) return;
     this.api.deletePoint(p.id).subscribe({
-      next: () => { this.loadAll(); this.snack.open('PDV eliminado', 'OK', { duration: 3000 }); },
-      error: (err) => this.snack.open(err?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 })
+      next: () => {
+        console.log('[PointsComponent] deletePoint success');
+        this.loadAll();
+        this.snack.open('PDV eliminado', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        console.error('[PointsComponent] deletePoint error:', err);
+        this.snack.open(err?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 });
+      }
     });
   }
 
   save(): void {
-    if (this.form.invalid) { this.form.markAllAsTouched(); return; }
+    console.log('[PointsComponent] save called. Form valid:', this.form.valid, 'Form value:', this.form.value);
+    if (this.form.invalid) {
+      console.warn('[PointsComponent] save blocked - form is invalid');
+      this.form.markAllAsTouched();
+      return;
+    }
     this.saving.set(true);
     const v = this.form.value;
     const payload = {
       nombre: v.nombre, direccion: v.direccion, departamento: v.departamento,
-      ciudad: v.ciudad, cadena: v.cadena, jerarquia_n2: v.jerarquia_n2,
+      ciudad: v.ciudad, localidad: v.localidad, cadena: v.cadena, jerarquia_n2: v.jerarquia_n2,
       jerarquia_n2_2: v.jerarquia_n2_2, nivel_de_alcance: v.nivel_de_alcance,
       latitud: v.latitud, longitud: v.longitud, rif: v.rif, radio: v.radio
     };
     const op = this.editingId()
       ? this.api.updatePoint(this.editingId()!, payload)
       : this.api.createPoint({ id: v.id, ...payload });
+    console.log('[PointsComponent] Sending save API call. EditingId:', this.editingId(), 'Payload:', payload);
     op.subscribe({
-      next: () => { this.saving.set(false); this.closePanel(); this.loadAll(); this.snack.open(this.editingId() ? 'PDV actualizado' : 'PDV creado', 'OK', { duration: 3000 }); },
-      error: (err) => { this.saving.set(false); this.snack.open(err?.error?.detail ?? 'Error al guardar', 'OK', { duration: 4000 }); }
+      next: (res) => {
+        console.log('[PointsComponent] save success response:', res);
+        this.saving.set(false);
+        this.closePanel();
+        this.loadAll();
+        this.snack.open(this.editingId() ? 'PDV actualizado' : 'PDV creado', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        console.error('[PointsComponent] save error response:', err);
+        this.saving.set(false);
+        this.snack.open(err?.error?.detail ?? 'Error al guardar', 'OK', { duration: 4000 });
+      }
     });
   }
 }

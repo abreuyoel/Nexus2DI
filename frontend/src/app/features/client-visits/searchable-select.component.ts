@@ -187,15 +187,22 @@ export class SearchableSelectComponent {
   private host = inject(ElementRef<HTMLElement>);
 
   selectedLabel = computed(() => {
-    const opt = this.options().find(o => o.value === this.value());
-    return opt ? opt.label : '';
+    const opts = this.options() || [];
+    const val = (this.value() ?? '').toString();
+    const opt = opts.find(o => o && String(o.value) === val);
+    return opt ? (opt.label ?? '') : '';
   });
 
   filtered = computed(() => {
-    const q = this.search().trim().toLowerCase();
-    const opts = this.options();
+    const q = (this.search() ?? '').toString().trim().toLowerCase();
+    const opts = this.options() || [];
     if (!q) return opts;
-    return opts.filter(o => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+    return opts.filter(o => {
+      if (!o) return false;
+      const label = (o.label ?? '').toString().toLowerCase();
+      const val = (o.value ?? '').toString().toLowerCase();
+      return label.includes(q) || val.includes(q);
+    });
   });
 
   toggle(): void {

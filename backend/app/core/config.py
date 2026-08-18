@@ -87,7 +87,7 @@ class Settings(BaseSettings):
         return (
             f"mssql+pyodbc://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_SERVER}/{self.DB_NAME}"
-            f"?driver={driver}&TrustServerCertificate=yes"
+            f"?driver={driver}&TrustServerCertificate=yes&Encrypt=no&timeout=30"
         )
 
     class Config:

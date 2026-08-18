@@ -20,10 +20,31 @@ class RouteAssignment(BaseModel):
 from sqlalchemy import func
 
 @router.get("")
+@router.get("/")
 def list_mercaderistas_con_rutas(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
 ):
+    try:
+        users_vendedores = db.query(Usuario).filter(Usuario.id_rol == 9, Usuario.activo == True).all()
+        synced = False
+        for u in users_vendedores:
+            cid = int(u.cedula) if u.cedula and str(u.cedula).isdigit() else (9000000 + u.id)
+            existing = db.query(Mercaderista).filter(Mercaderista.cedula == cid).first()
+            if not existing:
+                db.add(Mercaderista(
+                    nombre=u.username,
+                    cedula=cid,
+                    email=u.email,
+                    tipo="Vendedor",
+                    activo=True
+                ))
+                synced = True
+        if synced:
+            db.commit()
+    except Exception:
+        db.rollback()
+
     counts_subq = (
         db.query(
             MercaderistaRuta.mercaderista_id.label("mercaderista_id"),

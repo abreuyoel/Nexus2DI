@@ -6,15 +6,23 @@ from app.db.session import get_db
 from app.core.security import decode_token
 from app.models.user import Usuario
 
-bearer_scheme = HTTPBearer()
+# auto_error=False: si falta el header Authorization, HTTPBearer NO lanza 403
+# automáticamente; lo manejamos abajo devolviendo 401 para que el frontend
+# (interceptor de auth) redirija a /login de forma consistente.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 _LAST_ACTIVE_INTERVAL = timedelta(minutes=5)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Usuario:
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No autenticado: falta el token de acceso",
+        )
     token = credentials.credentials
     payload = decode_token(token)
     user_id = payload.get("sub")

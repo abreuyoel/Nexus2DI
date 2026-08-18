@@ -79,10 +79,11 @@
     <div class="flex flex-wrap items-center gap-2">
       <!-- Cliente primero: escopa rutas/puntos/mercaderistas de abajo -->
       @if (!isClientePuro()) {
-        <select [(ngModel)]="filtroCliente" (ngModelChange)="onClienteFiltroChange()" class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
-          <option value="">Todos los clientes</option>
-          @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
-        </select>
+      <select [(ngModel)]="filtroCliente" (ngModelChange)="onClienteFiltroChange()"
+        class="flex-1 min-w-[140px] bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-white rounded-xl px-3 py-2 text-sm font-semibold outline-none focus:border-primary-500">
+        <option value="">Todos los clientes</option>
+        @for (c of clientesOpts; track c) { <option [value]="c">{{ c }}</option> }
+      </select>
       }
 
       <!-- Rutas: multi-select -->
@@ -387,6 +388,14 @@
 
     <!-- filtros por estado -->
     <div class="px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 flex flex-wrap gap-2">
+      @if (isClientePuro()) {
+      <!-- Cliente puro: sin toggle -- esta vista siempre está fija en
+               "solo aprobadas", no tiene sentido ofrecer Pendientes/Rechazadas. -->
+      <span
+        class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+        <mat-icon class="!text-sm">check_circle</mat-icon> Fotos aprobadas ({{ countBy('Aprobada') }})
+      </span>
+      } @else {
       <button (click)="photoFilter='todas'"
         [class]="photoFilter==='todas' ? 'bg-slate-800 text-white' : 'bg-slate-100 dark:bg-slate-800/50 text-slate-500'"
         class="px-3 py-1.5 rounded-lg text-xs font-bold">Todas ({{ grupoTotal }})</button>
@@ -399,6 +408,7 @@
       <button (click)="photoFilter='rechazadas'"
         [class]="photoFilter==='rechazadas' ? 'bg-rose-600 text-white' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'"
         class="px-3 py-1.5 rounded-lg text-xs font-bold">Rechazadas ({{ countBy('Rechazada') }})</button>
+      }
       @if (groupHasPairs) {
       <div class="flex-1"></div>
       <button (click)="comparar = !comparar" [matTooltip]="comparar ? 'Ver en cuadrícula' : 'Comparar Antes/Después'"
@@ -410,83 +420,66 @@
       }
     </div>
 
-      <!-- filtros por estado -->
-      <div class="px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 flex flex-wrap gap-2">
-        @if (isClientePuro()) {
-          <!-- Cliente puro: sin toggle -- esta vista siempre está fija en
-               "solo aprobadas", no tiene sentido ofrecer Pendientes/Rechazadas. -->
-          <span class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-            <mat-icon class="!text-sm">check_circle</mat-icon> Fotos aprobadas ({{ countBy('Aprobada') }})
-          </span>
-        } @else {
-          <button (click)="photoFilter='todas'" [class]="photoFilter==='todas' ? 'bg-slate-800 text-white' : 'bg-slate-100 dark:bg-slate-800/50 text-slate-500'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Todas ({{ grupoTotal }})</button>
-          <button (click)="photoFilter='pendientes'" [class]="photoFilter==='pendientes' ? 'bg-amber-600 text-white' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Pendientes ({{ countBy('pendiente') }})</button>
-          <button (click)="photoFilter='aprobadas'" [class]="photoFilter==='aprobadas' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Aprobadas ({{ countBy('Aprobada') }})</button>
-          <button (click)="photoFilter='rechazadas'" [class]="photoFilter==='rechazadas' ? 'bg-rose-600 text-white' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'" class="px-3 py-1.5 rounded-lg text-xs font-bold">Rechazadas ({{ countBy('Rechazada') }})</button>
-        }
-        @if (groupHasPairs) {
-          <div class="flex-1"></div>
-          <button (click)="comparar = !comparar" [matTooltip]="comparar ? 'Ver en cuadrícula' : 'Comparar Antes/Después'"
-            [class]="comparar ? 'bg-primary-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'"
-            class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1">
-            <mat-icon class="!text-sm">{{ comparar ? 'compare' : 'grid_view' }}</mat-icon>
-            {{ comparar ? 'Comparando A/D' : 'Comparar A/D' }}
-          </button>
+    <!-- grid fotos -->
+    <div class="flex-1 overflow-y-auto p-4">
+      @if (photosLoading()) {
+      <div class="flex justify-center py-16"><mat-spinner diameter="40"></mat-spinner></div>
+      } @else if (showCompare) {
+      <!-- Comparación Antes / Después lado a lado -->
+      <div class="grid grid-cols-2 gap-3 mb-3 sticky -top-4 z-10">
+        <div
+          class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1">
+          <mat-icon class="!text-sm">history</mat-icon> Antes
+        </div>
+        <div
+          class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1">
+          <mat-icon class="!text-sm">check</mat-icon> Después
+        </div>
+      </div>
+      @if (comparePairs.length === 0) {
+      <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
+      } @else {
+      <div class="space-y-3">
+        @for (p of comparePairs; track $index) {
+        <div class="grid grid-cols-2 gap-3 items-start">
+          <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.antes }"></ng-container>
+          <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.despues }"></ng-container>
+        </div>
         }
       </div>
-
-      <!-- grid fotos -->
-      <div class="flex-1 overflow-y-auto p-4">
-        @if (photosLoading()) {
-          <div class="flex justify-center py-16"><mat-spinner diameter="40"></mat-spinner></div>
-        } @else if (showCompare) {
-          <!-- Comparación Antes / Después lado a lado -->
-          <div class="grid grid-cols-2 gap-3 mb-3 sticky -top-4 z-10">
-            <div class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1"><mat-icon class="!text-sm">history</mat-icon> Antes</div>
-            <div class="text-center text-xs font-black uppercase tracking-wider py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 flex items-center justify-center gap-1"><mat-icon class="!text-sm">check</mat-icon> Después</div>
-          </div>
-          @if (comparePairs.length === 0) {
-            <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
-          } @else {
-            <div class="space-y-3">
-              @for (p of comparePairs; track $index) {
-                <div class="grid grid-cols-2 gap-3 items-start">
-                  <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.antes }"></ng-container>
-                  <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: p.despues }"></ng-container>
-                </div>
-              }
-            </div>
-          }
-        } @else if (filteredPhotos.length === 0) {
-          <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
-        } @else {
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            @for (f of filteredPhotos; track f.id) {
-              <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: f }"></ng-container>
-            }
-          </div>
+      }
+      } @else if (filteredPhotos.length === 0) {
+      <p class="text-center text-slate-400 py-12">No hay fotos en este filtro.</p>
+      } @else {
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        @for (f of filteredPhotos; track f.id) {
+        <ng-container *ngTemplateOutlet="photoCard; context: { $implicit: f }"></ng-container>
         }
       </div>
+      }
+    </div>
 
-      <!-- plantilla reusable de tarjeta de foto -->
-      <ng-template #photoCard let-f>
-        @if (f?._pendiente) {
-          <!-- Cliente puro: este lado del par (Antes o Después) no está
+    <!-- plantilla reusable de tarjeta de foto -->
+    <ng-template #photoCard let-f>
+      @if (f?._pendiente) {
+      <!-- Cliente puro: este lado del par (Antes o Después) no está
                Aprobado todavía -- puede que ni exista aún o que exista y
                siga en revisión, para el cliente es indistinguible y se
                muestra igual como "pendiente". -->
-          <div class="rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-800/50 h-52 flex flex-col items-center justify-center text-amber-500 dark:text-amber-400 gap-1 bg-amber-50/50 dark:bg-amber-950/20">
-            <mat-icon class="!text-3xl">hourglass_empty</mat-icon>
-            <span class="text-[10px] font-bold">Pendiente por revisión</span>
-          </div>
-        } @else if (f) {
-          <div class="rounded-2xl overflow-hidden border-2 transition-all"
-            [ngClass]="isAprobada(f) ? 'border-emerald-500' : isRechazada(f) ? 'border-rose-500' : 'border-slate-200 dark:border-white/10'">
-            <div class="relative">
-                   a las 7pm cuando el mercaderista no desactivó el PDV a mano
-                   (file_path NULL). Renderizarlas como <img> daba un recuadro
-                   vacío indistinguible de una foto que no carga -- reportado
-                   como "fotos de desactivación en blanco". -->
+      <div
+        class="rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-800/50 h-52 flex flex-col items-center justify-center text-amber-500 dark:text-amber-400 gap-1 bg-amber-50/50 dark:bg-amber-950/20">
+        <mat-icon class="!text-3xl">hourglass_empty</mat-icon>
+        <span class="text-[10px] font-bold">Pendiente por revisión</span>
+      </div>
+      } @else if (f) {
+      <div class="rounded-2xl overflow-hidden border-2 transition-all"
+        [ngClass]="isAprobada(f) ? 'border-emerald-500' : isRechazada(f) ? 'border-rose-500' : 'border-slate-200 dark:border-white/10'">
+        <div class="relative">
+          <!-- Fotos de desactivación (id_tipo_foto=6) sin archivo: se generan
+               automáticamente a las 7pm cuando el mercaderista no desactivó el
+               PDV a mano (file_path NULL). Renderizarlas como <img> daba un
+               recuadro vacío indistinguible de una foto que no carga --
+               reportado como "fotos de desactivación en blanco". -->
           @if (esAutoCierre(f)) {
           <div
             class="w-full h-52 flex flex-col items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-4 text-center">

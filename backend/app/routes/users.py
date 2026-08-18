@@ -21,7 +21,8 @@ router = APIRouter(prefix="/api/users", tags=["Usuarios"])
 from app.models.analista import Analista
 from app.models.ejecutivo import Ejecutivo
 
-@router.get("", response_model=List[UsuarioResponse])
+@router.get("")
+@router.get("/")
 def list_users(
     skip: int = 0,
     limit: int = 100,
@@ -66,7 +67,8 @@ def list_users(
 
 
 
-@router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
+@router.post("")
+@router.post("/")
 def create_user(
     data: UsuarioCreate,
     request: Request,

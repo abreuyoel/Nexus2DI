@@ -17,30 +17,44 @@
   </div>
 
   <!-- TABS -->
-  <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-fit">
+  <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-fit overflow-x-auto max-w-full">
     <button (click)="switchTab('rutas')"
       [class]="activeTab()==='rutas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
-      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
       <mat-icon class="!text-base">alt_route</mat-icon> Rutas
     </button>
-    @if (auth.can('routes.asignar_merc')) {
+    @if (auth.canAccess('routes.asignar_merc', ['admin', 'analyst', 'supervisor', 'coordinador'])) {
     <button (click)="switchTab('mercaderistas')"
       [class]="activeTab()==='mercaderistas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
-      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
       <mat-icon class="!text-base">people</mat-icon> Asignación Mercaderistas
     </button>
     }
-    @if (auth.can('routes.asignar_analista')) {
+    @if (auth.canAccess('routes.asignar_auditor', ['admin', 'analyst', 'supervisor', 'coordinador'])) {
+    <button (click)="switchTab('auditores')"
+      [class]="activeTab()==='auditores' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
+      <mat-icon class="!text-base">verified_user</mat-icon> Auditores
+    </button>
+    }
+    @if (auth.canAccess('routes.asignar_vendedor', ['admin', 'analyst', 'supervisor', 'coordinador'])) {
+    <button (click)="switchTab('vendedores')"
+      [class]="activeTab()==='vendedores' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
+      <mat-icon class="!text-base">point_of_sale</mat-icon> Vendedores
+    </button>
+    }
+    @if (auth.canAccess('routes.asignar_analista', ['admin', 'supervisor', 'coordinador'])) {
     <button (click)="switchTab('analistas')"
       [class]="activeTab()==='analistas' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
-      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
       <mat-icon class="!text-base">analytics</mat-icon> Asignación Analistas
     </button>
     }
-    @if (auth.can('routes.asignar_supervisor')) {
+    @if (auth.canAccess('routes.asignar_supervisor', ['admin', 'coordinador'])) {
     <button (click)="switchTab('supervisores')"
       [class]="activeTab()==='supervisores' ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'"
-      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all">
+      class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap">
       <mat-icon class="!text-base">supervisor_account</mat-icon> Asignación Supervisores
     </button>
     }
@@ -401,6 +415,140 @@
     <span class="text-xs font-bold text-slate-500">{{ mercPage() }} / {{ totalMercPages }}</span>
     <button type="button" (click)="goMercPage(mercPage() + 1)" [disabled]="mercPage() >= totalMercPages"
       class="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-500 hover:text-primary-500 disabled:opacity-40 flex items-center justify-center transition-all">
+      <mat-icon class="!text-base">chevron_right</mat-icon>
+    </button>
+  </div>
+  }
+  }
+  }
+
+  <!-- ═══ TAB: AUDITORES ════════════════════════════════════ -->
+  @if (activeTab() === 'auditores') {
+  <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between mb-4">
+    <div class="relative max-w-md flex-1">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+      <input [(ngModel)]="auditorSearch" (ngModelChange)="onAuditorSearchChange()" placeholder="Buscar auditor por nombre o cédula..."
+        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-purple-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+    </div>
+    <span class="text-xs font-semibold text-slate-500">{{ filteredAuditors.length }} auditores</span>
+  </div>
+
+  @if (mercLoading()) {
+  <div class="flex flex-col items-center justify-center py-24 gap-4">
+    <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+    <p class="text-slate-400 font-medium">Cargando auditores...</p>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    @for (a of paginatedAuditors; track a.id) {
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-purple-200 dark:hover:border-purple-900/50 transition-all flex flex-col justify-between">
+      <div>
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-11 h-11 rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+            <mat-icon>verified_user</mat-icon>
+          </div>
+          <div class="min-w-0">
+            <h3 class="font-black text-slate-800 dark:text-white text-sm leading-tight truncate">{{ a.nombre || a.nombre_completo }}</h3>
+            <p class="text-xs text-slate-400 truncate">CI: {{ a.cedula }}</p>
+          </div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 flex items-center justify-between mb-4">
+          <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Rutas Asignadas</span>
+          <span class="text-sm font-black text-purple-600 dark:text-purple-400">{{ a.rutas_count }}</span>
+        </div>
+      </div>
+      <button (click)="openPanel(a)"
+        class="w-full flex items-center justify-center gap-2 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+        <mat-icon class="!text-base">edit_note</mat-icon>
+        Asignar Rutas
+      </button>
+    </div>
+    }
+    @if (filteredAuditors.length === 0 && !mercLoading()) {
+    <div class="col-span-3 py-20 text-center">
+      <div class="flex flex-col items-center gap-3 opacity-40">
+        <mat-icon class="!text-5xl">person_search</mat-icon>
+        <p class="font-bold">No se encontraron auditores</p>
+      </div>
+    </div>
+    }
+  </div>
+  @if (totalAuditorPages > 1) {
+  <div class="flex items-center justify-center gap-2 pt-3">
+    <button type="button" (click)="goAuditorPage(auditorPage() - 1)" [disabled]="auditorPage() <= 1"
+      class="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-500 hover:text-purple-500 disabled:opacity-40 flex items-center justify-center transition-all">
+      <mat-icon class="!text-base">chevron_left</mat-icon>
+    </button>
+    <span class="text-xs font-bold text-slate-500">{{ auditorPage() }} / {{ totalAuditorPages }}</span>
+    <button type="button" (click)="goAuditorPage(auditorPage() + 1)" [disabled]="auditorPage() >= totalAuditorPages"
+      class="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-500 hover:text-purple-500 disabled:opacity-40 flex items-center justify-center transition-all">
+      <mat-icon class="!text-base">chevron_right</mat-icon>
+    </button>
+  </div>
+  }
+  }
+  }
+
+  <!-- ═══ TAB: VENDEDORES ════════════════════════════════════ -->
+  @if (activeTab() === 'vendedores') {
+  <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between mb-4">
+    <div class="relative max-w-md flex-1">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">search</mat-icon>
+      <input [(ngModel)]="vendedorSearch" (ngModelChange)="onVendedorSearchChange()" placeholder="Buscar vendedor por nombre o cédula..."
+        class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 focus:border-emerald-500 text-slate-800 dark:text-white placeholder-slate-400 rounded-xl pl-9 pr-4 py-2.5 text-sm font-semibold outline-none transition-colors shadow-sm">
+    </div>
+    <span class="text-xs font-semibold text-slate-500">{{ filteredVendedores.length }} vendedores</span>
+  </div>
+
+  @if (mercLoading()) {
+  <div class="flex flex-col items-center justify-center py-24 gap-4">
+    <mat-spinner diameter="48" strokeWidth="4"></mat-spinner>
+    <p class="text-slate-400 font-medium">Cargando vendedores...</p>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    @for (v of paginatedVendedores; track v.id) {
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-emerald-200 dark:hover:border-emerald-900/50 transition-all flex flex-col justify-between">
+      <div>
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-11 h-11 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <mat-icon>point_of_sale</mat-icon>
+          </div>
+          <div class="min-w-0">
+            <h3 class="font-black text-slate-800 dark:text-white text-sm leading-tight truncate">{{ v.nombre || v.nombre_completo }}</h3>
+            <p class="text-xs text-slate-400 truncate">CI: {{ v.cedula }}</p>
+          </div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2 flex items-center justify-between mb-4">
+          <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Rutas Asignadas</span>
+          <span class="text-sm font-black text-emerald-600 dark:text-emerald-400">{{ v.rutas_count }}</span>
+        </div>
+      </div>
+      <button (click)="openPanel(v)"
+        class="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-sm shadow-md transition-all active:scale-95">
+        <mat-icon class="!text-base">edit_note</mat-icon>
+        Asignar Rutas
+      </button>
+    </div>
+    }
+    @if (filteredVendedores.length === 0 && !mercLoading()) {
+    <div class="col-span-3 py-20 text-center">
+      <div class="flex flex-col items-center gap-3 opacity-40">
+        <mat-icon class="!text-5xl">person_search</mat-icon>
+        <p class="font-bold">No se encontraron vendedores</p>
+      </div>
+    </div>
+    }
+  </div>
+  @if (totalVendedorPages > 1) {
+  <div class="flex items-center justify-center gap-2 pt-3">
+    <button type="button" (click)="goVendedorPage(vendedorPage() - 1)" [disabled]="vendedorPage() <= 1"
+      class="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-500 hover:text-emerald-500 disabled:opacity-40 flex items-center justify-center transition-all">
+      <mat-icon class="!text-base">chevron_left</mat-icon>
+    </button>
+    <span class="text-xs font-bold text-slate-500">{{ vendedorPage() }} / {{ totalVendedorPages }}</span>
+    <button type="button" (click)="goVendedorPage(vendedorPage() + 1)" [disabled]="vendedorPage() >= totalVendedorPages"
+      class="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-500 hover:text-emerald-500 disabled:opacity-40 flex items-center justify-center transition-all">
       <mat-icon class="!text-base">chevron_right</mat-icon>
     </button>
   </div>

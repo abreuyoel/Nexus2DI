@@ -118,6 +118,7 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
 
 
 @router.get("", response_model=List[RutaResponse])
+@router.get("/", response_model=List[RutaResponse])
 def list_routes(
     activa: Optional[bool] = None,
     db: Session = Depends(get_db),
@@ -139,7 +140,31 @@ def list_routes(
     return _enrich_routes(db, rutas)
 
 
+@router.get("/my-routes", response_model=List[RutaResponse])
+def my_routes(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Retorna las rutas asignadas al usuario logueado según su rol (analista / supervisor / admin)."""
+    if current_user.is_admin:
+        rutas = db.query(Ruta).order_by(Ruta.nombre).all()
+        return _enrich_routes(db, rutas)
+
+    if current_user.is_analyst and current_user.id_perfil:
+        rutas = (
+            db.query(Ruta)
+            .join(Ruta.analistas)
+            .filter(AnalistaRuta.id_analista == current_user.id_perfil)
+            .order_by(Ruta.nombre)
+            .all()
+        )
+        return _enrich_routes(db, rutas)
+
+    return []
+
+
 @router.post("", response_model=RutaResponse, status_code=201)
+@router.post("/", response_model=RutaResponse, status_code=201)
 def create_route(
     data: RutaCreate,
     db: Session = Depends(get_db),

@@ -57,6 +57,7 @@ def _ciudad_to_response(c: Ciudad) -> dict:
 # Ciudades — registradas ANTES del genérico para que /ciudades/ no colisione
 # ─────────────────────────────────────────────────────────────────────────────
 
+@router.get("/ciudades", response_model=List[CiudadResponse])
 @router.get("/ciudades/", response_model=List[CiudadResponse])
 def list_ciudades(
     departamento_id: Optional[int] = None,
@@ -75,6 +76,7 @@ def list_ciudades(
     return [_ciudad_to_response(c) for c in q.order_by(Ciudad.nombre).all()]
 
 
+@router.post("/ciudades", response_model=CiudadResponse, status_code=201)
 @router.post("/ciudades/", response_model=CiudadResponse, status_code=201)
 def create_ciudad(
     data: CiudadCreate,
@@ -175,6 +177,7 @@ def delete_ciudad(
 # la sigla que arma el correlativo de nombre de ruta, ver routes/rutas.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@router.get("/servicios", response_model=List[ServicioResponse])
 @router.get("/servicios/", response_model=List[ServicioResponse])
 def list_servicios(
     activo: Optional[bool] = None,
@@ -187,6 +190,7 @@ def list_servicios(
     return q.order_by(Servicio.nombre).all()
 
 
+@router.post("/servicios", response_model=ServicioResponse, status_code=201)
 @router.post("/servicios/", response_model=ServicioResponse, status_code=201)
 def create_servicio(
     data: ServicioCreate,
@@ -218,23 +222,26 @@ def update_servicio(
         raise HTTPException(status_code=404, detail="No encontrado")
 
     old_nombre = item.nombre
-    if data.nombre is not None:
-        nuevo = data.nombre.strip()
-        if nuevo != old_nombre:
-            if db.query(Servicio).filter(Servicio.nombre == nuevo).first():
-                raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo}'")
-            db.query(Ruta).filter(Ruta.servicio == old_nombre).update(
-                {Ruta.servicio: nuevo}, synchronize_session=False
-            )
-            item.nombre = nuevo
+    nuevo_nombre = data.nombre.strip() if data.nombre is not None else old_nombre
+    nuevo_prefijo = data.prefijo.strip().upper() if data.prefijo is not None else item.prefijo
 
-    if data.prefijo is not None:
-        prefijo = data.prefijo.strip().upper()
-        clash = db.query(Servicio).filter(Servicio.prefijo == prefijo, Servicio.id != item_id).first()
+    if nuevo_nombre != old_nombre:
+        clash = db.query(Servicio).filter(Servicio.nombre == nuevo_nombre, Servicio.id != item_id).first()
         if clash:
-            raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa '{clash.nombre}'")
-        item.prefijo = prefijo
+            raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo_nombre}'")
 
+    if nuevo_prefijo != item.prefijo:
+        clash = db.query(Servicio).filter(Servicio.prefijo == nuevo_prefijo, Servicio.id != item_id).first()
+        if clash:
+            raise HTTPException(status_code=409, detail=f"El prefijo '{nuevo_prefijo}' ya lo usa otro servicio")
+
+    if nuevo_nombre != old_nombre:
+        db.query(Ruta).filter(Ruta.servicio == old_nombre).update(
+            {Ruta.servicio: nuevo_nombre}, synchronize_session=False
+        )
+
+    item.nombre = nuevo_nombre
+    item.prefijo = nuevo_prefijo
     if data.activo is not None:
         item.activo = data.activo
 
@@ -260,9 +267,9 @@ def delete_servicio(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": f"No se puede eliminar '{item.nombre}' porque está siendo usado por {usage} ruta(s). Reasigne o elimine esas rutas primero, o use ?force=true.",
+                "message": f"No se puede eliminar el servicio '{item.nombre}' porque está asignado a {usage} ruta(s). Reasigne o elimine esas rutas primero, o use ?force=true.",
                 "usage_count": usage,
-                "sample_pdv_ids": sample,
+                "sample_route_names": sample,
             },
         )
 
@@ -311,6 +318,7 @@ def _resolve_generic(catalog: str) -> Type:
     return GENERIC_CATALOGS[catalog]
 
 
+@router.get("/{catalog}", response_model=List[CatalogoResponse])
 @router.get("/{catalog}/", response_model=List[CatalogoResponse])
 def list_catalog(
     catalog: str,
@@ -325,6 +333,7 @@ def list_catalog(
     return q.order_by(Model.nombre).all()
 
 
+@router.post("/{catalog}", response_model=CatalogoResponse, status_code=201)
 @router.post("/{catalog}/", response_model=CatalogoResponse, status_code=201)
 def create_catalog_item(
     catalog: str,

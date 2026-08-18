@@ -28,6 +28,7 @@ class PuntoInteresBase(BaseModel):
     direccion: Optional[str] = None
     departamento: Optional[str] = None
     ciudad: Optional[str] = None
+    localidad: Optional[str] = None
     cadena: Optional[str] = None
     jerarquia_n2: Optional[str] = None
     jerarquia_n2_2: Optional[str] = None
@@ -47,6 +48,7 @@ class PuntoInteresUpdate(BaseModel):
     direccion: Optional[str] = None
     departamento: Optional[str] = None
     ciudad: Optional[str] = None
+    localidad: Optional[str] = None
     cadena: Optional[str] = None
     jerarquia_n2: Optional[str] = None
     jerarquia_n2_2: Optional[str] = None
@@ -72,6 +74,7 @@ class PuntoInteresClienteResponse(BaseModel):
     direccion: Optional[str] = None
     departamento: Optional[str] = None
     ciudad: Optional[str] = None
+    localidad: Optional[str] = None
     cadena: Optional[str] = None
     jerarquia_n2: Optional[str] = None
     jerarquia_n2_2: Optional[str] = None
