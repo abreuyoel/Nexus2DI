@@ -79,20 +79,28 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
         .all()
     )
 
-    clientes_map: dict[int, set] = {}
-    cliente_rows = (
-        db.query(RutaProgramacion.ruta_id, Cliente.nombre)
-        .join(Cliente, Cliente.id == RutaProgramacion.id_cliente)
+    pair_rows = (
+        db.query(RutaProgramacion.ruta_id, RutaProgramacion.id_cliente)
         .filter(
             RutaProgramacion.ruta_id.in_(ruta_ids),
             RutaProgramacion.activo == True,
-            Cliente.nombre.isnot(None),
+            RutaProgramacion.id_cliente.isnot(None),
         )
         .distinct()
         .all()
     )
-    for rid, cname in cliente_rows:
-        clientes_map.setdefault(rid, set()).add(cname)
+
+    unique_cids = list({cid for _, cid in pair_rows if cid is not None})
+    client_map = (
+        dict(db.query(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(unique_cids)).all())
+        if unique_cids else {}
+    )
+
+    clientes_map: dict[int, set] = {}
+    for rid, cid in pair_rows:
+        cname = client_map.get(cid)
+        if cname:
+            clientes_map.setdefault(rid, set()).add(cname)
 
     excl_ids = [r.id_cliente_exclusivo for r in rutas if r.id_cliente_exclusivo]
     excl_map = (

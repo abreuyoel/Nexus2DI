@@ -75,16 +75,16 @@
 
     <!-- Tabs -->
     <div class="flex gap-1 px-8">
-      <button type="button" (click)="loadTab('masivo')"
-        [ngClass]="activeTab()==='masivo' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
-        class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
-        <mat-icon class="!text-base">edit_note</mat-icon> Editor Masivo
-      </button>
       <button type="button" (click)="loadTab('points')"
         [ngClass]="activeTab()==='points' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
         class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
         <mat-icon class="!text-base">location_on</mat-icon> Puntos Actuales
         <span class="bg-primary-900 text-primary-400 text-xs px-2 py-0.5 rounded-full">{{ routePoints().length }}</span>
+      </button>
+      <button type="button" (click)="loadTab('masivo')"
+        [ngClass]="activeTab()==='masivo' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"
+        class="px-5 py-2.5 text-sm font-black rounded-t-xl transition-all flex items-center gap-2">
+        <mat-icon class="!text-base">edit_note</mat-icon> Editor Masivo
       </button>
       <button type="button" (click)="loadTab('changes')"
         [ngClass]="activeTab()==='changes' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-300'"

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnChanges, Input, SimpleChanges, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -24,7 +24,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
   templateUrl: './revision-visitas.component.html',
   styleUrls: ['./revision-visitas.component.scss'],
 })
-export class RevisionVisitasComponent implements OnInit, OnDestroy {
+export class RevisionVisitasComponent implements OnInit, OnDestroy, OnChanges {
   loading = signal(true);
   visitas = signal<any[]>([]);
   isClientePuro = signal(false);
@@ -49,6 +49,14 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   periodo: Periodo | 'custom' = 'hoy';
   desde = '';
   hasta = '';
+
+  // ─── Inputs opcionales (modo embebido en Centro de Mando) ──────────────
+  // Cuando el componente se usa dentro de Centro de Mando se le inyectan el
+  // rango y el cliente del filtro global del padre. En modo autónomo (ruta
+  // directa) quedan indefinidos y el componente gestiona su propio rango.
+  @Input() rangoDesde?: string;
+  @Input() rangoHasta?: string;
+  @Input() clienteId?: number | null;
   search = '';
   // Filtros (dropdowns)
   filtroRutas: string[] = [];          // multi-select
@@ -102,8 +110,13 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
-    const r = this.rangeFor('hoy');
-    this.desde = r.desde; this.hasta = r.hasta;
+    if (this.rangoDesde && this.rangoHasta) {
+      // Modo embebido en Centro de Mando: heredar el rango global del padre.
+      this.desde = this.rangoDesde; this.hasta = this.rangoHasta; this.periodo = 'custom';
+    } else {
+      const r = this.rangeFor('hoy');
+      this.desde = r.desde; this.hasta = r.hasta;
+    }
     this.load();
     this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => { } });
@@ -140,6 +153,21 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
         this.dismissAndRefresh();
       }
     }, 60_000);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Solo relevante en modo embebido (Centro de Mando): cuando el padre
+    // cambia el rango o el cliente global, recargar las visitas.
+    const r = changes['rangoDesde'] || changes['rangoHasta'];
+    if (r && !r.firstChange && this.rangoDesde && this.rangoHasta) {
+      this.desde = this.rangoDesde; this.hasta = this.rangoHasta; this.periodo = 'custom';
+      this.load();
+    }
+    const c = changes['clienteId'];
+    if (c && !c.firstChange) {
+      this.load();
+      if (this.clienteId) this.loadRoster(this.clienteId); else this.loadRoster();
+    }
   }
 
   ngOnDestroy(): void {
@@ -214,7 +242,9 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   load(): void {
     this.loading.set(true);
     this.visitasPage.set(1);
-    this.api.getReviewList({ desde: this.desde, hasta: this.hasta }).subscribe({
+    const opts: { desde?: string; hasta?: string; cliente_id?: number } = { desde: this.desde, hasta: this.hasta };
+    if (this.clienteId) opts.cliente_id = this.clienteId;
+    this.api.getReviewList(opts).subscribe({
       next: (d) => { this.visitas.set(d || []); this.loading.set(false); },
       error: () => { this.visitas.set([]); this.loading.set(false); },
     });

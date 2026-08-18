@@ -267,7 +267,11 @@ export class RoutesComponent implements OnInit {
   // ── Acciones de ruta ──────────────────────────────────────
   viewPoints(ruta: Ruta, startEdit = false): void {
     const ref = this.dialog.open(RouteDetailDialogComponent, {
-      data: { ruta, startEdit }, width: '100%', maxWidth: '1100px', panelClass: 'custom-dialog'
+      data: { ruta, startEdit },
+      width: '100%',
+      maxWidth: '1100px',
+      panelClass: 'custom-dialog',
+      autoFocus: false,
     });
     ref.afterClosed().subscribe(() => this.loadRoutes());
   }
