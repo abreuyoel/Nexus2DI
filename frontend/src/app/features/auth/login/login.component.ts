@@ -96,16 +96,16 @@ export class LoginComponent implements OnInit {
     
     const credentials = this.form.value as any;
     
+    if (this.rememberMe()) {
+      localStorage.setItem('remembered_user', credentials.username);
+    } else {
+      localStorage.removeItem('remembered_user');
+    }
+
     this.auth.login(credentials).subscribe({
       next: () => {
-        this.loading.set(false);
-        
-        if (this.rememberMe()) {
-          localStorage.setItem('remembered_user', credentials.username);
-        } else {
-          localStorage.removeItem('remembered_user');
-        }
-        // redirect is handled inside handleAuthSuccess → getMe().subscribe(user => redirect)
+        // La redirección ya fue iniciada por el pipeline de auth.login().
+        // Mantenemos loading en true para que el spinner siga activo hasta la redirección.
       },
       error: (err) => {
         this.loading.set(false);

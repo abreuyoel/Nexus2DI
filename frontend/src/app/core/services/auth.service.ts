@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Observable, tap } from 'rxjs';
+import { Observable, tap, switchMap } from 'rxjs';
 import { User, TokenResponse, LoginRequest, LoginMercaderistaRequest } from '../models/user.model';
 import { environment } from '../../../environments/environment';
 
@@ -11,30 +11,48 @@ export class AuthService {
   private readonly USER_KEY = 'epran_user';
 
   currentUser = signal<User | null>(this.loadUser());
+  isLoggingOut = signal(false);
 
   constructor(private http: HttpClient, private router: Router) {
     if (this.isLoggedIn()) {
-      this.getMe().subscribe();
+      this.getMe().subscribe({ error: () => {} });
     }
   }
 
-  login(credentials: LoginRequest): Observable<TokenResponse> {
+  login(credentials: LoginRequest): Observable<User> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials).pipe(
-      tap((res: TokenResponse) => this.handleAuthSuccess(res))
+      switchMap((res: TokenResponse) => {
+        localStorage.setItem(this.TOKEN_KEY, res.access_token);
+        return this.getMe();
+      }),
+      tap((user: User) => {
+        this.redirectAfterLogin(user.rol);
+      })
     );
   }
 
-  loginMercaderista(credentials: LoginMercaderistaRequest): Observable<TokenResponse> {
+  loginMercaderista(credentials: LoginMercaderistaRequest): Observable<User> {
     return this.http.post<TokenResponse>(`${environment.apiUrl}/auth/login-mercaderista`, credentials).pipe(
-      tap((res: TokenResponse) => this.handleAuthSuccess(res))
+      switchMap((res: TokenResponse) => {
+        localStorage.setItem(this.TOKEN_KEY, res.access_token);
+        return this.getMe();
+      }),
+      tap((user: User) => {
+        this.redirectAfterLogin(user.rol);
+      })
     );
   }
 
   logout(): void {
-    this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
-      complete: () => this.clearSession(),
-      error: () => this.clearSession(),
-    });
+    this.isLoggingOut.set(true);
+    const token = this.getToken();
+    if (token) {
+      this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({ error: () => {} });
+    }
+    setTimeout(() => {
+      this.clearSession();
+      this.isLoggingOut.set(false);
+    }, 150);
   }
 
   getMe(): Observable<User> {

@@ -28,11 +28,11 @@ export interface SelectOption {
         <mat-icon class="ss-search-icon">search</mat-icon>
         <input #searchInput
           [ngModel]="search()"
-          (ngModelChange)="search.set($event)"
+          (ngModelChange)="onSearchInput($event)"
           (keydown.escape)="close()"
           [placeholder]="searchPlaceholder()">
         @if (search()) {
-          <button type="button" class="ss-clear-search" (click)="search.set('')">
+          <button type="button" class="ss-clear-search" (click)="onSearchInput('')">
             <mat-icon>close</mat-icon>
           </button>
         }
@@ -182,6 +182,7 @@ export class SearchableSelectComponent {
   icon = input<string>('list');
   align = input<'left' | 'right'>('left');
   @Output() valueChange = new EventEmitter<string>();
+  @Output() searchChange = new EventEmitter<string>();
 
   open = signal(false);
   search = signal('');
@@ -208,10 +209,15 @@ export class SearchableSelectComponent {
     });
   });
 
+  onSearchInput(val: string): void {
+    this.search.set(val);
+    this.searchChange.emit(val);
+  }
+
   toggle(): void {
     this.open.update(v => !v);
     if (this.open()) {
-      this.search.set('');
+      this.onSearchInput('');
       setTimeout(() => this.searchInput?.nativeElement?.focus(), 50);
     }
   }

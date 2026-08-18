@@ -84,8 +84,7 @@ export class LoginMercaderistaComponent implements OnInit {
     this.error.set('');
     this.auth.loginMercaderista(this.form.value as any).subscribe({
       next: () => {
-        this.loading.set(false);
-        // Redirect is handled inside handleAuthSuccess -> getMe().subscribe(user => redirect)
+        // Redirección en proceso, mantenemos el spinner activo.
       },
       error: (err) => {
         this.loading.set(false);
