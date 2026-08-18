@@ -29,16 +29,16 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
         </div>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
-        <div class="w-44">
+        <div class="w-52 sm:w-60">
           <app-searchable-select [options]="roleOptions()" [value]="roleFilterStr"
             (valueChange)="onRoleFilterChange($event)" placeholder="Todos los roles"
-            searchPlaceholder="Buscar rol..." allLabel="Todos los roles" icon="group"></app-searchable-select>
+            searchPlaceholder="Buscar rol..." allLabel="Todos los roles" icon="group" align="right"></app-searchable-select>
         </div>
-        <div class="w-64">
+        <div class="w-64 sm:w-80">
           <app-searchable-select [options]="userOptions()" [value]="selectedUserStr"
             (valueChange)="onUserSelectChange($event)"
             placeholder="— Selecciona un usuario ({{ filteredUsers().length }}) —"
-            searchPlaceholder="Buscar usuario..." allLabel="Seleccionar usuario..." icon="person"></app-searchable-select>
+            searchPlaceholder="Buscar usuario..." allLabel="Seleccionar usuario..." icon="person" align="right"></app-searchable-select>
         </div>
         <button (click)="save()" [disabled]="!selectedUserId || saving()"
           class="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-700 to-purple-700 hover:from-violet-600 hover:to-purple-600 disabled:opacity-50 rounded-xl font-black text-sm shadow-lg">
@@ -120,15 +120,69 @@ export class PermissionsComponent implements OnInit {
   roleFilterStr = '';
   selectedUserStr = '';
 
-  roles = computed(() => [...new Set(this.users().map(u => u.rol))].sort());
-  roleOptions = computed<SelectOption[]>(() => this.roles().map(r => ({ value: r, label: r })));
+  readonly systemRoles = [
+    { code: 'admin', label: 'Administrador', id: 8 },
+    { code: 'analyst', label: 'Analista', id: 2 },
+    { code: 'supervisor', label: 'Supervisor', id: 6 },
+    { code: 'coordinador_exclusivo', label: 'Coordinador Exclusivo', id: 3 },
+    { code: 'coordinador_tradex', label: 'Coordinador Tradex', id: 4 },
+    { code: 'coordinador_general', label: 'Coordinador General', id: 11 },
+    { code: 'atc', label: 'Atención al Cliente', id: 10 },
+    { code: 'vendedor', label: 'Vendedor', id: 9 },
+    { code: 'client', label: 'Cliente', id: 1 },
+    { code: 'mercaderista', label: 'Mercaderista', id: 5 },
+    { code: 'auditor', label: 'Auditor', id: 7 },
+    { code: 'auditor_campo', label: 'Auditor de Campo', id: 14 },
+    { code: 'encuestador', label: 'Encuestador', id: 12 },
+    { code: 'cliente_encuestador', label: 'Cliente Encuestador', id: 13 },
+    { code: 'ejecutivo_cuenta', label: 'Ejecutivo de Cuenta', id: 15 },
+  ];
+
+  roleOptions = computed<SelectOption[]>(() => {
+    const options: SelectOption[] = this.systemRoles.map(r => ({
+      value: r.code,
+      label: r.label
+    }));
+    
+    const knownCodes = new Set(this.systemRoles.map(r => r.code));
+    const knownLabels = new Set(this.systemRoles.map(r => r.label));
+    
+    for (const u of this.users()) {
+      const rVal = u.rol || u.rol_nombre || (u.id_rol ? String(u.id_rol) : '');
+      if (rVal && !knownCodes.has(rVal) && !knownLabels.has(rVal)) {
+        options.push({ value: rVal, label: u.rol_nombre || rVal });
+        knownCodes.add(rVal);
+      }
+    }
+    
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  });
+
   filteredUsers = computed(() => {
     const rf = this.roleFilter();
     const list = this.users();
-    return rf ? list.filter(u => u.rol === rf) : list;
+    if (!rf) return list;
+    
+    const matchedSysRole = this.systemRoles.find(r => r.code === rf || r.label === rf || String(r.id) === rf);
+    
+    return list.filter(u => {
+      if (u.rol === rf || u.rol_nombre === rf || String(u.id_rol) === rf) return true;
+      if (matchedSysRole) {
+        return u.rol === matchedSysRole.code ||
+               u.rol_nombre === matchedSysRole.label ||
+               u.id_rol === matchedSysRole.id;
+      }
+      return false;
+    });
   });
+
   userOptions = computed<SelectOption[]>(() =>
-    this.filteredUsers().map(u => ({ value: String(u.id), label: `${u.username} (${u.rol})` }))
+    this.filteredUsers().map(u => {
+      const roleLabel = u.rol_nombre ||
+        this.systemRoles.find(r => r.code === u.rol || r.id === u.id_rol)?.label ||
+        u.rol;
+      return { value: String(u.id), label: `${u.username} (${roleLabel})` };
+    })
   );
 
   roots = computed(() => this.modulos().filter(m => !m.id_padre).sort((a, b) => a.orden - b.orden));
