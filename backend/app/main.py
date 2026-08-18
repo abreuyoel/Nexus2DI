@@ -16,10 +16,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
-from app.core.config import settings
 import app.db.all_models  # noqa: F401 — registers all SQLAlchemy models
 from app.routes import auth, users, merchandisers, visits, rutas, points, supervisors, auditors, reporteria, chat, admin_sessions, atencion_cliente, mercaderista_rutas, push, notifications, clients, audit, catalogos, productos_catalogos, auditor_campo, cargas_powerbi
-from create_cargas_powerbi_tables import init_cargas_powerbi_tables
 
 
 @asynccontextmanager
@@ -31,9 +29,8 @@ async def lifespan(app: FastAPI):
     from app.services.realtime import set_loop
     try:
         ensure_catalog_tables()
-        init_cargas_powerbi_tables()
     except Exception as e:
-        logger.exception(f"Fallo inicializando catálogos/powerbi: {e}")
+        logger.exception(f"Fallo inicializando catálogos: {e}")
 
     # Plan de Acción: asegura la tabla PLAN_ACCION_PENDIENTES (idempotente) y,
     # si quedó vacía en un ambiente nuevo (epran-qa), dispara un recálculo en
