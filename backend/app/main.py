@@ -1,5 +1,8 @@
 import logging
 import os
+import time
+import collections
+import threading
 
 # Configuración de logging (DEBE IR ANTES DE IMPORTAR RUTAS)
 logging.basicConfig(
@@ -15,7 +18,8 @@ from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 from app.core.config import settings
 import app.db.all_models  # noqa: F401 — registers all SQLAlchemy models
-from app.routes import auth, users, merchandisers, visits, rutas, points, supervisors, auditors, reporteria, chat, admin_sessions, atencion_cliente, mercaderista_rutas, push, notifications, clients, audit, catalogos, productos_catalogos, auditor_campo
+from app.routes import auth, users, merchandisers, visits, rutas, points, supervisors, auditors, reporteria, chat, admin_sessions, atencion_cliente, mercaderista_rutas, push, notifications, clients, audit, catalogos, productos_catalogos, auditor_campo, cargas_powerbi
+from create_cargas_powerbi_tables import init_cargas_powerbi_tables
 
 
 @asynccontextmanager
@@ -27,8 +31,9 @@ async def lifespan(app: FastAPI):
     from app.services.realtime import set_loop
     try:
         ensure_catalog_tables()
+        init_cargas_powerbi_tables()
     except Exception as e:
-        logger.exception(f"Fallo inicializando catálogos: {e}")
+        logger.exception(f"Fallo inicializando catálogos/powerbi: {e}")
 
     # Plan de Acción: asegura la tabla PLAN_ACCION_PENDIENTES (idempotente) y,
     # si quedó vacía en un ambiente nuevo (epran-qa), dispara un recálculo en
@@ -100,6 +105,40 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Middleware de Timing — loguea cada request con su latencia en ms.
+# Requests > 500ms → WARNING para fácil identificación en logs.
+# Las stats se acumulan en memoria para el endpoint /api/debug/perf.
+# ─────────────────────────────────────────────────────────────────────────────
+_perf_lock = threading.Lock()
+_perf_data: dict[str, collections.deque] = {}  # ruta → deque de latencias (ms)
+_PERF_MAX_SAMPLES = 200  # últimas N mediciones por ruta
+
+
+@app.middleware("http")
+async def timing_middleware(request: Request, call_next):
+    t0 = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (time.monotonic() - t0) * 1000
+
+    # Normalizar la ruta (quitar path params numéricos para agrupar correctamente)
+    path = request.url.path
+    method = request.method
+    key = f"{method} {path}"
+
+    with _perf_lock:
+        if key not in _perf_data:
+            _perf_data[key] = collections.deque(maxlen=_PERF_MAX_SAMPLES)
+        _perf_data[key].append(elapsed_ms)
+
+    if elapsed_ms > 2000:
+        logger.warning(f"SLOW [{method}] {path} → {elapsed_ms:.0f}ms")
+    elif elapsed_ms > 500:
+        logger.info(f"SLOW [{method}] {path} → {elapsed_ms:.0f}ms")
+
+    response.headers["X-Response-Time"] = f"{elapsed_ms:.1f}ms"
+    return response
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -184,6 +223,7 @@ app.include_router(audit.router)
 app.include_router(catalogos.router)
 app.include_router(productos_catalogos.router)
 app.include_router(auditor_campo.router)
+app.include_router(cargas_powerbi.router)
 from app.routes import permisos
 app.include_router(permisos.router)
 from app.routes import analysts
@@ -254,3 +294,48 @@ async def favicon():
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path)
     return JSONResponse(status_code=204, content=None)
+
+
+@app.get("/api/debug/perf", include_in_schema=False)
+async def perf_stats(request: Request):
+    """Estadísticas de latencia por endpoint (últimas 200 mediciones por ruta).
+    Protegido por header X-Debug-Key con el SECRET_KEY del servidor.
+    Solo accesible desde la red interna o con la clave correcta."""
+    debug_key = request.headers.get("X-Debug-Key", "")
+    if debug_key != settings.SECRET_KEY:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
+    import statistics
+    result = []
+    with _perf_lock:
+        snapshot = {k: list(v) for k, v in _perf_data.items()}
+
+    for route, latencies in snapshot.items():
+        if not latencies:
+            continue
+        sorted_l = sorted(latencies)
+        n = len(sorted_l)
+        result.append({
+            "route": route,
+            "count": n,
+            "avg_ms": round(statistics.mean(sorted_l), 1),
+            "p50_ms": round(sorted_l[int(n * 0.50)], 1),
+            "p95_ms": round(sorted_l[int(n * 0.95)], 1),
+            "p99_ms": round(sorted_l[min(int(n * 0.99), n - 1)], 1),
+            "max_ms": round(sorted_l[-1], 1),
+        })
+
+    result.sort(key=lambda x: x["p95_ms"], reverse=True)
+    return {"routes": result, "total_routes_tracked": len(result)}
+
+
+@app.get("/api/debug/auth-cache", include_in_schema=False)
+async def auth_cache_stats(request: Request):
+    """Estadísticas del cache de autenticación en memoria."""
+    debug_key = request.headers.get("X-Debug-Key", "")
+    if debug_key != settings.SECRET_KEY:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+
+    from app.core.dependencies import get_cache_stats
+    return get_cache_stats()
+

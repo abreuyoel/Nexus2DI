@@ -29,6 +29,15 @@ export class ApiService {
     if (rol) params.rol = rol;
     return this.http.get<User[]>(`${this.base}/api/users`, { params });
   }
+
+  /** Lista ligera para selectores/dropdowns — sin JOINs, mucho más rápido */
+  getUsersSlim(limit = 300, search?: string, rol?: string, id_rol?: number): Observable<{id: number; username: string; id_rol: number; rol_nombre: string; activo: boolean}[]> {
+    const params: any = { limit };
+    if (search) params.q = search;
+    if (rol) params.rol = rol;
+    if (id_rol) params.id_rol = id_rol;
+    return this.http.get<any[]>(`${this.base}/api/users/slim`, { params });
+  }
   createUser(data: object): Observable<User> { return this.http.post<User>(`${this.base}/api/users`, data); }
   updateUser(id: number, data: object): Observable<User> { return this.http.patch<User>(`${this.base}/api/users/${id}`, data); }
   deleteUser(id: number): Observable<object> { return this.http.delete<object>(`${this.base}/api/users/${id}`); }
@@ -547,11 +556,28 @@ export class ApiService {
   getClientMisVisitas(opts: { fecha_inicio?: string; fecha_fin?: string; region?: string; cadena?: string; punto_id?: string; cliente_id?: number } = {}): Observable<any> {
     return this.http.get<any>(`${this.base}/api/client/mis-visitas`, { params: this.params(opts) });
   }
-  getClientDashboard(clienteId?: number): Observable<{ has_dashboard: boolean; url_html: string | null; tipo?: string }> {
-    return this.http.get<any>(`${this.base}/api/client/dashboard`, { params: this.params({ cliente_id: clienteId }) });
+  getClientDashboard(clienteId?: number, idDashboard?: number): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/client/dashboard`, { params: this.params({ cliente_id: clienteId, id_dashboard: idDashboard }) });
   }
   getClientSummary(opts: { clienteId?: number; fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any> {
     return this.http.get<any>(`${this.base}/api/client/summary`, { params: this.params({ cliente_id: opts.clienteId, fecha_inicio: opts.fecha_inicio, fecha_fin: opts.fecha_fin }) });
+  }
+
+  // --- CARGAS DE POWER BI ---
+  getPowerBiSummary(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/cargas-powerbi/summary`);
+  }
+  getPowerBisByClient(clientId: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/cargas-powerbi/client/${clientId}`);
+  }
+  createPowerBi(payload: { id_cliente: number; nombre?: string; url_html: string; tipo?: string }): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/cargas-powerbi`, payload);
+  }
+  updatePowerBi(id: number, payload: { nombre?: string; url_html?: string; activo?: boolean }): Observable<any> {
+    return this.http.put<any>(`${this.base}/api/cargas-powerbi/${id}`, payload);
+  }
+  deletePowerBi(id: number): Observable<any> {
+    return this.http.delete<any>(`${this.base}/api/cargas-powerbi/${id}`);
   }
 
   // --- PORTAL MERCADERISTA ---

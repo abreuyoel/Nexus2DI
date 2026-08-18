@@ -90,25 +90,49 @@ def get_exclusive_clients(
 @router.get("/dashboard")
 def get_client_dashboard(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
+    id_dashboard: Optional[int] = Query(None, description="ID específico de dashboard a cargar"),
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Obtener la configuración del dashboard para el cliente."""
+    """Obtener la configuración del dashboard para el cliente (por defecto el más reciente)."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
-    query = text("""
-        SELECT url_html, tipo
+    
+    # Obtener todas las opciones disponibles del cliente
+    list_query = text("""
+        SELECT id_dashboard, nombre, url_html, tipo, fecha_creacion
         FROM dashboard_client
-        WHERE id_cliente = :cliente_id
+        WHERE id_cliente = :cliente_id AND ISNULL(activo, 1) = 1
+        ORDER BY ISNULL(es_principal, 0) DESC, fecha_creacion DESC, id_dashboard DESC
     """)
-    row = db.execute(query, {"cliente_id": resolved_cliente_id}).fetchone()
+    all_rows = db.execute(list_query, {"cliente_id": resolved_cliente_id}).fetchall()
 
-    if not row:
-        return {"has_dashboard": False, "url_html": None}
+    if not all_rows:
+        return {"has_dashboard": False, "url_html": None, "dashboards": []}
+
+    # Si especificó id_dashboard, buscarlo en la lista; si no, tomar el más reciente (all_rows[0])
+    selected_row = all_rows[0]
+    if id_dashboard is not None:
+        matched = next((r for r in all_rows if r[0] == id_dashboard), None)
+        if matched:
+            selected_row = matched
+
+    dashboards_summary = [
+        {
+            "id_dashboard": r[0],
+            "nombre": r[1] or "Power BI",
+            "fecha_creacion": r[4]
+        }
+        for r in all_rows
+    ]
 
     return {
         "has_dashboard": True,
-        "url_html": row[0],
-        "tipo": row[1]
+        "id_dashboard": selected_row[0],
+        "nombre": selected_row[1] or "Power BI",
+        "url_html": selected_row[2],
+        "tipo": selected_row[3] or "powerbi",
+        "fecha_creacion": selected_row[4],
+        "dashboards": dashboards_summary
     }
 
 

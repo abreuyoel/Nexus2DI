@@ -13,6 +13,8 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { forkJoin, of, Subject } from 'rxjs';
 import { catchError, takeUntil } from 'rxjs/operators';
 
+import { CargasPowerbiComponent } from '../cargas-powerbi/cargas-powerbi.component';
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -25,6 +27,7 @@ import { catchError, takeUntil } from 'rxjs/operators';
     MatButtonModule,
     MatTooltipModule,
     RouterLink,
+    CargasPowerbiComponent,
   ],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss'],
@@ -37,6 +40,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
   clientSummary = signal<any>(null);
   clientDashboardUrl = signal<SafeHtml | null>(null);
   activeView = signal<'summary' | 'powerbi'>('summary');
+
+  hasPowerBiAdminPermission = computed(() => {
+    return this.auth.canAccess('dashboard-powerbi', ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo']) ||
+           this.auth.canAccess('cargas-powerbi', ['admin', 'superadmin', 'analyst', 'coordinador_general', 'coordinador_exclusivo']);
+  });
 
   // ─── Filtros por fecha (formato ISO yyyy-MM-dd) ─────────────────────────────
   // Por defecto el filtro es diario: de ayer a hoy (un día para el otro).
@@ -134,6 +142,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
       });
   }
 
+  clientDashboardsList = signal<any[]>([]);
+  selectedDashboardId = signal<number | null>(null);
+
   private loadClientData(): void {
     // Usar forkJoin para esperar ambas respuestas antes de quitar el spinner.
     // El resumen del cliente ya recibe el rango de fechas elegido.
@@ -164,6 +175,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
             this.clientDashboardUrl.set(
               this.sanitizer.bypassSecurityTrustHtml(dashboardData.url_html)
             );
+            if (dashboardData?.dashboards) {
+              this.clientDashboardsList.set(dashboardData.dashboards);
+              this.selectedDashboardId.set(dashboardData.id_dashboard || null);
+            }
           }
           this.loading.set(false);
         },
@@ -178,6 +193,19 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.loading.set(false);
         },
       });
+  }
+
+  selectClientDashboard(id: number): void {
+    this.selectedDashboardId.set(id);
+    this.api.getClientDashboard(undefined, id).subscribe({
+      next: (res: any) => {
+        if (res?.has_dashboard && res?.url_html) {
+          this.clientDashboardUrl.set(
+            this.sanitizer.bypassSecurityTrustHtml(res.url_html)
+          );
+        }
+      },
+    });
   }
 
   // ─── Helpers de fecha ──────────────────────────────────────────────────────

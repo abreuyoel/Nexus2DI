@@ -82,7 +82,7 @@ export class AuthService {
   can(clave: string, action: 'read' | 'write' | 'delete' = 'read'): boolean {
     const u = this.currentUser();
     if (!u) return false;
-    if (u.is_admin || u.rol === 'admin') return true;
+    if (u.is_admin || u.rol === 'admin' || u.rol === 'superadmin') return true;
     
     const p = (u.permisos || []).find((x) => x.module === clave);
     
@@ -102,7 +102,7 @@ export class AuthService {
   canAccess(clave: string, roles: string[] = []): boolean {
     const u = this.currentUser();
     if (!u) return false;
-    if (u.is_admin || u.rol === 'admin') return true;
+    if (u.is_admin || u.rol === 'admin' || u.rol === 'superadmin') return true;
     
     // 1. Buscar si hay una sobrescritura explícita
     const p = (u.permisos || []).find((x) => x.module === clave);

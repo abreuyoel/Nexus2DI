@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from typing import List
 from app.db.session import get_db
-from app.core.dependencies import require_admin, get_current_user, require_permission
+from app.core.dependencies import require_admin, get_current_user, require_permission, _cache_invalidate_user
 from app.core.security import get_password_hash
 from app.models.mercaderista import Mercaderista
 from app.models.cliente import Cliente
@@ -223,6 +223,9 @@ def update_user(
                changes={"old": old_values, "new": new_values, "modified_fields": list(update_data.keys())})
     db.commit()
     db.refresh(user)
+    # Invalidar cache si el usuario fue desactivado o cambió rol
+    if "activo" in update_data or "id_rol" in update_data:
+        _cache_invalidate_user(user_id)
     notify_event("user.updated", {"id": user.id, "activo": user.activo})
     return user
 
@@ -328,7 +331,74 @@ def update_user_permissions(
                    "permissions": data.permissions
                })
     db.commit()
+    # Invalidar cache del usuario: sus permisos han cambiado
+    _cache_invalidate_user(user_id)
     return {"message": "Permisos actualizados"}
+
+
+
+# =============================================================================
+# ENDPOINT SLIM — para selectores y dropdowns (sin JOINs, payload mínimo)
+# =============================================================================
+
+_ROL_NOMBRES: dict[int, str] = {
+    1: "Cliente", 2: "Analista", 3: "Coordinador Exclusivo",
+    4: "Coordinador Tradex", 5: "Mercaderista", 6: "Supervisor",
+    7: "Auditor", 8: "Administrador", 9: "Vendedor", 10: "Atención al Cliente",
+    11: "Coordinador General", 12: "Encuestador", 13: "Cliente Encuestador",
+    14: "Auditor de Campo", 15: "Ejecutivo de Cuenta",
+}
+
+@router.get("/slim")
+def list_users_slim(
+    limit: int = Query(300, ge=1, le=500),
+    search: str = Query(None, alias="q"),
+    rol: str = Query(None),
+    id_rol: int = Query(None),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(get_current_user),
+):
+    """Lista ligera de usuarios para selectores y dropdowns.
+    Sin JOINs a tablas de perfil — devuelve solo id, username, id_rol, rol_nombre.
+    Hasta 10x más rápido que GET /api/users para este caso de uso."""
+    effective_limit = min(max(1, limit), 500)
+
+    q = db.query(
+        Usuario.id,
+        Usuario.username,
+        Usuario.id_rol,
+        Usuario.activo,
+        Usuario.email,
+    ).filter(Usuario.activo == True)
+
+    if id_rol:
+        q = q.filter(Usuario.id_rol == id_rol)
+    elif rol:
+        target = rol.strip().lower()
+        matching_ids = [k for k, v in ROL_MAP.items() if v.lower() == target]
+        if matching_ids:
+            q = q.filter(Usuario.id_rol.in_(matching_ids))
+
+    if search:
+        term = f"%{search.strip().lower()}%"
+        q = q.filter(
+            or_(
+                func.lower(Usuario.username).like(term),
+                func.lower(Usuario.email).like(term),
+            )
+        )
+
+    rows = q.order_by(Usuario.username).limit(effective_limit).all()
+    return [
+        {
+            "id": r.id,
+            "username": r.username,
+            "id_rol": r.id_rol,
+            "rol_nombre": _ROL_NOMBRES.get(r.id_rol or 0, ROL_MAP.get(r.id_rol or 0, "Usuario")),
+            "activo": r.activo,
+        }
+        for r in rows
+    ]
 
 
 # =============================================================================

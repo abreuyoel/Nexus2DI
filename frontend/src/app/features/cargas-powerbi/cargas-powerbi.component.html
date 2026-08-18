@@ -1,0 +1,432 @@
+<div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white p-4 sm:p-6 lg:p-8">
+  <!-- ENCABEZADO -->
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-sm mb-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 shrink-0">
+          <mat-icon class="!w-8 !h-8 !text-[32px]">cloud_upload</mat-icon>
+        </div>
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-black tracking-tight leading-none bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+            Cargas de Power BI
+          </h1>
+          <p class="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
+            Gestión y asignación de reportes de Power BI agrupados por cliente
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button
+          (click)="openCreateModal()"
+          class="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:opacity-95 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-500/25 transition-all active:scale-95"
+        >
+          <mat-icon>add</mat-icon>
+          <span>Cargar Power BI</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- BARRA DE BÚSQUEDA Y FILTROS -->
+    <div class="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-slate-100 dark:border-white/5">
+      <div class="relative w-full sm:w-80">
+        <mat-icon class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">search</mat-icon>
+        <input
+          type="text"
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+          placeholder="Buscar cliente por nombre..."
+          class="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/70 border-0 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-400"
+        />
+      </div>
+
+      <div class="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+        <button
+          (click)="filterStatus.set('all')"
+          [class.bg-indigo-600]="filterStatus() === 'all'"
+          [class.text-white]="filterStatus() === 'all'"
+          [class.bg-slate-100]="filterStatus() !== 'all'"
+          [class.dark:bg-slate-800]="filterStatus() !== 'all'"
+          [class.text-slate-600]="filterStatus() !== 'all'"
+          [class.dark:text-slate-300]="filterStatus() !== 'all'"
+          class="px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
+        >
+          Todos ({{ clientsSummary().length }})
+        </button>
+
+        <button
+          (click)="filterStatus.set('with')"
+          [class.bg-indigo-600]="filterStatus() === 'with'"
+          [class.text-white]="filterStatus() === 'with'"
+          [class.bg-slate-100]="filterStatus() !== 'with'"
+          [class.dark:bg-slate-800]="filterStatus() !== 'with'"
+          [class.text-slate-600]="filterStatus() !== 'with'"
+          [class.dark:text-slate-300]="filterStatus() !== 'with'"
+          class="px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
+        >
+          Con Power BI
+        </button>
+
+        <button
+          (click)="filterStatus.set('without')"
+          [class.bg-indigo-600]="filterStatus() === 'without'"
+          [class.text-white]="filterStatus() === 'without'"
+          [class.bg-slate-100]="filterStatus() !== 'without'"
+          [class.dark:bg-slate-800]="filterStatus() !== 'without'"
+          [class.text-slate-600]="filterStatus() !== 'without'"
+          [class.dark:text-slate-300]="filterStatus() !== 'without'"
+          class="px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
+        >
+          Sin Power BI
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ESTADO CARGANDO -->
+  @if (loading()) {
+    <div class="flex flex-col items-center justify-center py-24 gap-4">
+      <mat-spinner diameter="48" class="!text-indigo-600"></mat-spinner>
+      <p class="text-slate-500 font-semibold text-sm">Cargando módulos de Power BI...</p>
+    </div>
+  } @else {
+    <!-- TARJETAS DE CLIENTES (GRID) -->
+    @if (filteredClients().length === 0) {
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-12 text-center max-w-lg mx-auto my-12">
+        <div class="w-16 h-16 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-500 flex items-center justify-center mx-auto mb-4">
+          <mat-icon class="!w-8 !h-8 !text-[32px]">folder_off</mat-icon>
+        </div>
+        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-200">No se encontraron clientes</h3>
+        <p class="text-slate-400 text-sm mt-1">Intenta con otro término de búsqueda o cambia de filtro.</p>
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        @for (c of paginatedClients(); track c.id_cliente) {
+          <div
+            (click)="openClientDetail(c)"
+            class="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 hover:border-indigo-500/50 dark:hover:border-indigo-500/50 rounded-2xl p-5 transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/5 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+          >
+            <div>
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-colors">
+                  <mat-icon>business</mat-icon>
+                </div>
+                <span
+                  [class]="c.total_powerbi > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 text-slate-500'"
+                  class="px-2.5 py-1 rounded-full text-xs font-extrabold flex items-center gap-1"
+                >
+                  <mat-icon class="!text-xs !w-3 !h-3">bar_chart</mat-icon>
+                  {{ c.total_powerbi }} {{ c.total_powerbi === 1 ? 'Power BI' : 'Power BIs' }}
+                </span>
+              </div>
+
+              <h3 class="font-black text-base text-slate-900 dark:text-white line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                {{ c.cliente }}
+              </h3>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>{{ c.total_powerbi > 0 ? 'Toca para ver' : 'Sin reportes' }}</span>
+              <div class="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform">
+                <span>Acceder</span>
+                <mat-icon class="!text-sm !w-4 !h-4">chevron_right</mat-icon>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- BARRA DE PAGINACIÓN -->
+      <div class="mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+        <div class="text-xs font-semibold text-slate-500 dark:text-slate-400">
+          Mostrando {{ (currentPage() - 1) * pageSize() + 1 }} -
+          {{ Math.min(currentPage() * pageSize(), filteredClients().length) }} de {{ filteredClients().length }} clientes
+        </div>
+
+        <div class="flex items-center gap-4">
+          <!-- Tamaño de Página -->
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-400">Por página:</span>
+            <select
+              [ngModel]="pageSize()"
+              (ngModelChange)="changePageSize($event)"
+              class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold outline-none cursor-pointer"
+            >
+              <option [ngValue]="12">12</option>
+              <option [ngValue]="24">24</option>
+              <option [ngValue]="48">48</option>
+              <option [ngValue]="96">96</option>
+            </select>
+          </div>
+
+          <!-- Controles Anterior / Siguiente -->
+          <div class="flex items-center gap-1">
+            <button
+              (click)="setPage(currentPage() - 1)"
+              [disabled]="currentPage() === 1"
+              class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-all"
+              title="Página Anterior"
+            >
+              <mat-icon>chevron_left</mat-icon>
+            </button>
+
+            <span class="px-3 py-1 text-xs font-black bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 rounded-lg">
+              Página {{ currentPage() }} de {{ totalPages() }}
+            </span>
+
+            <button
+              (click)="setPage(currentPage() + 1)"
+              [disabled]="currentPage() === totalPages()"
+              class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent transition-all"
+              title="Página Siguiente"
+            >
+              <mat-icon>chevron_right</mat-icon>
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- MODAL / DRAWER DE REPORTES DEL CLIENTE SELECCIONADO -->
+  @if (selectedClient()) {
+    <div class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-end animate-fadeIn">
+      <div class="w-full max-w-xl h-full bg-white dark:bg-slate-900 shadow-2xl flex flex-col border-l border-slate-200 dark:border-white/10 animate-slideLeft">
+        <!-- Cabecera del Drawer -->
+        <div class="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+              <mat-icon>business</mat-icon>
+            </div>
+            <div>
+              <h2 class="text-xl font-black text-slate-900 dark:text-white leading-tight">
+                {{ selectedClient()?.cliente }}
+              </h2>
+              <p class="text-xs text-slate-500 dark:text-slate-400">
+                {{ selectedClient()?.total_powerbi }} reportes de Power BI asignados
+              </p>
+            </div>
+          </div>
+          <button (click)="closeClientDetail()" class="p-2 rounded-xl text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <!-- Cuerpo con la lista de Power BIs -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-black uppercase tracking-wider text-slate-400">Reportes de Power BI</h3>
+            <button
+              (click)="openCreateModal(selectedClient()?.id_cliente)"
+              class="flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              <mat-icon class="!text-sm">add</mat-icon> Agregar nuevo
+            </button>
+          </div>
+
+          @if (selectedClient()?.powerbis?.length === 0) {
+            <div class="text-center py-12 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-6">
+              <mat-icon class="!text-4xl text-slate-300 mb-2">insert_drive_file</mat-icon>
+              <p class="text-sm font-bold text-slate-600 dark:text-slate-300">Este cliente aún no tiene Power BI asignado</p>
+              <button
+                (click)="openCreateModal(selectedClient()?.id_cliente)"
+                class="mt-3 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow"
+              >
+                Cargar primer Power BI
+              </button>
+            </div>
+          } @else {
+            @for (p of selectedClient()?.powerbis; track p.id_dashboard) {
+              <div class="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 rounded-2xl p-4 transition-all hover:border-indigo-500/40">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                      <mat-icon>bar_chart</mat-icon>
+                    </div>
+                    <div>
+                      <h4 class="font-bold text-slate-900 dark:text-white text-sm">
+                        {{ p.nombre || 'Power BI' }}
+                      </h4>
+                      <p class="text-xs text-slate-400 mt-0.5" *ngIf="p.fecha_creacion">
+                        Creado: {{ p.fecha_creacion | date: 'dd/MM/yyyy HH:mm' }}
+                      </p>
+                    </div>
+                  </div>
+
+                  @if (p.es_principal) {
+                    <span class="px-2.5 py-1 rounded-full text-xs font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                      <mat-icon class="!text-xs !w-3 !h-3">star</mat-icon> Principal
+                    </span>
+                  } @else {
+                    <button
+                      (click)="setAsPrincipal(p)"
+                      class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-all flex items-center gap-1"
+                      title="Establecer como reporte principal para este cliente"
+                    >
+                      <mat-icon class="!text-xs !w-3 !h-3">star_border</mat-icon> Activar Principal
+                    </button>
+                  }
+                </div>
+
+                <!-- ACCIONES DE CADA POWER BI -->
+                <div class="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between">
+                  <button
+                    (click)="viewReport(p)"
+                    class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+                  >
+                    <mat-icon class="!text-sm">visibility</mat-icon>
+                    <span>Ver Reporte</span>
+                  </button>
+
+                  <div class="flex items-center gap-1">
+                    <button
+                      (click)="openEditModal(p)"
+                      class="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      title="Editar"
+                    >
+                      <mat-icon class="!text-sm">edit</mat-icon>
+                    </button>
+
+                    <button
+                      (click)="deletePowerBi(p, $event)"
+                      class="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      title="Eliminar"
+                    >
+                      <mat-icon class="!text-sm">delete</mat-icon>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- VISOR FULLSCREEN DEL REPORTES POWER BI (MODAL) -->
+  @if (activeViewerReport()) {
+    <div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex flex-col animate-fadeIn">
+      <!-- Barra superior del Visor -->
+      <div class="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-white/10">
+        <div class="flex items-center gap-3">
+          <mat-icon class="text-amber-400">bar_chart</mat-icon>
+          <div>
+            <h3 class="font-bold text-base leading-none">
+              {{ activeViewerReport()?.nombre }}
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">
+              Cliente: {{ activeViewerReport()?.cliente_nombre || selectedClient()?.cliente }}
+            </p>
+          </div>
+        </div>
+
+        <button
+          (click)="closeViewer()"
+          class="flex items-center gap-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+        >
+          <mat-icon>close</mat-icon> Cerrar Visor
+        </button>
+      </div>
+
+      <!-- Contenedor iframe del reporte -->
+      <div class="flex-1 w-full h-full p-2 overflow-hidden bg-slate-950 flex flex-col items-stretch">
+        <div class="w-full h-full flex-1 rounded-2xl overflow-hidden shadow-2xl bg-white dark:bg-slate-900 flex flex-col items-stretch" [innerHTML]="sanitizedViewerUrl()"></div>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL DE FORMULARIO (CREAR / EDITAR) -->
+  @if (showFormModal()) {
+    <div class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 dark:border-white/10 space-y-5 animate-scaleUp">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-white/5 pb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+              <mat-icon>{{ editingItem() ? 'edit' : 'cloud_upload' }}</mat-icon>
+            </div>
+            <h2 class="text-lg font-black text-slate-900 dark:text-white">
+              {{ editingItem() ? 'Editar Carga Power BI' : 'Nueva Carga de Power BI' }}
+            </h2>
+          </div>
+          <button (click)="closeFormModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <!-- Campos del Formulario -->
+        <div class="space-y-4">
+          <!-- Selección de Cliente -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cliente</label>
+            <app-searchable-select
+              [options]="clientOptions()"
+              [value]="formClientIdStr()"
+              (valueChange)="onClientSelect($event)"
+              placeholder="— Seleccionar cliente —"
+              searchPlaceholder="Buscar cliente..."
+              allLabel="Seleccionar cliente..."
+              icon="business"
+              [disabled]="!!editingItem()"
+            ></app-searchable-select>
+          </div>
+
+          <!-- Nombre / Título del Reporte -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Título / Nombre del Reporte</label>
+            <input
+              type="text"
+              [ngModel]="formNombre()"
+              (ngModelChange)="formNombre.set($event)"
+              placeholder="Ej: Dashboard de Ventas Q3"
+              class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <!-- Enlace / Código Iframe -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Código Embed &lt;iframe&gt; o Enlace Power BI</label>
+            <textarea
+              rows="4"
+              [ngModel]="formUrlHtml()"
+              (ngModelChange)="formUrlHtml.set($event); updateLivePreview($event)"
+              placeholder="Pega aquí el código <iframe ...> de Power BI publicado en la web o la URL"
+              class="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+            ></textarea>
+          </div>
+
+          <!-- Vista Previa Rápida -->
+          @if (formLiveSanitized()) {
+            <div>
+              <label class="block text-xs font-bold uppercase tracking-wider text-emerald-500 mb-1">Vista previa detectada:</label>
+              <div class="h-44 w-full border border-emerald-500/30 rounded-xl overflow-hidden bg-slate-950 p-1" [innerHTML]="formLiveSanitized()"></div>
+            </div>
+          }
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-white/5">
+          <button
+            (click)="closeFormModal()"
+            class="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl"
+          >
+            Cancelar
+          </button>
+
+          <button
+            (click)="savePowerBi()"
+            [disabled]="saving()"
+            class="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-500/25"
+          >
+            @if (saving()) {
+              <mat-spinner diameter="16"></mat-spinner>
+            } @else {
+              <mat-icon class="!text-sm">save</mat-icon>
+            }
+            Guardar Power BI
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

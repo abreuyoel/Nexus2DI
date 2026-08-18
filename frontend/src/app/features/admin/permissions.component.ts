@@ -178,10 +178,10 @@ export class PermissionsComponent implements OnInit {
   });
 
   userOptions = computed<SelectOption[]>(() =>
-    this.filteredUsers().map(u => {
-      const roleLabel = u.rol_nombre ||
-        this.systemRoles.find(r => r.code === u.rol || r.id === u.id_rol)?.label ||
-        u.rol;
+    this.filteredUsers().map((u: any) => {
+      const roleLabel = (u as any).rol_nombre ||
+        this.systemRoles.find(r => r.code === (u as any).rol || r.id === u.id_rol)?.label ||
+        (u as any).rol || '';
       return { value: String(u.id), label: `${u.username} (${roleLabel})` };
     })
   );
@@ -194,22 +194,23 @@ export class PermissionsComponent implements OnInit {
   constructor(private api: ApiService, private snack: MatSnackBar) { }
 
   ngOnInit(): void {
-    this.loadUsers();
+    // No cargamos usuarios en ngOnInit — lazy load cuando el usuario interactúa con el selector
     this.api.getModulos().subscribe(m => { this.modulos.set(m); this.ensurePerms(); });
   }
 
   loadUsers(search?: string, role?: string | null): void {
     const r = role || undefined;
-    this.api.getUsers(150, search, undefined, r).subscribe({
-      next: (newUsers) => {
+    // Usa el endpoint slim: sin JOINs, 10x más rápido que /api/users
+    this.api.getUsersSlim(300, search, r).subscribe({
+      next: (newUsers: any[]) => {
         const currentSelectedId = this.selectedUserId;
         if (currentSelectedId) {
-          const selUser = this.users().find(u => u.id === currentSelectedId);
-          if (selUser && !newUsers.some(u => u.id === currentSelectedId)) {
+          const selUser = this.users().find((u: any) => u.id === currentSelectedId);
+          if (selUser && !newUsers.some((u: any) => u.id === currentSelectedId)) {
             newUsers.unshift(selUser);
           }
         }
-        this.users.set(newUsers);
+        this.users.set(newUsers as any);
       },
       error: (err) => console.error('Error cargando usuarios:', err)
     });

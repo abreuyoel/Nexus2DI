@@ -397,37 +397,51 @@ def resumen_dia(
         
         total_planificados = sum(plan_counts.values())
 
-        # 3) MERCADERISTAS QUE ACTIVARON
+        # 3) MERCADERISTAS QUE ACTIVARON (vía RUTAS_ACTIVADAS o VISITAS_MERCADERISTA)
         if cliente_id:
             activos_hoy_q = f"""
-                SELECT DISTINCT ra.id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE)
-                FROM RUTAS_ACTIVADAS ra
-                JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
-                JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
-                JOIN RUTAS_NUEVAS rn        ON rn.id_ruta = rp.id_ruta
-                WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
-                  AND mr.id_mercaderista = ra.id_mercaderista
-                  AND rp.id_cliente = ?{serv_filter}
+                SELECT DISTINCT id_mercaderista, fecha FROM (
+                    SELECT ra.id_mercaderista AS id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE) AS fecha
+                    FROM RUTAS_ACTIVADAS ra
+                    JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
+                    JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
+                    JOIN RUTAS_NUEVAS rn        ON rn.id_ruta = rp.id_ruta
+                    WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
+                      AND mr.id_mercaderista = ra.id_mercaderista
+                      AND rp.id_cliente = ?{serv_filter}
+                    UNION
+                    SELECT vm.id_mercaderista AS id_mercaderista, CAST(vm.fecha_visita AS DATE) AS fecha
+                    FROM VISITAS_MERCADERISTA vm
+                    WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE))
+                      AND vm.id_cliente = ?
+                ) act_union
             """
-            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id))
+            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id, d_desde, d_hasta, cliente_id))
         else:
-            cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            cli_filter_ra = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            cli_filter_vm = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
+            params_ra = [d_desde, d_hasta] + (analista_cliente_ids if is_analyst_scoped else [])
+            params_vm = [d_desde, d_hasta] + (analista_cliente_ids if is_analyst_scoped else [])
             activos_hoy_q = f"""
-                SELECT DISTINCT ra.id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE)
-                FROM RUTAS_ACTIVADAS ra
-                JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
-                JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
-                WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
-                  AND mr.id_mercaderista = ra.id_mercaderista{cli_filter}
+                SELECT DISTINCT id_mercaderista, fecha FROM (
+                    SELECT ra.id_mercaderista AS id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE) AS fecha
+                    FROM RUTAS_ACTIVADAS ra
+                    JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = ra.id_ruta
+                    JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = ra.id_ruta
+                    WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
+                      AND mr.id_mercaderista = ra.id_mercaderista{cli_filter_ra}
+                    UNION
+                    SELECT vm.id_mercaderista AS id_mercaderista, CAST(vm.fecha_visita AS DATE) AS fecha
+                    FROM VISITAS_MERCADERISTA vm
+                    WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE)){cli_filter_vm}
+                ) act_union
             """
-            activos_rows = execute_query(db, activos_hoy_q, tuple([d_desde, d_hasta] + analista_cliente_ids))
+            activos_rows = execute_query(db, activos_hoy_q, tuple(params_ra + params_vm))
             
         act_counts = {}
         for r in activos_rows:
             mid = r[0]
             act_counts[mid] = act_counts.get(mid, 0) + 1
-            
-        total_activos = sum(act_counts.values())
 
         # 4) CLASIFICACIÓN
         if asignados_map:
@@ -728,8 +742,9 @@ def resumen_dia(
                 d["rutas_nombres"].append(ent["ruta"])
 
         mercaderistas_detalle = []
-        faltantes = []
-        activos = []
+        activos_planificados = []
+        faltantes_planificados = []
+        activos_no_planificados = []
         
         for mid, m in asignados_map.items():
             p_cnt = plan_counts.get(mid, 0)
@@ -758,15 +773,27 @@ def resumen_dia(
                 "pois_completados":   mp["pois_com"],
             }
             mercaderistas_detalle.append(det)
-            if faltas > 0:
-                faltantes.append(det)
-            if a_cnt > 0:
-                activos.append(det)
+            if p_cnt > 0:
+                if faltas > 0:
+                    faltantes_planificados.append(det)
+                if a_cnt > 0:
+                    activos_planificados.append(det)
+            else:
+                if a_cnt > 0:
+                    activos_no_planificados.append(det)
 
         prio = {"Faltante":0,"Activo":1,"No planificado":2}
         mercaderistas_detalle.sort(key=lambda x: (prio.get(x["estado"],99), x["nombre"] or ""))
         
-        total_faltantes = sum(max(0, plan_counts.get(m, 0) - act_counts.get(m, 0)) for m in plan_counts.keys())
+        is_single_day = (d_desde == d_hasta)
+        if is_single_day:
+            total_planificados_card = len(activos_planificados) + len(faltantes_planificados)
+            total_activos_card = len(activos_planificados)
+            total_faltantes_card = len(faltantes_planificados)
+        else:
+            total_planificados_card = total_planificados
+            total_activos_card = sum(min(plan_counts.get(m, 0), act_counts.get(m, 0)) for m in plan_counts.keys())
+            total_faltantes_card = max(0, total_planificados_card - total_activos_card)
 
         return {
             "success":         True,
@@ -776,16 +803,17 @@ def resumen_dia(
             "hasta":           d_hasta.isoformat(),
             "mercaderistas": {
                 "total_asignados":         len(asignados_map),
-                "planificados_hoy":        total_planificados,
-                "activos_hoy":             total_activos,
-                "faltantes_hoy":           total_faltantes,
+                "planificados_hoy":        total_planificados_card,
+                "activos_hoy":             total_activos_card,
+                "activos_no_planificados": len(activos_no_planificados),
+                "faltantes_hoy":           total_faltantes_card,
                 "exclusivos":              sum(1 for m in asignados_map.values()
                                                if m["tipo_servicio"] == "Exclusivo"),
                 "tradex":                  sum(1 for m in asignados_map.values()
                                                if m["tipo_servicio"] == "Tradex"),
                 "detalle":                 mercaderistas_detalle,
-                "faltantes":               faltantes,
-                "activos":                 activos,
+                "faltantes":               faltantes_planificados,
+                "activos":                 activos_planificados + activos_no_planificados,
             },
             "rutas": {
                 "planificadas":  rutas_planificadas,

@@ -34,7 +34,10 @@ class Usuario(Base):
     id_perfil = Column(Integer, nullable=True)
     activo = Column(Boolean, default=True)
 
-    rol_obj = relationship(Rol, lazy="joined", foreign_keys=[id_rol])
+    # lazy="select" en lugar de "joined": el JOIN a ROLES ocurría en CADA
+    # carga de Usuario aunque casi nunca se necesite rol_obj directamente.
+    # rol_nombre ahora usa un dict local (cero queries extra).
+    rol_obj = relationship(Rol, lazy="select", foreign_keys=[id_rol])
     sesiones = relationship("SesionActiva", back_populates="usuario", cascade="all, delete-orphan")
     solicitudes = relationship("Solicitud", back_populates="usuario", cascade="all, delete-orphan")
     permisos = relationship("UserPermission", back_populates="usuario", cascade="all, delete-orphan", lazy="noload")
@@ -45,7 +48,25 @@ class Usuario(Base):
 
     @property
     def rol_nombre(self) -> str:
-        return self.rol_obj.nombre if self.rol_obj else ROL_MAP.get(self.id_rol or 0, "client")
+        # Lookup local — sin tocar DB ni rol_obj (0 queries adicionales)
+        _nombres: dict[int, str] = {
+            1: "Cliente",
+            2: "Analista",
+            3: "Coordinador Exclusivo",
+            4: "Coordinador Tradex",
+            5: "Mercaderista",
+            6: "Supervisor",
+            7: "Auditor",
+            8: "Administrador",
+            9: "Vendedor",
+            10: "Atención al Cliente",
+            11: "Coordinador General",
+            12: "Encuestador",
+            13: "Cliente Encuestador",
+            14: "Auditor de Campo",
+            15: "Ejecutivo de Cuenta",
+        }
+        return _nombres.get(self.id_rol or 0, ROL_MAP.get(self.id_rol or 0, "Usuario"))
 
     @property
     def is_admin(self) -> bool:
