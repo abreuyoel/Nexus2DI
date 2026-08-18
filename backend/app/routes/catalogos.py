@@ -57,7 +57,7 @@ def _ciudad_to_response(c: Ciudad) -> dict:
 # Ciudades — registradas ANTES del genérico para que /ciudades/ no colisione
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/ciudades/", response_model=List[CiudadResponse])
+@router.get("/ciudades", response_model=List[CiudadResponse])
 def list_ciudades(
     departamento_id: Optional[int] = None,
     departamento: Optional[str] = None,
@@ -75,7 +75,7 @@ def list_ciudades(
     return [_ciudad_to_response(c) for c in q.order_by(Ciudad.nombre).all()]
 
 
-@router.post("/ciudades/", response_model=CiudadResponse, status_code=201)
+@router.post("/ciudades", response_model=CiudadResponse, status_code=201)
 def create_ciudad(
     data: CiudadCreate,
     db: Session = Depends(get_db),
@@ -175,7 +175,7 @@ def delete_ciudad(
 # la sigla que arma el correlativo de nombre de ruta, ver routes/rutas.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/servicios/", response_model=List[ServicioResponse])
+@router.get("/servicios", response_model=List[ServicioResponse])
 def list_servicios(
     activo: Optional[bool] = None,
     db: Session = Depends(get_db),
@@ -187,7 +187,7 @@ def list_servicios(
     return q.order_by(Servicio.nombre).all()
 
 
-@router.post("/servicios/", response_model=ServicioResponse, status_code=201)
+@router.post("/servicios", response_model=ServicioResponse, status_code=201)
 def create_servicio(
     data: ServicioCreate,
     db: Session = Depends(get_db),
@@ -311,7 +311,7 @@ def _resolve_generic(catalog: str) -> Type:
     return GENERIC_CATALOGS[catalog]
 
 
-@router.get("/{catalog}/", response_model=List[CatalogoResponse])
+@router.get("/{catalog}", response_model=List[CatalogoResponse])
 def list_catalog(
     catalog: str,
     activo: Optional[bool] = None,
@@ -325,7 +325,7 @@ def list_catalog(
     return q.order_by(Model.nombre).all()
 
 
-@router.post("/{catalog}/", response_model=CatalogoResponse, status_code=201)
+@router.post("/{catalog}", response_model=CatalogoResponse, status_code=201)
 def create_catalog_item(
     catalog: str,
     data: CatalogoCreate,
