@@ -64,4 +64,13 @@ EXPOSE 8000
 # más workers, un evento emitido en el worker A nunca llegaría a un cliente
 # conectado al worker B. Ver plan de despliegue para el camino a escalar
 # (mover ese estado a pub/sub sobre Redis).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+#
+# --proxy-headers + --forwarded-allow-ips='*': sin esto, uvicorn ignora el
+# X-Forwarded-Proto que manda el nginx del frontend (ver frontend/nginx.conf)
+# y Starlette cree que TODA conexión es http plano -- cualquier URL absoluta
+# que construya (ej. el Location de una redirección 307 por slash) sale como
+# http://, y el navegador la bloquea por CSP en visitas reales por https.
+# '*' es seguro acá: este proceso solo es alcanzable vía el Service interno
+# del cluster (nunca expuesto directo a internet), así que no hay un
+# atacante externo que pueda falsificar el header saltándose a nginx.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]
