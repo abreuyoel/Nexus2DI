@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -11,6 +11,7 @@ import { ApiService } from '../../../core/services/api.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { PuntoInteres } from '../../../core/models/visita.model';
 import { CatalogosComponent } from './catalogos.component';
+import { SearchableSelectComponent, SelectOption } from '../../client-visits/searchable-select.component';
 import { HasPermDirective } from '../../../core/directives/has-perm.directive';
 import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
 
@@ -20,7 +21,7 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
   imports: [
     CommonModule, FormsModule, ReactiveFormsModule,
     MatIconModule, MatSnackBarModule, MatProgressSpinnerModule, MatTooltipModule,
-    CatalogosComponent, HasPermDirective,
+    CatalogosComponent, HasPermDirective, SearchableSelectComponent,
   ],
   template: `
 <div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -88,69 +89,39 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-        <div class="relative">
-          <select [ngModel]="filterRegion()" (ngModelChange)="onFilterRegionChange($event)"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (r of regions(); track r) { <option [value]="r">{{ r }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="regionOpts()" [value]="filterRegion()" icon="public"
+          placeholder="Todos" searchPlaceholder="Buscar departamento..." allLabel="Todos"
+          (valueChange)="onFilterRegionChange($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
-        <div class="relative">
-          <select [ngModel]="filterCiudad()" (ngModelChange)="filterCiudad.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todas</option>
-            @for (c of cities(); track c) { <option [value]="c">{{ c }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="ciudadOpts()" [value]="filterCiudad()" icon="location_city"
+          placeholder="Todas" searchPlaceholder="Buscar ciudad..." allLabel="Todas"
+          (valueChange)="onCiudadChange($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
-        <div class="relative">
-          <select [ngModel]="filterJerarquia()" (ngModelChange)="filterJerarquia.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (j of jerarquias(); track j) { <option [value]="j">{{ j }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="jerarquiaOpts()" [value]="filterJerarquia()" icon="store"
+          placeholder="Todos" searchPlaceholder="Buscar tipo..." allLabel="Todos"
+          (valueChange)="onJerarquiaChange($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Jerarquía Nivel 2_2</label>
-        <div class="relative">
-          <select [ngModel]="filterJerarquia2()" (ngModelChange)="filterJerarquia2.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (j of jerarquias2(); track j) { <option [value]="j">{{ j }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="jerarquia2Opts()" [value]="filterJerarquia2()" icon="account_tree"
+          placeholder="Todos" searchPlaceholder="Buscar jerarquía..." allLabel="Todos"
+          (valueChange)="onJerarquia2Change($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nivel de Alcance</label>
-        <div class="relative">
-          <select [ngModel]="filterNivelAlcance()" (ngModelChange)="filterNivelAlcance.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (n of nivelesAlcance(); track n) { <option [value]="n">{{ n }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="nivelAlcanceOpts()" [value]="filterNivelAlcance()" icon="radar"
+          placeholder="Todos" searchPlaceholder="Buscar alcance..." allLabel="Todos"
+          (valueChange)="onNivelAlcanceChange($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Clasificación de Canal</label>
-        <div class="relative">
-          <select [ngModel]="filterCadena()" (ngModelChange)="filterCadena.set($event); reload()"
-            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-2 pr-8 text-sm font-semibold appearance-none outline-none transition-colors">
-            <option value="">Todos</option>
-            @for (c of chains(); track c) { <option [value]="c">{{ c }}</option> }
-          </select>
-          <mat-icon class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none !text-base">expand_more</mat-icon>
-        </div>
+        <app-searchable-select [options]="cadenaOpts()" [value]="filterCadena()" icon="hub"
+          placeholder="Todos" searchPlaceholder="Buscar canal..." allLabel="Todos"
+          (valueChange)="onCadenaChange($event)"></app-searchable-select>
       </div>
       <div class="space-y-1">
         <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Buscar</label>
@@ -225,6 +196,10 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
               </td>
               <td class="px-4 py-3.5 text-right">
                 <div class="inline-flex items-center gap-1">
+                  <button (click)="openDetails(p)" matTooltip="Detalles"
+                    class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-sky-500 text-slate-500 dark:text-slate-400 hover:text-white inline-flex items-center justify-center transition-all">
+                    <mat-icon class="!text-sm">visibility</mat-icon>
+                  </button>
                   <button *hasPerm="'points'; action:'write'" (click)="openPanel(p)" matTooltip="Editar"
                     class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-primary-500 text-slate-500 dark:text-slate-400 hover:text-white inline-flex items-center justify-center transition-all">
                     <mat-icon class="!text-sm">edit</mat-icon>
@@ -261,6 +236,8 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
         <div class="relative">
           <select [ngModel]="pageSize()" (ngModelChange)="onPageSizeChange($event)"
             class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 text-slate-800 dark:text-white rounded-xl px-3 py-1.5 pr-7 text-sm font-bold appearance-none outline-none transition-colors">
+            <option [value]="20">20 / pág</option>
+            <option [value]="50">50 / pág</option>
             <option [value]="100">100 / pág</option>
             <option [value]="200">200 / pág</option>
             <option [value]="500">500 / pág</option>
@@ -432,6 +409,120 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
     </div>
   </div>
 }
+
+<!-- DETALLES MODAL -->
+@if (detailsOpen() && detailPoint()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" (click)="closeDetails()"></div>
+    <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="bg-gradient-to-r from-primary-700 to-indigo-600 px-6 py-5 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+            <mat-icon class="text-white !text-xl">storefront</mat-icon>
+          </div>
+          <div>
+            <h3 class="font-black text-white">{{ detailPoint()!.nombre || 'Detalle del PDV' }}</h3>
+            <p class="text-xs text-white/70 font-mono">{{ detailPoint()!.id }}</p>
+          </div>
+        </div>
+        <button (click)="closeDetails()"
+          class="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-all">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-6 py-5">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dirección</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.direccion || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dpto / Ciudad</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.departamento || '—' }} / {{ detailPoint()!.ciudad || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Negocio</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.jerarquia_n2 || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subtipo</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.jerarquia_n2_2 || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Canal</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.cadena || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alcance</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.nivel_de_alcance || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">RIF</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.rif || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Radio (m)</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.radio || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5 col-span-2">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Coordenadas</span>
+            <p class="text-sm font-mono font-semibold text-slate-800 dark:text-white">
+              @if (detailPoint()!.latitud && detailPoint()!.longitud) {
+                {{ detailPoint()!.latitud }}, {{ detailPoint()!.longitud }}
+              } @else { Sin coordenadas }
+            </p>
+          </div>
+        </div>
+
+        <div class="relative mt-3">
+          @if (mapTileInfo()) {
+            <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 relative group bg-slate-200 dark:bg-slate-800" style="height:260px">
+              <div class="absolute left-1/2 top-1/2" style="transform: translate(-50%, -50%);">
+                <div [style.transform]="'translate(' + mapTileInfo()!.ox + 'px,' + mapTileInfo()!.oy + 'px)'"
+                  style="width:768px;height:768px;">
+                  <div class="grid grid-cols-3" style="width:768px;height:768px;">
+                    @for (row of tileRows; track row) {
+                      @for (col of tileRows; track col) {
+                        <img [src]="tileSrc(mapTileInfo()!.x + col - 1, mapTileInfo()!.y + row - 1)"
+                          alt="" class="block" style="width:256px;height:256px;" draggable="false"
+                          referrerpolicy="no-referrer-when-downgrade">
+                      }
+                    }
+                  </div>
+                </div>
+              </div>
+              <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <mat-icon class="!text-4xl text-rose-600" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));">location_on</mat-icon>
+              </div>
+              <div class="absolute inset-0 cursor-pointer" (click)="openInGoogleMaps()" matTooltip="Abrir en Google Maps"></div>
+              <div class="absolute bottom-2 right-2 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur text-[11px] font-bold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg shadow pointer-events-none">
+                <mat-icon class="!text-sm">open_in_new</mat-icon> Google Maps
+              </div>
+            </div>
+          } @else {
+            <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 relative flex flex-col items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-400" style="height:160px">
+              <mat-icon class="!text-4xl">location_off</mat-icon>
+              <span class="text-sm font-semibold">Sin coordenadas</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      <div class="px-6 py-4 border-t border-slate-200 dark:border-white/8 shrink-0 flex gap-3">
+        <button type="button" (click)="closeDetails()"
+          class="flex-1 py-2.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-xl font-bold text-sm transition-all">
+          Cerrar
+        </button>
+        <button type="button" *hasPerm="'points'; action:'write'" (click)="closeDetails(); openPanel(detailPoint())"
+          class="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-black rounded-xl text-sm shadow-lg transition-all active:scale-95">
+          <mat-icon class="!text-base">edit</mat-icon>
+          Editar
+        </button>
+      </div>
+    </div>
+  </div>
+}
   `
 })
 export class PointsComponent implements OnInit, OnDestroy {
@@ -449,11 +540,13 @@ export class PointsComponent implements OnInit, OnDestroy {
   saving = signal(false);
   panelOpen = signal(false);
   editingId = signal<string | null>(null);
+  detailsOpen = signal(false);
+  detailPoint = signal<PuntoInteres | null>(null);
 
   points = signal<PuntoInteres[]>([]);
   total = signal(0);
   skip = signal(0);
-  pageSize = signal(100);
+  pageSize = signal(20);
 
   regions = signal<string[]>([]);
   cities = signal<string[]>([]);
@@ -470,9 +563,19 @@ export class PointsComponent implements OnInit, OnDestroy {
   filterCadena = signal('');
   searchText = signal('');
 
+  regionOpts = computed<SelectOption[]>(() => this.regions().map(r => ({ value: r, label: r })));
+  ciudadOpts = computed<SelectOption[]>(() => this.cities().map(c => ({ value: c, label: c })));
+  jerarquiaOpts = computed<SelectOption[]>(() => this.jerarquias().map(j => ({ value: j, label: j })));
+  jerarquia2Opts = computed<SelectOption[]>(() => this.jerarquias2().map(j => ({ value: j, label: j })));
+  nivelAlcanceOpts = computed<SelectOption[]>(() => this.nivelesAlcance().map(n => ({ value: n, label: n })));
+  cadenaOpts = computed<SelectOption[]>(() => this.chains().map(c => ({ value: c, label: c })));
+
   private search$ = new Subject<string>();
   private mapInstance: maplibregl.Map | null = null;
   private mapMarker: maplibregl.Marker | null = null;
+
+  readonly tileRows = [0, 1, 2];
+  mapTileInfo = signal<{ x: number; y: number; z: number; ox: number; oy: number } | null>(null);
 
   form = this.fb.group({
     id: ['', Validators.required],
@@ -501,7 +604,7 @@ export class PointsComponent implements OnInit, OnDestroy {
     // Al cambiar departamento en el form, recargar ciudades de ese departamento
     this.form.get('departamento')?.valueChanges.subscribe((dep) => {
       this.api.getCities(dep || undefined).subscribe({
-        next: d => this.cities.set(d), error: () => {}
+        next: d => this.cities.set(d), error: () => { }
       });
     });
   }
@@ -540,26 +643,31 @@ export class PointsComponent implements OnInit, OnDestroy {
   reload(): void { this.skip.set(0); this.loadAll(); }
 
   loadDropdowns(): void {
-    this.api.getRegions().subscribe({ next: d => this.regions.set(d), error: () => {} });
-    this.api.getCities(this.filterRegion() || undefined).subscribe({ next: d => this.cities.set(d), error: () => {} });
-    this.api.getChains().subscribe({ next: d => this.chains.set(d), error: () => {} });
-    this.api.getJerarquiaN2().subscribe({ next: d => this.jerarquias.set(d), error: () => {} });
-    this.api.getJerarquiaN2_2().subscribe({ next: d => this.jerarquias2.set(d), error: () => {} });
-    this.api.getNivelesAlcance().subscribe({ next: d => this.nivelesAlcance.set(d), error: () => {} });
+    this.api.getRegions().subscribe({ next: d => this.regions.set(d), error: () => { } });
+    this.api.getCities(this.filterRegion() || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
+    this.api.getChains().subscribe({ next: d => this.chains.set(d), error: () => { } });
+    this.api.getJerarquiaN2().subscribe({ next: d => this.jerarquias.set(d), error: () => { } });
+    this.api.getJerarquiaN2_2().subscribe({ next: d => this.jerarquias2.set(d), error: () => { } });
+    this.api.getNivelesAlcance().subscribe({ next: d => this.nivelesAlcance.set(d), error: () => { } });
   }
 
   onSearch(val: string): void { this.searchText.set(val); this.search$.next(val); }
   onFilterRegionChange(val: string): void {
     this.filterRegion.set(val);
     this.filterCiudad.set('');
-    this.api.getCities(val || undefined).subscribe({ next: d => this.cities.set(d), error: () => {} });
+    this.api.getCities(val || undefined).subscribe({ next: d => this.cities.set(d), error: () => { } });
     this.reload();
   }
+  onCiudadChange(val: string): void { this.filterCiudad.set(val); this.reload(); }
+  onJerarquiaChange(val: string): void { this.filterJerarquia.set(val); this.reload(); }
+  onJerarquia2Change(val: string): void { this.filterJerarquia2.set(val); this.reload(); }
+  onNivelAlcanceChange(val: string): void { this.filterNivelAlcance.set(val); this.reload(); }
+  onCadenaChange(val: string): void { this.filterCadena.set(val); this.reload(); }
   clearFilters(): void {
     this.filterRegion.set(''); this.filterCiudad.set(''); this.filterJerarquia.set('');
     this.filterJerarquia2.set(''); this.filterNivelAlcance.set(''); this.filterCadena.set('');
     this.searchText.set('');
-    this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => {} });
+    this.api.getCities().subscribe({ next: d => this.cities.set(d), error: () => { } });
     this.reload();
   }
   prevPage(): void { this.skip.update(v => Math.max(0, v - this.pageSize())); this.loadAll(); }
@@ -579,15 +687,71 @@ export class PointsComponent implements OnInit, OnDestroy {
     setTimeout(() => this.initMap(), 250);
   }
 
-  closePanel(): void { this.destroyMap(); this.panelOpen.set(false); }
+  closePanel(): void {
+    try { this.destroyMap(); } catch (e) { this.mapInstance = null; this.mapMarker = null; }
+    this.editingId.set(null);
+    this.panelOpen.set(false);
+  }
+
+  openDetails(p: PuntoInteres): void {
+    this.detailPoint.set(p);
+    this.detailsOpen.set(true);
+    this.buildMapTiles();
+  }
+
+  private buildMapTiles(): void {
+    const p = this.detailPoint();
+    const latStr = this.normCoord(p?.latitud);
+    const lngStr = this.normCoord(p?.longitud);
+    if (!latStr || !lngStr || isNaN(+latStr) || isNaN(+lngStr)) {
+      this.mapTileInfo.set(null);
+      return;
+    }
+    const lat = +latStr;
+    const lng = +lngStr;
+    const z = 14;
+    const n = Math.pow(2, z);
+    const xt = ((lng + 180) / 360) * n;
+    const latRad = (lat * Math.PI) / 180;
+    const yt = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+    const x = Math.floor(xt);
+    const y = Math.floor(yt);
+    const fx = xt - x;
+    const fy = yt - y;
+    this.mapTileInfo.set({ x, y, z, ox: 128 - fx * 256, oy: 128 - fy * 256 });
+  }
+
+  tileSrc(x: number, y: number): string {
+    const z = this.mapTileInfo()?.z ?? 14;
+    return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  }
+
+  private normCoord(v: string | undefined | null): string {
+    return ((v ?? '').toString().trim()).replace(',', '.');
+  }
+
+  openInGoogleMaps(): void {
+    const p = this.detailPoint();
+    const lat = this.normCoord(p?.latitud);
+    const lng = this.normCoord(p?.longitud);
+    if (!lat || !lng || isNaN(+lat) || isNaN(+lng)) return;
+    const url = `https://www.google.com/maps?q=${lat},${lng}`;
+    window.open(url, '_blank', 'noopener');
+  }
+
+  closeDetails(): void {
+    this.detailPoint.set(null);
+    this.detailsOpen.set(false);
+  }
 
   initMap(): void {
+    if (!this.panelOpen()) return;
     const el = document.getElementById('punto-map');
     if (!el) return;
     this.destroyMap();
 
-    const latStr = this.form.get('latitud')?.value?.trim() ?? '';
-    const lngStr = this.form.get('longitud')?.value?.trim() ?? '';
+    const latStr = this.normCoord(this.form.get('latitud')?.value as string);
+    const lngStr = this.normCoord(this.form.get('longitud')?.value as string);
     const hasCoords = latStr !== '' && lngStr !== '' && !isNaN(+latStr) && !isNaN(+lngStr);
     const lat = hasCoords ? +latStr : 10.48;
     const lng = hasCoords ? +lngStr : -66.90;

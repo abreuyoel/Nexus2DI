@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional, List, BinaryIO
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, cast, Date
 
 from app.models.mercaderista import Mercaderista
@@ -19,6 +19,7 @@ from app.models.balance import Balance
 from app.models.producto import Categoria, Producto
 from app.models.cliente import Cliente, CategoriaCliente
 from app.models.punto import PuntoInteres
+from app.models.ruta import RutaActivada
 
 FOTO_TIPOS = {
     "gestion_antes":        {"label": "Gestión (Antes)",            "solo_camara": False, "id": 1},
@@ -116,6 +117,10 @@ class VisitaService:
 
         visitas = (
             self.db.query(Visita)
+            .options(
+                joinedload(Visita.punto),
+                joinedload(Visita.cliente)
+            )
             .filter(
                 Visita.mercaderista_id == merc.id,
                 Visita.fecha >= fi,
@@ -347,7 +352,7 @@ class VisitaService:
     # ── Finalizar Visita ─────────────────────────────────────────────────────
 
     def finalizar_visita(self, current_user, id_visita: int) -> dict:
-        """Cierra el ciclo de vida de una visita."""
+        """Cierra el ciclo de vida de una visita y desactiva automáticamente el PDV si se completaron sus visitas."""
         merc = self._get_mercaderista(current_user)
 
         visita = (
@@ -360,6 +365,48 @@ class VisitaService:
             raise HTTPException(status_code=404, detail="Visita no encontrada")
 
         visita.estado = "Finalizada"
+
+        # ⚡ Auto-desactivar el PDV: marcar el punto como Finalizado para que no quede pendiente
+        if visita.punto_id:
+            hoy = date.today()
+            # Buscar si ya existía una activación para este punto hoy
+            activacion_pdv = (
+                self.db.query(RutaActivada)
+                .filter(
+                    RutaActivada.mercaderista_id == merc.id,
+                    RutaActivada.identificador_punto_interes == visita.punto_id,
+                    cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
+                )
+                .first()
+            )
+            if activacion_pdv:
+                activacion_pdv.estado = "Finalizado"
+            else:
+                # Buscar id_ruta para respetar la restricción NOT NULL de la base de datos
+                from app.models.ruta import RutaProgramacion, MercaderistaRuta
+                prog = (
+                    self.db.query(RutaProgramacion.ruta_id)
+                    .filter(
+                        RutaProgramacion.punto_id == visita.punto_id,
+                        RutaProgramacion.activo == True,
+                    )
+                    .first()
+                )
+                ruta_id = prog[0] if prog else None
+                if not ruta_id:
+                    mr = self.db.query(MercaderistaRuta.ruta_id).filter(MercaderistaRuta.mercaderista_id == merc.id).first()
+                    ruta_id = mr[0] if mr else 1
+
+                desactivacion = RutaActivada(
+                    mercaderista_id=merc.id,
+                    ruta_id=ruta_id,
+                    identificador_punto_interes=visita.punto_id,
+                    fecha_hora_activacion=datetime.now(),
+                    estado="Finalizado",
+                    tipo_activacion="pdv",
+                )
+                self.db.add(desactivacion)
+
         self.db.commit()
 
         # Notificar por WebSocket
@@ -428,7 +475,7 @@ class VisitaService:
         if id_cliente:
             cats_cliente = [
                 cc.id_categoria
-                for cc in self.db.query(CategoriaCliente)
+                for cc in self.db.query(CategoriaCliente.id_categoria)
                 .filter(CategoriaCliente.id_cliente == id_cliente)
                 .all()
             ]
@@ -438,31 +485,41 @@ class VisitaService:
                 if cliente and cliente.id_categoria:
                     cats_cliente = [cliente.id_categoria]
 
-            if cats_cliente:
-                categorias = (
-                    self.db.query(Categoria)
-                    .filter(Categoria.id_categoria.in_(cats_cliente))
-                    .all()
-                )
-            else:
+            if not cats_cliente:
                 return {"categorias": [], "total_productos": 0}
+
+            categorias = (
+                self.db.query(Categoria)
+                .filter(Categoria.id_categoria.in_(cats_cliente))
+                .all()
+            )
+            productos = (
+                self.db.query(Producto)
+                .filter(Producto.id_categoria.in_(cats_cliente))
+                .all()
+            )
         else:
             categorias = self.db.query(Categoria).all()
+            productos = self.db.query(Producto).all()
+
+        # Agrupar productos por categoría en memoria en una sola pasada
+        prods_por_cat: dict = {}
+        for p in productos:
+            cid = p.id_categoria
+            if cid not in prods_por_cat:
+                prods_por_cat[cid] = []
+            prods_por_cat[cid].append(p)
 
         result_categorias = []
         total_productos = 0
 
         for cat in categorias:
-            productos = (
-                self.db.query(Producto)
-                .filter(Producto.id_categoria == cat.id_categoria)
-                .all()
-            )
-            if not productos:
+            cat_prods = prods_por_cat.get(cat.id_categoria, [])
+            if not cat_prods:
                 continue
 
             items = []
-            for p in productos:
+            for p in cat_prods:
                 items.append({
                     "id_producto": p.id_producto,
                     "sku": p.cod_prod or p.producto_gu or "",
@@ -497,6 +554,10 @@ class VisitaService:
 
         visita = (
             self.db.query(Visita)
+            .options(
+                joinedload(Visita.punto),
+                joinedload(Visita.cliente)
+            )
             .filter(Visita.id == visita_id, Visita.mercaderista_id == merc.id)
             .first()
         )
@@ -515,23 +576,29 @@ class VisitaService:
             .all()
         )
 
+        # Batch preload motivos de rechazo si hay fotos rechazadas
+        fotos_rechazadas_ids = [
+            f.id for f in fotos
+            if f.estado and f.estado.lower() in ("rechazado", "rechazada")
+        ]
+        motivos_map = {}
+        if fotos_rechazadas_ids:
+            notifs = (
+                self.db.query(NotificacionRechazoFoto)
+                .filter(NotificacionRechazoFoto.id_foto.in_(fotos_rechazadas_ids))
+                .order_by(NotificacionRechazoFoto.fecha_creacion.desc())
+                .all()
+            )
+            for n in notifs:
+                if n.id_foto not in motivos_map:
+                    motivos_map[n.id_foto] = n.motivo
+
         id_to_codigo = {v["id"]: k for k, v in FOTO_TIPOS.items()}
         fotos_result = []
         for f in fotos:
             tipo_codigo = id_to_codigo.get(f.id_tipo_foto, "gestion_antes")
             tipo_label = FOTO_TIPOS.get(tipo_codigo, {}).get("label", tipo_codigo)
-
-            # Obtener motivo de rechazo si existe
-            motivo_rechazo = None
-            if f.estado and f.estado.lower() in ("rechazado", "rechazada"):
-                notif = (
-                    self.db.query(NotificacionRechazoFoto)
-                    .filter(NotificacionRechazoFoto.id_foto == f.id)
-                    .order_by(NotificacionRechazoFoto.fecha_creacion.desc())
-                    .first()
-                )
-                if notif:
-                    motivo_rechazo = notif.motivo
+            motivo_rechazo = motivos_map.get(f.id)
 
             fotos_result.append({
                 "id_foto": f.id,

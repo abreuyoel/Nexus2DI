@@ -33,6 +33,63 @@ const ACCENT_DICT: Record<string, string> = {
   'psicologo': 'Psicólogo',
   'psicologia': 'Psicología',
 
+  // Sub-especialidades
+  'cardiologia pediatrica': 'Cardiología Pediátrica',
+  'cirugia cardiovascular': 'Cirugía Cardiovascular',
+  'cirugia pediatrica': 'Cirugía Pediátrica',
+  'cirugia plastica': 'Cirugía Plástica y Reconstructiva',
+  'cirugia oncológica': 'Cirugía Oncológica',
+  'ecografia': 'Ecografía Integral',
+  'ecografia integral': 'Ecografía Integral',
+  'electrofisiologia': 'Electrofisiología',
+  'endocrinologia pediatrica': 'Endocrinología Pediátrica',
+  'gastroenterologia pediatrica': 'Gastroenterología Pediátrica',
+  'ginecologia infanto juvenil': 'Ginecología Infanto-Juvenil',
+  'hematologia pediatrica': 'Hematología Pediátrica',
+  'infectologia pediatrica': 'Infectología Pediátrica',
+  'mastologia': 'Mastología',
+  'medicina critica': 'Medicina Crítica y Cuidado Intensivo',
+  'nefrologia pediatrica': 'Nefrología Pediátrica',
+  'neonatologia': 'Neonatología',
+  'neumonologia pediatrica': 'Neumonología Pediátrica',
+  'neurocirugia': 'Neurocirugía',
+  'neurologia pediatrica': 'Neurología Pediátrica',
+  'nutricion clinica': 'Nutrición Clínica',
+  'odontopediatria': 'Odontopediatría',
+  'oftalmologia pediatrica': 'Oftalmología Pediátrica',
+  'oncologia medica': 'Oncología Médica',
+  'ortodoncia': 'Ortodoncia',
+  'periodoncia': 'Periodoncia',
+  'perinatologia': 'Perinatología',
+  'psiquiatria infantil': 'Psiquiatría Infantil',
+  'radiologia': 'Radiología e Imagenología',
+  'reproduccion humana': 'Reproducción Humana',
+  'reumatologia pediatrica': 'Reumatología Pediátrica',
+
+  // Universidades (siglas y nombres)
+  'ucv': 'Universidad Central de Venezuela (UCV)',
+  'ula': 'Universidad de Los Andes (ULA)',
+  'luz': 'Universidad del Zulia (LUZ)',
+  'uc': 'Universidad de Carabobo (UC)',
+  'udo': 'Universidad de Oriente (UDO)',
+  'ucla': 'Universidad Centroccidental Lisandro Alvarado (UCLA)',
+  'unefm': 'Universidad Nacional Experimental Francisco de Miranda (UNEFM)',
+  'unerg': 'Universidad Nacional Experimental Rómulo Gallegos (UNERG)',
+  'ucab': 'Universidad Católica Andrés Bello (UCAB)',
+  'usm': 'Universidad Santa María (USM)',
+  'elam': 'Escuela Latinoamericana de Medicina (ELAM)',
+  'unellez': 'Universidad Nacional Experimental de los Llanos Ezequiel Zamora (UNELLEZ)',
+  'unet': 'Universidad del Táchira (UNET)',
+  'urbe': 'Universidad Rafael Belloso Chacín (URBE)',
+  'unimet': 'Universidad Metropolitana (UNIMET)',
+  'universidad central de venezuela': 'Universidad Central de Venezuela (UCV)',
+  'universidad de los andes': 'Universidad de Los Andes (ULA)',
+  'universidad del zulia': 'Universidad del Zulia (LUZ)',
+  'universidad de carabobo': 'Universidad de Carabobo (UC)',
+  'universidad de oriente': 'Universidad de Oriente (UDO)',
+  'universidad catolica andres bello': 'Universidad Católica Andrés Bello (UCAB)',
+  'universidad santa maria': 'Universidad Santa María (USM)',
+
   // Estados
   'anzoategui': 'Anzoátegui',
   'apure': 'Apure',
@@ -212,10 +269,10 @@ export class MutableSearchSelectComponent implements OnInit, OnChanges {
   @Input() value: string = '';
   @Input() disabled: boolean = false;
   @Input() required: boolean = true;
-  @Input() tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad' = 'especialidad';
+  @Input() tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad' = 'especialidad';
 
   @Output() valueChange = new EventEmitter<string>();
-  @Output() addNew = new EventEmitter<{ tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad', value: string }>();
+  @Output() addNew = new EventEmitter<{ tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad', value: string }>();
 
   searchQuery: string = '';
   isOpen: boolean = false;
@@ -321,6 +378,17 @@ export class MutableSearchSelectComponent implements OnInit, OnChanges {
     const matchingOption = this.options.find(opt => this.normalize(opt) === normInput);
     if (matchingOption && matchingOption !== input) {
       return matchingOption;
+    }
+
+    // Sugerencia de formato Capitalizado si fue escrito todo en minúsculas
+    if (input === input.toLowerCase() && input.length > 2) {
+      const titleCased = input
+        .split(' ')
+        .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '')
+        .join(' ');
+      if (titleCased !== input) {
+        return titleCased;
+      }
     }
 
     return null;

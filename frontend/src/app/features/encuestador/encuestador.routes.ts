@@ -8,6 +8,7 @@ export const ENCUESTADOR_ROUTES: Routes = [
   { path: 'dashboard', component: EncuestadorDashboardComponent },
   { path: 'centro', component: CentroFormComponent },
   { path: 'medico', component: MedicoFormComponent },
+  { path: 'medico/:idMedico', component: MedicoFormComponent },
   { path: 'configuracion', component: ConfiguracionEncuestadorComponent },
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
 ];

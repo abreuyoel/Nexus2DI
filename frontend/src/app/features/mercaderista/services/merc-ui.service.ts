@@ -31,6 +31,31 @@ export class MercUiService {
   /** ID de la ruta actualmente activa (en_progreso). Se limpia al finalizar la ruta. */
   activeRouteId = signal<number | null>(null);
 
+  // ─── Cache en memoria ultra-rápido (0ms) ───
+  private _cacheMisRutas: any = null;
+  private _cacheMisVisitas: any[] | null = null;
+  private _cachePdvActivos: any[] | null = null;
+  private _cacheProductosCliente = new Map<number, { categorias: any[]; total_productos: number }>();
+
+  get cachedMisRutas() { return this._cacheMisRutas; }
+  set cachedMisRutas(v: any) { this._cacheMisRutas = v; }
+
+  get cachedMisVisitas() { return this._cacheMisVisitas; }
+  set cachedMisVisitas(v: any[] | null) { this._cacheMisVisitas = v; }
+
+  get cachedPdvActivos() { return this._cachePdvActivos; }
+  set cachedPdvActivos(v: any[] | null) { this._cachePdvActivos = v; }
+
+  getCachedProductos(idCliente: number) { return this._cacheProductosCliente.get(idCliente); }
+  setCachedProductos(idCliente: number, val: any) { this._cacheProductosCliente.set(idCliente, val); }
+
+  invalidateAllCache() {
+    this._cacheMisRutas = null;
+    this._cacheMisVisitas = null;
+    this._cachePdvActivos = null;
+    this._cacheProductosCliente.clear();
+  }
+
   // ─── Timer de visita (40 min) ───
   timerSeconds = signal(MAX_VISITA_SECS);
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -152,6 +177,9 @@ export class MercUiService {
       this.reportAudit('CERRAR_PANEL', 'Cerró el panel de visita sin finalizar (pausa de fondo).');
     }
     this.activeVisit.set(null);
+    if (finalized) {
+      this.invalidateAllCache();
+    }
     // ⚠️ NO limpiar activeRouteId aquí — la ruta sigue activa hasta que el usuario la finalice manualmente.
   }
 

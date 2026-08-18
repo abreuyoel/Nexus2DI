@@ -18,7 +18,7 @@ class IdListRequest(BaseModel):
     ids: List[int] = []
 
 
-@router.get("/", response_model=List[AnalistaResponse])
+@router.get("", response_model=List[AnalistaResponse])
 def list_analysts(
     db: Session = Depends(get_db),
     _: Usuario = Depends(get_current_user),
@@ -140,7 +140,7 @@ def get_analyst(analyst_id: int, db: Session = Depends(get_db), _: Usuario = Dep
         raise HTTPException(status_code=404, detail="Analista no encontrado")
     return analyst
 
-@router.post("/", response_model=AnalistaResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AnalistaResponse, status_code=status.HTTP_201_CREATED)
 def create_analyst(
     data: AnalistaCreate,
     db: Session = Depends(get_db),

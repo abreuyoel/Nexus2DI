@@ -146,3 +146,89 @@ END;
        WHERE up.id_usuario = u.id_usuario AND up.module = 'portal-mercaderista'
    );
 
+-- 7. Insertar sub-módulos del Centro de Mando en la tabla MODULOS
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.activaciones')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.activaciones', 'Activaciones', id_modulo, 'submodulo', 1, 1
+    FROM MODULOS WHERE clave = 'centro-mando';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.visitas')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.visitas', 'Visitas', id_modulo, 'submodulo', 2, 1
+    FROM MODULOS WHERE clave = 'centro-mando';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.activaciones.dashboard')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.activaciones.dashboard', 'Dashboard', id_modulo, 'accion', 1, 1
+    FROM MODULOS WHERE clave = 'centro-mando.activaciones';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.activaciones.gestion_dia')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.activaciones.gestion_dia', 'Gestión del Día', id_modulo, 'accion', 2, 1
+    FROM MODULOS WHERE clave = 'centro-mando.activaciones';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.activaciones.pendientes')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.activaciones.pendientes', 'Pendientes', id_modulo, 'accion', 3, 1
+    FROM MODULOS WHERE clave = 'centro-mando.activaciones';
+END;
+
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'centro-mando.activaciones.horas_trabajadas')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, orden, activo)
+    SELECT 'centro-mando.activaciones.horas_trabajadas', 'Horas Trabajadas', id_modulo, 'accion', 4, 1
+    FROM MODULOS WHERE clave = 'centro-mando.activaciones';
+END;
+
+-- 8. Insertar módulo auditoria-usuarios en MODULOS si no existe
+IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'auditoria-usuarios')
+BEGIN
+    INSERT INTO MODULOS (clave, nombre, id_padre, tipo, ruta, icono, orden, activo)
+    VALUES ('auditoria-usuarios', 'Auditoría de Usuarios', NULL, 'modulo', '/auditoria-usuarios', 'admin_panel_settings', 215, 1);
+    PRINT 'Módulo auditoria-usuarios insertado en MODULOS';
+END;
+
+-- 9. Conceder permisos de auditoria-usuarios al usuario dev y administradores
+DECLARE @IdUsuarioDevAud INT;
+SELECT @IdUsuarioDevAud = id_usuario FROM USUARIOS WHERE username = 'dev';
+
+IF @IdUsuarioDevAud IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM usuario_permisos WHERE id_usuario = @IdUsuarioDevAud AND module = 'auditoria-usuarios')
+    BEGIN
+        INSERT INTO usuario_permisos (id_usuario, module, can_read, can_write, can_delete, can_see_all)
+        VALUES (@IdUsuarioDevAud, 'auditoria-usuarios', 1, 1, 1, 1);
+    END;
+END;
+
+INSERT INTO usuario_permisos (id_usuario, module, can_read, can_write, can_delete, can_see_all)
+SELECT u.id_usuario, 'auditoria-usuarios', 1, 1, 1, 1
+FROM USUARIOS u
+WHERE u.id_rol = 8
+  AND NOT EXISTS (
+      SELECT 1 FROM usuario_permisos up
+      WHERE up.id_usuario = u.id_usuario AND up.module = 'auditoria-usuarios'
+  );
+
+-- 10. Agregar columnas de fin de jornada en JORNADAS_ENCUESTADOR si faltan
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('JORNADAS_ENCUESTADOR') AND name = 'latitud_fin')
+    ALTER TABLE JORNADAS_ENCUESTADOR ADD latitud_fin FLOAT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('JORNADAS_ENCUESTADOR') AND name = 'longitud_fin')
+    ALTER TABLE JORNADAS_ENCUESTADOR ADD longitud_fin FLOAT NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('JORNADAS_ENCUESTADOR') AND name = 'ciudad_fin')
+    ALTER TABLE JORNADAS_ENCUESTADOR ADD ciudad_fin VARCHAR(100) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('JORNADAS_ENCUESTADOR') AND name = 'estado_geo_fin')
+    ALTER TABLE JORNADAS_ENCUESTADOR ADD estado_geo_fin VARCHAR(100) NULL;
+

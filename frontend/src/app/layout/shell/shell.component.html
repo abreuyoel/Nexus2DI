@@ -23,7 +23,22 @@
 
     <!-- Navigation List -->
     <nav class="flex-1 py-8 px-3 space-y-1 overflow-y-auto custom-scrollbar">
-      @for (item of visibleNavItems(); track item.route) {
+      <!-- Búsqueda de módulos del sidebar -->
+      @if (sidenavOpen()) {
+      <div class="relative mb-4 px-1">
+        <span class="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-[18px]">search</span>
+        <input type="text" [(ngModel)]="navSearch" placeholder="Buscar módulo..."
+          class="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-8 text-sm text-slate-200 placeholder:text-slate-500 focus:border-primary-500/50 focus:bg-white/10 outline-none transition-all">
+        @if (navSearch()) {
+        <button type="button" (click)="navSearch.set('')"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors">
+          <span class="material-icons text-[16px]">close</span>
+        </button>
+        }
+      </div>
+      }
+
+      @for (item of filteredNavItems(); track item.route) {
       <!-- Ítem principal -->
       <a [routerLink]="item.route.split('?')[0]"
         [queryParams]="item.route.includes('?') ? parseQueryParams(item.route) : {}"
@@ -46,15 +61,17 @@
       </a>
       <!-- Sub-ítems (e.g. Power BI bajo Dashboard) -->
       @if (item.children && item.children.length > 0 && sidenavOpen()) {
-        @for (child of item.children; track child.route) {
-        <a [routerLink]="child.route.split('?')[0]"
-          [queryParams]="child.route.includes('?') ? parseQueryParams(child.route) : {}"
-          routerLinkActive="bg-primary-500/10 text-primary-400"
-          class="flex items-center gap-3 pl-12 pr-4 py-2.5 rounded-xl border border-transparent transition-all duration-200 hover:bg-white/5 hover:text-white group ml-2">
-          <mat-icon class="shrink-0 !text-[18px] text-slate-500 group-hover:text-primary-400" routerLinkActive="!text-primary-400">{{ child.icon }}</mat-icon>
-          <span class="text-sm font-semibold text-slate-400 group-hover:text-white tracking-tight whitespace-nowrap">{{ child.label }}</span>
-        </a>
-        }
+      @for (child of item.children; track child.route) {
+      <a [routerLink]="child.route.split('?')[0]"
+        [queryParams]="child.route.includes('?') ? parseQueryParams(child.route) : {}"
+        routerLinkActive="bg-primary-500/10 text-primary-400"
+        class="flex items-center gap-3 pl-12 pr-4 py-2.5 rounded-xl border border-transparent transition-all duration-200 hover:bg-white/5 hover:text-white group ml-2">
+        <mat-icon class="shrink-0 !text-[18px] text-slate-500 group-hover:text-primary-400"
+          routerLinkActive="!text-primary-400">{{ child.icon }}</mat-icon>
+        <span class="text-sm font-semibold text-slate-400 group-hover:text-white tracking-tight whitespace-nowrap">{{
+          child.label }}</span>
+      </a>
+      }
       }
       }
     </nav>

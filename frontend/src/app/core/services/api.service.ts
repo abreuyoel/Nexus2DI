@@ -31,6 +31,10 @@ export class ApiService {
   deleteUser(id: number): Observable<object> { return this.http.delete<object>(`${this.base}/api/users/${id}`); }
   getAnalysts(): Observable<User[]> { return this.http.get<User[]>(`${this.base}/api/users/analysts`); }
   getSupervisors(): Observable<User[]> { return this.http.get<User[]>(`${this.base}/api/users/supervisors`); }
+  getEncuestadores(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/users/encuestadores`); }
+  createEncuestador(data: object): Observable<any> { return this.http.post<any>(`${this.base}/api/users/encuestadores`, data); }
+  updateEncuestador(id: number, data: object): Observable<any> { return this.http.put<any>(`${this.base}/api/users/encuestadores/${id}`, data); }
+  deleteEncuestador(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/users/encuestadores/${id}`); }
   getModulos(): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/modulos`); }
   getUserPermissions(userId: number): Observable<any[]> { return this.http.get<any[]>(`${this.base}/api/users/${userId}/permissions`); }
   updateUserPermissions(userId: number, permissions: any[]): Observable<any> { return this.http.post<any>(`${this.base}/api/users/${userId}/permissions`, { permissions }); }
@@ -196,6 +200,7 @@ export class ApiService {
   getCentroMandoHorasTrabajadas(opts: { desde?: string; hasta?: string; cliente_id?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando/horas-trabajadas`, { params: this.params(opts) }); }
   getCentroMandoAuditoriaFiltros(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/filtros`); }
   getCentroMandoAuditoriaResumen(opts: { desde?: string; hasta?: string; id_auditor?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/resumen`, { params: this.params(opts) }); }
+  getAuditoriaUsuarios(opts: { skip?: number; limit?: number; accion?: string; ejecutor?: string; search?: string; fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/auditoria-usuarios`, { params: this.params(opts) }); }
   getCentroMandoAuditoriaTendenciaCompetencia(opts: { semanas?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/tendencia-competencia`, { params: this.params(opts) }); }
   deleteMercFoto(fotoId: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/merc/foto/${fotoId}`); }
 
@@ -500,6 +505,12 @@ export class ApiService {
   bulkUpsertFrecuenciasPdvCliente(data: { id_cliente: number; items: object[] }): Observable<any> {
     return this.http.post<any>(`${this.base}/api/frecuencias-pdvs-cliente/bulk`, data);
   }
+  importFrecuenciasExcel(idCliente: number, file: File): Observable<any> {
+    const fd = new FormData();
+    fd.append('id_cliente', String(idCliente));
+    fd.append('file', file, file.name);
+    return this.http.post<any>(`${this.base}/api/frecuencias-pdvs-cliente/importar-excel`, fd);
+  }
 
   // --- HORAS PROMEDIO EJECUCIÓN ---
   getHorasPromedioEjecucion(opts: { id_cliente?: number; id_tipo_negocio?: number } = {}): Observable<any[]> {
@@ -533,8 +544,8 @@ export class ApiService {
   getClientDashboard(clienteId?: number): Observable<{ has_dashboard: boolean; url_html: string | null; tipo?: string }> {
     return this.http.get<any>(`${this.base}/api/client/dashboard`, { params: this.params({ cliente_id: clienteId }) });
   }
-  getClientSummary(clienteId?: number): Observable<any> {
-    return this.http.get<any>(`${this.base}/api/client/summary`, { params: this.params({ cliente_id: clienteId }) });
+  getClientSummary(opts: { clienteId?: number; fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/client/summary`, { params: this.params({ cliente_id: opts.clienteId, fecha_inicio: opts.fecha_inicio, fecha_fin: opts.fecha_fin }) });
   }
 
   // --- PORTAL MERCADERISTA ---

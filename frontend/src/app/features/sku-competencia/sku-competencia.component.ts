@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,6 +7,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 interface Grupo {
   id_producto_cliente: number;
@@ -18,64 +19,151 @@ interface Grupo {
 @Component({
   selector: 'app-sku-competencia',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule, MatTooltipModule, SearchableSelectComponent],
   templateUrl: './sku-competencia.component.html',
 })
 export class SkuCompetenciaComponent implements OnInit {
+  // Expuesto para uso en el template (paginación)
+  Math = Math;
+
   loading = signal(false);
   clientes = signal<any[]>([]);
   clienteId: number | null = null;
   grupos = signal<Grupo[]>([]);
 
+  // Filtros de productoras y categorías
+  cargandoFiltros = signal(false);
+  todasProductoras = signal<any[]>([]);
+  todasCategorias = signal<any[]>([]);
+  categoriasFiltradas = signal<any[]>([]);
+  productoraFiltroId: number | null = null;
+  categoriaFiltroId: number | null = null;
+
+  clienteOptions = computed<SelectOption[]>(() =>
+    this.clientes().map((c) => ({ value: String(c.id), label: c.nombre || c.cliente }))
+  );
+  get clienteIdStr(): string { return this.clienteId != null ? String(this.clienteId) : ''; }
+
+  // Paginación client-side sobre los grupos (SKU propios del cliente)
+  grupoPage = signal(0);
+  grupoPageSize = signal(20);
+  paginatedGrupos = computed<Grupo[]>(() => {
+    const size = this.grupoPageSize();
+    const start = this.grupoPage() * size;
+    return this.grupos().slice(start, start + size);
+  });
+  get totalGrupoPages(): number {
+    return Math.max(1, Math.ceil(this.grupos().length / this.grupoPageSize()));
+  }
+  goGrupoPage(p: number): void { this.grupoPage.set(p); }
+  onGrupoPageSizeChange(val: number): void { this.grupoPageSize.set(val); this.grupoPage.set(0); }
+
   // Buscador para agregar un SKU propio nuevo
   buscarPropio = '';
   resultadosPropio = signal<any[]>([]);
-  buscandoPropio = signal(false);
+  buscandoPropio   = signal(false);
   private buscarPropio$ = new Subject<string>();
 
-  // Buscador de competencia -- uno activo a la vez, identificado por el
-  // id_producto_cliente del grupo que lo abrió.
+  // ── Panel de competencia (uno a la vez) ───────────────────────────────
   grupoCompetenciaAbierto: number | null = null;
   buscarCompetencia = '';
   resultadosCompetencia = signal<any[]>([]);
-  buscandoCompetencia = signal(false);
-  seleccionCompetencia = new Set<number>();
+  buscandoCompetencia   = signal(false);
+  seleccionCompetencia  = new Set<number>();
+  // Filtros de browse dentro del panel de competencia
+  productoraCompId: number | null = null;
+  categoriaCompId: number | null = null;
+  categoriasComp  = signal<any[]>([]);
   private buscarCompetencia$ = new Subject<string>();
 
-  constructor(private api: ApiService, private snack: MatSnackBar) {}
+  constructor(private api: ApiService, private snack: MatSnackBar) { }
 
   ngOnInit(): void {
-    this.api.getClients().subscribe({ next: (d) => this.clientes.set(d || []), error: () => {} });
+    this.api.getClients().subscribe({ next: (d) => this.clientes.set(d || []), error: () => { } });
     this.buscarPropio$.pipe(debounceTime(300), distinctUntilChanged()).subscribe((term) => this.ejecutarBusquedaPropio(term));
     this.buscarCompetencia$.pipe(debounceTime(300), distinctUntilChanged()).subscribe((term) => this.ejecutarBusquedaCompetencia(term));
   }
 
+  onClienteSelectChange(val: string): void {
+    this.clienteId = val ? +val : null;
+    this.onClienteChange();
+  }
+
   onClienteChange(): void {
     this.resultadosPropio.set([]); this.buscarPropio = '';
+    this.productoraFiltroId = null; this.categoriaFiltroId = null;
+    this.categoriasFiltradas.set([]);
     this.cerrarBuscadorCompetencia();
-    if (!this.clienteId) { this.grupos.set([]); return; }
+    if (!this.clienteId) { this.grupos.set([]); this.todasProductoras.set([]); this.todasCategorias.set([]); return; }
     this.loadGrupos();
+    this.loadFiltros();
   }
 
   loadGrupos(): void {
     if (!this.clienteId) return;
     this.loading.set(true);
+    this.grupoPage.set(0);
     this.api.getSkuCompetenciaMapeos(this.clienteId).subscribe({
       next: (d) => { this.grupos.set(d || []); this.loading.set(false); },
       error: () => { this.grupos.set([]); this.loading.set(false); this.snack.open('Error al cargar los mapeos', 'OK', { duration: 3000 }); },
     });
   }
 
-  // ── Buscar/agregar el SKU propio ──
-  onBuscarPropioChange(val: string): void { this.buscarPropio$.next(val); }
-  private ejecutarBusquedaPropio(term: string): void {
-    if (!term || term.trim().length < 2) { this.resultadosPropio.set([]); return; }
+  // ── Cargar filtros (productoras + categorías) ──────────────────────────
+  loadFiltros(): void {
+    this.cargandoFiltros.set(true);
+    this.api.getProductosFiltrosDisponibles({}).subscribe({
+      next: (f) => {
+        this.todasProductoras.set(f.productoras || []);
+        this.todasCategorias.set(f.categorias || []);
+        this.cargandoFiltros.set(false);
+      },
+      error: () => this.cargandoFiltros.set(false),
+    });
+  }
+
+  // ── Selección de productora en el panel de SKU propio ─────────────────
+  selectProductora(id: number | null): void {
+    this.productoraFiltroId = id;
+    this.categoriaFiltroId  = null;
+    // Filtrar categorías que tienen productos de esa productora
+    if (id) {
+      this.categoriasFiltradas.set(this.todasCategorias());
+    } else {
+      this.categoriasFiltradas.set([]);
+    }
+    this.cargarProductosPropio();
+  }
+
+  selectCategoria(id: number | null): void {
+    this.categoriaFiltroId = id;
+    this.cargarProductosPropio();
+  }
+
+  cargarProductosPropio(): void {
+    const opts: any = { limit: 60 };
+    if (this.productoraFiltroId) opts.id_productora = this.productoraFiltroId;
+    if (this.categoriaFiltroId)  opts.id_categoria  = this.categoriaFiltroId;
+    if (this.buscarPropio.trim()) opts.busqueda = this.buscarPropio.trim();
+
+    // Si no hay ningún filtro activo, limpiar y salir
+    if (!opts.id_productora && !opts.id_categoria && !opts.busqueda) {
+      this.resultadosPropio.set([]);
+      return;
+    }
     this.buscandoPropio.set(true);
-    this.api.getProductos({ busqueda: term, limit: 15 }).subscribe({
+    this.api.getProductos(opts).subscribe({
       next: (res) => { this.resultadosPropio.set(res.items || []); this.buscandoPropio.set(false); },
       error: () => { this.resultadosPropio.set([]); this.buscandoPropio.set(false); },
     });
   }
+
+  // ── Búsqueda de texto (complementaria a los filtros) ──────────────────
+  onBuscarPropioChange(val: string): void { this.buscarPropio$.next(val); }
+  private ejecutarBusquedaPropio(term: string): void {
+    this.cargarProductosPropio();
+  }
+
   agregarSkuPropio(p: any): void {
     if (!this.clienteId) return;
     if (this.grupos().some((g) => g.id_producto_cliente === p.id)) {
@@ -84,27 +172,64 @@ export class SkuCompetenciaComponent implements OnInit {
     }
     this.grupos.update((list) => [{ id_producto_cliente: p.id, producto_cliente: p.producto_gu, marca_cliente: p.marca ?? null, competencia: [] }, ...list]);
     this.buscarPropio = ''; this.resultadosPropio.set([]);
+    this.grupoPage.set(0);
     this.abrirBuscadorCompetencia(p.id);
   }
 
-  // ── Buscar/agregar competencia dentro de un grupo ──
+  // ── Buscar/agregar competencia dentro de un grupo ─────────────────────
   abrirBuscadorCompetencia(idProductoCliente: number): void {
     this.grupoCompetenciaAbierto = idProductoCliente;
-    this.buscarCompetencia = ''; this.resultadosCompetencia.set([]); this.seleccionCompetencia.clear();
+    this.buscarCompetencia = '';
+    this.resultadosCompetencia.set([]);
+    this.seleccionCompetencia.clear();
+    this.productoraCompId = null;
+    this.categoriaCompId  = null;
+    this.categoriasComp.set([]);
   }
   cerrarBuscadorCompetencia(): void {
     this.grupoCompetenciaAbierto = null;
-    this.buscarCompetencia = ''; this.resultadosCompetencia.set([]); this.seleccionCompetencia.clear();
+    this.buscarCompetencia = '';
+    this.resultadosCompetencia.set([]);
+    this.seleccionCompetencia.clear();
+    this.productoraCompId = null;
+    this.categoriaCompId  = null;
+    this.categoriasComp.set([]);
   }
+
+  selectProductoraComp(id: number | null): void {
+    this.productoraCompId = id;
+    this.categoriaCompId  = null;
+    this.categoriasComp.set(id ? this.todasCategorias() : []);
+    this.cargarProductosCompetencia();
+  }
+
+  selectCategoriaComp(id: number | null): void {
+    this.categoriaCompId = id;
+    this.cargarProductosCompetencia();
+  }
+
   onBuscarCompetenciaChange(val: string): void { this.buscarCompetencia$.next(val); }
   private ejecutarBusquedaCompetencia(term: string): void {
-    if (!term || term.trim().length < 2) { this.resultadosCompetencia.set([]); return; }
+    this.cargarProductosCompetencia();
+  }
+
+  cargarProductosCompetencia(): void {
+    const opts: any = { limit: 60 };
+    if (this.productoraCompId) opts.id_productora = this.productoraCompId;
+    if (this.categoriaCompId)  opts.id_categoria  = this.categoriaCompId;
+    if (this.buscarCompetencia.trim()) opts.busqueda = this.buscarCompetencia.trim();
+
+    if (!opts.id_productora && !opts.id_categoria && !opts.busqueda) {
+      this.resultadosCompetencia.set([]);
+      return;
+    }
     this.buscandoCompetencia.set(true);
-    this.api.getProductos({ busqueda: term, limit: 15 }).subscribe({
+    this.api.getProductos(opts).subscribe({
       next: (res) => { this.resultadosCompetencia.set(res.items || []); this.buscandoCompetencia.set(false); },
       error: () => { this.resultadosCompetencia.set([]); this.buscandoCompetencia.set(false); },
     });
   }
+
   toggleSeleccionCompetencia(idProducto: number): void {
     if (this.seleccionCompetencia.has(idProducto)) this.seleccionCompetencia.delete(idProducto);
     else this.seleccionCompetencia.add(idProducto);

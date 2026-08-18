@@ -1,0 +1,10 @@
+// El calendario nativo de los <input type="date"> respeta el tema activo:
+// en modo claro el icono/panel se muestra claro y en modo oscuro se muestra
+// oscuro. Sin esto, el panel del calendario queda blanco incluso en dark mode.
+input[type='date'] {
+    color-scheme: light;
+}
+
+:host-context(.dark) input[type='date'] {
+    color-scheme: dark;
+}

@@ -34,15 +34,15 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   vista = signal<'activaciones' | 'visitas'>('activaciones');
 
   // ─── Loading ───────────────────────────────────────────────────────────────
-  loadingResumen      = signal(true);
+  loadingResumen = signal(true);
   loadingActivaciones = signal(false);
 
   // ─── Realtime: Pending Events (pulse + sonido + auto-refresh) ──────────────
-  pendingEvents      = signal(0);
-  hasPendingUpdates  = signal(false);
+  pendingEvents = signal(0);
+  hasPendingUpdates = signal(false);
   /** Set de keys de tarjetas que cambiaron en el último refresh. Se limpia
    *  automáticamente después de la animación (1.5s). */
-  changedCards       = signal<Set<string>>(new Set());
+  changedCards = signal<Set<string>>(new Set());
   private autoRefreshInterval?: any;
   private notifAudio?: HTMLAudioElement;
 
@@ -50,18 +50,21 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   resumenDia = signal<any>(null);
 
   // ─── Activaciones / Tabs ───────────────────────────────────────────────────
-  activaciones    = signal<any[]>([]);
-  stats           = signal<any>({});
+  activaciones = signal<any[]>([]);
+  stats = signal<any>({});
   porMercaderista = signal<any[]>([]);
-  pendientes      = signal<any[]>([]);
-  gestionPorDia   = signal<any>({ fechas: [], clientes: [] });
-  clientes        = signal<any[]>([]);
+  pendientes = signal<any[]>([]);
+  gestionPorDia = signal<any>({ fechas: [], clientes: [] });
+  clientes = signal<any[]>([]);
 
   isClientePuro   = signal(false);
 
   // ─── Horas Trabajadas (por mercaderista, de mayor a menor) ────────────────
-  loadingHoras    = signal(false);
+  loadingHoras = signal(false);
   horasTrabajadas = signal<any[]>([]);
+  /** Marca si las horas ya se cargaron alguna vez (carga lazy): evita volver a
+   *  disparar la query pesada en refrescos si la pestaña nunca se ha abierto. */
+  private horasLoaded = false;
 
   // ─── Filtros Globales (Día) ────────────────────────────────────────────────
   get fecha(): string {
@@ -71,7 +74,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     this.filtroDesde = val;
   }
 
-  filtroCliente: number | null  = null;
+  filtroCliente: number | null = null;
 
   // ─── Filtros Rango (Global) ────────────────────────────────────────────────
   filtroDesde: string = this.todayStr();
@@ -83,25 +86,25 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   // ─── UI State (Detalle y Modal) ───────────────────────────────────────────
   showDetalle: 'activos' | 'faltantes' | null = null;
   detalleList: any[] = [];
-  
+
   showModalPdvs = false;
   modalPdvs = { pendientes: [] as any[], activos: [] as any[], completados: [] as any[] };
 
   // ─── Búsqueda / sub-filtros locales ───────────────────────────────────────
   searchText: string = '';
-  tabPunto:   'act' | 'com' = 'act';
+  tabPunto: 'act' | 'com' = 'act';
   tabCliente: 'act' | 'com' = 'act';
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
   get diaSemana(): string {
-    const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
     const d = new Date(this.filtroDesde + 'T12:00:00');
     return DIAS[d.getDay()];
   }
 
   get fechaDisplay(): string {
     const d = new Date(this.filtroDesde + 'T12:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
   get isHoy(): boolean {
@@ -115,7 +118,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   get dateRangeDisplay(): string {
     if (this.filtroDesde === this.filtroHasta) {
       const d = new Date(this.filtroDesde + 'T12:00:00');
-      const DIAS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+      const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
       const dia = DIAS[d.getDay()];
       return `${dia} ${this.formatDateDMY(this.filtroDesde)}`;
     } else {
@@ -125,13 +128,17 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
 
   formatDateDMY(dateStr: string): string {
     const d = new Date(dateStr + 'T12:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  }
+
+  get canSeeHorasTrabajadas(): boolean {
+    return this.auth.canAccess('centro-mando.activaciones.horas_trabajadas', ['admin', 'analyst', 'supervisor']);
   }
 
   constructor(
     private api: ApiService, private auth: AuthService, private realtime: RealtimeService,
     private dialog: MatDialog, private router: Router,
-  ) {}
+  ) { }
 
   private rtSubscription?: Subscription;
 
@@ -140,7 +147,10 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     this.loadClientes();
     this.loadResumenDia();
     this.loadActivaciones();
-    this.loadHorasTrabajadas();
+    // Horas trabajadas es un agregado pesado (histórico de 524 timeouts). Solo
+    // se carga si el usuario puede verlo, y aun así de forma lazy al abrir la
+    // pestaña, para agilizar la carga inicial del dashboard.
+    if (this.canSeeHorasTrabajadas) this.loadHorasTrabajadas();
 
     // Preparar audio de notificación (un beep sutil generado por Web Audio API)
     this.prepareNotifSound();
@@ -252,6 +262,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
    * y sumarla al refresh de cada evento de foto/visita agregaría más carga al
    * mismo mecanismo que ya causó reinicios del backend bajo tráfico real. */
   loadHorasTrabajadas() {
+    this.horasLoaded = true;
     this.loadingHoras.set(true);
     const opts: any = { desde: this.filtroDesde, hasta: this.filtroHasta };
     if (this.filtroCliente) opts.cliente_id = this.filtroCliente;
@@ -265,6 +276,15 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   }
 
   // ─── Acciones Top UI ──────────────────────────────────────────────────────
+  /** Abre la pestaña "Horas Trabajadas" y dispara su carga la primera vez
+   *  (carga lazy): la query es pesada y solo debe correr cuando se necesita. */
+  abrirHoras() {
+    this.activeView = 'horas';
+    if (!this.horasLoaded && this.canSeeHorasTrabajadas) {
+      this.loadHorasTrabajadas();
+    }
+  }
+
   irHoy() {
     const today = this.todayStr();
     this.filtroDesde = today;
@@ -281,7 +301,9 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   refresh() {
     this.loadResumenDia();
     this.loadActivaciones();
-    this.loadHorasTrabajadas();
+    // Solo recargar horas si ya fueron cargadas (la pestaña se abrió antes);
+    // así el refresh automático no re-dispara la query pesada innecesariamente.
+    if (this.horasLoaded) this.loadHorasTrabajadas();
   }
 
   /** Refresca y resetea el indicador de actualizaciones pendientes. */
@@ -518,18 +540,18 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   get filteredPendientes() {
     const q = this.searchText.toLowerCase();
     return this.pendientes().filter(p =>
-      !q || (p.mercaderista||'').toLowerCase().includes(q) ||
-            (p.cliente||'').toLowerCase().includes(q) ||
-            (p.punto_de_interes||'').toLowerCase().includes(q)
+      !q || (p.mercaderista || '').toLowerCase().includes(q) ||
+      (p.cliente || '').toLowerCase().includes(q) ||
+      (p.punto_de_interes || '').toLowerCase().includes(q)
     );
   }
 
   get filteredLista() {
     const q = this.searchText.toLowerCase();
     return this.activaciones().filter(v =>
-      !q || (v.mercaderista||'').toLowerCase().includes(q) ||
-            (v.cliente||'').toLowerCase().includes(q) ||
-            (v.punto_de_interes||'').toLowerCase().includes(q)
+      !q || (v.mercaderista || '').toLowerCase().includes(q) ||
+      (v.cliente || '').toLowerCase().includes(q) ||
+      (v.punto_de_interes || '').toLowerCase().includes(q)
     );
   }
 
@@ -628,10 +650,12 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
     });
     ref.afterClosed().subscribe(thread => {
       if (thread?.id_grupo) {
-        this.router.navigate(['/chat'], { queryParams: {
-          grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
-          grupo_visita: thread.id_visita, titulo: thread.titulo,
-        } });
+        this.router.navigate(['/chat'], {
+          queryParams: {
+            grupo_cliente: thread.id_cliente, tipo_grupo: thread.tipo_grupo,
+            grupo_visita: thread.id_visita, titulo: thread.titulo,
+          }
+        });
       }
     });
   }

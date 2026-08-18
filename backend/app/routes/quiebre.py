@@ -105,7 +105,7 @@ def listar_alertas(
         LEFT JOIN CLIENTES c ON c.id_cliente = a.id_cliente
         {where}
         ORDER BY a.urgente DESC, a.riesgo ASC, a.dias_para_llegar_a_cero ASC
-    """, params)
+    """, tuple(params))
     cols = [d[0] for d in cursor.description]
     items = [dict(zip(cols, row)) for row in cursor.fetchall()]
 

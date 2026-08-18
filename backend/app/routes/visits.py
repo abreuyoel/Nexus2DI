@@ -19,7 +19,7 @@ from datetime import datetime
 router = APIRouter(prefix="/api/visits", tags=["Visitas"])
 
 
-@router.get("/", response_model=List[VisitaResponse])
+@router.get("", response_model=List[VisitaResponse])
 def list_visits(
     ruta_id: Optional[int] = None,
     fecha: Optional[date] = None,
@@ -37,7 +37,7 @@ def list_visits(
     return query.order_by(Visita.fecha.desc()).all()
 
 
-@router.post("/", response_model=VisitaResponse, status_code=201)
+@router.post("", response_model=VisitaResponse, status_code=201)
 def create_visit(
     data: VisitaCreate,
     db: Session = Depends(get_db),
@@ -148,10 +148,16 @@ def review_list(
     # Las visitas de auditoría (mercaderista asignado a una ruta con
     # servicio tipo "auditoría") son un control de calidad aparte, no
     # gestión regular — no deben aparecer en la cola de revisión de nadie.
+    # Se excluye SOLO la visita concreta que cae en una ruta de auditoría
+    # (mismo punto de interés + cliente), no TODAS las visitas de un
+    # mercaderista que además tenga alguna ruta de auditoría asignada.
     where += """ AND NOT EXISTS (
         SELECT 1 FROM MERCADERISTAS_RUTAS mr_aud
+        JOIN RUTA_PROGRAMACION rp_aud ON rp_aud.id_ruta = mr_aud.id_ruta
         JOIN RUTAS_NUEVAS rn_aud ON rn_aud.id_ruta = mr_aud.id_ruta
         WHERE mr_aud.id_mercaderista = v.id_mercaderista
+          AND rp_aud.id_punto_interes = v.identificador_punto_interes
+          AND rp_aud.id_cliente = v.id_cliente
           AND rn_aud.servicio LIKE '%auditor%'
     )"""
     analyst_join = ""
@@ -289,23 +295,36 @@ def review_mercaderistas(
         )"""
         params["aid"] = current_user.id_perfil
 
+    # Optimización: la versión anterior hacía un JOIN completo contra
+    # RUTA_PROGRAMACION (una fila por PDV) y un OUTER APPLY correlacionado que
+    # se ejecutaba una vez por fila, lo que multiplicaba filas antes del
+    # DISTINCT y disparaba el tiempo de carga del roster. Ahora:
+    #   1) rp se pre-agrega a (id_ruta, id_cliente, activa) DISTINCT.
+    #   2) Los departamentos se calculan UNA vez por ruta en una tabla derivada
+    #      pre-agregada y se unen con LEFT JOIN en lugar de OUTER APPLY.
     q = text(f"""
         SELECT DISTINCT mr.id_mercaderista, m.nombre AS mercaderista,
                rp.id_cliente, c.cliente, rn.ruta, dep.departamentos
         FROM MERCADERISTAS_RUTAS mr
-        JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = mr.id_ruta
-        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
+        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = mr.id_ruta
+        JOIN (
+            SELECT DISTINCT id_ruta, id_cliente, activa
+            FROM RUTA_PROGRAMACION
+        ) rp ON rp.id_ruta = mr.id_ruta
         JOIN MERCADERISTAS m ON m.id_mercaderista = mr.id_mercaderista
         JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
-        OUTER APPLY (
-            SELECT STRING_AGG(x.depto, ', ') AS departamentos
+        LEFT JOIN (
+            SELECT rp2.id_ruta, STRING_AGG(rp2.depto, ', ') AS departamentos
             FROM (
-                SELECT DISTINCT p.departamento AS depto
-                FROM RUTA_PROGRAMACION rp2
-                JOIN PUNTOS_INTERES1 p ON p.identificador = rp2.id_punto_interes
-                WHERE rp2.id_ruta = rp.id_ruta AND rp2.activa = 1 AND p.departamento IS NOT NULL AND p.departamento <> ''
-            ) x
-        ) dep
+                SELECT DISTINCT rp2b.id_ruta, p.departamento AS depto
+                FROM RUTA_PROGRAMACION rp2b
+                JOIN PUNTOS_INTERES1 p ON p.identificador = rp2b.id_punto_interes
+                WHERE rp2b.activa = 1
+                  AND p.departamento IS NOT NULL
+                  AND p.departamento <> ''
+            ) rp2
+            GROUP BY rp2.id_ruta
+        ) dep ON dep.id_ruta = rp.id_ruta
         {where}
         ORDER BY c.cliente, m.nombre
     """)

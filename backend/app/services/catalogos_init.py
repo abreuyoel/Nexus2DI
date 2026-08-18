@@ -46,6 +46,90 @@ def ensure_route_columns() -> None:
     _backfill_exclusive_clients()
 
 
+def ensure_jornada_encuestador_columns() -> None:
+    """Agrega columnas latitud_fin, longitud_fin, ciudad_fin, estado_geo_fin en JORNADAS_ENCUESTADOR si faltan."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("JORNADAS_ENCUESTADOR")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar JORNADAS_ENCUESTADOR: {e}")
+        return
+
+    missing_cols = {
+        "latitud_fin": "FLOAT NULL",
+        "longitud_fin": "FLOAT NULL",
+        "ciudad_fin": "VARCHAR(100) NULL",
+        "estado_geo_fin": "VARCHAR(100) NULL"
+    }
+
+    for col_name, col_type in missing_cols.items():
+        if col_name not in cols:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE JORNADAS_ENCUESTADOR ADD {col_name} {col_type}"))
+                logger.info(f"Columna JORNADAS_ENCUESTADOR.{col_name} creada con éxito")
+            except Exception as e:
+                logger.exception(f"No se pudo crear JORNADAS_ENCUESTADOR.{col_name}: {e}")
+
+
+def ensure_catalogos_encuestador_columns() -> None:
+    """Agrega columnas creado_por, creado_en, modificado_en en CATALOGOS_ENCUESTADOR si faltan."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("CATALOGOS_ENCUESTADOR")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar CATALOGOS_ENCUESTADOR: {e}")
+        return
+
+    missing_cols = {
+        "creado_por": "VARCHAR(150) NULL",
+        "creado_en": "DATETIME NULL",
+        "modificado_en": "DATETIME NULL"
+    }
+
+    for col_name, col_type in missing_cols.items():
+        if col_name not in cols:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE CATALOGOS_ENCUESTADOR ADD {col_name} {col_type}"))
+                logger.info(f"Columna CATALOGOS_ENCUESTADOR.{col_name} creada con éxito")
+            except Exception as e:
+                logger.exception(f"No se pudo crear CATALOGOS_ENCUESTADOR.{col_name}: {e}")
+
+
+def ensure_usuarios_columns() -> None:
+    """Agrega columna cedula en USUARIOS si falta."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("USUARIOS")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar USUARIOS: {e}")
+        return
+
+    if "cedula" not in cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE USUARIOS ADD cedula VARCHAR(50) NULL"))
+            logger.info("Columna USUARIOS.cedula creada con éxito")
+        except Exception as e:
+            logger.exception(f"No se pudo crear USUARIOS.cedula: {e}")
+
+
+def ensure_encuestadores_columns() -> None:
+    """Agrega columnas telefono y email en ENCUESTADORES si faltan."""
+    try:
+        cols = [c["name"] for c in inspect(engine).get_columns("ENCUESTADORES")]
+    except Exception as e:
+        logger.warning(f"No se pudo inspeccionar ENCUESTADORES: {e}")
+        return
+
+    for col_name, col_type in [("telefono", "VARCHAR(50) NULL"), ("email", "VARCHAR(200) NULL")]:
+        if col_name not in cols:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE ENCUESTADORES ADD {col_name} {col_type}"))
+                logger.info(f"Columna ENCUESTADORES.{col_name} creada con éxito")
+            except Exception as e:
+                logger.exception(f"No se pudo crear ENCUESTADORES.{col_name}: {e}")
+
+
 def _backfill_exclusive_clients() -> None:
     """Rellena id_cliente_exclusivo en rutas Exclusivas (nombre 'Ruta E%') que estén
     en NULL, usando el cliente más frecuente en sus programaciones. Idempotente."""
@@ -123,6 +207,10 @@ def ensure_catalog_tables() -> None:
     """Crea las tablas de catálogo si no existen, y siembra con valores distintos
     de PUNTOS_INTERES1 la primera vez."""
     ensure_route_columns()
+    ensure_jornada_encuestador_columns()
+    ensure_catalogos_encuestador_columns()
+    ensure_usuarios_columns()
+    ensure_encuestadores_columns()
     inspector = inspect(engine)
     existing = set(inspector.get_table_names())
     missing = [t for t in CATALOG_TABLES if t not in existing]
@@ -250,40 +338,85 @@ def _seed_from_existing_pdv() -> None:
 
 
 def _seed_encuestador_catalogs() -> None:
-    """Siembra CATALOGOS_ENCUESTADOR con especialidades, estados y ciudades
-    existentes en la tabla MEDICOS, o con defaults si está vacía."""
+    """Siembra CATALOGOS_ENCUESTADOR con especialidades, subespecialidades, universidades,
+    estados y ciudades existentes en la tabla MEDICOS, o con defaults si está vacía."""
     db = SessionLocal()
     try:
         from app.models.encuestador import CatalogoEncuestador, Medico
-        if db.query(CatalogoEncuestador).count() > 0:
-            return
 
         # 1. Especialidades
-        esps = db.query(Medico.especialidad).filter(Medico.especialidad.isnot(None)).distinct().all()
-        esps_list = [e[0].strip() for e in esps if e[0] and e[0].strip()]
-        if not esps_list:
-            esps_list = ["Pediatría", "Ginecología", "Medicina General", "Cardiología", "Traumatología", "Medicina Interna", "Dermatología", "Oftalmología", "Urología", "Gastroenterología"]
-        for esp in set(esps_list):
-            db.add(CatalogoEncuestador(tipo="especialidad", nombre=esp))
+        if db.query(CatalogoEncuestador).filter(CatalogoEncuestador.tipo == "especialidad").count() == 0:
+            esps = db.query(Medico.especialidad).filter(Medico.especialidad.isnot(None)).distinct().all()
+            esps_list = [e[0].strip() for e in esps if e[0] and e[0].strip()]
+            if not esps_list:
+                esps_list = ["Pediatría", "Ginecología", "Medicina General", "Cardiología", "Traumatología", "Medicina Interna", "Dermatología", "Oftalmología", "Urología", "Gastroenterología"]
+            for esp in set(esps_list):
+                db.add(CatalogoEncuestador(tipo="especialidad", nombre=esp))
 
-        # 2. Estados
-        ests = db.query(Medico.estado).filter(Medico.estado.isnot(None)).distinct().all()
-        ests_list = [e[0].strip() for e in ests if e[0] and e[0].strip()]
-        if not ests_list:
-            ests_list = ["Distrito Capital", "Miranda", "Aragua", "Carabobo", "Zulia", "Lara", "Anzoátegui", "Bolívar", "Táchira", "Mérida"]
-        for est in set(ests_list):
-            db.add(CatalogoEncuestador(tipo="estado", nombre=est))
+        # 2. Subespecialidades
+        if db.query(CatalogoEncuestador).filter(CatalogoEncuestador.tipo == "subespecialidad").count() == 0:
+            subesps = db.query(Medico.sub_especialidad).filter(Medico.sub_especialidad.isnot(None)).distinct().all()
+            subesps_list = [s[0].strip() for s in subesps if s[0] and s[0].strip()]
+            if not subesps_list:
+                subesps_list = [
+                    "Cardiología Pediátrica", "Cirugía Cardiovascular", "Cirugía Pediátrica",
+                    "Cirugía Plástica y Reconstructiva", "Cirugía Oncológica", "Ecografía Integral",
+                    "Electrofisiología", "Endocrinología Pediátrica", "Gastroenterología Pediátrica",
+                    "Ginecología Infanto-Juvenil", "Hematología Pediátrica", "Infectología Pediátrica",
+                    "Mastología", "Medicina Crítica y Cuidado Intensivo", "Nefrología Pediátrica",
+                    "Neonatología", "Neumonología Pediátrica", "Neurocirugía", "Neurología Pediátrica",
+                    "Nutrición Clínica", "Odontopediatría", "Oftalmología Pediátrica", "Oncología Médica",
+                    "Ortodoncia", "Periodoncia", "Perinatología", "Psiquiatría Infantil",
+                    "Radiología e Imagenología", "Reproducción Humana", "Reumatología Pediátrica"
+                ]
+            for subesp in set(subesps_list):
+                db.add(CatalogoEncuestador(tipo="subespecialidad", nombre=subesp))
 
-        # 3. Ciudades
-        cius = db.query(Medico.ciudad).filter(Medico.ciudad.isnot(None)).distinct().all()
-        cius_list = [c[0].strip() for c in cius if c[0] and c[0].strip()]
-        if not cius_list:
-            cius_list = ["Caracas", "Maracay", "Valencia", "Maracaibo", "Barquisimeto", "Barcelona", "Puerto Ordaz", "San Cristóbal", "Mérida", "Los Teques"]
-        for ciu in set(cius_list):
-            db.add(CatalogoEncuestador(tipo="ciudad", nombre=ciu))
+        # 3. Universidades
+        if db.query(CatalogoEncuestador).filter(CatalogoEncuestador.tipo == "universidad").count() == 0:
+            unis = db.query(Medico.universidad_graduacion).filter(Medico.universidad_graduacion.isnot(None)).distinct().all()
+            unis_list = [u[0].strip() for u in unis if u[0] and u[0].strip()]
+            if not unis_list:
+                unis_list = [
+                    "Universidad Central de Venezuela (UCV)",
+                    "Universidad de Los Andes (ULA)",
+                    "Universidad del Zulia (LUZ)",
+                    "Universidad de Carabobo (UC)",
+                    "Universidad de Oriente (UDO)",
+                    "Universidad Centroccidental Lisandro Alvarado (UCLA)",
+                    "Universidad Nacional Experimental Francisco de Miranda (UNEFM)",
+                    "Universidad Nacional Experimental Rómulo Gallegos (UNERG)",
+                    "Universidad Católica Andrés Bello (UCAB)",
+                    "Universidad Santa María (USM)",
+                    "Escuela Latinoamericana de Medicina (ELAM)",
+                    "Universidad Nacional Experimental de los Llanos Ezequiel Zamora (UNELLEZ)",
+                    "Universidad del Táchira (UNET)",
+                    "Universidad Rafael Belloso Chacín (URBE)",
+                    "Universidad Metropolitana (UNIMET)"
+                ]
+            for uni in set(unis_list):
+                db.add(CatalogoEncuestador(tipo="universidad", nombre=uni))
+
+        # 4. Estados
+        if db.query(CatalogoEncuestador).filter(CatalogoEncuestador.tipo == "estado").count() == 0:
+            ests = db.query(Medico.estado).filter(Medico.estado.isnot(None)).distinct().all()
+            ests_list = [e[0].strip() for e in ests if e[0] and e[0].strip()]
+            if not ests_list:
+                ests_list = ["Distrito Capital", "Miranda", "Aragua", "Carabobo", "Zulia", "Lara", "Anzoátegui", "Bolívar", "Táchira", "Mérida"]
+            for est in set(ests_list):
+                db.add(CatalogoEncuestador(tipo="estado", nombre=est))
+
+        # 5. Ciudades
+        if db.query(CatalogoEncuestador).filter(CatalogoEncuestador.tipo == "ciudad").count() == 0:
+            cius = db.query(Medico.ciudad).filter(Medico.ciudad.isnot(None)).distinct().all()
+            cius_list = [c[0].strip() for c in cius if c[0] and c[0].strip()]
+            if not cius_list:
+                cius_list = ["Caracas", "Maracay", "Valencia", "Maracaibo", "Barquisimeto", "Barcelona", "Puerto Ordaz", "San Cristóbal", "Mérida", "Los Teques"]
+            for ciu in set(cius_list):
+                db.add(CatalogoEncuestador(tipo="ciudad", nombre=ciu))
 
         db.commit()
-        logger.info("CATALOGOS_ENCUESTADOR sembrado correctamente con valores iniciales.")
+        logger.info("CATALOGOS_ENCUESTADOR inicializado/actualizado con éxito.")
     except Exception as e:
         logger.exception(f"Error sembrando catálogos de encuestador: {e}")
         db.rollback()

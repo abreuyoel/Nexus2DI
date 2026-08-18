@@ -49,27 +49,14 @@ class PdvService:
         Un PDV está activo si:
         - Su ruta está activada en RUTAS_ACTIVADAS (estado="activo")
         - Tiene programación hoy
-        - Tiene al menos un cliente sin visitar, O
-        - Todos los clientes están visitados pero falta la desactivación
+        - Tiene al menos una visita real hoy y clientes por completar/desactivar
         """
         merc = self._get_mercaderista(current_user)
         hoy = date.today()
         dia_numero = hoy.weekday()
+        dia_es = DAY_MAP_ES[dia_numero]
 
-        print(f"\n[get_pdv_activos] 🔍 mercaderista_id={merc.id}, hoy={hoy}, dia={DAY_MAP_ES[dia_numero]}")
-
-        # DEBUG: ver TODAS las activaciones del mercaderista sin filtrar
-        todas_activaciones = (
-            self.db.query(RutaActivada)
-            .filter(RutaActivada.mercaderista_id == merc.id)
-            .all()
-        )
-        print(f"[get_pdv_activos] 📋 Todas las activaciones ({len(todas_activaciones)}):")
-        for a in todas_activaciones:
-            ruta_n = self.db.query(Ruta).filter(Ruta.id == a.ruta_id).first()
-            print(f"  id={a.id} ruta={a.ruta_id} ({ruta_n.nombre if ruta_n else '?'}) estado='{a.estado}' tipo='{a.tipo_activacion}' fecha={a.fecha_hora_activacion}")
-
-        # Solo rutas que están realmente activadas por este mercaderista
+        # 1. Buscar rutas activadas por este mercaderista
         rutas_activadas = (
             self.db.query(RutaActivada.ruta_id)
             .filter(
@@ -79,14 +66,12 @@ class PdvService:
             )
             .all()
         )
-        rutas_activadas_ids = [r[0] for r in rutas_activadas]
-        print(f"[get_pdv_activos] ✅ Rutas activadas filtradas (estado='activo', tipo='ruta'): {rutas_activadas_ids}")
+        rutas_activadas_ids = [r[0] for r in rutas_activadas if r[0]]
 
         if not rutas_activadas_ids:
-            # Intentar también con tipo_activacion="pdv" (PDVs activados individualmente)
-            print("[get_pdv_activos] ⚠️ Sin rutas activadas. Buscando PDVs activados individualmente...")
+            # Buscar PDVs activados individualmente
             pdvs_activados = (
-                self.db.query(RutaActivada)
+                self.db.query(RutaActivada.ruta_id)
                 .filter(
                     RutaActivada.mercaderista_id == merc.id,
                     RutaActivada.estado == "activo",
@@ -94,20 +79,14 @@ class PdvService:
                 )
                 .all()
             )
-            print(f"[get_pdv_activos] PDVs activados individualmente: {[(a.id, a.ruta_id, a.identificador_punto_interes) for a in pdvs_activados]}")
-            # Si hay PDVs activados, usar sus rutas
             if pdvs_activados:
-                rutas_activadas_ids = list(set(a.ruta_id for a in pdvs_activados if a.ruta_id))
-                print(f"[get_pdv_activos] 🟢 Usando rutas de PDVs activados: {rutas_activadas_ids}")
+                rutas_activadas_ids = list(set(r[0] for r in pdvs_activados if r[0]))
 
-        # 🆕 Fallback: buscar visitas NO finalizadas hoy para construir resultado directo
         modo_fallback_visitas = False
         fallback_puntos_ids = []
 
         if not rutas_activadas_ids:
-            print("[get_pdv_activos] ⚠️ Sin activaciones formales. Buscando visitas pendientes hoy...")
-
-            # Rutas que YA fueron finalizadas hoy (no deben aparecer en el fallback)
+            # Fallback: buscar si hay visitas pendientes hoy
             rutas_finalizadas_hoy = (
                 self.db.query(RutaActivada.ruta_id)
                 .filter(
@@ -118,11 +97,10 @@ class PdvService:
                 )
                 .all()
             )
-            rutas_finalizadas_ids = set(r[0] for r in rutas_finalizadas_hoy)
-            print(f"[get_pdv_activos] 🚫 Rutas ya finalizadas hoy: {rutas_finalizadas_ids}")
+            rutas_finalizadas_ids = set(r[0] for r in rutas_finalizadas_hoy if r[0])
 
             visitas_pendientes = (
-                self.db.query(Visita)
+                self.db.query(Visita.punto_id)
                 .filter(
                     Visita.mercaderista_id == merc.id,
                     Visita.fecha == hoy,
@@ -130,96 +108,98 @@ class PdvService:
                 )
                 .all()
             )
-            print(f"[get_pdv_activos] 📝 Visitas pendientes hoy: {[(v.id, v.punto_id, v.id_cliente, v.estado) for v in visitas_pendientes]}")
             if visitas_pendientes:
-                puntos_ids = list(set(v.punto_id for v in visitas_pendientes))
-                print(f"[get_pdv_activos] 🎯 Puntos con visitas pendientes: {puntos_ids}")
-                # Buscar las rutas asociadas a esos puntos hoy
-                rutas_de_puntos = (
-                    self.db.query(RutaProgramacion.ruta_id)
-                    .filter(
-                        RutaProgramacion.punto_id.in_(puntos_ids),
-                        RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
-                        RutaProgramacion.activo == True,
-                    )
-                    .distinct()
-                    .all()
-                )
-                todas_rutas_ids = [r[0] for r in rutas_de_puntos]
-                print(f"[get_pdv_activos] 🔗 Rutas de los puntos con visitas: {todas_rutas_ids}")
-
-                # Filtrar: solo incluir rutas que NO estan finalizadas
-                rutas_filtradas = [rid for rid in todas_rutas_ids if rid not in rutas_finalizadas_ids]
-                print(f"[get_pdv_activos] 🟢 Rutas NO finalizadas con visitas pendientes: {rutas_filtradas}")
-
-                if rutas_filtradas:
-                    # Solo incluir puntos cuyas rutas NO esten finalizadas
-                    puntos_filtrados = []
-                    for pid in puntos_ids:
-                        prog_punto = (
-                            self.db.query(RutaProgramacion)
-                            .filter(
-                                RutaProgramacion.punto_id == pid,
-                                RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
-                                RutaProgramacion.activo == True,
-                            )
-                            .first()
+                puntos_ids = list(set(v[0] for v in visitas_pendientes if v[0]))
+                if puntos_ids:
+                    progs = (
+                        self.db.query(RutaProgramacion.punto_id, RutaProgramacion.ruta_id)
+                        .filter(
+                            RutaProgramacion.punto_id.in_(puntos_ids),
+                            RutaProgramacion.dia == dia_es,
+                            RutaProgramacion.activo == True,
                         )
-                        if prog_punto and prog_punto.ruta_id not in rutas_finalizadas_ids:
-                            puntos_filtrados.append(pid)
+                        .all()
+                    )
+                    rutas_validas = set()
+                    puntos_validos = []
+                    for pid, rid in progs:
+                        if rid and rid not in rutas_finalizadas_ids:
+                            rutas_validas.add(rid)
+                            puntos_validos.append(pid)
 
-                    print(f"[get_pdv_activos] 🎯 Puntos con visitas en rutas NO finalizadas: {puntos_filtrados}")
-
-                    if puntos_filtrados:
-                        rutas_activadas_ids = rutas_filtradas
-                        fallback_puntos_ids = puntos_filtrados
+                    if rutas_validas and puntos_validos:
+                        rutas_activadas_ids = list(rutas_validas)
+                        fallback_puntos_ids = list(set(puntos_validos))
                         modo_fallback_visitas = True
-                        print(f"[get_pdv_activos] 🔒 Modo fallback: solo puntos {fallback_puntos_ids}")
 
         if not rutas_activadas_ids:
             return []
 
-        # Programaciones de hoy para las rutas activadas
-        # Si es fallback de visitas, filtrar SOLO por los puntos con visitas reales
+        # 2. Programaciones de hoy
+        prog_query = self.db.query(RutaProgramacion).filter(
+            RutaProgramacion.dia == dia_es,
+            RutaProgramacion.activo == True,
+        )
         if modo_fallback_visitas and fallback_puntos_ids:
-            programaciones = (
-                self.db.query(RutaProgramacion)
-                .filter(
-                    RutaProgramacion.punto_id.in_(fallback_puntos_ids),
-                    RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
-                    RutaProgramacion.activo == True
-                )
-                .all()
-            )
+            prog_query = prog_query.filter(RutaProgramacion.punto_id.in_(fallback_puntos_ids))
         else:
-            programaciones = (
-                self.db.query(RutaProgramacion)
-                .filter(
-                    RutaProgramacion.ruta_id.in_(rutas_activadas_ids),
-                    RutaProgramacion.dia == DAY_MAP_ES[dia_numero],
-                    RutaProgramacion.activo == True
-                )
-                .all()
-            )
+            prog_query = prog_query.filter(RutaProgramacion.ruta_id.in_(rutas_activadas_ids))
 
+        programaciones = prog_query.all()
         if not programaciones:
             return []
 
-        # Pre-cache de nombres de ruta (una sola query)
-        ruta_nombres = {}
-        for rid in set(p.ruta_id for p in programaciones):
-            r = self.db.query(Ruta).filter(Ruta.id == rid).first()
-            ruta_nombres[rid] = r.nombre if r else f"Ruta #{rid}"
+        # 3. BATCH PRELOAD: Evitar N+1 queries
+        puntos_ids_set = set(p.punto_id for p in programaciones)
+        clientes_ids_set = set(p.id_cliente for p in programaciones)
+        rutas_ids_set = set(p.ruta_id for p in programaciones)
 
-        # Agrupar por PDV
+        # Batch Nombres de Ruta
+        rutas_db = self.db.query(Ruta.id, Ruta.nombre).filter(Ruta.id.in_(rutas_ids_set)).all()
+        ruta_nombres = {r[0]: r[1] for r in rutas_db}
+
+        # Batch Puntos
+        puntos_db = self.db.query(PuntoInteres.id, PuntoInteres.nombre).filter(PuntoInteres.id.in_(puntos_ids_set)).all()
+        puntos_nombres = {p[0]: p[1] for p in puntos_db}
+
+        # Batch Clientes
+        clientes_db = self.db.query(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(clientes_ids_set)).all()
+        clientes_nombres = {c[0]: c[1] for c in clientes_db}
+
+        # Batch Visitas de hoy para estos puntos y clientes
+        visitas_hoy_db = (
+            self.db.query(Visita)
+            .filter(
+                Visita.mercaderista_id == merc.id,
+                Visita.punto_id.in_(puntos_ids_set),
+                Visita.id_cliente.in_(clientes_ids_set),
+                Visita.fecha == hoy,
+            )
+            .all()
+        )
+        visitas_map = {(v.punto_id, v.id_cliente): v for v in visitas_hoy_db}
+
+        # Batch PDVs desactivados hoy (para no mostrarlos como pendientes de desactivación)
+        pdvs_desactivados_hoy = {
+            a[0]
+            for a in self.db.query(RutaActivada.identificador_punto_interes)
+            .filter(
+                RutaActivada.mercaderista_id == merc.id,
+                RutaActivada.estado == "Finalizado",
+                cast(RutaActivada.fecha_hora_activacion, Date) == hoy,
+            )
+            .all()
+            if a[0]
+        }
+
+        # 4. Agrupar en memoria
         pdvs: dict = {}
         for prog in programaciones:
             key = prog.punto_id
             if key not in pdvs:
-                punto = self.db.query(PuntoInteres).filter(PuntoInteres.id == key).first()
                 pdvs[key] = {
                     "punto_id": key,
-                    "punto_nombre": punto.nombre if punto else "Sin nombre",
+                    "punto_nombre": puntos_nombres.get(key, "Sin nombre"),
                     "ruta_id": prog.ruta_id,
                     "ruta_nombre": ruta_nombres.get(prog.ruta_id, f"Ruta #{prog.ruta_id}"),
                     "clientes_pendientes": [],
@@ -230,20 +210,8 @@ class PdvService:
                     "ultima_visita_cliente_nombre": None,
                 }
 
-            cliente = self.db.query(Cliente).filter(Cliente.id == prog.id_cliente).first()
-            cliente_nombre = cliente.nombre if cliente else f"Cliente #{prog.id_cliente}"
-
-            # Verificar si este cliente ya tiene visita hoy
-            visita_hoy = (
-                self.db.query(Visita)
-                .filter(
-                    Visita.mercaderista_id == merc.id,
-                    Visita.punto_id == key,
-                    Visita.id_cliente == prog.id_cliente,
-                    Visita.fecha == hoy,
-                )
-                .first()
-            )
+            cliente_nombre = clientes_nombres.get(prog.id_cliente, f"Cliente #{prog.id_cliente}")
+            visita_hoy = visitas_map.get((key, prog.id_cliente))
 
             if visita_hoy:
                 pdvs[key]["clientes_listos"].append(cliente_nombre)
@@ -253,22 +221,19 @@ class PdvService:
             else:
                 pdvs[key]["clientes_pendientes"].append(cliente_nombre)
 
-        # Determinar si falta desactivación: todos los clientes visitados
-        # pero el PDV no está desactivado.
-        # ⚠️ Solo incluir PDVs que tienen al menos una visita real creada hoy.
-        # Si un PDV no tiene ninguna visita, no hay "trabajo en progreso".
         result = []
         for pdv_data in pdvs.values():
             if not pdv_data["clientes_pendientes"] and not pdv_data["clientes_listos"]:
-                continue  # Sin clientes, ignorar
-
-            # 🆕 Filtrar: solo PDVs con al menos una visita real hoy
+                continue
+            # Solo PDVs con al menos una visita real hoy
             if pdv_data["ultima_visita_local_id"] is None:
-                continue  # Sin visitas → no hay trabajo real
+                continue
+
+            # Si ya fue desactivado hoy, no mostrarlo en la lista de trabajo pendiente
+            if pdv_data["punto_id"] in pdvs_desactivados_hoy:
+                continue
 
             if not pdv_data["clientes_pendientes"]:
-                # Todos visitados → ¿falta desactivación?
-                # Solo marcamos falta_desactivacion si hay al menos un cliente listo
                 pdv_data["falta_desactivacion"] = len(pdv_data["clientes_listos"]) > 0
 
             result.append(pdv_data)
@@ -456,12 +421,33 @@ class PdvService:
         if activacion:
             activacion.estado = "Finalizado"
             self.db.commit()
-            print(f"[desactivar_pdv] ✅ Activación id={activacion.id} marcada como Finalizado")
             return {"success": True, "mensaje": "PDV desactivado correctamente"}
 
-        # No se encontró registro RUTAS_ACTIVADAS, pero puede haber visitas
-        # pendientes que el fallback de get_pdv_activos() está detectando.
-        # Finalizar esas visitas para que el PDV deje de aparecer como activo.
+        # Buscar id_ruta para respetar la restricción NOT NULL de la base de datos
+        prog = (
+            self.db.query(RutaProgramacion.ruta_id)
+            .filter(
+                RutaProgramacion.punto_id == id_punto,
+                RutaProgramacion.activo == True,
+            )
+            .first()
+        )
+        ruta_id = prog[0] if prog else None
+        if not ruta_id:
+            mr = self.db.query(MercaderistaRuta.ruta_id).filter(MercaderistaRuta.mercaderista_id == merc.id).first()
+            ruta_id = mr[0] if mr else 1
+
+        desactivacion = RutaActivada(
+            mercaderista_id=merc.id,
+            ruta_id=ruta_id,
+            identificador_punto_interes=id_punto,
+            fecha_hora_activacion=datetime.now(),
+            estado="Finalizado",
+            tipo_activacion="pdv",
+        )
+        self.db.add(desactivacion)
+
+        # Finalizar cualquier visita pendiente remanente para este punto
         visitas_pendientes = (
             self.db.query(Visita)
             .filter(
@@ -472,16 +458,11 @@ class PdvService:
             )
             .all()
         )
+        for v in visitas_pendientes:
+            v.estado = "Finalizada"
 
-        if visitas_pendientes:
-            for v in visitas_pendientes:
-                v.estado = "Finalizada"
-            self.db.commit()
-            print(f"[desactivar_pdv] ⚠️ Sin registro RUTAS_ACTIVADAS, pero se finalizaron {len(visitas_pendientes)} visita(s) pendiente(s) para {id_punto}")
-            return {"success": True, "mensaje": f"PDV desactivado ({len(visitas_pendientes)} visita(s) finalizada(s))"}
-
-        print(f"[desactivar_pdv] ℹ️ Sin activación ni visitas pendientes para {id_punto}")
-        return {"success": True, "mensaje": "PDV ya estaba desactivado"}
+        self.db.commit()
+        return {"success": True, "mensaje": "PDV desactivado correctamente"}
 
     # ── Validar Cierre de PDV ────────────────────────────────────────────────
 

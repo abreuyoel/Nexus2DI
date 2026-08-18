@@ -342,12 +342,45 @@
 
         <!-- TABS: MEDICOS -->
         <div *ngIf="activeTab() === 'medicos'">
-          <!-- Medicos Specific Search -->
+          <!-- Medicos Specific Search (con autocompletado) -->
           <div class="mb-4 relative max-w-md">
             <span class="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">search</span>
-            <input type="text" [(ngModel)]="searchQueryMedicos" (ngModelChange)="loadData()"
-              class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white focus:border-violet-500 outline-none transition-colors shadow-inner"
+            <input type="text" [(ngModel)]="searchQueryMedicos" (input)="onMedicoSearchInput()"
+              (focus)="onMedicoSearchInput()" (blur)="closeMedicoDropdown()"
+              (keydown.enter)="showMedicoDropdown = false; loadData()"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 pl-12 pr-10 text-white focus:border-violet-500 outline-none transition-colors shadow-inner"
               placeholder="Buscar por cédula, apellido o nombre...">
+            @if (searchQueryMedicos) {
+            <button type="button" (mousedown)="$event.preventDefault()" (click)="clearMedicoSearch()"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition-colors">
+              <mat-icon class="!text-base">close</mat-icon>
+            </button>
+            }
+
+            <!-- Dropdown de sugerencias -->
+            @if (showMedicoDropdown) {
+            <div
+              class="absolute z-30 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-h-72 overflow-y-auto custom-scrollbar">
+              @if (medicoSearchLoading()) {
+              <div class="px-4 py-3 text-sm text-slate-400 flex items-center gap-2">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-500"></div> Buscando médicos...
+              </div>
+              } @else if (medicoSuggestions().length === 0) {
+              <div class="px-4 py-3 text-sm text-slate-500">Sin coincidencias. Enter para buscar en la lista completa.
+              </div>
+              } @else {
+              <button type="button" *ngFor="let s of medicoSuggestions()" (mousedown)="$event.preventDefault()"
+                (click)="selectMedicoSuggestion(s)"
+                class="w-full text-left px-4 py-3 hover:bg-slate-800 transition-colors border-b border-slate-800 last:border-0">
+                <div class="font-bold text-white text-sm">
+                  {{ s.apellido1 }} {{ s.apellido2 }}, {{ s.nombre1 }} {{ s.nombre2 }}
+                </div>
+                <div class="text-xs text-slate-400 mt-0.5">ID: {{ s.id_medico_externo }} | {{ s.especialidad }} | {{
+                  s.ciudad }}</div>
+              </button>
+              }
+            </div>
+            }
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

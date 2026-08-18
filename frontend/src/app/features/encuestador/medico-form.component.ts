@@ -98,8 +98,15 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
             </div>
 
             <div class="md:col-span-2">
-              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Sub-especialidad</label>
-              <input type="text" [(ngModel)]="medicoData.sub_especialidad" name="sub_especialidad" [readonly]="medicoExistente" class="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" [class.bg-gray-100]="medicoExistente && !isDark()" [class.opacity-60]="medicoExistente">
+              <app-mutable-search-select
+                label="Sub-especialidad"
+                placeholder="Seleccione sub-especialidad..."
+                [options]="subespecialidadesList"
+                [(value)]="medicoData.sub_especialidad"
+                tipo="subespecialidad"
+                [disabled]="medicoExistente"
+                (addNew)="onAddNewCatalogItem($event)"
+              ></app-mutable-search-select>
             </div>
             <div class="md:col-span-2">
               <app-mutable-search-select
@@ -121,6 +128,7 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
                 [(value)]="medicoData.segunda_universidad_graduacion"
                 tipo="universidad"
                 [required]="false"
+>>>>>>> origin/main
                 [disabled]="medicoExistente"
                 (addNew)="onAddNewCatalogItem($event)"
               ></app-mutable-search-select>
@@ -273,6 +281,7 @@ export class MedicoFormComponent implements OnInit {
   catalogos: any = { valor_consulta_rangos: [], promedio_pacientes_rangos: [] };
   isOnline = navigator.onLine;
   especialidadesList: string[] = [];
+  subespecialidadesList: string[] = [];
   universidadesList: string[] = [];
 
   // Estandarizado a pedido del cliente (2026-08-13): antes Estado/Ciudad eran
@@ -504,6 +513,12 @@ export class MedicoFormComponent implements OnInit {
     if (m.especialidad && !this.especialidadesList.includes(m.especialidad)) {
       this.especialidadesList.push(m.especialidad);
     }
+    if (m.sub_especialidad && !this.subespecialidadesList.includes(m.sub_especialidad)) {
+      this.subespecialidadesList.push(m.sub_especialidad);
+    }
+    if (m.universidad_graduacion && !this.universidadesList.includes(m.universidad_graduacion)) {
+      this.universidadesList.push(m.universidad_graduacion);
+    }
   }
 
   guardando = false;
@@ -620,22 +635,17 @@ export class MedicoFormComponent implements OnInit {
 
   inicializarListasCatalogos() {
     this.especialidadesList = [...(this.catalogos.especialidades || [])];
+    this.subespecialidadesList = [...(this.catalogos.subespecialidades || [])];
     this.universidadesList = [...(this.catalogos.universidades || [])];
   }
 
-  // La firma acepta la unión completa que declara app-mutable-search-select
-  // (addNew: EventEmitter<{tipo: 'especialidad'|'estado'|'ciudad'|'universidad', ...}>)
-  // -- Estado/Ciudad ya no usan ese componente (ver estadosParaMostrar()/
-  // ciudadesDisponibles() arriba), quedan especialidad y universidad.
-  async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'estado' | 'ciudad' | 'universidad', value: string }) {
+  async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad', value: string }) {
     const { tipo, value } = event;
     const valorFormateado = value.trim();
     if (!valorFormateado) return;
 
-    // 'estado'/'ciudad' no llegan acá (esos ya no usan este componente),
-    // pero la firma completa sigue viva por compatibilidad con el @Output().
-    const listaKey = tipo === 'especialidad' ? 'especialidades' : tipo === 'universidad' ? 'universidades' : null;
-    const lista = tipo === 'especialidad' ? this.especialidadesList : tipo === 'universidad' ? this.universidadesList : null;
+    const listaKey = tipo === 'especialidad' ? 'especialidades' : tipo === 'subespecialidad' ? 'subespecialidades' : tipo === 'universidad' ? 'universidades' : null;
+    const lista = tipo === 'especialidad' ? this.especialidadesList : tipo === 'subespecialidad' ? this.subespecialidadesList : tipo === 'universidad' ? this.universidadesList : null;
 
     // Añadir localmente si no existe para actualizar la lista de opciones
     if (lista && !lista.includes(valorFormateado)) {

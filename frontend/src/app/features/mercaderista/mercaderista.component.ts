@@ -48,11 +48,17 @@ export class MercaderistaComponent implements OnInit {
 
   // PDVs activos con trabajo pendiente hoy (desde /api/merc/pdv-activos)
   pdvActivos = signal<any[]>([]);
+  activeRouteData = signal<{ id_ruta: number; nombre: string; tipo: string; pdvs_total: number; pdvs_visitados: number } | null>(null);
   loadingPdvActivos = signal(false);
   todayVisitsCount = signal(0);
 
   // True si hay un panel de visita abierto, PDVs activos pendientes, O una ruta activa en progreso
-  hasActivePdv = computed(() => this.ui.activeVisit() !== null || this.pdvActivos().length > 0 || this.ui.activeRouteId() !== null);
+  hasActivePdv = computed(() =>
+    this.ui.activeVisit() !== null ||
+    this.pdvActivos().length > 0 ||
+    this.ui.activeRouteId() !== null ||
+    this.activeRouteData() !== null
+  );
 
   private confirmSvc = inject(ConfirmService);
   ui = inject(MercUiService);
@@ -98,7 +104,7 @@ export class MercaderistaComponent implements OnInit {
 
   changeScreen(screen: 'dashboard' | 'carga-menu' | 'ruta' | 'visitas' | 'pdv-activos' | 'sync') {
     this.activeScreen.set(screen);
-    if (screen === 'dashboard') {
+    if (screen === 'dashboard' || screen === 'carga-menu') {
       this.loadPdvActivos();
       this.loadTodayVisitsCount();
     } else if (screen === 'sync') {
@@ -118,14 +124,20 @@ export class MercaderistaComponent implements OnInit {
     } else if (this.pdvActivos().length > 0) {
       // Hay PDV activo pero sin panel abierto → navegar a pantalla PDV activos
       this.activeScreen.set('pdv-activos');
-    } else if (this.ui.activeRouteId()) {
-      // Ruta activa pero sin visitas ni PDVs pendientes → ir a la pantalla de ruta para finalizarla
+    } else if (this.activeRouteData() || this.ui.activeRouteId()) {
+      const r = this.activeRouteData();
+      if (r?.tipo?.toLowerCase() === 'variable') {
+        this.tipoRuta.set('variable');
+      } else {
+        this.tipoRuta.set('fija');
+      }
       this.activeScreen.set('ruta');
     }
   }
 
   private loadTodayVisitsCount() {
-    this.api.getMercMisVisitas().subscribe({
+    const todayStr = new Date().toISOString().split('T')[0];
+    this.api.getMercMisVisitas({ fecha_inicio: todayStr, fecha_fin: todayStr }).subscribe({
       next: (res) => {
         this.todayVisitsCount.set(res ? res.length : 0);
       },
@@ -136,21 +148,48 @@ export class MercaderistaComponent implements OnInit {
   }
 
   private loadPdvActivos() {
-    this.pdvActivos.set([]);
-    this.loadingPdvActivos.set(true);
-    console.log('[Mercaderista] 🔄 Consultando PDV activos...');
+    if (this.ui.cachedPdvActivos) {
+      this.pdvActivos.set(this.ui.cachedPdvActivos);
+      this.loadingPdvActivos.set(false);
+    } else {
+      this.loadingPdvActivos.set(true);
+    }
+
     this.api.get<any[]>('/api/merc/pdv-activos').subscribe({
       next: (res) => {
-        console.log('[Mercaderista] ✅ PDV activos response:', res);
+        this.ui.cachedPdvActivos = res || [];
         this.pdvActivos.set(res || []);
         this.loadingPdvActivos.set(false);
-        console.log('[Mercaderista] 📊 hasActivePdv:', this.hasActivePdv(), '| pdvActivos count:', this.pdvActivos().length, '| activeVisit:', !!this.ui.activeVisit());
       },
-      error: (err) => {
-        console.error('[Mercaderista] ❌ Error PDV activos:', err);
-        this.pdvActivos.set([]);
+      error: () => {
         this.loadingPdvActivos.set(false);
       }
+    });
+
+    // Consultar estado de rutas activas hoy
+    this.api.getMercMiRuta().subscribe({
+      next: (res) => {
+        this.ui.cachedMisRutas = res;
+        const todas = [...(res.rutas_fijas || []), ...(res.rutas_variables || [])];
+        const activa = todas.find((r: any) => r.activada === true && !r.finalizada);
+        if (activa) {
+          const pdvs = activa.pdvs || [];
+          const visitados = pdvs.filter((p: any) => (p.clientes || []).some((c: any) => c.visitado || c.id_visita)).length;
+          this.ui.setActiveRoute(activa.id_ruta);
+          this.tipoRuta.set(activa.tipo?.toLowerCase() === 'variable' ? 'variable' : 'fija');
+          this.activeRouteData.set({
+            id_ruta: activa.id_ruta,
+            nombre: activa.nombre,
+            tipo: activa.tipo,
+            pdvs_total: pdvs.length,
+            pdvs_visitados: visitados,
+          });
+        } else {
+          this.activeRouteData.set(null);
+          this.ui.clearActiveRoute();
+        }
+      },
+      error: () => {}
     });
   }
 

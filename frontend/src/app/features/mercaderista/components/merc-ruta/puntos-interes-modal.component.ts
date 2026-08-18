@@ -1,5 +1,6 @@
-import { Component, Input, Output, EventEmitter, inject, signal, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, signal, computed, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -34,7 +35,7 @@ const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string
 @Component({
   selector: 'app-puntos-interes-modal',
   standalone: true,
-  imports: [CommonModule, MatIconModule, MatButtonModule, MatProgressSpinnerModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatButtonModule, MatProgressSpinnerModule, MatSnackBarModule],
   template: `
     <!-- Overlay backdrop -->
     <div class="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
@@ -67,8 +68,28 @@ const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string
         </button>
       </div>
 
+      <!-- Search Bar -->
+      <div class="px-4 pt-3 pb-1 shrink-0">
+        <div class="relative">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 !text-slate-400 !text-sm">search</mat-icon>
+          <input type="text" [ngModel]="busqueda()" (ngModelChange)="busqueda.set($event)"
+                 placeholder="Buscar PDV, cadena, dirección o cliente..."
+                 class="w-full pl-9 pr-8 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500 transition-all text-slate-800 dark:text-white">
+          @if (busqueda()) {
+            <button (click)="busqueda.set('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <mat-icon class="!text-sm">close</mat-icon>
+            </button>
+          }
+        </div>
+        @if (busqueda()) {
+          <p class="text-[10px] text-slate-400 font-bold px-1 mt-1">
+            Mostrando {{ pdvsFiltrados().length }} de {{ pdvs.length }} puntos
+          </p>
+        }
+      </div>
+
       <!-- PDV List -->
-      <div class="flex-grow overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">
+      <div class="flex-grow overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar">
 
         <!-- Aclaración: ruta activa — solo se pueden visitar PDVs de esta ruta -->
         <div class="bg-primary-500/10 border border-primary-500/20 rounded-xl p-3 flex items-start gap-2">
@@ -77,14 +98,16 @@ const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string
             La ruta <strong>{{ rutaNombre }}</strong> está activa. Solo podés visitar PDVs de esta ruta hasta que la finalices.
           </p>
         </div>
-        @if (pdvs.length === 0) {
+        @if (pdvsFiltrados().length === 0) {
           <div class="py-16 text-center opacity-50">
-            <mat-icon class="!text-5xl text-slate-300">wrong_location</mat-icon>
-            <p class="text-xs font-black text-slate-400 uppercase tracking-widest mt-2">No hay PDVs en esta ruta</p>
+            <mat-icon class="!text-5xl text-slate-300">{{ busqueda() ? 'search_off' : 'wrong_location' }}</mat-icon>
+            <p class="text-xs font-black text-slate-400 uppercase tracking-widest mt-2">
+              {{ busqueda() ? 'No se encontraron PDVs para esta búsqueda' : 'No hay PDVs en esta ruta' }}
+            </p>
           </div>
         }
 
-        @for (group of pdvs; track group.id_punto) {
+        @for (group of pdvsFiltrados(); track group.id_punto) {
           <div class="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-white/5 space-y-3">
 
             <!-- Priority Badge -->
@@ -255,6 +278,20 @@ export class PuntosInteresModalComponent {
   private pendingPdv: PdvGroup | null = null;
   private _fileCancelCheck = false;
   private _cancelFocusHandler: (() => void) | null = null;
+
+  busqueda = signal<string>('');
+
+  pdvsFiltrados = computed<PdvGroup[]>(() => {
+    const q = this.busqueda().trim().toLowerCase();
+    if (!q) return this.pdvs;
+    return this.pdvs.filter(p => {
+      const matchNombre = (p.nombre || '').toLowerCase().includes(q);
+      const matchCadena = (p.cadena || '').toLowerCase().includes(q);
+      const matchDireccion = (p.direccion || '').toLowerCase().includes(q);
+      const matchCliente = (p.clients || []).some(c => (c.nombre || '').toLowerCase().includes(q));
+      return matchNombre || matchCadena || matchDireccion || matchCliente;
+    });
+  });
 
   priorityColors(prioridad: string) {
     return PRIORITY_COLORS[prioridad] ?? PRIORITY_COLORS['Baja'];

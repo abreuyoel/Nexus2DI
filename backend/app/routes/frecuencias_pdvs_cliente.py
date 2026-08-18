@@ -1,7 +1,9 @@
 """CRUD de FRECUENCIAS_PDVS_CLIENTE: cuantas veces por semana debe visitarse
 un PDV para un cliente dado."""
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Form
+import io
+import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -219,3 +221,94 @@ def delete_frecuencia(
     db.delete(f)
     db.commit()
     return {"detail": "Registro eliminado"}
+
+
+@router.post("/importar-excel")
+def importar_excel_frecuencias(
+    id_cliente: int = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.carga_masiva', 'read')),
+):
+    """
+    Recibe el archivo Excel cargado por el usuario, valida que corresponda al cliente,
+    y realiza el upsert de frecuencias de forma masiva y optimizada en la base de datos.
+    """
+    if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
+        raise HTTPException(404, "Cliente no existe")
+        
+    try:
+        contents = file.file.read()
+        df_meta = pd.read_excel(io.BytesIO(contents), sheet_name="Frecuencias", header=None, nrows=8)
+        
+        if df_meta.shape[0] < 5 or df_meta.shape[1] < 2:
+            raise HTTPException(400, "Formato de cabecera inválido en la hoja Frecuencias.")
+            
+        id_cliente_excel_raw = df_meta.iloc[4, 1]
+        try:
+            id_cliente_excel = int(id_cliente_excel_raw)
+        except (ValueError, TypeError):
+            raise HTTPException(400, f"No se pudo leer el ID del cliente en la celda B5 del archivo. Encontrado: {id_cliente_excel_raw}")
+            
+        if id_cliente_excel != id_cliente:
+            raise HTTPException(
+                400, 
+                f"El cliente del archivo ({id_cliente_excel}) no coincide con el seleccionado ({id_cliente})."
+            )
+            
+        df_data = pd.read_excel(io.BytesIO(contents), sheet_name="Frecuencias", skiprows=8)
+        
+        if len(df_data.columns) < 5:
+            raise HTTPException(400, "El archivo debe tener al menos 5 columnas en la sección de datos.")
+            
+        col_id_pdv = df_data.columns[0]
+        col_freq = df_data.columns[3] # columna de frecuencia semanal (índice 3 en 0-indexed)
+        col_obs = df_data.columns[4]  # columna de observaciones (índice 4 en 0-indexed)
+        
+        creados = 0
+        actualizados = 0
+        
+        for _, row in df_data.iterrows():
+            id_pdv = str(row[col_id_pdv]).strip()
+            if not id_pdv or id_pdv == "nan" or pd.isna(row[col_id_pdv]):
+                continue
+                
+            freq_raw = row[col_freq]
+            if pd.isna(freq_raw) or str(freq_raw).strip() == "":
+                continue
+                
+            try:
+                freq_str = str(freq_raw).replace(",", ".")
+                freq_val = float(freq_str)
+            except (ValueError, TypeError):
+                continue
+                
+            obs_raw = row[col_obs]
+            obs_val = str(obs_raw).strip() if not pd.isna(obs_raw) else None
+            
+            existente = db.query(FrecuenciaPdvCliente).filter_by(
+                id_cliente=id_cliente, id_punto_interes=id_pdv
+            ).first()
+            
+            if existente:
+                existente.frecuencia_semanal = freq_val
+                existente.observaciones = obs_val
+                existente.activo = True
+                existente.id_usuario = current_user.id
+                existente.fecha_modificacion = datetime.utcnow()
+                actualizados += 1
+            else:
+                db.add(FrecuenciaPdvCliente(
+                    id_cliente=id_cliente, id_punto_interes=id_pdv,
+                    frecuencia_semanal=freq_val, observaciones=obs_val,
+                    activo=True, id_usuario=current_user.id,
+                ))
+                creados += 1
+                
+        db.commit()
+        return {"creados": creados, "actualizados": actualizados}
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(500, f"Error al procesar el archivo Excel en el servidor: {str(e)}")

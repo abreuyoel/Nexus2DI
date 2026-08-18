@@ -15,7 +15,7 @@ from app.models.user import Usuario
 from app.models.ruta import Ruta, RutaProgramacion
 from app.models.mercaderista import MercaderistaRuta
 from app.routes.rutas import _get_servicio_prefijo, _next_route_number
-from app.services.plan_accion_service import recalcular_plan_accion, calcular_clusters, _execute_with_timeout
+from app.services.plan_accion_service import recalcular_plan_accion, calcular_clusters, _execute_with_timeout, ensure_plan_accion_table
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,14 @@ def listar_pendientes(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
 ):
+    # La tabla se crea idempotentemente acá (además del arranque): así un
+    # ambiente nuevo (epran-qa) no devuelve 500 'Invalid object name' la
+    # primera vez que se abre el módulo.
+    try:
+        ensure_plan_accion_table(db)
+    except Exception as e:
+        logger.error(f"No se pudo asegurar PLAN_ACCION_PENDIENTES: {e}")
+
     where = "WHERE 1=1"
     params: list = []
     if id_ruta:

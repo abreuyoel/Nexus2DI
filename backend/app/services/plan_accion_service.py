@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -324,7 +325,96 @@ _INSERT_SQL = f"""
 """
 
 
+_PLAN_ACCION_TABLE_DDL = """
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'PLAN_ACCION_PENDIENTES')
+BEGIN
+    CREATE TABLE PLAN_ACCION_PENDIENTES (
+        id_pendiente        INT IDENTITY(1,1) PRIMARY KEY,
+        id_ruta             INT NOT NULL,
+        ruta_nombre         NVARCHAR(200) NULL,
+        id_punto_interes    NVARCHAR(100) NOT NULL,
+        punto_de_interes    NVARCHAR(300) NULL,
+        departamento        NVARCHAR(200) NULL,
+        ciudad              NVARCHAR(200) NULL,
+        id_cliente          INT NOT NULL,
+        cliente_nombre      NVARCHAR(200) NULL,
+        prioridad_ruta      NVARCHAR(50) NULL,
+        frecuencia_semanal  DECIMAL(6,2) NULL,
+        periodo             NVARCHAR(10) NOT NULL,
+        tipo_pendiente      NVARCHAR(30) NOT NULL,
+        visitas_requeridas  DECIMAL(6,2) NULL,
+        visitas_hechas      DECIMAL(6,2) NULL,
+        visitas_faltantes   DECIMAL(6,2) NULL,
+        dias_disponibles    INT NULL,
+        urgencia            DECIMAL(10,4) NULL,
+        score               DECIMAL(10,4) NOT NULL,
+        fecha_calculo       DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT UQ_PlanAccionPendientes UNIQUE (id_ruta, id_punto_interes, id_cliente)
+    );
+    CREATE INDEX IX_PlanAccionPendientes_Score ON PLAN_ACCION_PENDIENTES (score DESC);
+    CREATE INDEX IX_PlanAccionPendientes_Ruta ON PLAN_ACCION_PENDIENTES (id_ruta);
+    CREATE INDEX IX_PlanAccionPendientes_Cliente ON PLAN_ACCION_PENDIENTES (id_cliente);
+END
+"""
+
+
+def ensure_plan_accion_table(db: Session) -> None:
+    """Crea PLAN_ACCION_PENDIENTES si no existe (idempotente). La definición
+    vive también en sql/2026-08-02_tabla_plan_accion_pendientes.sql, pero esa
+    migración no se aplica automáticamente en ambientes nuevos (epran-qa), lo
+    que dejaba GET /api/plan-accion/pendientes con un 500 'Invalid object
+    name'. Con esto la tabla se garantiza en cada arranque de la app."""
+    conn = db.connection().connection
+    prev_autocommit = getattr(conn, "autocommit", False)
+    try:
+        conn.autocommit = True
+        cursor = conn.cursor()
+        cursor.execute(_PLAN_ACCION_TABLE_DDL)
+    finally:
+        try:
+            conn.autocommit = prev_autocommit
+        except Exception:
+            pass
+
+
+def _recalcular_en_hilo() -> None:
+    """Recálculo en background con sesión propia (para el seed inicial en
+    ambientes nuevos, sin bloquear el arranque de la app)."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        n = recalcular_plan_accion(db)
+        logger.info(f"Plan de Acción (seed inicial): {n} pendiente(s)")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error en recálculo inicial de Plan de Acción: {e}")
+    finally:
+        db.close()
+
+
+def ensure_plan_accion_tables() -> None:
+    """Wrapper sin Session para llamar desde el lifespan de arranque. Asegura
+    la tabla y, si quedó vacía (ambiente nuevo como epran-qa), dispara un
+    recálculo en background para no mostrar el módulo vacío durante horas."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    vacia = False
+    try:
+        ensure_plan_accion_table(db)
+        conn = db.connection().connection
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM PLAN_ACCION_PENDIENTES")
+        vacia = (cursor.fetchone()[0] == 0)
+    except Exception as e:
+        logger.warning(f"No se pudo verificar PLAN_ACCION_PENDIENTES en arranque: {e}")
+    finally:
+        db.close()
+    if vacia:
+        threading.Thread(target=_recalcular_en_hilo, daemon=True).start()
+
+
 def recalcular_plan_accion(db: Session) -> int:
+    ensure_plan_accion_table(db)
     pendientes = calcular_pendientes(db)
 
     # DELETE sin WHERE + INSERT: la tabla queda bloqueada desde el DELETE
