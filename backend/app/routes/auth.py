@@ -163,21 +163,22 @@ def get_me(current_user: Usuario = Depends(get_current_user), db: Session = Depe
 
     nombre = None
     cedula = None
-    try:
-        merc = None
-        if current_user.id_perfil:
-            merc = db.query(Mercaderista).filter(Mercaderista.id == current_user.id_perfil).first()
-        if not merc:
-            try:
-                cedula_val = int(current_user.username)
-                merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
-            except ValueError:
-                pass
-        if merc:
-            nombre = merc.nombre
-            cedula = str(merc.cedula)
-    except Exception as e:
-        logger.error(f"Error fetching mercaderista for {current_user.username}: {str(e)}")
+    if current_user.is_mercaderista or current_user.id_rol == 5:
+        try:
+            merc = None
+            if current_user.id_perfil:
+                merc = db.query(Mercaderista).filter(Mercaderista.id == current_user.id_perfil).first()
+            if not merc:
+                try:
+                    cedula_val = int(current_user.username)
+                    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+                except ValueError:
+                    pass
+            if merc:
+                nombre = merc.nombre
+                cedula = str(merc.cedula)
+        except Exception as e:
+            logger.error(f"Error fetching mercaderista for {current_user.username}: {str(e)}")
 
     return UsuarioCurrentResponse(
         id=current_user.id,
