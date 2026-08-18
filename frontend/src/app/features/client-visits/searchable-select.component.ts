@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, input, model } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, input, model, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -23,15 +23,14 @@ export interface SelectOption {
   </button>
 
   @if (open()) {
-    <div class="ss-panel">
+    <div class="ss-panel" [class.ss-panel-right]="align() === 'right'">
       <div class="ss-search">
         <mat-icon class="ss-search-icon">search</mat-icon>
         <input #searchInput
           [ngModel]="search()"
           (ngModelChange)="search.set($event)"
           (keydown.escape)="close()"
-          [placeholder]="searchPlaceholder()"
-          autofocus>
+          [placeholder]="searchPlaceholder()">
         @if (search()) {
           <button type="button" class="ss-clear-search" (click)="search.set('')">
             <mat-icon>close</mat-icon>
@@ -89,7 +88,8 @@ export interface SelectOption {
     .ss-trigger-chevron { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .5; }
 
     .ss-panel {
-      position: absolute; z-index: 1000; top: calc(100% + 4px); left: 0; right: 0;
+      position: absolute; z-index: 1000; top: calc(100% + 4px); left: 0;
+      min-width: 100%; width: max-content; max-width: min(380px, 90vw);
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: .75rem;
@@ -99,6 +99,7 @@ export interface SelectOption {
       color: #1e293b;
       transition: background 0.3s, border-color 0.3s;
     }
+    .ss-panel-right { left: auto; right: 0; }
 
     :host-context(.dark) .ss-panel {
       background: #1f2937;
@@ -179,28 +180,40 @@ export class SearchableSelectComponent {
   searchPlaceholder = input<string>('Buscar...');
   allLabel = input<string>('Todos');
   icon = input<string>('list');
+  align = input<'left' | 'right'>('left');
   @Output() valueChange = new EventEmitter<string>();
 
   open = signal(false);
   search = signal('');
 
   private host = inject(ElementRef<HTMLElement>);
+  @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   selectedLabel = computed(() => {
-    const opt = this.options().find(o => o.value === this.value());
-    return opt ? opt.label : '';
+    const opts = this.options() || [];
+    const val = (this.value() ?? '').toString();
+    const opt = opts.find(o => o && String(o.value) === val);
+    return opt ? (opt.label ?? '') : '';
   });
 
   filtered = computed(() => {
-    const q = this.search().trim().toLowerCase();
-    const opts = this.options();
+    const q = (this.search() ?? '').toString().trim().toLowerCase();
+    const opts = this.options() || [];
     if (!q) return opts;
-    return opts.filter(o => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+    return opts.filter(o => {
+      if (!o) return false;
+      const label = (o.label ?? '').toString().toLowerCase();
+      const val = (o.value ?? '').toString().toLowerCase();
+      return label.includes(q) || val.includes(q);
+    });
   });
 
   toggle(): void {
     this.open.update(v => !v);
-    if (this.open()) this.search.set('');
+    if (this.open()) {
+      this.search.set('');
+      setTimeout(() => this.searchInput?.nativeElement?.focus(), 50);
+    }
   }
   close(): void { this.open.set(false); }
   pick(v: string): void {

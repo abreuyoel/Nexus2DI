@@ -39,7 +39,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   activeView = signal<'summary' | 'powerbi'>('summary');
 
   // ─── Filtros por fecha (formato ISO yyyy-MM-dd) ─────────────────────────────
-  fechaInicio: string = this.dateToIso(this.daysAgo(30));
+  // Por defecto el filtro es diario: de ayer a hoy (un día para el otro).
+  fechaInicio: string = this.dateToIso(this.yesterday());
   fechaFin: string = this.dateToIso(new Date());
 
   // Percent de la barra de fotos aprobadas (calculado en vez de hardcodeado).
@@ -109,10 +110,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Restablece el rango a los últimos 30 días y recarga. */
+  /** Restablece el rango al mes actual (1ro al último día del mes) y recarga. */
   resetFechas(): void {
-    this.fechaInicio = this.dateToIso(this.daysAgo(30));
-    this.fechaFin = this.dateToIso(new Date());
+    const now = new Date();
+    this.fechaInicio = this.dateToIso(this.firstDayOfMonth(now));
+    this.fechaFin = this.dateToIso(this.lastDayOfMonth(now));
     this.refresh();
   }
 
@@ -186,9 +188,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
     return `${y}-${m}-${day}`;
   }
 
-  private daysAgo(n: number): Date {
+  private yesterday(): Date {
     const d = new Date();
-    d.setDate(d.getDate() - n);
+    d.setDate(d.getDate() - 1);
     return d;
+  }
+
+  private firstDayOfMonth(d: Date): Date {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+
+  private lastDayOfMonth(d: Date): Date {
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0);
   }
 }

@@ -33,6 +33,7 @@ def _apply_client_pdv_filter(query, current_user: Usuario, db: Session):
 
 
 @router.get("", response_model=List[Union[PuntoInteresResponse, PuntoInteresClienteResponse]])
+@router.get("/", response_model=List[Union[PuntoInteresResponse, PuntoInteresClienteResponse]], include_in_schema=False)
 def list_points(
     region: Optional[str] = None,
     ciudad: Optional[str] = None,
@@ -74,6 +75,7 @@ def list_points(
 
 
 @router.post("", response_model=PuntoInteresResponse, status_code=201)
+@router.post("/", response_model=PuntoInteresResponse, status_code=201, include_in_schema=False)
 def create_point(
     data: PuntoInteresCreate,
     request: Request,

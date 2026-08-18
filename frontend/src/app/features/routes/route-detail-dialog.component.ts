@@ -32,7 +32,7 @@ export class RouteDetailDialogComponent implements OnInit {
   routePoints = signal<any[]>([]);
   futureChanges = signal<any[]>([]);
 
-  activeTab = signal<'masivo' | 'points' | 'changes'>('masivo');
+  activeTab = signal<'masivo' | 'points' | 'changes'>('points');
   editingRoute = signal(false);
   savingRoute = signal(false);
 
@@ -85,12 +85,15 @@ export class RouteDetailDialogComponent implements OnInit {
       coordinador_2: this.ruta.coordinador_2 ?? ''
     });
 
-    this.api.getClients().subscribe((d: any) => {
-      this.clients.set(d ?? []);
-      // Exclusiva: cliente bloqueado al cliente exclusivo de la ruta
-      if (this.isExclusiva && this.ruta.id_cliente_exclusivo) {
-        this.selectedClientIds.set([Number(this.ruta.id_cliente_exclusivo)]);
-      }
+    this.api.getClients().subscribe({
+      next: (d: any) => {
+        this.clients.set(d ?? []);
+        // Exclusiva: cliente bloqueado al cliente exclusivo de la ruta
+        if (this.isExclusiva && this.ruta.id_cliente_exclusivo) {
+          this.selectedClientIds.set([Number(this.ruta.id_cliente_exclusivo)]);
+        }
+      },
+      error: (err) => console.error('Error al cargar clientes en detalles de ruta:', err)
     });
     this.loadRoutePoints();
 

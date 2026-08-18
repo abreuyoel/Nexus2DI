@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/admin/chat-grupos", tags=["Admin - Grupos de Cha
 
 
 @router.get("")
+@router.get("/")
 def listar_grupos(db: Session = Depends(get_db), _: Usuario = Depends(require_admin)):
     rows = db.execute(text("""
         SELECT g.id_grupo, g.id_cliente, g.tipo_grupo, g.nombre, g.activa,
@@ -31,7 +32,7 @@ def listar_grupos(db: Session = Depends(get_db), _: Usuario = Depends(require_ad
                (SELECT COUNT(*) FROM CHAT_GRUPO_MIEMBROS_EXTRA x WHERE x.id_grupo = g.id_grupo) AS extra_count
         FROM CHAT_GRUPOS g
         LEFT JOIN CLIENTES c ON c.id_cliente = g.id_cliente AND g.id_cliente <> 0
-        ORDER BY g.tipo_grupo = 'encuestador' DESC, c.cliente, g.tipo_grupo
+        ORDER BY CASE WHEN g.tipo_grupo = 'encuestador' THEN 1 ELSE 0 END DESC, c.cliente, g.tipo_grupo
     """)).fetchall()
     return [{
         "id_grupo": r[0], "id_cliente": r[1], "tipo_grupo": r[2], "nombre": r[3],

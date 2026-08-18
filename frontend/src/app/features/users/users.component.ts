@@ -358,6 +358,17 @@ export class UsersComponent implements OnInit {
       next: () => {
         this.saving.set(false);
         this.showVendedorForm.set(false);
+        const numCedula = val.cedula ? parseInt(String(val.cedula).replace(/\D/g, ''), 10) : 0;
+        if (numCedula > 0) {
+          const mercData = {
+            nombre: val.username || '',
+            cedula: numCedula,
+            email: val.email || '',
+            tipo: 'Vendedor',
+            activo: val.activo ?? true
+          };
+          this.api.createMercaderista(mercData).subscribe({ error: () => {} });
+        }
         this.loadData();
         this.snack.open(ed ? 'Vendedor actualizado' : 'Vendedor creado', 'OK', { duration: 2500 });
       },

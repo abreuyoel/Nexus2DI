@@ -76,7 +76,17 @@ export class RoutesComponent implements OnInit {
   });
 
   // ── Tab ───────────────────────────────────────────────────
-  activeTab = signal<'rutas' | 'mercaderistas' | 'analistas' | 'supervisores'>('rutas');
+  activeTab = signal<'rutas' | 'mercaderistas' | 'auditores' | 'vendedores' | 'analistas' | 'supervisores'>('rutas');
+
+  // ── Tab switch ────────────────────────────────────────────
+  switchTab(tab: 'rutas' | 'mercaderistas' | 'auditores' | 'vendedores' | 'analistas' | 'supervisores'): void {
+    this.activeTab.set(tab);
+    if ((tab === 'mercaderistas' || tab === 'auditores' || tab === 'vendedores') && this.mercList().length === 0) {
+      this.loadMercaderistas();
+    }
+    if (tab === 'analistas' && this.analystList().length === 0) this.loadAnalysts();
+    if (tab === 'supervisores' && this.supervisorList().length === 0) this.loadSupervisors();
+  }
 
   // ── Mercaderistas grid ────────────────────────────────────
   mercLoading = signal(false);
@@ -257,7 +267,11 @@ export class RoutesComponent implements OnInit {
   // ── Acciones de ruta ──────────────────────────────────────
   viewPoints(ruta: Ruta, startEdit = false): void {
     const ref = this.dialog.open(RouteDetailDialogComponent, {
-      data: { ruta, startEdit }, width: '100%', maxWidth: '1100px', panelClass: 'custom-dialog'
+      data: { ruta, startEdit },
+      width: '100%',
+      maxWidth: '1100px',
+      panelClass: 'custom-dialog',
+      autoFocus: false,
     });
     ref.afterClosed().subscribe(() => this.loadRoutes());
   }
@@ -372,13 +386,7 @@ export class RoutesComponent implements OnInit {
     });
   }
 
-  // ── Tab switch ────────────────────────────────────────────
-  switchTab(tab: 'rutas' | 'mercaderistas' | 'analistas' | 'supervisores'): void {
-    this.activeTab.set(tab);
-    if (tab === 'mercaderistas' && this.mercList().length === 0) this.loadMercaderistas();
-    if (tab === 'analistas' && this.analystList().length === 0) this.loadAnalysts();
-    if (tab === 'supervisores' && this.supervisorList().length === 0) this.loadSupervisors();
-  }
+
 
   // ── Analistas / Supervisores (panel compartido) ───────────
   loadAnalysts(): void {
@@ -541,6 +549,66 @@ export class RoutesComponent implements OnInit {
   get mercTipos(): string[] {
     return [...new Set(this.mercList().map(m => m.tipo).filter(Boolean))];
   }
+
+  // ── Auditores grid methods ────────────────────────────────
+  auditorSearch = '';
+  auditorPage = signal(1);
+
+  get auditoresList(): any[] {
+    return this.mercList().filter(m => {
+      const t = (m.tipo || '').toLowerCase();
+      return t.includes('auditor') || m.is_auditor || t === 'auditor de campo' || t === 'auditor de gestión';
+    });
+  }
+
+  get filteredAuditors(): any[] {
+    const s = this.auditorSearch.trim().toLowerCase();
+    return this.auditoresList.filter(m =>
+      !s || (m.nombre || m.nombre_completo || '').toLowerCase().includes(s) ||
+      String(m.cedula ?? '').includes(s) || (m.email || '').toLowerCase().includes(s)
+    );
+  }
+
+  get totalAuditorPages(): number {
+    return Math.max(1, Math.ceil(this.filteredAuditors.length / RoutesComponent.MERC_PAGE_SIZE));
+  }
+  get paginatedAuditors(): any[] {
+    const p = Math.min(this.auditorPage(), this.totalAuditorPages);
+    const start = (p - 1) * RoutesComponent.MERC_PAGE_SIZE;
+    return this.filteredAuditors.slice(start, start + RoutesComponent.MERC_PAGE_SIZE);
+  }
+  goAuditorPage(p: number): void { this.auditorPage.set(Math.min(Math.max(1, p), this.totalAuditorPages)); }
+  onAuditorSearchChange(): void { this.auditorPage.set(1); }
+
+  // ── Vendedores grid methods ───────────────────────────────
+  vendedorSearch = '';
+  vendedorPage = signal(1);
+
+  get vendedoresList(): any[] {
+    return this.mercList().filter(m => {
+      const t = (m.tipo || '').toLowerCase();
+      return t.includes('vendedor') || m.tipo === 'Vendedor' || t === 'vendedor';
+    });
+  }
+
+  get filteredVendedores(): any[] {
+    const s = this.vendedorSearch.trim().toLowerCase();
+    return this.vendedoresList.filter(m =>
+      !s || (m.nombre || m.nombre_completo || '').toLowerCase().includes(s) ||
+      String(m.cedula ?? '').includes(s) || (m.email || '').toLowerCase().includes(s)
+    );
+  }
+
+  get totalVendedorPages(): number {
+    return Math.max(1, Math.ceil(this.filteredVendedores.length / RoutesComponent.MERC_PAGE_SIZE));
+  }
+  get paginatedVendedores(): any[] {
+    const p = Math.min(this.vendedorPage(), this.totalVendedorPages);
+    const start = (p - 1) * RoutesComponent.MERC_PAGE_SIZE;
+    return this.filteredVendedores.slice(start, start + RoutesComponent.MERC_PAGE_SIZE);
+  }
+  goVendedorPage(p: number): void { this.vendedorPage.set(Math.min(Math.max(1, p), this.totalVendedorPages)); }
+  onVendedorSearchChange(): void { this.vendedorPage.set(1); }
 
   // ── Assignment panel methods ──────────────────────────────
   openPanel(merc: any): void {

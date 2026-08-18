@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnChanges, Input, SimpleChanges, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -24,7 +24,7 @@ type PhotoFilter = 'todas' | 'pendientes' | 'aprobadas' | 'rechazadas';
   templateUrl: './revision-visitas.component.html',
   styleUrls: ['./revision-visitas.component.scss'],
 })
-export class RevisionVisitasComponent implements OnInit, OnDestroy {
+export class RevisionVisitasComponent implements OnInit, OnDestroy, OnChanges {
   loading = signal(true);
   visitas = signal<any[]>([]);
   isClientePuro = signal(false);
@@ -49,6 +49,14 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   periodo: Periodo | 'custom' = 'hoy';
   desde = '';
   hasta = '';
+
+  // ─── Inputs opcionales (modo embebido en Centro de Mando) ──────────────
+  // Cuando el componente se usa dentro de Centro de Mando se le inyectan el
+  // rango y el cliente del filtro global del padre. En modo autónomo (ruta
+  // directa) quedan indefinidos y el componente gestiona su propio rango.
+  @Input() rangoDesde?: string;
+  @Input() rangoHasta?: string;
+  @Input() clienteId?: number | null;
   search = '';
   // Filtros (dropdowns)
   filtroRutas: string[] = [];          // multi-select
@@ -102,8 +110,13 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
-    const r = this.rangeFor('hoy');
-    this.desde = r.desde; this.hasta = r.hasta;
+    if (this.rangoDesde && this.rangoHasta) {
+      // Modo embebido en Centro de Mando: heredar el rango global del padre.
+      this.desde = this.rangoDesde; this.hasta = this.rangoHasta; this.periodo = 'custom';
+    } else {
+      const r = this.rangeFor('hoy');
+      this.desde = r.desde; this.hasta = r.hasta;
+    }
     this.load();
     this.loadRoster();
     this.api.getRejectReasons().subscribe({ next: (rs) => this.rejectReasons.set(rs || []), error: () => { } });
@@ -118,7 +131,7 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
           this.clientesCatalogo.set(res?.clientes || []);
         }
       },
-      error: () => {},
+      error: () => { },
     });
     // Tiempo real: acumular eventos y mostrar indicador visual (pulse),
     // en vez de refrescar agresivamente cada 800ms.
@@ -140,6 +153,21 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
         this.dismissAndRefresh();
       }
     }, 60_000);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Solo relevante en modo embebido (Centro de Mando): cuando el padre
+    // cambia el rango o el cliente global, recargar las visitas.
+    const r = changes['rangoDesde'] || changes['rangoHasta'];
+    if (r && !r.firstChange && this.rangoDesde && this.rangoHasta) {
+      this.desde = this.rangoDesde; this.hasta = this.rangoHasta; this.periodo = 'custom';
+      this.load();
+    }
+    const c = changes['clienteId'];
+    if (c && !c.firstChange) {
+      this.load();
+      if (this.clienteId) this.loadRoster(this.clienteId); else this.loadRoster();
+    }
   }
 
   ngOnDestroy(): void {
@@ -214,7 +242,9 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   load(): void {
     this.loading.set(true);
     this.visitasPage.set(1);
-    this.api.getReviewList({ desde: this.desde, hasta: this.hasta }).subscribe({
+    const opts: { desde?: string; hasta?: string; cliente_id?: number } = { desde: this.desde, hasta: this.hasta };
+    if (this.clienteId) opts.cliente_id = this.clienteId;
+    this.api.getReviewList(opts).subscribe({
       next: (d) => { this.visitas.set(d || []); this.loading.set(false); },
       error: () => { this.visitas.set([]); this.loading.set(false); },
     });
@@ -342,13 +372,36 @@ export class RevisionVisitasComponent implements OnInit, OnDestroy {
   get rosterFiltrado(): any[] {
     const s = this.search.trim().toLowerCase();
     const stats = this.statsPorMercaderista;
+    // Claves mercaderista+cliente cuyas visitas matchean la búsqueda (por
+    // número de visita, punto, ruta, etc.). El roster por defecto solo
+    // filtraba por nombre de mercaderista/cliente, así que buscar por "nro
+    // de visita" devolvía "0 resultados" aunque la visita existiera y su
+    // mercaderista sí estuviera en el roster.
+    const matchKeys = new Set<string>();
+    if (s) {
+      for (const v of this.visitas()) {
+        if (
+          (v.cliente || '').toLowerCase().includes(s) ||
+          (v.mercaderista || '').toLowerCase().includes(s) ||
+          (v.punto_de_interes || '').toLowerCase().includes(s) ||
+          (v.ruta || '').toLowerCase().includes(s) ||
+          String(v.id_visita).includes(s)
+        ) {
+          matchKeys.add(`${v.id_mercaderista}_${v.cliente}`);
+        }
+      }
+    }
     return this.rosterConVisitasHuerfanas
       .filter(r => {
         if (this.filtroCliente && r.cliente !== this.filtroCliente) return false;
         if (this.filtroRutas.length && !this.filtroRutas.includes(r.ruta)) return false;
         if (this.filtroMercaderistas.length && !this.filtroMercaderistas.includes(r.mercaderista)) return false;
         if (this.filtroDepartamento && !(r.departamentos || '').split(',').map((d: string) => d.trim()).includes(this.filtroDepartamento)) return false;
-        if (s && !((r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s))) return false;
+        if (s) {
+          const nameMatch = (r.mercaderista || '').toLowerCase().includes(s) || (r.cliente || '').toLowerCase().includes(s);
+          const visitaMatch = matchKeys.has(`${r.id_mercaderista}_${r.cliente}`);
+          if (!nameMatch && !visitaMatch) return false;
+        }
         return true;
       })
       .map(r => ({ ...r, _stats: stats.get(`${r.id_mercaderista}_${r.cliente}`) || { visitas: 0, fotos: 0, aprobadas: 0, sin_revisar: 0 } }))

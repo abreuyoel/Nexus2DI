@@ -17,7 +17,7 @@
   </div>
 
   @if (vista() === 'visitas') {
-  <app-revision-visitas />
+  <app-revision-visitas [rangoDesde]="filtroDesde" [rangoHasta]="filtroHasta" [clienteId]="filtroCliente" />
   } @else {
 
   <!-- ═══════════════════════════════════════════════════════ HEADER ══ -->
@@ -35,16 +35,16 @@
     <div class="cm-header-right">
       <!-- Selector Cliente -->
       @if (!isClientePuro()) {
-        <div class="cm-select-wrap">
-          <mat-icon class="cm-select-icon">business</mat-icon>
-          <select #clienteSelect [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
-            <option [ngValue]="null">Todos los clientes</option>
-            @for (c of clientes(); track c.id_cliente) {
-              <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
-            }
-          </select>
-          <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
-        </div>
+      <div class="cm-select-wrap">
+        <mat-icon class="cm-select-icon">business</mat-icon>
+        <select #clienteSelect [(ngModel)]="filtroCliente" (change)="onClienteChange()" class="cm-select">
+          <option [ngValue]="null">Todos los clientes</option>
+          @for (c of clientes(); track c.id_cliente) {
+          <option [ngValue]="c.id_cliente">{{ c.cliente }}</option>
+          }
+        </select>
+        <mat-icon class="cm-select-arrow" (click)="$any(clienteSelect).showPicker()">expand_more</mat-icon>
+      </div>
       }
 
       <!-- Rango de Fechas Global -->

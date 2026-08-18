@@ -15,6 +15,7 @@ class PuntoInteres(Base):
     jerarquia_n2 = Column("jerarquia_nivel_2", String(200), nullable=True)
     jerarquia_n2_2 = Column("jerarquia_nivel_2_2", String(200), nullable=True)
     ciudad = Column(String(200), nullable=True)
+    localidad = Column(String(50), nullable=True)
     cadena = Column("clasificacion_de_canal", String(200), nullable=True)
     radio = Column(String(50), nullable=True)
     tiempo_minimo = Column("tiempo_minimo_de_visita", Integer, nullable=True)

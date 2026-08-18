@@ -79,20 +79,28 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
         .all()
     )
 
-    clientes_map: dict[int, set] = {}
-    cliente_rows = (
-        db.query(RutaProgramacion.ruta_id, Cliente.nombre)
-        .join(Cliente, Cliente.id == RutaProgramacion.id_cliente)
+    pair_rows = (
+        db.query(RutaProgramacion.ruta_id, RutaProgramacion.id_cliente)
         .filter(
             RutaProgramacion.ruta_id.in_(ruta_ids),
             RutaProgramacion.activo == True,
-            Cliente.nombre.isnot(None),
+            RutaProgramacion.id_cliente.isnot(None),
         )
         .distinct()
         .all()
     )
-    for rid, cname in cliente_rows:
-        clientes_map.setdefault(rid, set()).add(cname)
+
+    unique_cids = list({cid for _, cid in pair_rows if cid is not None})
+    client_map = (
+        dict(db.query(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(unique_cids)).all())
+        if unique_cids else {}
+    )
+
+    clientes_map: dict[int, set] = {}
+    for rid, cid in pair_rows:
+        cname = client_map.get(cid)
+        if cname:
+            clientes_map.setdefault(rid, set()).add(cname)
 
     excl_ids = [r.id_cliente_exclusivo for r in rutas if r.id_cliente_exclusivo]
     excl_map = (
@@ -118,6 +126,7 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
 
 
 @router.get("", response_model=List[RutaResponse])
+@router.get("/", response_model=List[RutaResponse])
 def list_routes(
     activa: Optional[bool] = None,
     db: Session = Depends(get_db),
@@ -139,7 +148,31 @@ def list_routes(
     return _enrich_routes(db, rutas)
 
 
+@router.get("/my-routes", response_model=List[RutaResponse])
+def my_routes(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """Retorna las rutas asignadas al usuario logueado según su rol (analista / supervisor / admin)."""
+    if current_user.is_admin:
+        rutas = db.query(Ruta).order_by(Ruta.nombre).all()
+        return _enrich_routes(db, rutas)
+
+    if current_user.is_analyst and current_user.id_perfil:
+        rutas = (
+            db.query(Ruta)
+            .join(Ruta.analistas)
+            .filter(AnalistaRuta.id_analista == current_user.id_perfil)
+            .order_by(Ruta.nombre)
+            .all()
+        )
+        return _enrich_routes(db, rutas)
+
+    return []
+
+
 @router.post("", response_model=RutaResponse, status_code=201)
+@router.post("/", response_model=RutaResponse, status_code=201)
 def create_route(
     data: RutaCreate,
     db: Session = Depends(get_db),

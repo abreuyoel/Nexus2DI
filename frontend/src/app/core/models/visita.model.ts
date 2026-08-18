@@ -93,6 +93,7 @@ export interface PuntoInteres {
   departamento?: string;
   region?: string;
   ciudad?: string;
+  localidad?: string;
   cadena?: string;
   jerarquia_n2?: string;
   jerarquia_n2_2?: string;
