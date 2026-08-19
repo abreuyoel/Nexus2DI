@@ -289,7 +289,14 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificador *</label>
+              <div class="flex items-center justify-between">
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificador *</label>
+                @if (!editingId()) {
+                  <button type="button" (click)="forceGenerateId()" class="text-[10px] font-bold text-primary-600 hover:text-primary-500 select-none bg-transparent border-none p-0 outline-none cursor-pointer">
+                    Autogenerar
+                  </button>
+                }
+              </div>
               <input formControlName="id"
                 [attr.readonly]="editingId() ? true : null"
                 [class.opacity-60]="!!editingId()"
@@ -632,6 +639,27 @@ export class PointsComponent implements OnInit, OnDestroy {
         error: (err) => console.error('[PointsComponent] Error fetching form cities:', err)
       });
     });
+
+    // Al cambiar el nombre del punto, autogenerar el identificador si estamos creando uno nuevo
+    this.form.get('nombre')?.valueChanges.pipe(
+      debounceTime(400),
+      distinctUntilChanged()
+    ).subscribe((name) => {
+      const nameStr = typeof name === 'string' ? name.trim() : '';
+      if (!this.editingId() && nameStr && nameStr.length >= 3) {
+        const currentId = this.form.get('id')?.value?.trim();
+        if (!currentId) {
+          this.api.generatePointId(nameStr).subscribe({
+            next: (res) => {
+              if (res && res.id) {
+                this.form.patchValue({ id: res.id });
+              }
+            },
+            error: (err) => console.error('[PointsComponent] Error generating point ID:', err)
+          });
+        }
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -730,6 +758,25 @@ export class PointsComponent implements OnInit, OnDestroy {
   prevPage(): void { this.skip.update(v => Math.max(0, v - this.pageSize())); this.loadAll(); }
   nextPage(): void { this.skip.update(v => v + this.pageSize()); this.loadAll(); }
   onPageSizeChange(size: number): void { this.pageSize.set(+size); this.skip.set(0); this.loadAll(); }
+  forceGenerateId(): void {
+    const name = this.form.get('nombre')?.value?.trim() || '';
+    if (!name) {
+      this.snack.open('Primero escribe el nombre del punto', 'OK', { duration: 2500 });
+      return;
+    }
+    this.api.generatePointId(name).subscribe({
+      next: (res) => {
+        if (res && res.id) {
+          this.form.patchValue({ id: res.id });
+          this.snack.open('Identificador generado', 'OK', { duration: 2000 });
+        }
+      },
+      error: (err) => {
+        console.error('[PointsComponent] Error generating point ID:', err);
+        this.snack.open('Error al generar el identificador', 'OK', { duration: 3000 });
+      }
+    });
+  }
 
   openPanel(p: PuntoInteres | null): void {
     console.log('[PointsComponent] openPanel called. Point:', p);

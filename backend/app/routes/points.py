@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, func
@@ -142,6 +142,35 @@ async def get_jerarquia_n2_2(db: AsyncSession = Depends(get_async_db), _: Usuari
 async def get_nivel_alcance(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre))).scalars().all()
     return list(rows)
+
+
+@router.get("/generate-id")
+async def generate_point_id(
+    name: str = Query(...),
+    db: AsyncSession = Depends(get_async_db),
+    _: Usuario = Depends(get_current_user),
+):
+    import re
+    clean_name = re.sub(r'[^a-zA-Z]', '', name).upper()
+    prefix = clean_name[:3] if len(clean_name) >= 3 else (clean_name + "PDV")[:3]
+    
+    query = select(PuntoInteres.id).filter(PuntoInteres.id.like(f"{prefix}%"))
+    rows = (await db.execute(query)).scalars().all()
+    
+    max_num = 0
+    for rid in rows:
+        digits = re.findall(r'\d+', rid)
+        if digits:
+            try:
+                num = int(digits[-1])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+                
+    next_num = max_num + 1
+    generated_id = f"{prefix}{next_num:04d}"
+    return {"id": generated_id}
 
 
 @router.get("/count")

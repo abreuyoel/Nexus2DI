@@ -82,6 +82,9 @@ export class ApiService {
   getPointPhotos(pointId: number, estado?: string): Observable<object[]> {
     return this.http.get<object[]>(`${this.base}/api/points/${pointId}/photos`, { params: this.params({ estado }) });
   }
+  generatePointId(name: string): Observable<{ id: string }> {
+    return this.http.get<{ id: string }>(`${this.base}/api/points/generate-id`, { params: this.params({ name }) });
+  }
 
   // --- CATÁLOGOS PDV ---
   // catalog ∈ 'tipo-negocio' | 'subtipo-negocio' | 'alcance' | 'canal-venta' | 'departamentos'
