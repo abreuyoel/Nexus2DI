@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Float, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -18,8 +19,8 @@ class PuntoInteres(Base):
     localidad = Column(String(50), nullable=True)
     cadena = Column("clasificacion_de_canal", String(200), nullable=True)
     radio = Column(String(50), nullable=True)
-    tiempo_minimo = Column("tiempo_minimo_de_visita", Integer, nullable=True)
-    fecha_creado = Column(DateTime, nullable=True)
+    tiempo_minimo = Column("tiempo_minimo_de_visita", Integer, default=15, nullable=False)
+    fecha_creado = Column(DateTime, default=datetime.utcnow, nullable=True)
     nivel_de_alcance = Column(String(200), nullable=True)
     rif = Column(String(50), nullable=True)
 

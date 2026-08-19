@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, func
@@ -83,7 +83,14 @@ async def create_point(
     db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
-    punto = PuntoInteres(**data.model_dump())
+    from datetime import datetime
+    punto_data = data.model_dump()
+    if punto_data.get("tiempo_minimo") is None:
+        punto_data["tiempo_minimo"] = 15
+    if punto_data.get("fecha_creado") is None:
+        punto_data["fecha_creado"] = datetime.now()
+
+    punto = PuntoInteres(**punto_data)
     db.add(punto)
     db.flush()
 
@@ -142,6 +149,35 @@ async def get_jerarquia_n2_2(db: AsyncSession = Depends(get_async_db), _: Usuari
 async def get_nivel_alcance(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre))).scalars().all()
     return list(rows)
+
+
+@router.get("/generate-id")
+async def generate_point_id(
+    name: str = Query(...),
+    db: AsyncSession = Depends(get_async_db),
+    _: Usuario = Depends(get_current_user),
+):
+    import re
+    clean_name = re.sub(r'[^a-zA-Z]', '', name).upper()
+    prefix = clean_name[:3] if len(clean_name) >= 3 else (clean_name + "PDV")[:3]
+    
+    query = select(PuntoInteres.id).filter(PuntoInteres.id.like(f"{prefix}%"))
+    rows = (await db.execute(query)).scalars().all()
+    
+    max_num = 0
+    for rid in rows:
+        digits = re.findall(r'\d+', rid)
+        if digits:
+            try:
+                num = int(digits[-1])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+                
+    next_num = max_num + 1
+    generated_id = f"{prefix}{next_num:04d}"
+    return {"id": generated_id}
 
 
 @router.get("/count")
@@ -238,7 +274,7 @@ async def delete_point(
         )
 
     nombre = getattr(punto, 'nombre', point_id)
-    db.delete(punto)
+    await db.delete(punto)
 
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
