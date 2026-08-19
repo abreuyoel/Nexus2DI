@@ -133,6 +133,14 @@ export class ClientDataComponent implements OnInit {
     return !!u && (u.rol === 'admin' || u.rol === 'analyst');
   }
 
+  isPanama(obj: any): boolean {
+    if (!obj) return false;
+    const dep = (obj.departamento || '').toLowerCase();
+    const reg = (obj.region || '').toLowerCase();
+    const cuad = (obj.cuadrante || '').toLowerCase();
+    return dep.includes('panam') || reg.includes('panam') || cuad.includes('panam');
+  }
+
   constructor(private api: ApiService, private datePipe: DatePipe, private snack: MatSnackBar, private auth: AuthService) {}
 
   ngOnInit(): void {
@@ -294,19 +302,22 @@ export class ClientDataComponent implements OnInit {
 
   /** Descarga el Excel de una sola visita. */
   exportVisit(v: any): void {
-    const data = v.items.map((it: any) => ({
-      'Producto': it.producto,
-      'Categoría': it.categoria,
-      'Departamento': it.departamento,
-      'Cuadrante': it.cuadrante,
-      'Estado': it.estado,
-      'Inv. Inicial': it.inv_inicial,
-      'Inv. Final': it.inv_final,
-      'Inv. Depósito': it.inv_deposito,
-      'Caras': it.caras,
-      'Precio Bs': it.precio_bs,
-      'Precio $': it.precio_ds,
-    }));
+    const data = v.items.map((it: any) => {
+      const isPan = this.isPanama(it);
+      return {
+        'Producto': it.producto,
+        'Categoría': it.categoria,
+        'Departamento': it.departamento,
+        'Cuadrante': it.cuadrante,
+        'Estado': it.estado,
+        'Inv. Inicial': it.inv_inicial,
+        'Inv. Final': it.inv_final,
+        'Inv. Depósito': it.inv_deposito,
+        'Caras': it.caras,
+        'Precio Bs': isPan ? null : it.precio_bs,
+        'Precio $': isPan ? it.precio_bs : it.precio_ds,
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Visita ${v.visita_id}`);
@@ -322,24 +333,27 @@ export class ClientDataComponent implements OnInit {
     const params = { ...this.buildFilterParams(), export_all: true };
     this.api.getClientDataBalances(params).subscribe({
       next: (res) => {
-        const dataToExport = res.items.map(item => ({
-          'Visita ID': item.visita_id,
-          'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
-          'Región': item.region,
-          'Cadena': item.cadena,
-          'PDV': item.pdv_nombre,
-          'Mercaderista': item.mercaderista,
-          'Producto': item.producto,
-          'Categoría': item.categoria,
-          'Departamento': item.departamento,
-          'Cuadrante': item.cuadrante,
-          'Estado': item.estado,
-          'Inventario Inicial': item.inv_inicial,
-          'Inventario Final': item.inv_final,
-          'Caras': item.caras,
-          'Precio Bs': item.precio_bs,
-          'Precio $': item.precio_ds
-        }));
+        const dataToExport = res.items.map(item => {
+          const isPan = this.isPanama(item);
+          return {
+            'Visita ID': item.visita_id,
+            'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
+            'Región': item.region,
+            'Cadena': item.cadena,
+            'PDV': item.pdv_nombre,
+            'Mercaderista': item.mercaderista,
+            'Producto': item.producto,
+            'Categoría': item.categoria,
+            'Departamento': item.departamento,
+            'Cuadrante': item.cuadrante,
+            'Estado': item.estado,
+            'Inventario Inicial': item.inv_inicial,
+            'Inventario Final': item.inv_final,
+            'Caras': item.caras,
+            'Precio Bs': isPan ? null : item.precio_bs,
+            'Precio $': isPan ? item.precio_bs : item.precio_ds
+          };
+        });
 
         const ws: XLSX.WorkSheet = XLSX.utils.json_to_sheet(dataToExport);
         const wb: XLSX.WorkBook = XLSX.utils.book_new();
