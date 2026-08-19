@@ -8,11 +8,11 @@ with open(filepath, 'r', encoding='utf-8') as f:
 
 # Define the new resumen_dia function
 new_resumen_dia = """@router.get("/resumen-dia")
-def resumen_dia(
+async def resumen_dia(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     try:
@@ -42,7 +42,7 @@ def resumen_dia(
         cliente_tipo = None
         cliente_nombre = "Todos los clientes"
         if cliente_id:
-            cli_row = execute_query(db, "SELECT cliente, id_tipo_cliente FROM CLIENTES WHERE id_cliente = ?", (cliente_id,))
+            cli_row = await execute_query(db, "SELECT cliente, id_tipo_cliente FROM CLIENTES WHERE id_cliente = ?", (cliente_id,))
             if cli_row:
                 cliente_nombre = cli_row[0][0]
                 cliente_tipo = cli_row[0][1]
@@ -62,7 +62,7 @@ def resumen_dia(
                 JOIN RUTAS_NUEVAS rn        ON rn.id_ruta = rp.id_ruta
                 WHERE m.activo = 1 AND rp.activa = 1 AND rp.id_cliente = ?{serv_filter}
             \"\"\"
-            asignados = execute_query(db, merc_asig_q, (cliente_id,))
+            asignados = await execute_query(db, merc_asig_q, (cliente_id,))
         else:
             merc_asig_q = \"\"\"
                 SELECT DISTINCT m.id_mercaderista, m.nombre, m.cedula,
@@ -72,7 +72,7 @@ def resumen_dia(
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = mr.id_ruta
                 WHERE m.activo = 1 AND rp.activa = 1
             \"\"\"
-            asignados = execute_query(db, merc_asig_q)
+            asignados = await execute_query(db, merc_asig_q)
 
         asignados_map = {r[0]: {"id_mercaderista": r[0], "nombre": r[1],
                                 "cedula": r[2], "tipo_campo": r[3]}
@@ -90,7 +90,7 @@ def resumen_dia(
                 WHERE m.activo = 1 AND rp.activa = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             \"\"\"
-            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range + [cliente_id]))
+            plan_hoy = await execute_query(db, plan_hoy_q, tuple(days_in_range + [cliente_id]))
         else:
             plan_hoy_q = f\"\"\"
                 SELECT DISTINCT m.id_mercaderista, rp.dia
@@ -100,7 +100,7 @@ def resumen_dia(
                 WHERE m.activo = 1 AND rp.activa = 1
                   AND rp.dia IN ({ph})
             \"\"\"
-            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range))
+            plan_hoy = await execute_query(db, plan_hoy_q, tuple(days_in_range))
             
         plan_counts = {}
         for r in plan_hoy:
@@ -122,7 +122,7 @@ def resumen_dia(
                   AND mr.id_mercaderista = ra.id_mercaderista
                   AND rp.id_cliente = ?{serv_filter}
             \"\"\"
-            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id))
+            activos_rows = await execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id))
         else:
             activos_hoy_q = \"\"\"
                 SELECT DISTINCT ra.id_mercaderista, CAST(ra.fecha_hora_activacion AS DATE)
@@ -132,7 +132,7 @@ def resumen_dia(
                 WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
                   AND mr.id_mercaderista = ra.id_mercaderista
             \"\"\"
-            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta))
+            activos_rows = await execute_query(db, activos_hoy_q, (d_desde, d_hasta))
             
         act_counts = {}
         for r in activos_rows:
@@ -152,7 +152,7 @@ def resumen_dia(
                 WHERE mr.id_mercaderista IN ({ph2}) AND rp.activa = 1
                 GROUP BY mr.id_mercaderista
             \"\"\"
-            for mid, n in execute_query(db, clas_q, tuple(ids)):
+            for mid, n in await execute_query(db, clas_q, tuple(ids)):
                 if cliente_tipo == 3:
                     asignados_map[mid]["tipo_servicio"] = "Exclusivo"
                 else:
@@ -176,7 +176,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             \"\"\"
-            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range + [cliente_id]))
+            rutas_plan_rows = await execute_query(db, rutas_plan_q, tuple(days_in_range + [cliente_id]))
         else:
             rutas_plan_q = f\"\"\"
                 SELECT DISTINCT rp.id_ruta, rn.ruta, mr.id_mercaderista, m.nombre, rp.dia
@@ -187,7 +187,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph})
             \"\"\"
-            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range))
+            rutas_plan_rows = await execute_query(db, rutas_plan_q, tuple(days_in_range))
 
         ruta_merc_pairs = {}
         for r in rutas_plan_rows:
@@ -213,7 +213,7 @@ def resumen_dia(
             FROM RUTAS_ACTIVADAS ra
             WHERE CAST(ra.fecha_hora_activacion AS DATE) BETWEEN ? AND ?
         \"\"\"
-        ra_rows = execute_query(db, ra_q, (d_desde, d_hasta))
+        ra_rows = await execute_query(db, ra_q, (d_desde, d_hasta))
         
         # Agrupar estado por ruta_merc
         for rid, mid, estado, fd in ra_rows:
@@ -242,7 +242,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             \"\"\"
-            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + [cliente_id]))
+            pois_plan_rows = await execute_query(db, pois_plan_q, tuple(days_in_range + [cliente_id]))
         else:
             pois_plan_q = f\"\"\"
                 SELECT DISTINCT rp.id_punto_interes, mr.id_mercaderista,
@@ -255,7 +255,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph})
             \"\"\"
-            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range))
+            pois_plan_rows = await execute_query(db, pois_plan_q, tuple(days_in_range))
 
         if cliente_id:
             estado_visita_q = \"\"\"
@@ -268,7 +268,7 @@ def resumen_dia(
                   AND vm.id_cliente = ?
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             \"\"\"
-            ev_rows = execute_query(db, estado_visita_q, (d_desde, d_hasta, cliente_id))
+            ev_rows = await execute_query(db, estado_visita_q, (d_desde, d_hasta, cliente_id))
         else:
             estado_visita_q = \"\"\"
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
@@ -279,7 +279,7 @@ def resumen_dia(
                 WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             \"\"\"
-            ev_rows = execute_query(db, estado_visita_q, (d_desde, d_hasta))
+            ev_rows = await execute_query(db, estado_visita_q, (d_desde, d_hasta))
             
         estado_visita = {(r[0], r[1], r[2], r[3]): {"act": bool(r[4]), "des": bool(r[5])}
                          for r in ev_rows}
@@ -353,7 +353,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND rp.dia IN ({ph})
                   AND mr.id_mercaderista IN ({ph2})
             \"\"\"
-            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids))
+            tradex_rows = await execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids))
 
             estado_visita_full_q = \"\"\"
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
@@ -364,7 +364,7 @@ def resumen_dia(
                 WHERE CAST(vm.fecha_visita AS DATE) BETWEEN ? AND ?
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             \"\"\"
-            ev_full = execute_query(db, estado_visita_full_q, (d_desde, d_hasta))
+            ev_full = await execute_query(db, estado_visita_full_q, (d_desde, d_hasta))
             ev_full_map = {(r[0], r[1], r[2], r[3]): {"act": bool(r[4]), "des": bool(r[5])}
                            for r in ev_full}
                            

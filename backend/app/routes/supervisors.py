@@ -1,7 +1,9 @@
+from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.models.foto import Foto, NotificacionRechazoFoto
@@ -13,26 +15,26 @@ router = APIRouter(prefix="/api/supervisor", tags=["Supervisor"])
 
 
 @router.get("/rejected-photos", response_model=List[FotoResponse])
-def get_rejected_photos(
-    db: Session = Depends(get_db),
+async def get_rejected_photos(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     if current_user.rol not in ("supervisor", "admin", "analyst"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
-    return db.query(Foto).filter(Foto.estado == "Rechazada").order_by(Foto.fecha_registro.desc()).all()
+    return (await db.execute(select(Foto).filter(Foto.estado == "Rechazada").order_by(Foto.fecha_registro.desc()))).scalars().all()
 
 
 @router.post("/replace-photo")
 async def replace_rejected_photo(
     foto_id: int = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     if current_user.rol not in ("supervisor", "admin", "mercaderista"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
-    foto = db.query(Foto).filter(Foto.id == foto_id).first()
+    foto = (await db.execute(select(Foto).filter(Foto.id == foto_id))).scalars().first()
     if not foto:
         raise HTTPException(status_code=404, detail="Foto no encontrada")
 
@@ -51,15 +53,19 @@ async def replace_rejected_photo(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                entity_id=foto.id,
                changes={"old_path": old_path, "new_path": foto.blob_path})
-    db.commit()
+    await db.commit()
     return {"message": "Foto reemplazada exitosamente", "foto_id": foto.id, "blob_path": foto.blob_path}
 
 
 @router.get("/notifications", response_model=List[NotificacionRechazoResponse])
-def get_notifications(
-    db: Session = Depends(get_db),
+async def get_notifications(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    return db.query(NotificacionRechazoFoto).filter(
-        NotificacionRechazoFoto.leida == False
-    ).order_by(NotificacionRechazoFoto.fecha_notificacion.desc()).limit(50).all()
+    return (await db.execute(
+        select(NotificacionRechazoFoto)
+        .filter(NotificacionRechazoFoto.leida == False)
+        .order_by(NotificacionRechazoFoto.fecha_notificacion.desc())
+        .limit(50)
+    )).scalars().all()
+

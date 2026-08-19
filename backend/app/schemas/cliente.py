@@ -4,6 +4,7 @@ from typing import Optional
 
 class ClienteBase(BaseModel):
     nombre: Optional[str] = None
+    id_categoria: Optional[int] = 1
     activo: bool = True
 
 

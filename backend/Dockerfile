@@ -73,4 +73,6 @@ EXPOSE 8000
 # '*' es seguro acá: este proceso solo es alcanzable vía el Service interno
 # del cluster (nunca expuesto directo a internet), así que no hay un
 # atacante externo que pueda falsificar el header saltándose a nginx.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]
+# Se cambió a la forma 'shell' del CMD para poder interpolar variables de entorno.
+# La variable UVICORN_WORKERS será inyectada por Kubernetes.
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1} --proxy-headers --forwarded-allow-ips='*'

@@ -2,11 +2,13 @@ import json
 from typing import Optional, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Union
 from app.models.audit import AuditLog
 
 
 def log_action(
-    db: Session,
+    db: Union[Session, AsyncSession],
     *,
     action: str,
     entity_type: str,

@@ -14,11 +14,12 @@ este trabajo, pero no cuesta nada mantener el mismo esquema de nombres.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import List, Optional
 from datetime import datetime
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.schemas.chat_grupos import (
@@ -27,8 +28,8 @@ from app.schemas.chat_grupos import (
     InfoGrupoClienteResponse, LectorGrupoInfo, VisitaThreadRequest, VisitaThreadResponse,
 )
 from app.services.chat_grupos_membresia import (
-    get_grupos_de_usuario, get_miembros_grupo, usuario_es_miembro,
-    asegurar_grupos_cliente, TIPOS_VALIDOS,
+    async_get_grupos_de_usuario, async_get_miembros_grupo, async_usuario_es_miembro,
+    async_asegurar_grupos_cliente, TIPOS_VALIDOS,
 )
 from app.services.visibility import client_route_ids
 from app.websockets.manager import manager
@@ -49,37 +50,39 @@ def _foto_url(blob_path: Optional[str]) -> Optional[str]:
 
 
 
-def _grupo_info(db: Session, id_grupo: int):
-    return db.execute(text("""
+async def _grupo_info(db: AsyncSession, id_grupo: int):
+    return (await db.execute(text("""
         SELECT id_grupo, id_cliente, tipo_grupo, nombre, activa
         FROM CHAT_GRUPOS WHERE id_grupo = :id
-    """), {"id": id_grupo}).fetchone()
+    """), {"id": id_grupo})).fetchone()
 
 
-def _autorizado_grupo(db: Session, current_user: Usuario, id_grupo: int) -> bool:
-    return any(g["id_grupo"] == id_grupo for g in get_grupos_de_usuario(db, current_user.id))
+async def _autorizado_grupo(db: AsyncSession, current_user: Usuario, id_grupo: int) -> bool:
+    grupos = await async_get_grupos_de_usuario(db, current_user.id)
+    return any(g["id_grupo"] == id_grupo for g in grupos)
 
 
-def _rutas_permitidas_cliente(db: Session, current_user: Usuario) -> Optional[list]:
+async def _async_rutas_permitidas_cliente(db: AsyncSession, current_user: Usuario) -> Optional[list]:
     """None = sin restricción (ve todas las rutas de su cliente). Lista =
     solo esas rutas. Mismo criterio que client_photos.py: exclusivo del rol
     'client' puro (id_rol=1) — coordinadores/admin ya son miembros de TODOS
     los grupos vía ROLES_COORDINADOR y no se restringen acá."""
     if current_user.rol != "client":
         return None
-    return client_route_ids(db, current_user)
+    from app.services.visibility import async_client_route_ids
+    return await async_client_route_ids(db, current_user)
 
 
-def _visita_permitida_para_cliente(db: Session, current_user: Usuario, id_cliente: int, id_visita: int) -> bool:
+async def _visita_permitida_para_cliente(db: AsyncSession, current_user: Usuario, id_cliente: int, id_visita: int) -> bool:
     """Para un cliente con CLIENTES_RUTAS restringido: ¿esta visita cae en
     una de sus rutas asignadas? Mismo patrón EXISTS que
     client_photos.py::get_client_visits (id_punto_interes + id_cliente).
     Coordinadores/admin y clientes sin restricción (None) siempre pasan."""
-    rutas = _rutas_permitidas_cliente(db, current_user)
+    rutas = await _async_rutas_permitidas_cliente(db, current_user)
     if rutas is None:
         return True
     ids_csv = ",".join(str(int(i)) for i in rutas) if rutas else "-1"
-    row = db.execute(text(f"""
+    row = (await db.execute(text(f"""
         SELECT 1 FROM VISITAS_MERCADERISTA v
         WHERE v.id_visita = :vid AND v.id_cliente = :cid
           AND EXISTS (
@@ -88,7 +91,7 @@ def _visita_permitida_para_cliente(db: Session, current_user: Usuario, id_client
                 AND rp_f.id_cliente = v.id_cliente
                 AND rp_f.id_ruta IN ({ids_csv})
           )
-    """), {"vid": id_visita, "cid": id_cliente}).fetchone()
+    """), {"vid": id_visita, "cid": id_cliente})).fetchone()
     return row is not None
 
 
@@ -96,16 +99,16 @@ def _visita_permitida_para_cliente(db: Session, current_user: Usuario, id_client
 # MIS GRUPOS
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/mis-grupos", response_model=List[GrupoResponse])
-def mis_grupos(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def mis_grupos(db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     """Grupos a los que pertenece el usuario, con conteo de no-leídos y preview."""
-    grupos = get_grupos_de_usuario(db, current_user.id)
+    grupos = await async_get_grupos_de_usuario(db, current_user.id)
     if not grupos:
         return []
 
     ids = [g["id_grupo"] for g in grupos]
     ph = ",".join(str(int(i)) for i in ids)
 
-    unread_rows = db.execute(text(f"""
+    unread_rows = (await db.execute(text(f"""
         SELECT m.id_grupo, COUNT(*)
         FROM CHAT_GRUPO_MENSAJES m
         LEFT JOIN CHAT_GRUPO_LECTURAS l
@@ -114,10 +117,10 @@ def mis_grupos(db: Session = Depends(get_db), current_user: Usuario = Depends(ge
           AND m.id_usuario <> :uid
           AND m.id_mensaje > ISNULL(l.last_read_id_mensaje, 0)
         GROUP BY m.id_grupo
-    """), {"uid": current_user.id}).fetchall()
+    """), {"uid": current_user.id})).fetchall()
     unread = {r[0]: int(r[1]) for r in unread_rows}
 
-    last_rows = db.execute(text(f"""
+    last_rows = (await db.execute(text(f"""
         SELECT x.id_grupo, x.mensaje, x.fecha_envio
         FROM (
             SELECT m.id_grupo, m.mensaje, m.fecha_envio,
@@ -134,7 +137,7 @@ def mis_grupos(db: Session = Depends(get_db), current_user: Usuario = Depends(ge
               )
         ) x
         WHERE x.rn = 1
-    """)).fetchall()
+    """))).fetchall()
     last = {r[0]: {"mensaje": r[1], "fecha": r[2]} for r in last_rows}
 
     result = [
@@ -154,14 +157,14 @@ def mis_grupos(db: Session = Depends(get_db), current_user: Usuario = Depends(ge
 # CHAT GENERAL DEL GRUPO
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/{id_grupo}/mensajes", response_model=List[MensajeGrupoResponse])
-def mensajes_grupo(
+async def mensajes_grupo(
     id_grupo: int,
     limit: int = Query(50, le=200),
     before_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    if not _autorizado_grupo(db, current_user, id_grupo):
+    if not await _autorizado_grupo(db, current_user, id_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
     cond = " AND m.id_mensaje < :before_id" if before_id else ""
@@ -169,7 +172,7 @@ def mensajes_grupo(
     if before_id:
         params["before_id"] = before_id
 
-    rows = db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT TOP (:limit) m.id_mensaje, m.id_grupo, m.id_usuario, m.username,
                              m.mensaje, m.tipo_mensaje, m.fecha_envio, m.foto_adjunta
         FROM CHAT_GRUPO_MENSAJES m
@@ -183,7 +186,7 @@ def mensajes_grupo(
               )
           )
         ORDER BY m.id_mensaje DESC
-    """), params).fetchall()
+    """), params)).fetchall()
 
     mensajes = [{
         "id_mensaje": r[0], "id_grupo": r[1], "id_usuario": r[2], "username": r[3],
@@ -194,12 +197,12 @@ def mensajes_grupo(
     if mensajes:
         ids = [m["id_mensaje"] for m in mensajes]
         ph = ",".join(str(int(i)) for i in ids)
-        lect_rows = db.execute(text(f"""
+        lect_rows = (await db.execute(text(f"""
             SELECT id_mensaje, id_usuario, username, fecha_lectura
             FROM CHAT_GRUPO_MENSAJE_LECTURAS
             WHERE id_mensaje IN ({ph})
             ORDER BY fecha_lectura ASC
-        """)).fetchall()
+        """))).fetchall()
         por_mensaje: dict[int, list] = {}
         for r in lect_rows:
             por_mensaje.setdefault(r[0], []).append(
@@ -216,10 +219,10 @@ def mensajes_grupo(
 async def enviar_mensaje_grupo(
     id_grupo: int,
     data: EnviarMensajeGrupoRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    if not _autorizado_grupo(db, current_user, id_grupo):
+    if not await _autorizado_grupo(db, current_user, id_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
     texto = (data.mensaje or "").strip()
@@ -227,13 +230,13 @@ async def enviar_mensaje_grupo(
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
     ahora = datetime.now()
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         INSERT INTO CHAT_GRUPO_MENSAJES (id_grupo, id_usuario, username, mensaje, tipo_mensaje, fecha_envio)
         OUTPUT INSERTED.id_mensaje
         VALUES (:id_grupo, :uid, :username, :mensaje, 'usuario', :fecha)
     """), {"id_grupo": id_grupo, "uid": current_user.id, "username": current_user.username,
-           "mensaje": texto, "fecha": ahora}).fetchone()
-    db.commit()
+           "mensaje": texto, "fecha": ahora})).fetchone()
+    await db.commit()
     id_mensaje = row[0]
 
     payload = {
@@ -254,29 +257,29 @@ async def enviar_mensaje_grupo(
 
 
 @router.get("/{id_grupo}/miembros", response_model=List[MiembroGrupoResponse])
-def miembros_grupo(id_grupo: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
-    if not _autorizado_grupo(db, current_user, id_grupo):
+async def miembros_grupo(id_grupo: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
+    if not await _autorizado_grupo(db, current_user, id_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
-    info = _grupo_info(db, id_grupo)
+    info = await _grupo_info(db, id_grupo)
     if not info:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
-    miembros = get_miembros_grupo(db, info[1], info[2])
+    miembros = await async_get_miembros_grupo(db, info[1], info[2])
     return [MiembroGrupoResponse(**m) for m in miembros]
 
 
 @router.post("/{id_grupo}/marcar-leido")
-async def marcar_leido_grupo(id_grupo: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def marcar_leido_grupo(id_grupo: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     """Marca el grupo como leído hasta su último mensaje (puntero, badge de
     no-leídos) y registra el recibo de lectura por mensaje (tick doble)."""
-    if not _autorizado_grupo(db, current_user, id_grupo):
+    if not await _autorizado_grupo(db, current_user, id_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
-    last = db.execute(text("""
+    last = (await db.execute(text("""
         SELECT ISNULL(MAX(id_mensaje), 0) FROM CHAT_GRUPO_MENSAJES WHERE id_grupo = :id
-    """), {"id": id_grupo}).scalar()
+    """), {"id": id_grupo})).scalar()
     last_id = int(last or 0)
 
-    db.execute(text("""
+    await db.execute(text("""
         MERGE CHAT_GRUPO_LECTURAS AS t
         USING (SELECT :id_grupo AS id_grupo, :uid AS id_usuario) AS s
            ON t.id_grupo = s.id_grupo AND t.id_usuario = s.id_usuario
@@ -287,7 +290,7 @@ async def marcar_leido_grupo(id_grupo: int, db: Session = Depends(get_db), curre
             VALUES (:id_grupo, :uid, :last_id, GETDATE());
     """), {"id_grupo": id_grupo, "uid": current_user.id, "last_id": last_id})
 
-    nuevos = db.execute(text("""
+    nuevos = (await db.execute(text("""
         INSERT INTO CHAT_GRUPO_MENSAJE_LECTURAS (id_mensaje, id_usuario, username, fecha_lectura)
         OUTPUT INSERTED.id_mensaje, INSERTED.fecha_lectura
         SELECT m.id_mensaje, :uid, :username, GETDATE()
@@ -297,8 +300,8 @@ async def marcar_leido_grupo(id_grupo: int, db: Session = Depends(get_db), curre
               SELECT 1 FROM CHAT_GRUPO_MENSAJE_LECTURAS l
               WHERE l.id_mensaje = m.id_mensaje AND l.id_usuario = :uid
           )
-    """), {"id_grupo": id_grupo, "uid": current_user.id, "username": current_user.username}).fetchall()
-    db.commit()
+    """), {"id_grupo": id_grupo, "uid": current_user.id, "username": current_user.username})).fetchall()
+    await db.commit()
 
     if nuevos:
         try:
@@ -318,13 +321,13 @@ async def marcar_leido_grupo(id_grupo: int, db: Session = Depends(get_db), curre
 # SUB-HILO DE CHAT POR VISITA
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/visitas-chat/{id_cliente}/{tipo_grupo}", response_model=List[VisitaConChatResponse])
-def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     """Visitas de este cliente que YA tienen un sub-hilo de chat iniciado."""
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
-    rutas = _rutas_permitidas_cliente(db, current_user)
+    rutas = await _async_rutas_permitidas_cliente(db, current_user)
     ruta_filter_sql = ""
     if rutas is not None:
         ids_csv = ",".join(str(int(i)) for i in rutas) if rutas else "-1"
@@ -337,7 +340,7 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
           )
         """
 
-    rows = db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT v.id_visita, v.fecha_visita, m.nombre AS mercaderista, p.punto_de_interes,
                v.estado, x.ultimo_mensaje, x.fecha_ultimo
         FROM (
@@ -355,7 +358,7 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
         ) x
         WHERE 1=1 {ruta_filter_sql}
         ORDER BY x.fecha_ultimo DESC
-    """), {"cid": id_cliente, "tipo": tipo_grupo}).fetchall()
+    """), {"cid": id_cliente, "tipo": tipo_grupo})).fetchall()
 
     return [
         VisitaConChatResponse(
@@ -367,19 +370,19 @@ def visitas_con_chat(id_cliente: int, tipo_grupo: str, db: Session = Depends(get
 
 
 @router.get("/visita-mensajes/{id_cliente}/{tipo_grupo}/{id_visita}", response_model=List[MensajeGrupoVisitaResponse])
-def mensajes_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def mensajes_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
-    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+    if not await _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
         raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT id_mensaje, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta
         FROM CHAT_MENSAJES_GRUPO_VISITA
         WHERE id_cliente = :cid AND tipo_grupo = :tipo AND id_visita = :vid
         ORDER BY fecha_envio ASC
-    """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita}).fetchall()
+    """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita})).fetchall()
 
     mensajes = [{
         "id_mensaje": r[0], "id_cliente": id_cliente, "tipo_grupo": tipo_grupo, "id_visita": id_visita,
@@ -391,12 +394,12 @@ def mensajes_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: 
     if mensajes:
         ids = [m["id_mensaje"] for m in mensajes]
         ph = ",".join(str(int(i)) for i in ids)
-        lect_rows = db.execute(text(f"""
+        lect_rows = (await db.execute(text(f"""
             SELECT id_mensaje, id_usuario, username, fecha_lectura
             FROM CHAT_GRUPO_VISITA_LECTURAS
             WHERE id_mensaje IN ({ph})
             ORDER BY fecha_lectura ASC
-        """)).fetchall()
+        """))).fetchall()
         por_mensaje: dict[int, list] = {}
         for r in lect_rows:
             por_mensaje.setdefault(r[0], []).append(
@@ -412,12 +415,12 @@ def mensajes_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: 
 async def enviar_mensaje_grupo_visita(
     id_cliente: int, tipo_grupo: str, id_visita: int,
     data: EnviarMensajeGrupoRequest,
-    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user),
 ):
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
-    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+    if not await _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
         raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
     texto = (data.mensaje or "").strip()
@@ -425,14 +428,14 @@ async def enviar_mensaje_grupo_visita(
         raise HTTPException(status_code=400, detail="Mensaje vacío")
 
     ahora = datetime.now()
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         INSERT INTO CHAT_MENSAJES_GRUPO_VISITA
             (id_cliente, tipo_grupo, id_visita, id_usuario, username, mensaje, tipo_mensaje, fecha_envio)
         OUTPUT INSERTED.id_mensaje
         VALUES (:cid, :tipo, :vid, :uid, :username, :mensaje, 'usuario', :fecha)
     """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita, "uid": current_user.id,
-           "username": current_user.username, "mensaje": texto, "fecha": ahora}).fetchone()
-    db.commit()
+           "username": current_user.username, "mensaje": texto, "fecha": ahora})).fetchone()
+    await db.commit()
     id_mensaje = row[0]
 
     payload = {
@@ -453,14 +456,14 @@ async def enviar_mensaje_grupo_visita(
 
 
 @router.post("/visita-marcar-leido/{id_cliente}/{tipo_grupo}/{id_visita}")
-async def marcar_leido_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def marcar_leido_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
-    if not _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
+    if not await _visita_permitida_para_cliente(db, current_user, id_cliente, id_visita):
         raise HTTPException(status_code=403, detail="No autorizado para esta visita")
 
-    nuevos = db.execute(text("""
+    nuevos = (await db.execute(text("""
         INSERT INTO CHAT_GRUPO_VISITA_LECTURAS (id_mensaje, id_usuario, username, fecha_lectura)
         OUTPUT INSERTED.id_mensaje, INSERTED.fecha_lectura
         SELECT m.id_mensaje, :uid, :username, GETDATE()
@@ -472,8 +475,8 @@ async def marcar_leido_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita:
               WHERE l.id_mensaje = m.id_mensaje AND l.id_usuario = :uid
           )
     """), {"cid": id_cliente, "tipo": tipo_grupo, "vid": id_visita,
-           "uid": current_user.id, "username": current_user.username}).fetchall()
-    db.commit()
+           "uid": current_user.id, "username": current_user.username})).fetchall()
+    await db.commit()
 
     if nuevos:
         try:
@@ -494,16 +497,16 @@ async def marcar_leido_grupo_visita(id_cliente: int, tipo_grupo: str, id_visita:
 # de equipo fuera del chat en sí (Centro de Mando / revisión de visitas).
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/info-cliente/{id_cliente}/{tipo_grupo}", response_model=InfoGrupoClienteResponse)
-def info_grupo_cliente(id_cliente: int, tipo_grupo: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def info_grupo_cliente(id_cliente: int, tipo_grupo: str, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     _validar_tipo(tipo_grupo)
     if not usuario_es_miembro(db, current_user.id, id_cliente, tipo_grupo):
         raise HTTPException(status_code=403, detail="No autorizado")
 
     asegurar_grupos_cliente(db, id_cliente)  # idempotente: crea el grupo si falta
 
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         SELECT id_grupo, nombre FROM CHAT_GRUPOS WHERE id_cliente = :cid AND tipo_grupo = :tipo AND activa = 1
-    """), {"cid": id_cliente, "tipo": tipo_grupo}).fetchone()
+    """), {"cid": id_cliente, "tipo": tipo_grupo})).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
 
@@ -511,9 +514,9 @@ def info_grupo_cliente(id_cliente: int, tipo_grupo: str, db: Session = Depends(g
 
 
 @router.post("/visita-thread", response_model=VisitaThreadResponse, status_code=201)
-def get_or_create_visita_thread(
+async def get_or_create_visita_thread(
     body: VisitaThreadRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Punto de entrada del botón de chat de una visita en Centro de Mando /
@@ -522,12 +525,12 @@ def get_or_create_visita_thread(
     que el viejo POST /api/chat/visit-thread (ahora eliminado)."""
     _validar_tipo(body.tipo_grupo)
 
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         SELECT v.id_cliente, p.punto_de_interes
         FROM VISITAS_MERCADERISTA v
         LEFT JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
         WHERE v.id_visita = :vid
-    """), {"vid": body.visita_id}).fetchone()
+    """), {"vid": body.visita_id})).fetchone()
     if not row or not row[0]:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     id_cliente, punto_nombre = int(row[0]), row[1]
@@ -536,9 +539,9 @@ def get_or_create_visita_thread(
         raise HTTPException(status_code=403, detail="No autorizado")
 
     asegurar_grupos_cliente(db, id_cliente)
-    grupo_row = db.execute(text("""
+    grupo_row = (await db.execute(text("""
         SELECT id_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND tipo_grupo = :tipo AND activa = 1
-    """), {"cid": id_cliente, "tipo": body.tipo_grupo}).fetchone()
+    """), {"cid": id_cliente, "tipo": body.tipo_grupo})).fetchone()
     if not grupo_row:
         raise HTTPException(status_code=404, detail="Grupo no encontrado")
 

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text, bindparam, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, bindparam, and_, or_, select, update, delete
 from typing import List, Optional
 from datetime import date, timedelta
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.models.user import Usuario
 from app.models.visita import Visita
@@ -20,59 +21,59 @@ router = APIRouter(prefix="/api/visits", tags=["Visitas"])
 
 
 @router.get("", response_model=List[VisitaResponse])
-def list_visits(
+async def list_visits(
     ruta_id: Optional[int] = None,
     fecha: Optional[date] = None,
     estado: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    query = db.query(Visita)
+    query = select(Visita)
     if ruta_id:
         query = query.filter(Visita.ruta_id == ruta_id)
     if fecha:
         query = query.filter(Visita.fecha == fecha)
     if estado:
         query = query.filter(Visita.estado == estado)
-    return query.order_by(Visita.fecha.desc()).all()
+    return (await db.execute(query.order_by(Visita.fecha.desc()))).scalars().all()
 
 
 @router.post("", response_model=VisitaResponse, status_code=201)
-def create_visit(
+async def create_visit(
     data: VisitaCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     visita = Visita(**data.model_dump())
     db.add(visita)
-    db.commit()
-    db.refresh(visita)
+    await db.commit()
+    await db.refresh(visita)
     return visita
 
 
 @router.get("/pending", response_model=List[VisitaResponse])
-def get_pending_visits(
-    db: Session = Depends(get_db),
+async def get_pending_visits(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     today = date.today()
-    return db.query(Visita).filter(
+    return (await db.execute(select(Visita).filter(
         Visita.fecha == today,
         Visita.estado.in_(["Pendiente", "En Progreso", "Rechazada"]),
-    ).options(joinedload(Visita.punto), joinedload(Visita.mercaderista)).all()
+    ).options(joinedload(Visita.punto), joinedload(Visita.mercaderista)))).scalars().all()
 
 
 @router.get("/with-balances", response_model=List[VisitaResponse])
-def get_visits_with_balances(
+async def get_visits_with_balances(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     cliente_id: Optional[int] = None,
     mercaderista_id: Optional[int] = None,
     punto_id: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
-    query = db.query(Visita).join(Balance, Visita.id == Balance.visita_id).distinct()
+    query = select(Visita).join(Balance, Visita.id == Balance.visita_id).distinct()
 
     if current_user.is_analyst and current_user.id_perfil:
         # analistas_rutas -> RUTA_PROGRAMACION, no ANALISTAS_CLIENTE
@@ -81,13 +82,13 @@ def get_visits_with_balances(
         # que se exige también que el mercaderista de la visita esté
         # asignado (MERCADERISTAS_RUTAS) a esa misma ruta del analista —
         # ver comentario largo en review_list().
-        managed_rows = db.execute(text("""
+        managed_rows = (await db.execute(text("""
             SELECT DISTINCT rp.id_punto_interes, rp.id_cliente, mr.id_mercaderista
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
             JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
             WHERE ar.id_analista = :aid AND rp.activa = 1
-        """), {"aid": current_user.id_perfil}).fetchall()
+        """), {"aid": current_user.id_perfil})).fetchall()
         managed_triples = [(r[0], r[1], r[2]) for r in managed_rows if r[0] is not None and r[1] is not None]
         if not managed_triples:
             return []
@@ -108,25 +109,25 @@ def get_visits_with_balances(
     if punto_id:
         query = query.filter(Visita.punto_id == punto_id)
 
-    return query.options(
+    return (await db.execute(query.options(
         joinedload(Visita.punto),
         joinedload(Visita.mercaderista),
         joinedload(Visita.cliente)
-    ).order_by(Visita.fecha.desc()).all()
+    ).order_by(Visita.fecha.desc()))).scalars().all()
 
 
 @router.get("/review-list")
-def review_list(
+async def review_list(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Lista de visitas con conteo de fotos a revisar + desglose por tipo. Declarada
     ANTES de /{visit_id} para que la ruta estática no la capture el path param."""
-    from app.services.visibility import coordinator_client_ids
-    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+    from app.services.visibility import async_coordinator_client_ids
+    visible_ids = (await async_coordinator_client_ids(db, current_user)) if current_user.is_client else None
 
     if not (desde and hasta):
         hoy = date.today()
@@ -221,7 +222,7 @@ def review_list(
         HAVING SUM(CASE WHEN f.id_tipo_foto NOT IN (5,6) AND f.id_foto IS NOT NULL THEN 1 ELSE 0 END) > 0
         ORDER BY v.fecha_visita DESC
     """)
-    rows = db.execute(q, params).fetchall()
+    rows = (await db.execute(q, params)).fetchall()
 
     qb = text(f"""
         SELECT v.id_visita, f.id_tipo_foto,
@@ -238,7 +239,7 @@ def review_list(
         GROUP BY v.id_visita, f.id_tipo_foto, tf.tipo_foto
     """)
     tipos_map: dict = {}
-    for r in db.execute(qb, params).fetchall():
+    for r in (await db.execute(qb, params)).fetchall():
         tid = int(r.id_tipo_foto)
         tipos_map.setdefault(r.id_visita, []).append({
             "id_tipo_foto": tid, "label": r.label,
@@ -266,9 +267,9 @@ def review_list(
 
 
 @router.get("/review-mercaderistas")
-def review_mercaderistas(
+async def review_mercaderistas(
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Roster de mercaderistas asignados a rutas activas (MERCADERISTAS_RUTAS ->
@@ -277,8 +278,8 @@ def review_mercaderistas(
     pantalla de revisión pueda mostrar primero "quién debería estar reportando"
     (incluye mercaderistas con 0 visitas todavía), y recién al elegir uno se
     consultan sus visitas concretas."""
-    from app.services.visibility import coordinator_client_ids
-    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+    from app.services.visibility import async_coordinator_client_ids
+    visible_ids = (await async_coordinator_client_ids(db, current_user)) if current_user.is_client else None
 
     params: dict = {}
     where = "WHERE rp.activa = 1 AND ISNULL(rn.servicio, '') NOT LIKE '%auditor%'"
@@ -328,7 +329,7 @@ def review_mercaderistas(
         {where}
         ORDER BY c.cliente, m.nombre
     """)
-    rows = db.execute(q, params).fetchall()
+    rows = (await db.execute(q, params)).fetchall()
     return [
         {
             "id_mercaderista": r.id_mercaderista, "mercaderista": r.mercaderista,
@@ -346,15 +347,15 @@ async def _post_system_message_to_general_chat(db: Session, id_cliente: int, tex
     ahora = datetime.now()
     try:
         from app.websockets.manager import manager
-        grupos = db.execute(text("SELECT id_grupo, tipo_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND activa = 1"), {"cid": id_cliente}).fetchall()
+        grupos = (await db.execute(text("SELECT id_grupo, tipo_grupo FROM CHAT_GRUPOS WHERE id_cliente = :cid AND activa = 1"), {"cid": id_cliente})).fetchall()
         for g_id, g_tipo in grupos:
-            ins = db.execute(text("""
+            ins = (await db.execute(text("""
                 INSERT INTO CHAT_GRUPO_MENSAJES
                     (id_grupo, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
                 OUTPUT INSERTED.id_mensaje
                 VALUES (:gid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, NULL)
-            """), {"gid": g_id, "mensaje": texto, "fecha": ahora}).fetchone()
-            db.commit()
+            """), {"gid": g_id, "mensaje": texto, "fecha": ahora})).fetchone()
+            await db.commit()
             await manager.broadcast_to_room(f"grupo_{g_id}", {
                 "id_mensaje": ins[0], "id_grupo": g_id,
                 "id_usuario": None, "username": "Sistema", "mensaje": texto, "tipo_mensaje": "sistema",
@@ -363,17 +364,17 @@ async def _post_system_message_to_general_chat(db: Session, id_cliente: int, tex
     except Exception as e:
         import logging
         logging.warning(f"Error _post_system_message_to_general_chat: {e}")
-        db.rollback()
+        await db.rollback()
 
 
 @router.post("/{visit_id}/mark-reviewed")
 async def mark_reviewed(
     visit_id: int,
     revisada: bool = True,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
-    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    visita = (await db.execute(select(Visita).filter(Visita.id == visit_id))).scalars().first()
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     visita.revisada_por = str(current_user.id) if revisada else None
@@ -382,7 +383,7 @@ async def mark_reviewed(
     log_action(db, action="MARK_VISIT_REVIEWED", entity_type="Visita",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                entity_id=visita.id, changes={"revisada_por": visita.revisada_por})
-    db.commit()
+    await db.commit()
     notify_event("visit.reviewed", {"id_visita": visita.id, "revisada": revisada})
     if revisada and visita.id_cliente:
         nombre_punto = visita.punto.nombre if visita.punto else None
@@ -391,54 +392,54 @@ async def mark_reviewed(
 
 
 @router.get("/reject-reasons", response_model=List[RejectReason])
-def get_reject_reasons(
-    db: Session = Depends(get_db),
+async def get_reject_reasons(
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    rows = db.execute(text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS ORDER BY razon")).fetchall()
+    rows = (await db.execute(text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS ORDER BY razon"))).fetchall()
     return [{"id": r.id_razones_rechazos, "razon": r.razon} for r in rows]
 
 
 @router.get("/{visit_id}", response_model=VisitaResponse)
-def get_visit(
+async def get_visit(
     visit_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    visita = (await db.execute(select(Visita).filter(Visita.id == visit_id))).scalars().first()
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     return visita
 
 
 @router.patch("/{visit_id}", response_model=VisitaResponse)
-def update_visit(
+async def update_visit(
     visit_id: int,
     data: VisitaUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    visita = (await db.execute(select(Visita).filter(Visita.id == visit_id))).scalars().first()
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     for key, value in data.model_dump(exclude_none=True).items():
         setattr(visita, key, value)
-    db.commit()
-    db.refresh(visita)
+    await db.commit()
+    await db.refresh(visita)
     return visita
 
 
 @router.get("/{visit_id}/photos", response_model=List[FotoResponse])
-def get_visit_photos(
+async def get_visit_photos(
     visit_id: int,
     tipo: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    query = db.query(Foto).filter(Foto.visita_id == visit_id)
+    query = select(Foto).filter(Foto.visita_id == visit_id)
     if tipo:
         query = query.filter(Foto.id_tipo_foto == tipo)
-    fotos = query.all()
+    fotos = (await db.execute(query)).scalars().all()
 
     foto_ids = [f.id for f in fotos]
     razones_map: dict = {}
@@ -450,7 +451,7 @@ def get_visit_photos(
             LEFT JOIN USUARIOS u ON u.id_usuario = fr.rechazado_por
             WHERE fr.id_foto IN :ids
         """).bindparams(bindparam("ids", expanding=True))
-        for row in db.execute(q, {"ids": foto_ids}).fetchall():
+        for row in (await db.execute(q, {"ids": foto_ids})).fetchall():
             d = razones_map.setdefault(row.id_foto, {"razones": [], "razones_ids": [], "rechazado_por": None, "rechazado_por_nombre": None})
             d["razones"].append(row.razon)
             d["razones_ids"].append(row.id_razones_rechazos)
@@ -466,7 +467,7 @@ def get_visit_photos(
     return fotos
 
 
-def _assert_can_manage_photos(db: Session, current_user: Usuario, foto_ids: list[int]) -> None:
+async def _assert_can_manage_photos(db: AsyncSession, current_user: Usuario, foto_ids: list[int]) -> None:
     """Admin/Analyst pueden todo. Cliente solo puede gestionar fotos de sus visitas."""
     if current_user.rol in ("admin", "analyst"):
         return
@@ -476,12 +477,11 @@ def _assert_can_manage_photos(db: Session, current_user: Usuario, foto_ids: list
         raise HTTPException(status_code=403, detail="Usuario cliente sin id_perfil")
 
     # Validar que TODAS las fotos pertenezcan a visitas del cliente.
-    rows = (
-        db.query(Foto.id, Visita.id_cliente)
+    rows = (await db.execute(
+        select(Foto.id, Visita.id_cliente)
         .join(Visita, Foto.visita_id == Visita.id)
         .filter(Foto.id.in_(foto_ids))
-        .all()
-    )
+    )).all()
     if len(rows) != len(set(foto_ids)):
         raise HTTPException(status_code=404, detail="Alguna foto no existe")
     for foto_id, cliente_id in rows:
@@ -492,28 +492,27 @@ def _assert_can_manage_photos(db: Session, current_user: Usuario, foto_ids: list
 @router.post("/approve-photos")
 async def approve_photos(
     data: ApprovePhotosRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    _assert_can_manage_photos(db, current_user, data.foto_ids)
+    await _assert_can_manage_photos(db, current_user, data.foto_ids)
     
     from sqlalchemy import func
-    conteo = (
-        db.query(Visita.id, Visita.id_cliente, func.count(Foto.id), Visita.punto_id)
+    conteo = (await db.execute(
+        select(Visita.id, Visita.id_cliente, func.count(Foto.id), Visita.punto_id)
         .join(Foto, Foto.visita_id == Visita.id)
         .filter(Foto.id.in_(data.foto_ids))
         .group_by(Visita.id, Visita.id_cliente, Visita.punto_id)
-        .all()
-    )
+    )).all()
 
-    updated = db.query(Foto).filter(Foto.id.in_(data.foto_ids)).update(
-        {"estado": "Aprobada"},
-        synchronize_session=False,
+    updated_res = await db.execute(
+        update(Foto).where(Foto.id.in_(data.foto_ids)).values(estado="Aprobada")
     )
+    updated = updated_res.rowcount
     log_action(db, action="APPROVE_PHOTOS", entity_type="Foto",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                changes={"foto_ids": data.foto_ids, "count": updated})
-    db.commit()
+    await db.commit()
     notify_event("photo.decided", {"foto_ids": data.foto_ids, "estado": "Aprobada"})
     
     for v_id, c_id, count, pdv in conteo:
@@ -540,14 +539,14 @@ async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: F
     try:
         from app.websockets.manager import manager
 
-        ins = db.execute(text("""
+        ins = (await db.execute(text("""
             INSERT INTO CHAT_MENSAJES_GRUPO_VISITA
                 (id_cliente, tipo_grupo, id_visita, id_usuario, username, mensaje, tipo_mensaje, fecha_envio, foto_adjunta)
             OUTPUT INSERTED.id_mensaje
             VALUES (:cid, :tipo, :vid, NULL, 'Sistema', :mensaje, 'sistema', :fecha, :foto)
         """), {"cid": visita.id_cliente, "tipo": tipo_grupo, "vid": visita.id,
-               "mensaje": texto, "fecha": ahora, "foto": foto.blob_path}).fetchone()
-        db.commit()
+               "mensaje": texto, "fecha": ahora, "foto": foto.blob_path})).fetchone()
+        await db.commit()
         from app.services.azure_service import azure_service
         _foto_proxy = azure_service.get_proxy_url(foto.blob_path) if foto.blob_path else None
         await manager.broadcast_to_room(f"grupo_visita_{visita.id_cliente}_{tipo_grupo}_{visita.id}", {
@@ -556,17 +555,17 @@ async def _post_rejection_to_chat(db: Session, visita: Optional[Visita], foto: F
             "fecha_envio": str(ahora), "foto_adjunta": _foto_proxy, "leido_por": [],
         })
     except Exception:
-        db.rollback()
+        await db.rollback()
 
 
 @router.post("/reject-photo")
 async def reject_photo(
     data: RejectPhotoRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     _assert_can_manage_photos(db, current_user, [data.foto_id])
-    foto = db.query(Foto).filter(Foto.id == data.foto_id).first()
+    foto = (await db.execute(select(Foto).filter(Foto.id == data.foto_id))).scalars().first()
     if not foto:
         raise HTTPException(status_code=404, detail="Foto no encontrada")
     foto.estado = "Rechazada"
@@ -575,9 +574,9 @@ async def reject_photo(
     motivo = data.motivo or ""
     razones_nombres = []
     if data.razones_ids:
-        db.query(FotoRazonRechazo).filter(FotoRazonRechazo.id_foto == foto.id).delete()
+        await db.execute(delete(FotoRazonRechazo).where(FotoRazonRechazo.id_foto == foto.id))
         q = text("SELECT id_razones_rechazos, razon FROM RAZONES_RECHAZOS WHERE id_razones_rechazos IN :ids").bindparams(bindparam("ids", expanding=True))
-        name_by_id = {r.id_razones_rechazos: r.razon for r in db.execute(q, {"ids": data.razones_ids}).fetchall()}
+        name_by_id = {r.id_razones_rechazos: r.razon for r in (await db.execute(q, {"ids": data.razones_ids})).fetchall()}
         for rid in data.razones_ids:
             db.add(FotoRazonRechazo(id_foto=foto.id, id_razones_rechazos=rid, rechazado_por=current_user.id))
             if rid in name_by_id:
@@ -585,11 +584,11 @@ async def reject_photo(
         if razones_nombres:
             motivo = ", ".join(razones_nombres)
 
-    visita = db.query(Visita).filter(Visita.id == foto.visita_id).first()
+    visita = (await db.execute(select(Visita).filter(Visita.id == foto.visita_id))).scalars().first()
     merc_cedula = None
     if visita:
         from app.models.mercaderista import Mercaderista
-        merc = db.query(Mercaderista).filter(Mercaderista.id == visita.mercaderista_id).first()
+        merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == visita.mercaderista_id))).scalars().first()
         if merc:
             merc_cedula = merc.cedula
         # Reabre la visita para el mercaderista: una foto rechazada significa
@@ -614,7 +613,7 @@ async def reject_photo(
     # generado acá. Sin esto el INSERT de la notificación fallaba siempre con
     # "Cannot insert the value NULL into column 'id_foto_rechazada'".
     primera_razon_id = data.razones_ids[0] if data.razones_ids else None
-    rechazo_row = db.execute(text("""
+    rechazo_row = (await db.execute(text("""
         INSERT INTO FOTOS_RECHAZADAS
             (id_visita, id_foto_original, fecha_registro, fecha_rechazo,
              id_razones_rechazos, descripcion, rechazado_por)
@@ -627,7 +626,7 @@ async def reject_photo(
         "id_razon": primera_razon_id,
         "descripcion": motivo,
         "rechazado_por": current_user.username,
-    }).fetchone()
+    })).fetchone()
     id_foto_rechazada = rechazo_row[0] if rechazo_row else None
 
     notif = NotificacionRechazoFoto(
@@ -647,7 +646,7 @@ async def reject_photo(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                entity_id=foto.id, entity_name=foto.blob_path,
                changes={"motivo": motivo, "mercaderista": merc_cedula})
-    db.commit()
+    await db.commit()
 
     if merc_cedula:
         try:
@@ -672,18 +671,18 @@ async def reject_photo(
 
 
 @router.post("/save-decisions")
-def save_photo_decisions(
+async def save_photo_decisions(
     data: SavePhotoDecisionsRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     for decision in data.decisions:
         foto_id = decision.get("foto_id")
         estado = decision.get("estado")
-        foto = db.query(Foto).filter(Foto.id == foto_id).first()
+        foto = (await db.execute(select(Foto).filter(Foto.id == foto_id))).scalars().first()
         if foto and estado in ("Aprobada", "Rechazada"):
             foto.estado = estado
-    db.commit()
+    await db.commit()
     return {"message": "Decisiones guardadas"}
 
 
@@ -691,13 +690,13 @@ def save_photo_decisions(
 
 
 @router.get("/{visit_id}/balances", response_model=List[BalanceResponse])
-def get_visit_balances(
+async def get_visit_balances(
     visit_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     # Verificar que la visita pertenezca a un cliente manejado por el analista
-    visita = db.query(Visita).filter(Visita.id == visit_id).first()
+    visita = (await db.execute(select(Visita).filter(Visita.id == visit_id))).scalars().first()
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     
@@ -707,7 +706,7 @@ def get_visit_balances(
         # de que el analista tenga una ruta que sirva ese PDV+cliente, se
         # exige que el mercaderista de la visita esté asignado a esa misma
         # ruta (MERCADERISTAS_RUTAS) — ver comentario largo en review_list().
-        is_managed = db.execute(text("""
+        is_managed = (await db.execute(text("""
             SELECT TOP 1 1
             FROM analistas_rutas ar
             JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
@@ -718,37 +717,38 @@ def get_visit_balances(
         """), {
             "aid": current_user.id_perfil, "cid": visita.id_cliente,
             "pid": visita.punto_id, "mid": visita.mercaderista_id,
-        }).first()
+        })).first()
         if not is_managed:
             raise HTTPException(status_code=403, detail="No tiene permiso para ver esta visita")
 
     # Registrar inicio de modificación
-    db.query(Balance).filter(Balance.visita_id == visit_id).update(
-        {"fecha_inicio_modificacion": datetime.now()},
-        synchronize_session=False
+    await db.execute(
+        update(Balance).where(Balance.visita_id == visit_id).values(fecha_inicio_modificacion=datetime.now())
     )
-    db.commit()
+    await db.commit()
     
-    return db.query(Balance).filter(Balance.visita_id == visit_id).all()
+    return (await db.execute(select(Balance).filter(Balance.visita_id == visit_id))).scalars().all()
 
 
 @router.post("/update-balances")
-def update_balances(
+async def update_balances(
     data: UpdateBalancesRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     for item in data.balances:
-        db.query(Balance).filter(Balance.id == item.id_balance).update({
-            "inv_inicial": item.inv_inicial,
-            "inv_final": item.inv_final,
-            "inv_deposito": item.inv_deposito,
-            "caras": item.caras,
-            "precio_bs": item.precio_bs,
-            "precio_ds": item.precio_ds,
-            "fecha_modificacion": datetime.now()
-        }, synchronize_session=False)
+        await db.execute(
+            update(Balance).where(Balance.id == item.id_balance).values(
+                inv_inicial=item.inv_inicial,
+                inv_final=item.inv_final,
+                inv_deposito=item.inv_deposito,
+                caras=item.caras,
+                precio_bs=item.precio_bs,
+                precio_ds=item.precio_ds,
+                fecha_modificacion=datetime.now()
+            )
+        )
     
-    db.commit()
+    await db.commit()
     notify_event("balance.updated", {"count": len(data.balances)})
     return {"message": "Balances actualizados correctamente"}

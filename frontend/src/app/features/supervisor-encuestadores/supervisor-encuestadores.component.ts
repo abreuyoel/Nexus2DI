@@ -8,11 +8,12 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-supervisor-encuestadores',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule],
+  imports: [CommonModule, FormsModule, MatIconModule, MatSnackBarModule, SearchableSelectComponent],
   templateUrl: './supervisor-encuestadores.component.html',
   styleUrls: ['./supervisor-encuestadores.component.scss']
 })
@@ -81,10 +82,16 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   currentEncuesta: any = {};
   currentMedico: any = { consultorios: [] };
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  universidadesList: string[] = [];
+
+  get universidadesOpts(): SelectOption[] {
+    return (this.universidadesList || []).map(u => ({ value: u, label: u }));
+  }
 
   ngOnInit(): void {
     this.loadEncuestadores();
     this.loadCentros();
+    this.loadCatalogos();
 
     this.route.queryParams.subscribe(params => {
       if (params['jornadaId']) {
@@ -93,6 +100,14 @@ export class SupervisorEncuestadoresComponent implements OnInit {
       } else {
         this.isStandaloneDetailView = false;
         this.loadData();
+      }
+    });
+  }
+
+  loadCatalogos(): void {
+    this.http.get<any>(`${environment.apiUrl}/api/encuestador/catalogos`).subscribe({
+      next: (res) => {
+        this.universidadesList = res.universidades || [];
       }
     });
   }
@@ -723,6 +738,7 @@ export class SupervisorEncuestadoresComponent implements OnInit {
         especialidad: '',
         sub_especialidad: '',
         universidad_graduacion: '',
+        segunda_universidad_graduacion: '',
         nro_MPPS: '',
         nro_colegiado: '',
         ciudad: '',

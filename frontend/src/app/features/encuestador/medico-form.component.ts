@@ -128,7 +128,6 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
                 [(value)]="medicoData.segunda_universidad_graduacion"
                 tipo="universidad"
                 [required]="false"
->>>>>>> origin/main
                 [disabled]="medicoExistente"
                 (addNew)="onAddNewCatalogItem($event)"
               ></app-mutable-search-select>

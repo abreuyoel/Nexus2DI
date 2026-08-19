@@ -5,11 +5,12 @@ crea la ruta de verdad y la asigna al mercaderista elegido por el admin."""
 import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db, get_async_db, SessionLocal
 from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.ruta import Ruta, RutaProgramacion
@@ -26,13 +27,13 @@ DAY_MAP_ES = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes
 
 
 @router.get("/pendientes")
-def listar_pendientes(
+async def listar_pendientes(
     id_ruta: Optional[int] = None,
     id_cliente: Optional[int] = None,
     tipo_pendiente: Optional[str] = Query(None, pattern="^(nunca_visitado|fotos_rechazadas)$"),
     prioridad_ruta: Optional[str] = None,
     score_min: Optional[float] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
 ):
     # La tabla se crea idempotentemente acá (además del arranque): así un
@@ -44,27 +45,19 @@ def listar_pendientes(
         logger.error(f"No se pudo asegurar PLAN_ACCION_PENDIENTES: {e}")
 
     where = "WHERE 1=1"
-    params: list = []
+    params: dict = {}
     if id_ruta:
-        where += " AND id_ruta = ?"
-        params.append(id_ruta)
+        where += " AND id_ruta = :id_ruta"; params["id_ruta"] = id_ruta
     if id_cliente:
-        where += " AND id_cliente = ?"
-        params.append(id_cliente)
+        where += " AND id_cliente = :id_cliente"; params["id_cliente"] = id_cliente
     if tipo_pendiente:
-        where += " AND tipo_pendiente = ?"
-        params.append(tipo_pendiente)
+        where += " AND tipo_pendiente = :tipo_pendiente"; params["tipo_pendiente"] = tipo_pendiente
     if prioridad_ruta:
-        where += " AND prioridad_ruta = ?"
-        params.append(prioridad_ruta)
+        where += " AND prioridad_ruta = :prioridad_ruta"; params["prioridad_ruta"] = prioridad_ruta
     if score_min is not None:
-        where += " AND score >= ?"
-        params.append(score_min)
+        where += " AND score >= :score_min"; params["score_min"] = score_min
 
-    # Timeout defensivo: esta tabla es chica y no debería tardar, pero si
-    # alguna vez queda bloqueada detrás de un recalculo en curso, mejor
-    # fallar rápido en vez de colgar la pantalla indefinidamente.
-    rows = _execute_with_timeout(db, f"""
+    q = f"""
         SELECT id_pendiente, id_ruta, ruta_nombre, id_punto_interes, punto_de_interes,
                departamento, ciudad, id_cliente, cliente_nombre, prioridad_ruta,
                frecuencia_semanal, periodo, tipo_pendiente, visitas_requeridas,
@@ -73,14 +66,9 @@ def listar_pendientes(
         FROM PLAN_ACCION_PENDIENTES
         {where}
         ORDER BY score DESC
-    """, tuple(params), timeout=15)
-
-    cols = ["id_pendiente", "id_ruta", "ruta_nombre", "id_punto_interes", "punto_de_interes",
-            "departamento", "ciudad", "id_cliente", "cliente_nombre", "prioridad_ruta",
-            "frecuencia_semanal", "periodo", "tipo_pendiente", "visitas_requeridas",
-            "visitas_hechas", "visitas_faltantes", "dias_disponibles", "urgencia", "score",
-            "peso_riesgo", "riesgo_de_modelo", "fecha_calculo"]
-    items = [dict(zip(cols, row)) for row in rows]
+    """
+    rows = (await db.execute(text(q), params)).mappings().all()
+    items = [dict(r) for r in rows]
 
     fecha_calculo = items[0]["fecha_calculo"] if items else None
     total_criticos = sum(1 for i in items if (i["score"] or 0) >= 1)
@@ -106,7 +94,7 @@ def _recalcular_background():
 
 
 @router.post("/recalcular")
-def recalcular(
+async def recalcular(
     background_tasks: BackgroundTasks,
     current_user: Usuario = Depends(require_permission('plan-accion.recalcular', 'read')),
 ):
@@ -134,10 +122,10 @@ def _entrenar_background():
 
 
 @router.post("/modelo/entrenar")
-def entrenar_modelo_riesgo(
+async def entrenar_modelo_riesgo(
     background_tasks: BackgroundTasks,
     sincrono: bool = False,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('plan-accion.recalcular', 'read')),
 ):
     """Entrena (o re-entrena) el modelo de riesgo que reemplaza PESO_TIPO en
@@ -157,8 +145,8 @@ def entrenar_modelo_riesgo(
 
 
 @router.get("/modelo/info")
-def info_modelo_riesgo(
-    db: Session = Depends(get_db),
+async def info_modelo_riesgo(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('plan-accion', 'read')),
 ):
     """Métricas del último modelo entrenado (o ninguno todavía) -- para que
@@ -166,10 +154,10 @@ def info_modelo_riesgo(
     respaldo, y qué tan confiable es (AUC/average precision reales de
     validación, no del entrenamiento)."""
     import json
-    row = _execute_with_timeout(db, """
+    row = (await db.execute(text("""
         SELECT TOP 1 fecha_entrenamiento, metricas_json, n_entrenamiento, n_validacion
         FROM PLAN_ACCION_MODELO_RIESGO WHERE activo = 1 ORDER BY fecha_entrenamiento DESC
-    """, (), timeout=10)
+    """))).fetchone()
     if not row:
         return {"entrenado": False}
     fecha, metricas_json, n_train, n_val = row[0]
@@ -182,7 +170,7 @@ def info_modelo_riesgo(
 
 
 @router.get("/clusters")
-def listar_clusters(
+async def listar_clusters(
     score_min: float = 1.0,
     radio_km: float = 5.0,
     db: Session = Depends(get_db),
@@ -216,9 +204,9 @@ class ConfirmarRutaRequest(BaseModel):
 
 
 @router.post("/clusters/confirmar")
-def confirmar_ruta_bck(
+async def confirmar_ruta_bck(
     data: ConfirmarRutaRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('plan-accion.crear_ruta', 'read')),
 ):
     """Fase 4: toma una propuesta de ruta (los items de una tarjeta de
@@ -230,13 +218,14 @@ def confirmar_ruta_bck(
     if not data.items:
         raise HTTPException(status_code=400, detail="La propuesta no tiene PDVs")
 
-    prefijo = _get_servicio_prefijo(db, SERVICIO_BCK)
-    nombre = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
+    prefijo = await _get_servicio_prefijo(db, SERVICIO_BCK)
+    next_num = await _next_route_number(db, prefijo)
+    nombre = f"Ruta {prefijo}{next_num}"
     ruta = Ruta(nombre=nombre, servicio=SERVICIO_BCK)
     db.add(ruta)
-    db.flush()
+    await db.flush()
 
-    hoy = db.execute(text("SELECT CAST(GETDATE() AS DATE)")).scalar()
+    hoy = (await db.execute(text("SELECT CAST(GETDATE() AS DATE)"))).scalar()
     dia = DAY_MAP_ES[hoy.weekday()]
 
     for item in data.items:
@@ -250,13 +239,15 @@ def confirmar_ruta_bck(
             punto_interes_nombre=item.punto_de_interes,
         ))
 
-    ya_asignado = db.query(MercaderistaRuta).filter(
-        MercaderistaRuta.mercaderista_id == data.id_mercaderista,
-        MercaderistaRuta.ruta_id == ruta.id,
-    ).first()
+    ya_asignado = (await db.execute(
+        select(MercaderistaRuta).filter(
+            MercaderistaRuta.mercaderista_id == data.id_mercaderista,
+            MercaderistaRuta.ruta_id == ruta.id,
+        )
+    )).scalars().first()
     if not ya_asignado:
         db.add(MercaderistaRuta(mercaderista_id=data.id_mercaderista, ruta_id=ruta.id, tipo_ruta="Backup"))
 
-    db.commit()
+    await db.commit()
     logger.info(f"Ruta BCK creada: {nombre} (id={ruta.id}), {len(data.items)} PDV(s), mercaderista={data.id_mercaderista}")
     return {"ok": True, "id_ruta": ruta.id, "nombre_ruta": nombre, "dia": dia, "cantidad_pdvs": len(data.items)}

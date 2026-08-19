@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, input, model, ViewChild } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, ViewChild, HostBinding } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -15,22 +15,22 @@ export interface SelectOption {
   template: `
 <div class="ss-wrap" [class.ss-open]="open()">
   <button type="button" class="ss-trigger" (click)="toggle()">
-    <mat-icon class="ss-trigger-icon">{{ icon() }}</mat-icon>
+    <mat-icon class="ss-trigger-icon">{{ icon }}</mat-icon>
     <span class="ss-trigger-text" [class.ss-placeholder]="!selectedLabel()">
-      {{ selectedLabel() || placeholder() }}
+      {{ selectedLabel() || placeholder }}
     </span>
     <mat-icon class="ss-trigger-chevron">{{ open() ? 'expand_less' : 'expand_more' }}</mat-icon>
   </button>
 
   @if (open()) {
-    <div class="ss-panel" [class.ss-panel-right]="align() === 'right'">
+    <div class="ss-panel" [class.ss-panel-right]="align === 'right'">
       <div class="ss-search">
         <mat-icon class="ss-search-icon">search</mat-icon>
         <input #searchInput
           [ngModel]="search()"
           (ngModelChange)="onSearchInput($event)"
           (keydown.escape)="close()"
-          [placeholder]="searchPlaceholder()">
+          [placeholder]="searchPlaceholder">
         @if (search()) {
           <button type="button" class="ss-clear-search" (click)="onSearchInput('')">
             <mat-icon>close</mat-icon>
@@ -40,18 +40,18 @@ export interface SelectOption {
 
       <div class="ss-list">
         <button type="button" class="ss-item ss-item-all"
-          [class.ss-active]="!value()"
+          [class.ss-active]="!value"
           (click)="pick('')">
           <mat-icon class="ss-item-icon">all_inclusive</mat-icon>
-          <span>{{ allLabel() }}</span>
+          <span>{{ allLabel }}</span>
         </button>
 
         @for (opt of filtered(); track opt.value) {
           <button type="button" class="ss-item"
-            [class.ss-active]="opt.value === value()"
+            [class.ss-active]="opt.value === value"
             (click)="pick(opt.value)">
             <span class="ss-item-label">{{ opt.label }}</span>
-            @if (opt.value === value()) {
+            @if (opt.value === value) {
               <mat-icon class="ss-check">check</mat-icon>
             }
           </button>
@@ -69,6 +69,8 @@ export interface SelectOption {
 </div>
   `,
   styles: [`
+    :host { display: block; position: relative; z-index: 1; }
+    :host(.ss-open), :host:has(.ss-open), .ss-wrap.ss-open { z-index: 99999 !important; position: relative; }
     .ss-wrap { position: relative; width: 100%; }
     .ss-trigger {
       display: flex; align-items: center; gap: .5rem;
@@ -88,24 +90,24 @@ export interface SelectOption {
     .ss-trigger-chevron { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .5; }
 
     .ss-panel {
-      position: absolute; z-index: 1000; top: calc(100% + 4px); left: 0;
+      position: absolute; z-index: 99999; top: calc(100% + 4px); left: 0;
       min-width: 100%; width: max-content; max-width: min(380px, 90vw);
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1;
       border-radius: .75rem;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+      box-shadow: 0 20px 35px -5px rgba(0,0,0,0.25), 0 10px 15px -6px rgba(0,0,0,0.2);
       overflow: hidden;
       animation: ss-fade .12s ease-out;
-      color: #1e293b;
+      color: #0f172a;
       transition: background 0.3s, border-color 0.3s;
     }
     .ss-panel-right { left: auto; right: 0; }
 
     :host-context(.dark) .ss-panel {
-      background: #1f2937;
-      border-color: rgba(255,255,255,0.1);
-      color: #f1f5f9;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      background: #0f172a !important;
+      border-color: #334155;
+      color: #f8fafc;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.7);
     }
 
     @keyframes ss-fade {
@@ -174,14 +176,32 @@ export interface SelectOption {
   `]
 })
 export class SearchableSelectComponent {
-  options = input<SelectOption[]>([]);
-  value = model<string>('');
-  placeholder = input<string>('Selecciona...');
-  searchPlaceholder = input<string>('Buscar...');
-  allLabel = input<string>('Todos');
-  icon = input<string>('list');
-  align = input<'left' | 'right'>('left');
-  disabled = input<boolean>(false);
+  @HostBinding('class.ss-open') get isHostOpen() { return this.open(); }
+
+  private _options = signal<SelectOption[]>([]);
+  private _value = signal<string>('');
+
+  @Input() set options(val: SelectOption[]) {
+    this._options.set(val || []);
+  }
+  get options(): SelectOption[] {
+    return this._options();
+  }
+
+  @Input() set value(val: string) {
+    this._value.set(val ?? '');
+  }
+  get value(): string {
+    return this._value();
+  }
+
+  @Input() placeholder: string = 'Selecciona...';
+  @Input() searchPlaceholder: string = 'Buscar...';
+  @Input() allLabel: string = 'Todos';
+  @Input() icon: string = 'list';
+  @Input() align: 'left' | 'right' = 'left';
+  @Input() disabled: boolean = false;
+
   @Output() valueChange = new EventEmitter<string>();
   @Output() searchChange = new EventEmitter<string>();
 
@@ -192,15 +212,15 @@ export class SearchableSelectComponent {
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   selectedLabel = computed(() => {
-    const opts = this.options() || [];
-    const val = (this.value() ?? '').toString();
+    const opts = this._options() || [];
+    const val = (this._value() ?? '').toString();
     const opt = opts.find(o => o && String(o.value) === val);
     return opt ? (opt.label ?? '') : '';
   });
 
   filtered = computed(() => {
     const q = (this.search() ?? '').toString().trim().toLowerCase();
-    const opts = this.options() || [];
+    const opts = this._options() || [];
     if (!q) return opts;
     return opts.filter(o => {
       if (!o) return false;
@@ -216,7 +236,7 @@ export class SearchableSelectComponent {
   }
 
   toggle(): void {
-    if (this.disabled()) return;
+    if (this.disabled) return;
     this.open.update(v => !v);
     if (this.open()) {
       this.onSearchInput('');
@@ -225,7 +245,7 @@ export class SearchableSelectComponent {
   }
   close(): void { this.open.set(false); }
   pick(v: string): void {
-    this.value.set(v);
+    this._value.set(v);
     this.valueChange.emit(v);
     this.close();
   }

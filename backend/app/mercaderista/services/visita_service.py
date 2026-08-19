@@ -12,6 +12,8 @@ from typing import Optional, List, BinaryIO
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, cast, Date
 
+from app.core.timezone import get_adjusted_now, get_adjusted_today
+
 from app.models.mercaderista import Mercaderista
 from app.models.visita import Visita
 from app.models.foto import Foto, NotificacionRechazoFoto
@@ -70,7 +72,7 @@ class VisitaService:
     ) -> dict:
         """Crea una nueva visita o devuelve una existente del día."""
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         # Verificar si ya existe visita hoy para ese PDV+cliente
         existente = (
@@ -267,11 +269,12 @@ class VisitaService:
                 f.write(file_bytes)
             blob_path = f"/static/fotos_mercaderista/{local_name}"
 
+        merc = self._get_mercaderista(current_user)
         foto = Foto(
             visita_id=visita_id,
             id_tipo_foto=FOTO_TIPOS[tipo_foto]["id"],
             blob_path=blob_path,
-            fecha_registro=datetime.utcnow(),
+            fecha_registro=get_adjusted_now(self.db, merc.id),
             estado="pendiente",
             latitud=lat,
             longitud=lon,
@@ -299,7 +302,7 @@ class VisitaService:
     ) -> dict:
         """Guarda los balances de productos de una visita."""
         merc = self._get_mercaderista(current_user)
-        now = datetime.utcnow()
+        now = get_adjusted_now(self.db, merc.id)
 
         # Validar que la visita pertenece al mercaderista
         visita = (
@@ -368,7 +371,7 @@ class VisitaService:
 
         # ⚡ Auto-desactivar el PDV: marcar el punto como Finalizado para que no quede pendiente
         if visita.punto_id:
-            hoy = date.today()
+            hoy = get_adjusted_today(self.db, merc.id)
             # Buscar si ya existía una activación para este punto hoy
             activacion_pdv = (
                 self.db.query(RutaActivada)
@@ -383,7 +386,8 @@ class VisitaService:
                 activacion_pdv.estado = "Finalizado"
             else:
                 # Buscar id_ruta para respetar la restricción NOT NULL de la base de datos
-                from app.models.ruta import RutaProgramacion, MercaderistaRuta
+                from app.models.ruta import RutaProgramacion
+                from app.models.mercaderista import MercaderistaRuta
                 prog = (
                     self.db.query(RutaProgramacion.ruta_id)
                     .filter(
@@ -401,7 +405,7 @@ class VisitaService:
                     mercaderista_id=merc.id,
                     ruta_id=ruta_id,
                     identificador_punto_interes=visita.punto_id,
-                    fecha_hora_activacion=datetime.now(),
+                    fecha_hora_activacion=get_adjusted_now(self.db, merc.id),
                     estado="Finalizado",
                     tipo_activacion="pdv",
                 )
@@ -639,7 +643,7 @@ class VisitaService:
         # Check if PDV is activated today
         from app.models.ruta import RutaActivada, RutaProgramacion
         from app.models.mercaderista import MercaderistaRuta
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
         punto_activado = False
         if punto:
             activacion = (

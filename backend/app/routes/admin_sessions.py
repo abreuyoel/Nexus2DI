@@ -1,7 +1,9 @@
+from sqlalchemy import select, delete
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import require_admin
 from app.models.user import Usuario
 from app.models.sesion import SesionActiva
@@ -11,16 +13,15 @@ router = APIRouter(prefix="/api/admin/sessions", tags=["Admin - Sesiones"])
 
 
 @router.get("/active")
-def get_active_sessions(
-    db: Session = Depends(get_db),
+async def get_active_sessions(
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    sessions = (
-        db.query(SesionActiva)
+    sessions = (await db.execute(
+        select(SesionActiva)
         .filter(SesionActiva.activa == True)
         .order_by(SesionActiva.created_at.desc())
-        .all()
-    )
+    )).scalars().all()
     return [
         {
             "id": s.id,
@@ -37,12 +38,12 @@ def get_active_sessions(
 
 
 @router.post("/kill/{session_id}")
-def kill_session(
+async def kill_session(
     session_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_admin),
 ):
-    session = db.query(SesionActiva).filter(SesionActiva.id == session_id).first()
+    session = (await db.execute(select(SesionActiva).filter(SesionActiva.id == session_id))).scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Sesión no encontrada")
     if not session.activa:
@@ -56,23 +57,25 @@ def kill_session(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                entity_id=session_id, entity_name=session.username,
                changes={"target_user": session.username, "target_rol": session.rol, "ip": session.ip_address})
-    db.commit()
+    await db.commit()
     return {"message": f"Sesión {session_id} terminada"}
 
 
 @router.post("/kill-user/{user_id}")
-def kill_user_sessions(
+async def kill_user_sessions(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_admin),
 ):
-    target = db.query(Usuario).filter(Usuario.id == user_id).first()
+    target = (await db.execute(select(Usuario).filter(Usuario.id == user_id))).scalars().first()
     target_name = target.username if target else str(user_id)
     now = datetime.now(timezone.utc)
 
-    sessions = db.query(SesionActiva).filter(
-        SesionActiva.user_id == user_id, SesionActiva.activa == True
-    ).all()
+    sessions = (await db.execute(
+        select(SesionActiva).filter(
+            SesionActiva.user_id == user_id, SesionActiva.activa == True
+        )
+    )).scalars().all()
     for s in sessions:
         s.activa = False
         s.fecha_cierre = now
@@ -82,23 +85,22 @@ def kill_user_sessions(
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                entity_id=user_id, entity_name=target_name,
                changes={"sessions_killed": len(sessions)})
-    db.commit()
+    await db.commit()
     return {"message": f"{len(sessions)} sesiones terminadas para {target_name}"}
 
 
 @router.get("/history/{user_id}")
-def get_session_history(
+async def get_session_history(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    sessions = (
-        db.query(SesionActiva)
+    sessions = (await db.execute(
+        select(SesionActiva)
         .filter(SesionActiva.user_id == user_id)
         .order_by(SesionActiva.created_at.desc())
         .limit(50)
-        .all()
-    )
+    )).scalars().all()
     return [
         {
             "id": s.id,
@@ -115,24 +117,25 @@ def get_session_history(
 
 
 @router.post("/cleanup")
-def cleanup_sessions(
-    db: Session = Depends(get_db),
+async def cleanup_sessions(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_admin),
 ):
-    deleted = db.query(SesionActiva).filter(SesionActiva.activa == False).delete()
+    res = await db.execute(delete(SesionActiva).where(SesionActiva.activa == False))
+    deleted = res.rowcount
     log_action(db, action="CLEANUP_SESSIONS", entity_type="Sesion",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                changes={"deleted": deleted})
-    db.commit()
+    await db.commit()
     return {"message": f"Se eliminaron {deleted} sesiones inactivas"}
 
 
 # Backwards-compat aliases
 @router.post("/invalidate")
-def invalidate_session(session_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
+async def invalidate_session(session_id: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(require_admin)):
     return kill_session(session_id, db, current_user)
 
 
 @router.post("/invalidate-user/{user_id}")
-def invalidate_user_sessions(user_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
+async def invalidate_user_sessions(user_id: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(require_admin)):
     return kill_user_sessions(user_id, db, current_user)

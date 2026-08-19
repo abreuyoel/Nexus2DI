@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from typing import List, Optional
 from datetime import date, datetime
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.services.realtime import notify_event
 from app.models.user import Usuario, UserPermission
@@ -23,14 +24,14 @@ from app.schemas.ruta import (
 router = APIRouter(prefix="/api/routes", tags=["Rutas"])
 
 
-def _get_servicio_prefijo(db: Session, servicio_nombre: Optional[str]) -> str:
+async def _get_servicio_prefijo(db: AsyncSession, servicio_nombre: Optional[str]) -> str:
     """Prefijo de correlativo (ej. "E", "PR") configurado para ese servicio en
     el catálogo SERVICIOS -- reemplaza la whitelist hardcodeada E/A/T que
     tenía esta función antes, para poder agregar servicios nuevos (ej.
     Promovendedor -> "PR") sin tocar código."""
     if not servicio_nombre:
         raise HTTPException(status_code=400, detail="Servicio es requerido")
-    serv = db.query(Servicio).filter(Servicio.nombre == servicio_nombre).first()
+    serv = (await db.execute(select(Servicio).filter(Servicio.nombre == servicio_nombre))).scalars().first()
     if not serv:
         raise HTTPException(status_code=400, detail=f"El servicio '{servicio_nombre}' no existe en el catálogo")
     if not serv.prefijo:
@@ -41,10 +42,10 @@ def _get_servicio_prefijo(db: Session, servicio_nombre: Optional[str]) -> str:
     return serv.prefijo
 
 
-def _next_route_number(db: Session, prefijo: str) -> int:
+async def _next_route_number(db: AsyncSession, prefijo: str) -> int:
     """Mayor sufijo numérico existente para 'Ruta {prefijo}' + 1."""
     prefix = f"Ruta {prefijo}"
-    routes = db.query(Ruta.nombre).filter(Ruta.nombre.like(f"{prefix}%")).all()
+    routes = (await db.execute(select(Ruta.nombre).filter(Ruta.nombre.like(f"{prefix}%")))).scalars().all()
     max_num = 0
     for (nombre,) in routes:
         if nombre:
@@ -55,44 +56,46 @@ def _next_route_number(db: Session, prefijo: str) -> int:
 
 
 @router.get("/next-number")
-def get_next_route_number(servicio: str, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    prefijo = _get_servicio_prefijo(db, servicio)
-    return {"next_number": _next_route_number(db, prefijo), "prefijo": prefijo}
+async def get_next_route_number(servicio: str, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    prefijo = await _get_servicio_prefijo(db, servicio)
+    return {"next_number": await _next_route_number(db, prefijo), "prefijo": prefijo}
 
 
 @router.get("/options")
-def get_route_options(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    servicios = db.query(Ruta.servicio).distinct().filter(Ruta.servicio != None).all()
+async def get_route_options(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    servicios = (await db.execute(select(Ruta.servicio).distinct().filter(Ruta.servicio != None))).scalars().all()
     return {"servicios": [s[0] for s in servicios]}
 
 
-def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
+async def _enrich_routes(db: AsyncSession, rutas: List[Ruta]) -> List[dict]:
     """Agrega por ruta: puntos_count, clientes (distintos), region y cliente exclusivo."""
     ruta_ids = [r.id for r in rutas]
     if not ruta_ids:
         return []
 
     counts = dict(
-        db.query(RutaProgramacion.ruta_id, func.count(RutaProgramacion.id))
-        .filter(RutaProgramacion.ruta_id.in_(ruta_ids), RutaProgramacion.activo == True)
-        .group_by(RutaProgramacion.ruta_id)
-        .all()
+        (await db.execute(
+            select(RutaProgramacion.ruta_id, func.count(RutaProgramacion.id))
+            .filter(RutaProgramacion.ruta_id.in_(ruta_ids), RutaProgramacion.activo == True)
+            .group_by(RutaProgramacion.ruta_id)
+        )).all()
     )
 
     pair_rows = (
-        db.query(RutaProgramacion.ruta_id, RutaProgramacion.id_cliente)
-        .filter(
-            RutaProgramacion.ruta_id.in_(ruta_ids),
-            RutaProgramacion.activo == True,
-            RutaProgramacion.id_cliente.isnot(None),
-        )
-        .distinct()
-        .all()
+        (await db.execute(
+            select(RutaProgramacion.ruta_id, RutaProgramacion.id_cliente)
+            .filter(
+                RutaProgramacion.ruta_id.in_(ruta_ids),
+                RutaProgramacion.activo == True,
+                RutaProgramacion.id_cliente.isnot(None),
+            )
+            .distinct()
+        )).all()
     )
 
     unique_cids = list({cid for _, cid in pair_rows if cid is not None})
     client_map = (
-        dict(db.query(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(unique_cids)).all())
+        dict((await db.execute(select(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(unique_cids)))).all())
         if unique_cids else {}
     )
 
@@ -104,7 +107,7 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
 
     excl_ids = [r.id_cliente_exclusivo for r in rutas if r.id_cliente_exclusivo]
     excl_map = (
-        dict(db.query(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(excl_ids)).all())
+        dict((await db.execute(select(Cliente.id, Cliente.nombre).filter(Cliente.id.in_(excl_ids)))).all())
         if excl_ids else {}
     )
 
@@ -127,12 +130,12 @@ def _enrich_routes(db: Session, rutas: List[Ruta]) -> List[dict]:
 
 @router.get("", response_model=List[RutaResponse])
 @router.get("/", response_model=List[RutaResponse])
-def list_routes(
+async def list_routes(
     activa: Optional[bool] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    query = db.query(Ruta)
+    query = select(Ruta)
 
     # Granular Visibility Logic
     if not current_user.is_admin:
@@ -144,45 +147,46 @@ def list_routes(
             # Only see routes where they are assigned in analistas_rutas
             query = query.join(Ruta.analistas).filter(AnalistaRuta.id_analista == current_user.id_perfil)
 
-    rutas = query.order_by(Ruta.nombre).all()
-    return _enrich_routes(db, rutas)
+    rutas = (await db.execute(query.order_by(Ruta.nombre))).scalars().all()
+    return await _enrich_routes(db, rutas)
 
 
 @router.get("/my-routes", response_model=List[RutaResponse])
-def my_routes(
-    db: Session = Depends(get_db),
+async def my_routes(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Retorna las rutas asignadas al usuario logueado según su rol (analista / supervisor / admin)."""
     if current_user.is_admin:
-        rutas = db.query(Ruta).order_by(Ruta.nombre).all()
-        return _enrich_routes(db, rutas)
+        rutas = (await db.execute(select(Ruta).order_by(Ruta.nombre))).scalars().all()
+        return await _enrich_routes(db, rutas)
 
     if current_user.is_analyst and current_user.id_perfil:
         rutas = (
-            db.query(Ruta)
-            .join(Ruta.analistas)
-            .filter(AnalistaRuta.id_analista == current_user.id_perfil)
-            .order_by(Ruta.nombre)
-            .all()
-        )
-        return _enrich_routes(db, rutas)
+            await db.execute(
+                select(Ruta)
+                .join(Ruta.analistas)
+                .filter(AnalistaRuta.id_analista == current_user.id_perfil)
+                .order_by(Ruta.nombre)
+            )
+        ).scalars().all()
+        return await _enrich_routes(db, rutas)
 
     return []
 
 
 @router.post("", response_model=RutaResponse, status_code=201)
 @router.post("/", response_model=RutaResponse, status_code=201)
-def create_route(
+async def create_route(
     data: RutaCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    prefijo = _get_servicio_prefijo(db, data.servicio)
+    prefijo = await _get_servicio_prefijo(db, data.servicio)
     if data.servicio == "Exclusivo" and not data.id_cliente_exclusivo:
         raise HTTPException(status_code=400, detail="Cliente exclusivo es requerido para rutas de servicio Exclusivo")
 
-    route_name = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
+    route_name = f"Ruta {prefijo}{await _next_route_number(db, prefijo)}"
 
     db_data = data.model_dump()
     db_data["nombre"] = route_name
@@ -201,37 +205,37 @@ def create_route(
     db.flush()
     if id_analista is not None:
         db.add(AnalistaRuta(id_analista=id_analista, id_ruta=ruta.id))
-    db.commit()
-    db.refresh(ruta)
+    await db.commit()
+    await db.refresh(ruta)
     notify_event("route.created", {"id": ruta.id, "nombre": ruta.nombre})
-    return _enrich_routes(db, [ruta])[0]
+    return (await _enrich_routes(db, [ruta]))[0]
 
 
 @router.get("/activated/today")
-def get_activated_routes_today(
-    db: Session = Depends(get_db),
+async def get_activated_routes_today(
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    activadas = db.query(RutaActivada).all()
+    activadas = (await db.execute(select(RutaActivada))).scalars().all()
     return [{"ruta_id": a.ruta_id, "mercaderista_id": a.mercaderista_id} for a in activadas]
 
 
 @router.get("/{route_id}", response_model=RutaResponse)
-def get_route(route_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
+async def get_route(route_id: int, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    ruta = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
     return ruta
 
 
 @router.patch("/{route_id}", response_model=RutaResponse)
-def update_route(
+async def update_route(
     route_id: int,
     data: RutaUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
+    ruta = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
     updates = data.model_dump(exclude_none=True)
@@ -242,54 +246,54 @@ def update_route(
     for key, value in updates.items():
         setattr(ruta, key, value)
     if id_analista is not None:
-        existente = db.query(AnalistaRuta).filter(AnalistaRuta.id_ruta == route_id).first()
+        existente = (await db.execute(select(AnalistaRuta).filter(AnalistaRuta.id_ruta == route_id))).scalars().first()
         if not existente:
             db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
         elif existente.id_analista != id_analista:
             db.delete(existente)
             db.flush()
             db.add(AnalistaRuta(id_analista=id_analista, id_ruta=route_id))
-    db.commit()
-    db.refresh(ruta)
+    await db.commit()
+    await db.refresh(ruta)
     notify_event("route.updated", {"id": ruta.id, "nombre": ruta.nombre})
-    return _enrich_routes(db, [ruta])[0]
+    return (await _enrich_routes(db, [ruta]))[0]
 
 
 @router.delete("/{route_id}", status_code=204)
-def delete_route(
+async def delete_route(
     route_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'delete')),
 ):
-    ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
+    ruta = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
     # Eliminar dependencias sin cascade configurado (asignaciones/activaciones)
-    db.query(MercaderistaRuta).filter(MercaderistaRuta.ruta_id == route_id).delete(synchronize_session=False)
-    db.query(AnalistaRuta).filter(AnalistaRuta.id_ruta == route_id).delete(synchronize_session=False)
-    db.query(RutaActivada).filter(RutaActivada.ruta_id == route_id).delete(synchronize_session=False)
+    await db.execute(delete(MercaderistaRuta).where(MercaderistaRuta.ruta_id == route_id))
+    await db.execute(delete(AnalistaRuta).where(AnalistaRuta.id_ruta == route_id))
+    await db.execute(delete(RutaActivada).where(RutaActivada.ruta_id == route_id))
     # programaciones y cambios_futuros caen por cascade en la relación
     db.delete(ruta)
-    db.commit()
+    await db.commit()
     notify_event("route.deleted", {"id": route_id})
     return None
 
 
 @router.post("/{route_id}/duplicate", response_model=RutaResponse, status_code=201)
-def duplicate_route(
+async def duplicate_route(
     route_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    orig = db.query(Ruta).filter(Ruta.id == route_id).first()
+    orig = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     if not orig:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
     # Mismo prefijo que el servicio de la ruta original (antes se intentaba
     # adivinar parseando la letra tras "Ruta " del nombre, que no siempre
     # coincidía con el servicio real de la ruta).
-    prefijo = _get_servicio_prefijo(db, orig.servicio)
-    new_name = f"Ruta {prefijo}{_next_route_number(db, prefijo)}"
+    prefijo = await _get_servicio_prefijo(db, orig.servicio)
+    new_name = f"Ruta {prefijo}{await _next_route_number(db, prefijo)}"
 
     nueva = Ruta(
         nombre=new_name,
@@ -314,47 +318,47 @@ def duplicate_route(
             punto_interes_nombre=p.punto_interes_nombre,
         ))
 
-    db.commit()
-    db.refresh(nueva)
+    await db.commit()
+    await db.refresh(nueva)
     notify_event("route.created", {"id": nueva.id, "nombre": nueva.nombre})
-    return _enrich_routes(db, [nueva])[0]
+    return (await _enrich_routes(db, [nueva]))[0]
 
 
 @router.get("/{route_id}/points", response_model=List[RutaProgramacionResponse])
-def get_route_points(
+async def get_route_points(
     route_id: int,
     include_inactive: bool = False,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    q = db.query(RutaProgramacion).options(
+    q = select(RutaProgramacion).options(
         joinedload(RutaProgramacion.punto),
         joinedload(RutaProgramacion.cliente)
     ).filter(RutaProgramacion.ruta_id == route_id)
     if not include_inactive:
         q = q.filter(RutaProgramacion.activo == True)
-    return q.all()
+    return (await db.execute(q)).scalars().all()
 
 
 @router.post("/{route_id}/add-point", response_model=RutaProgramacionResponse, status_code=201)
-def add_point_to_route(
+async def add_point_to_route(
     route_id: int,
     data: AddPointToRouteRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    existing = db.query(RutaProgramacion).filter(
+    existing = (await db.execute(select(RutaProgramacion).filter(
         RutaProgramacion.ruta_id == route_id,
         RutaProgramacion.punto_id == data.punto_id,
         RutaProgramacion.id_cliente == data.client_id,
-    ).first()
+    ))).scalars().first()
     
     if existing:
         existing.activo = True
         existing.dia = data.dia
         existing.prioridad = data.priority
-        db.commit()
-        db.refresh(existing)
+        await db.commit()
+        await db.refresh(existing)
         return existing
         
     prog = RutaProgramacion(
@@ -366,19 +370,19 @@ def add_point_to_route(
         activo=True
     )
     db.add(prog)
-    db.commit()
-    db.refresh(prog)
+    await db.commit()
+    await db.refresh(prog)
     return prog
 
 
 @router.post("/{route_id}/schedule-change", response_model=CambioFuturoResponse, status_code=201)
-def schedule_route_change(
+async def schedule_route_change(
     route_id: int,
     data: ScheduleChangeRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('routes', 'write')),
 ):
-    ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
+    ruta = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     cambio = RutaCambioFuturo(
         ruta_id=route_id,
         ruta_nombre=ruta.nombre if ruta else None,
@@ -396,62 +400,64 @@ def schedule_route_change(
         estado="PENDIENTE",
     )
     db.add(cambio)
-    db.commit()
-    db.refresh(cambio)
+    await db.commit()
+    await db.refresh(cambio)
     return cambio
 
 
 @router.get("/{route_id}/future-changes", response_model=List[CambioFuturoResponse])
-def get_future_changes(
+async def get_future_changes(
     route_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    return db.query(RutaCambioFuturo).filter(
-        RutaCambioFuturo.ruta_id == route_id,
-    ).order_by(RutaCambioFuturo.fecha_ejecucion.asc()).all()
+    return (await db.execute(
+        select(RutaCambioFuturo)
+        .filter(RutaCambioFuturo.ruta_id == route_id)
+        .order_by(RutaCambioFuturo.fecha_ejecucion.asc())
+    )).scalars().all()
 
 
 @router.delete("/points/{programacion_id}", status_code=204)
-def remove_point_from_route(
+async def remove_point_from_route(
     programacion_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'delete')),
 ):
-    prog = db.query(RutaProgramacion).filter(RutaProgramacion.id == programacion_id).first()
+    prog = (await db.execute(select(RutaProgramacion).filter(RutaProgramacion.id == programacion_id))).scalars().first()
     if not prog:
         raise HTTPException(status_code=404, detail="Programación no encontrada")
     db.delete(prog)
-    db.commit()
+    await db.commit()
     return None
 
 
 @router.patch("/points/{programacion_id}/active")
-def set_point_active(
+async def set_point_active(
     programacion_id: int,
     activa: bool = Query(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('routes', 'write')),
 ):
     """Inactivar/activar un PDV de la ruta para ese día (RUTA_PROGRAMACION.activa)."""
-    prog = db.query(RutaProgramacion).filter(RutaProgramacion.id == programacion_id).first()
+    prog = (await db.execute(select(RutaProgramacion).filter(RutaProgramacion.id == programacion_id))).scalars().first()
     if not prog:
         raise HTTPException(status_code=404, detail="Programación no encontrada")
     prog.activo = activa
-    db.commit()
+    await db.commit()
     return {"id": programacion_id, "activa": activa}
 
 
 @router.post("/{route_id}/bulk-apply")
-def bulk_apply(
+async def bulk_apply(
     route_id: int,
     data: BulkApplyRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('routes', 'write')),
 ):
     """Aplica inserts + updates + deletes de programaciones en una sola operación
     (núcleo del Editor Masivo). Espejo de v1 bulk-apply."""
-    ruta = db.query(Ruta).filter(Ruta.id == route_id).first()
+    ruta = (await db.execute(select(Ruta).filter(Ruta.id == route_id))).scalars().first()
     if not ruta:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
@@ -463,18 +469,20 @@ def bulk_apply(
 
     # DELETES
     for d in data.deletes:
-        db.query(RutaProgramacion).filter(
-            RutaProgramacion.id == d.programacion_id,
-            RutaProgramacion.ruta_id == route_id,
-        ).delete(synchronize_session=False)
+        await db.execute(
+            delete(RutaProgramacion).where(
+                RutaProgramacion.id == d.programacion_id,
+                RutaProgramacion.ruta_id == route_id,
+            )
+        )
         deleted += 1
 
     # UPDATES
     for u in data.updates:
-        prog = db.query(RutaProgramacion).filter(
+        prog = (await db.execute(select(RutaProgramacion).filter(
             RutaProgramacion.id == u.programacion_id,
             RutaProgramacion.ruta_id == route_id,
-        ).first()
+        ))).scalars().first()
         if prog:
             prog.dia = u.dia
             prog.prioridad = u.prioridad
@@ -483,16 +491,16 @@ def bulk_apply(
     # INSERTS (dedupe por ruta+punto+cliente+día)
     usuario = current_user.username
     for ins in data.inserts:
-        exists = db.query(RutaProgramacion).filter(
+        exists = (await db.execute(select(RutaProgramacion).filter(
             RutaProgramacion.ruta_id == route_id,
             RutaProgramacion.punto_id == ins.point_id,
             RutaProgramacion.id_cliente == ins.client_id,
             RutaProgramacion.dia == ins.dia,
-        ).first()
+        ))).scalars().first()
         if exists:
             skipped.append({"point_id": ins.point_id, "dia": ins.dia, "reason": "Ya existe"})
             continue
-        pname = db.query(PuntoInteres.nombre).filter(PuntoInteres.id == ins.point_id).scalar()
+        pname = (await db.execute(select(PuntoInteres.nombre).filter(PuntoInteres.id == ins.point_id))).scalar()
         db.add(RutaProgramacion(
             ruta_id=route_id,
             punto_id=ins.point_id,
@@ -504,7 +512,7 @@ def bulk_apply(
         ))
         inserted += 1
 
-    db.commit()
+    await db.commit()
     return {
         "success": True,
         "inserted": inserted,

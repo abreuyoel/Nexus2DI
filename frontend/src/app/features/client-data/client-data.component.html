@@ -89,14 +89,15 @@
           <mat-icon class="!text-sm">public</mat-icon>
           Región
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="region">
-            <mat-option value="">Todas las regiones</mat-option>
-            @for (r of filterOptions().regiones; track r) {
-              <mat-option [value]="r">{{ r }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="regionesOpts()"
+          [value]="filterForm.get('region')?.value || ''"
+          (valueChange)="onSelectChange('region', $event)"
+          placeholder="Todas las regiones"
+          searchPlaceholder="Buscar región..."
+          allLabel="Todas las regiones"
+          icon="public"
+        ></app-searchable-select>
       </div>
 
       <!-- Cadena -->
@@ -105,14 +106,15 @@
           <mat-icon class="!text-sm">storefront</mat-icon>
           Cadena
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="cadena">
-            <mat-option value="">Todas las cadenas</mat-option>
-            @for (c of filterOptions().cadenas; track c) {
-              <mat-option [value]="c">{{ c }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="cadenasOpts()"
+          [value]="filterForm.get('cadena')?.value || ''"
+          (valueChange)="onSelectChange('cadena', $event)"
+          placeholder="Todas las cadenas"
+          searchPlaceholder="Buscar cadena..."
+          allLabel="Todas las cadenas"
+          icon="storefront"
+        ></app-searchable-select>
       </div>
 
       <!-- PDV -->
@@ -121,14 +123,15 @@
           <mat-icon class="!text-sm">store</mat-icon>
           Punto de Venta
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="pdv">
-            <mat-option value="">Todos los PDV</mat-option>
-            @for (p of filterOptions().pdvs; track p.id) {
-              <mat-option [value]="p.id">{{ p.nombre }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="pdvsOpts()"
+          [value]="filterForm.get('pdv')?.value || ''"
+          (valueChange)="onSelectChange('pdv', $event)"
+          placeholder="Todos los PDV"
+          searchPlaceholder="Buscar punto de venta..."
+          allLabel="Todos los PDV"
+          icon="store"
+        ></app-searchable-select>
       </div>
 
       <!-- Mercaderista -->
@@ -137,14 +140,15 @@
           <mat-icon class="!text-sm">person</mat-icon>
           Mercaderista
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="mercaderista">
-            <mat-option value="">Todos</mat-option>
-            @for (m of filterOptions().mercaderistas; track m) {
-              <mat-option [value]="m">{{ m }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="mercaderistasOpts()"
+          [value]="filterForm.get('mercaderista')?.value || ''"
+          (valueChange)="onSelectChange('mercaderista', $event)"
+          placeholder="Todos"
+          searchPlaceholder="Buscar mercaderista..."
+          allLabel="Todos los mercaderistas"
+          icon="person"
+        ></app-searchable-select>
       </div>
 
       <!-- Producto -->
@@ -153,14 +157,15 @@
           <mat-icon class="!text-sm">inventory_2</mat-icon>
           Producto
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="producto">
-            <mat-option value="">Todos los productos</mat-option>
-            @for (p of filterOptions().productos; track p) {
-              <mat-option [value]="p">{{ p }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="productosOpts()"
+          [value]="filterForm.get('producto')?.value || ''"
+          (valueChange)="onSelectChange('producto', $event)"
+          placeholder="Todos los productos"
+          searchPlaceholder="Buscar producto..."
+          allLabel="Todos los productos"
+          icon="inventory_2"
+        ></app-searchable-select>
       </div>
 
       <!-- Visita ID -->
@@ -180,14 +185,15 @@
           <mat-icon class="!text-sm">category</mat-icon>
           Categoría
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="categoria">
-            <mat-option value="">Todas las categorías</mat-option>
-            @for (c of filterOptions().categorias; track c) {
-              <mat-option [value]="c">{{ c }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="categoriasOpts()"
+          [value]="filterForm.get('categoria')?.value || ''"
+          (valueChange)="onSelectChange('categoria', $event)"
+          placeholder="Todas las categorías"
+          searchPlaceholder="Buscar categoría..."
+          allLabel="Todas las categorías"
+          icon="category"
+        ></app-searchable-select>
       </div>
 
       <!-- Departamento -->
@@ -196,14 +202,15 @@
           <mat-icon class="!text-sm">map</mat-icon>
           Departamento
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="departamento">
-            <mat-option value="">Todos los departamentos</mat-option>
-            @for (d of filterOptions().departamentos; track d) {
-              <mat-option [value]="d">{{ d }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="departamentosOpts()"
+          [value]="filterForm.get('departamento')?.value || ''"
+          (valueChange)="onSelectChange('departamento', $event)"
+          placeholder="Todos los departamentos"
+          searchPlaceholder="Buscar departamento..."
+          allLabel="Todos los departamentos"
+          icon="map"
+        ></app-searchable-select>
       </div>
 
       <!-- Cuadrante -->
@@ -212,14 +219,15 @@
           <mat-icon class="!text-sm">grid_view</mat-icon>
           Cuadrante
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="cuadrante">
-            <mat-option value="">Todos los cuadrantes</mat-option>
-            @for (q of filterOptions().cuadrantes; track q) {
-              <mat-option [value]="q">{{ q }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="cuadrantesOpts()"
+          [value]="filterForm.get('cuadrante')?.value || ''"
+          (valueChange)="onSelectChange('cuadrante', $event)"
+          placeholder="Todos los cuadrantes"
+          searchPlaceholder="Buscar cuadrante..."
+          allLabel="Todos los cuadrantes"
+          icon="grid_view"
+        ></app-searchable-select>
       </div>
 
       <!-- Estado de la visita -->
@@ -228,14 +236,15 @@
           <mat-icon class="!text-sm">flag</mat-icon>
           Estado
         </label>
-        <mat-form-field appearance="outline" class="filter-field">
-          <mat-select formControlName="estado">
-            <mat-option value="">Todos los estados</mat-option>
-            @for (e of filterOptions().estados; track e) {
-              <mat-option [value]="e">{{ e }}</mat-option>
-            }
-          </mat-select>
-        </mat-form-field>
+        <app-searchable-select
+          [options]="estadosOpts()"
+          [value]="filterForm.get('estado')?.value || ''"
+          (valueChange)="onSelectChange('estado', $event)"
+          placeholder="Todos los estados"
+          searchPlaceholder="Buscar estado..."
+          allLabel="Todos los estados"
+          icon="flag"
+        ></app-searchable-select>
       </div>
 
     </form>

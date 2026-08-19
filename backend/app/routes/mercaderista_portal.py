@@ -11,11 +11,14 @@ import uuid
 from datetime import datetime, date, timedelta
 from typing import Optional, List
 
+from app.core.timezone import get_adjusted_now, get_adjusted_today
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.models.mercaderista import Mercaderista
@@ -46,16 +49,22 @@ FOTO_TIPO_TO_ID = {k: v["id"] for k, v in FOTO_TIPOS.items()}
 ID_TO_CODIGO = {v["id"]: k for k, v in FOTO_TIPOS.items()}
 
 
-def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
-    """Obtiene el Mercaderista de la tabla MERCADERISTAS por cedula = username."""
-    try:
-        cedula_val = int(current_user.username)
-    except ValueError:
-        cedula_val = 0
+async def _get_mercaderista(current_user: Usuario, db: AsyncSession) -> Mercaderista:
+    """Obtiene el Mercaderista de la tabla MERCADERISTAS por id_perfil o cedula."""
+    merc = None
+    if current_user.id_perfil:
+        merc = (await db.execute(
+            select(Mercaderista).filter(Mercaderista.id == current_user.id_perfil)
+        )).scalars().first()
 
-    merc = db.query(Mercaderista).filter(
-        Mercaderista.cedula == cedula_val
-    ).first()
+    if not merc:
+        ced_str = current_user.cedula or current_user.username
+        if ced_str and str(ced_str).isdigit():
+            ced_int = int(ced_str)
+            merc = (await db.execute(
+                select(Mercaderista).filter(Mercaderista.cedula == ced_int)
+            )).scalars().first()
+
     if not merc:
         raise HTTPException(status_code=403, detail="Usuario no es mercaderista")
     return merc
@@ -66,18 +75,22 @@ def _get_mercaderista(current_user: Usuario, db: Session) -> Mercaderista:
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/mi-perfil")
-def get_mi_perfil(
-    db: Session = Depends(get_db),
+@router.get("/me")
+async def get_mi_perfil(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    try:
+        merc = await _get_mercaderista(current_user, db)
+    except HTTPException:
+        return {"id": current_user.id, "nombre": current_user.username, "rutas": []}
 
     # Rutas asignadas
-    rutas = db.execute(text("""
+    rutas = (await db.execute(text("""
         SELECT mr.id_mercaderista_ruta, mr.id_ruta, mr.tipo_ruta
         FROM MERCADERISTAS_RUTAS mr
         WHERE mr.id_mercaderista = :id_merc
-    """), {"id_merc": merc.id}).fetchall()
+    """), {"id_merc": merc.id})).fetchall()
 
     return {
         "id": merc.id,
@@ -97,21 +110,26 @@ def get_mi_perfil(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/mi-ruta")
-def get_mi_ruta(
-    db: Session = Depends(get_db),
+@router.get("/rutas")
+async def get_mi_ruta(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
-    hoy = date.today()
+    try:
+        merc = await _get_mercaderista(current_user, db)
+        hoy = get_adjusted_today(db, merc.id)
+    except HTTPException:
+        hoy = date.today()
+        return {"dia": DAY_MAP_ES[hoy.weekday()], "fecha": str(hoy), "rutas": [], "pdvs": []}
     dia_semana = DAY_MAP_ES[hoy.weekday()]
-
+    
     # 1. Obtener todas las rutas asignadas al mercaderista
-    rutas_rows = db.execute(text("""
+    rutas_rows = (await db.execute(text("""
         SELECT mr.id_ruta, mr.tipo_ruta, rn.ruta AS nombre_ruta
         FROM MERCADERISTAS_RUTAS mr
         JOIN RUTAS_NUEVAS rn ON rn.id_ruta = mr.id_ruta
         WHERE mr.id_mercaderista = :id_merc
-    """), {"id_merc": merc.id}).fetchall()
+    """), {"id_merc": merc.id})).fetchall()
 
     rutas = [
         {"id_ruta": r.id_ruta, "tipo": r.tipo_ruta, "nombre": r.nombre_ruta}
@@ -119,7 +137,7 @@ def get_mi_ruta(
     ]
 
     # 2. PDVs programados para hoy
-    pdvs_rows = db.execute(text("""
+    pdvs_rows = (await db.execute(text("""
         SELECT DISTINCT
             rp.id_programacion,
             rp.id_punto_interes,
@@ -141,15 +159,15 @@ def get_mi_ruta(
         WHERE mr.id_mercaderista = :id_merc
           AND rp.dia = :dia
           AND rp.activa = 1
-    """), {"id_merc": merc.id, "dia": dia_semana}).fetchall()
+    """), {"id_merc": merc.id, "dia": dia_semana})).fetchall()
 
     # Visitas ya realizadas hoy
-    visitas_hoy = db.execute(text("""
+    visitas_hoy = (await db.execute(text("""
         SELECT identificador_punto_interes, id_visita, estado, estado_data
         FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista = :id_merc
           AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"id_merc": merc.id, "hoy": str(hoy)}).fetchall()
+    """), {"id_merc": merc.id, "hoy": str(hoy)})).fetchall()
 
     visita_por_pdv = {v.identificador_punto_interes: v for v in visitas_hoy}
 
@@ -189,20 +207,24 @@ def get_mi_ruta(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/mis-visitas")
-def get_mis_visitas(
+@router.get("/visitas")
+async def get_mis_visitas(
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    try:
+        merc = await _get_mercaderista(current_user, db)
+    except HTTPException:
+        return []
 
     if not fecha_inicio:
-        fecha_inicio = str(date.today())
+        fecha_inicio = str(get_adjusted_today(db, merc.id))
     if not fecha_fin:
-        fecha_fin = str(date.today())
+        fecha_fin = str(get_adjusted_today(db, merc.id))
 
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT
             v.id_visita,
             v.fecha_visita,
@@ -222,19 +244,19 @@ def get_mis_visitas(
           AND CAST(v.fecha_visita AS DATE) >= :fi
           AND CAST(v.fecha_visita AS DATE) <= :ff
         ORDER BY v.fecha_visita DESC
-    """), {"id_merc": merc.id, "fi": fecha_inicio, "ff": fecha_fin}).fetchall()
+    """), {"id_merc": merc.id, "fi": fecha_inicio, "ff": fecha_fin})).fetchall()
 
     result = []
     for r in rows:
         # Contar fotos
-        fotos_count = db.execute(text("""
+        fotos_count = (await db.execute(text("""
             SELECT COUNT(*) FROM FOTOS_TOTALES WHERE id_visita = :vid
-        """), {"vid": r.id_visita}).scalar() or 0
+        """), {"vid": r.id_visita})).scalar() or 0
 
         # Contar balances
-        balances_count = db.execute(text("""
+        balances_count = (await db.execute(text("""
             SELECT COUNT(*) FROM BALANCES_TOTALES WHERE id_visita = :vid
-        """), {"vid": r.id_visita}).scalar() or 0
+        """), {"vid": r.id_visita})).scalar() or 0
 
         result.append({
             "id_visita":    r.id_visita,
@@ -258,12 +280,12 @@ def get_mis_visitas(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.post("/iniciar-visita")
-def iniciar_visita(
+async def iniciar_visita(
     payload: dict,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = await _get_mercaderista(current_user, db)
     id_punto = payload.get("id_punto")
     id_cliente = payload.get("id_cliente")
 
@@ -275,36 +297,36 @@ def iniciar_visita(
     # id_cliente acá, la visita del segundo cliente reutilizaba por error la
     # fila del primero y sus fotos/balance quedaban mezclados bajo el
     # id_visita equivocado.
-    existing = db.execute(text("""
+    existing = (await db.execute(text("""
         SELECT id_visita FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista = :mid
           AND identificador_punto_interes = :pid
           AND id_cliente = :cid
           AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente, "hoy": str(date.today())}).fetchone()
+    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente, "hoy": str(get_adjusted_today(db, merc.id))})).fetchone()
 
     if existing:
         return {"id_visita": existing.id_visita, "nueva": False}
 
     # Crear nueva visita
     # Nota: VISITAS_MERCADERISTA no tiene columna `tipo_visita` en la base real; se omite.
-    db.execute(text("""
+    await db.execute(text("""
         INSERT INTO VISITAS_MERCADERISTA
             (id_mercaderista, fecha_visita, estado, estado_data, id_cliente, identificador_punto_interes)
         VALUES
             (:mid, :fecha, 'Pendiente', 'Pendiente', :cid, :pid)
     """), {
         "mid": merc.id,
-        "fecha": datetime.now(),
+        "fecha": get_adjusted_now(db, merc.id),
         "cid": id_cliente,
         "pid": id_punto,
     })
-    db.commit()
+    await db.commit()
 
-    new_id = db.execute(text("""
+    new_id = (await db.execute(text("""
         SELECT MAX(id_visita) FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista = :mid AND identificador_punto_interes = :pid AND id_cliente = :cid
-    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente}).scalar()
+    """), {"mid": merc.id, "pid": id_punto, "cid": id_cliente})).scalar()
 
     from app.services.realtime import notify_event
     notify_event("visit.created", {"id_visita": new_id, "id_cliente": id_cliente, "id_punto": id_punto})
@@ -313,15 +335,15 @@ def iniciar_visita(
 
 
 @router.get("/ruta/{id_ruta}/pdvs")
-def get_pdvs_de_ruta(
+async def get_pdvs_de_ruta(
     id_ruta: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """TODOS los PDV de una ruta (sin filtro de día). Para que aparezcan al ejecutar la ruta."""
-    merc = _get_mercaderista(current_user, db)
-    hoy = date.today()
-    pdvs_rows = db.execute(text("""
+    merc = await _get_mercaderista(current_user, db)
+    hoy = get_adjusted_today(db, merc.id)
+    pdvs_rows = (await db.execute(text("""
         SELECT DISTINCT
             rp.id_punto_interes, rp.punto_interes, rp.id_cliente, rp.id_ruta, rp.prioridad,
             mr.tipo_ruta, pi.latitud, pi.longitud,
@@ -333,13 +355,13 @@ def get_pdvs_de_ruta(
         LEFT JOIN CLIENTES c ON c.id_cliente = rp.id_cliente
         WHERE mr.id_mercaderista = :id_merc AND rp.id_ruta = :id_ruta AND rp.activa = 1
         ORDER BY rp.punto_interes
-    """), {"id_merc": merc.id, "id_ruta": id_ruta}).fetchall()
+    """), {"id_merc": merc.id, "id_ruta": id_ruta})).fetchall()
 
-    visitas_hoy = db.execute(text("""
+    visitas_hoy = (await db.execute(text("""
         SELECT identificador_punto_interes, id_visita, estado, estado_data
         FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista = :id_merc AND CAST(fecha_visita AS DATE) = :hoy
-    """), {"id_merc": merc.id, "hoy": str(hoy)}).fetchall()
+    """), {"id_merc": merc.id, "hoy": str(hoy)})).fetchall()
     visita_por_pdv = {v.identificador_punto_interes: v for v in visitas_hoy}
 
     pdvs = []
@@ -379,18 +401,18 @@ def _merc_foto_url(blob_path, foto_id):
 
 
 @router.get("/visita/{visita_id}/fotos")
-def get_fotos_visita(
+async def get_fotos_visita(
     visita_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Lee SOLO de FOTOS_TOTALES. Devuelve por tipo una LISTA de fotos (varias por subtipo)."""
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT id_foto, id_tipo_foto, file_path, Estado, fecha_registro
         FROM FOTOS_TOTALES
         WHERE id_visita = :vid
         ORDER BY id_foto
-    """), {"vid": visita_id}).fetchall()
+    """), {"vid": visita_id})).fetchall()
 
     por_codigo: dict = {k: [] for k in FOTO_TIPOS.keys()}
     for r in rows:
@@ -429,7 +451,7 @@ async def upload_foto(
     file: UploadFile = File(...),
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     if tipo_foto not in FOTO_TIPOS:
@@ -462,17 +484,18 @@ async def upload_foto(
     id_tipo = FOTO_TIPO_TO_ID.get(tipo_foto)
     if not id_tipo:
         raise HTTPException(status_code=400, detail=f"Tipo de foto inválido: {tipo_foto}")
-    ahora = datetime.now()
-    db.execute(text("""
+    merc = await _get_mercaderista(current_user, db)
+    ahora = get_adjusted_now(db, merc.id)
+    await db.execute(text("""
         INSERT INTO FOTOS_TOTALES (id_visita, id_tipo_foto, file_path, fecha_registro, Estado, latitud, longitud)
         VALUES (:vid, :tipo_id, :path, :fecha, 'pendiente', :lat, :lon)
     """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path, "fecha": ahora, "lat": lat, "lon": lon})
-    db.commit()
+    await db.commit()
 
-    new_id = db.execute(text("""
+    new_id = (await db.execute(text("""
         SELECT MAX(id_foto) FROM FOTOS_TOTALES
         WHERE id_visita = :vid AND id_tipo_foto = :tipo_id AND file_path = :path
-    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path}).scalar()
+    """), {"vid": visita_id, "tipo_id": id_tipo, "path": blob_path})).scalar()
 
     from app.services.realtime import notify_event
     notify_event("photo.uploaded", {"id_foto": new_id, "visita_id": visita_id, "tipo_foto": tipo_foto})
@@ -481,15 +504,15 @@ async def upload_foto(
 
 
 @router.delete("/foto/{foto_id}")
-def delete_merc_foto(
+async def delete_merc_foto(
     foto_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Elimina una foto (para reemplazar/quitar) de FOTOS_TOTALES."""
-    db.execute(text("DELETE FROM FOTOS_RAZONES_RECHAZOS WHERE id_foto = :fid"), {"fid": foto_id})
-    db.execute(text("DELETE FROM FOTOS_TOTALES WHERE id_foto = :fid"), {"fid": foto_id})
-    db.commit()
+    await db.execute(text("DELETE FROM FOTOS_RAZONES_RECHAZOS WHERE id_foto = :fid"), {"fid": foto_id})
+    await db.execute(text("DELETE FROM FOTOS_TOTALES WHERE id_foto = :fid"), {"fid": foto_id})
+    await db.commit()
     from app.services.realtime import notify_event
     notify_event("photo.deleted", {"id_foto": foto_id})
     return {"deleted": foto_id}
@@ -500,15 +523,15 @@ def delete_merc_foto(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/foto/{foto_id}")
-def get_foto(
+async def get_foto(
     foto_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     from fastapi.responses import FileResponse, RedirectResponse
-    row = db.execute(text(
+    row = (await db.execute(text(
         "SELECT file_path FROM FOTOS_TOTALES WHERE id_foto = :fid"
-    ), {"fid": foto_id}).fetchone()
+    ), {"fid": foto_id})).fetchone()
     if not row or not row.file_path:
         raise HTTPException(status_code=404, detail="Foto no encontrada")
     if os.path.exists(row.file_path):
@@ -525,16 +548,16 @@ def get_foto(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/productos")
-def get_productos_cliente(
+async def get_productos_cliente(
     id_cliente: int = Query(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     # Productos del cliente vía modelo SNOWFLAKE:
     #   PRODUCTOS -> SUBCATEGORIAS -> CATEGORIAS, filtrado por las categorías del
     #   cliente (CATEGORIAS_CLIENTES). 'fabricante' se toma de la productora de la
     #   marca. (Antes usaba el PRODUCTS operativo por id_fabricante, ya migrado.)
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT p.id_product, p.producto_gutrade, cat.nombre AS categoria, pr.nombre AS fabricante
         FROM PRODUCTS p
         JOIN SUBCATEGORIAS sc ON sc.id_subcategoria = p.id_subcategoria
@@ -543,7 +566,7 @@ def get_productos_cliente(
         LEFT JOIN MARCAS m ON m.id_marca = p.id_marca
         LEFT JOIN PRODUCTORAS pr ON pr.id_productora = m.id_productora
         ORDER BY cat.nombre, p.producto_gutrade
-    """), {"cid": id_cliente}).fetchall()
+    """), {"cid": id_cliente})).fetchall()
 
     return [
         {
@@ -561,12 +584,12 @@ def get_productos_cliente(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.post("/balances")
-def guardar_balances(
+async def guardar_balances(
     payload: dict,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = await _get_mercaderista(current_user, db)
     visita_id  = payload.get("visita_id")
     productos  = payload.get("productos", [])
     id_cliente = payload.get("id_cliente")
@@ -575,21 +598,21 @@ def guardar_balances(
         raise HTTPException(status_code=400, detail="visita_id y productos son requeridos")
 
     # Obtener identificador_pdv de la visita
-    vis = db.execute(text("""
+    vis = (await db.execute(text("""
         SELECT identificador_punto_interes FROM VISITAS_MERCADERISTA WHERE id_visita = :vid
-    """), {"vid": visita_id}).fetchone()
+    """), {"vid": visita_id})).fetchone()
     if not vis:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
     id_pdv = vis.identificador_punto_interes
 
-    now = datetime.now()
+    now = get_adjusted_now(db, merc.id)
     for p in productos:
         sku       = p.get("sku", "")
         fabricante = p.get("fabricante", "")
         categoria  = p.get("categoria", "")
 
         # Insertar en BALANCES_TOTALES
-        db.execute(text("""
+        await db.execute(text("""
             INSERT INTO BALANCES_TOTALES (
                 id_cliente, fecha_balance, identificador_pdv, mercaderista,
                 producto, fabricante, categoria,
@@ -624,42 +647,42 @@ def guardar_balances(
         })
 
     # Actualizar estado_data de la visita
-    db.execute(text("""
+    await db.execute(text("""
         UPDATE VISITAS_MERCADERISTA
         SET estado_data = 'Cargado'
         WHERE id_visita = :vid
     """), {"vid": visita_id})
 
-    db.commit()
+    await db.commit()
     return {"success": True, "productos_guardados": len(productos)}
 
 
 @router.post("/finalizar-visita")
-def finalizar_visita(
+async def finalizar_visita(
     payload: dict,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Cierra el ciclo de vida de la visita -- sin esto VISITAS_MERCADERISTA.estado
     se quedaba en 'Pendiente' para siempre, igual al bug que ya tenía este mismo
     problema resuelto en auditor_campo.py::finalizar_auditoria_cliente. Acá además
     se valida que la visita sea del mercaderista autenticado antes de cerrarla."""
-    merc = _get_mercaderista(current_user, db)
+    merc = await _get_mercaderista(current_user, db)
     id_visita = payload.get("id_visita")
     if not id_visita:
         raise HTTPException(status_code=400, detail="id_visita es requerido")
 
-    visita = db.execute(text("""
+    visita = (await db.execute(text("""
         SELECT id_visita FROM VISITAS_MERCADERISTA
         WHERE id_visita = :vid AND id_mercaderista = :mid
-    """), {"vid": id_visita, "mid": merc.id}).fetchone()
+    """), {"vid": id_visita, "mid": merc.id})).fetchone()
     if not visita:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
 
-    db.execute(text("""
+    await db.execute(text("""
         UPDATE VISITAS_MERCADERISTA SET estado = 'Finalizada' WHERE id_visita = :vid
     """), {"vid": id_visita})
-    db.commit()
+    await db.commit()
 
     from app.services.realtime import notify_event
     notify_event("visit.finished", {"id_visita": id_visita})
@@ -672,13 +695,13 @@ def finalizar_visita(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @router.get("/chat/inbox")
-def get_chat_inbox(
-    db: Session = Depends(get_db),
+async def get_chat_inbox(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    merc = _get_mercaderista(current_user, db)
+    merc = await _get_mercaderista(current_user, db)
 
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT
             v.id_visita,
             v.fecha_visita,
@@ -704,7 +727,7 @@ def get_chat_inbox(
             SELECT 1 FROM CHAT_MENSAJES cm WHERE cm.id_visita = v.id_visita
           )
         ORDER BY ultimo_at DESC
-    """), {"id_merc": merc.id, "cedula": str(merc.cedula), "id_usuar": merc.id}).fetchall()
+    """), {"id_merc": merc.id, "cedula": str(merc.cedula), "id_usuar": merc.id})).fetchall()
 
     return [
         {
@@ -720,3 +743,55 @@ def get_chat_inbox(
         }
         for r in rows
     ]
+
+
+@router.get("/pdv-activos")
+async def get_pdv_activos(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: Usuario = Depends(get_current_user),
+):
+    try:
+        merc = await _get_mercaderista(current_user, db)
+    except HTTPException:
+        return []
+
+    hoy = str(date.today())
+    pdvs_rows = (await db.execute(text("""
+        SELECT DISTINCT
+            rp.id_punto_interes, pi.punto_de_interes AS punto_nombre,
+            rp.id_ruta, rn.ruta AS ruta_nombre
+        FROM RUTA_PROGRAMACION rp
+        JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
+        JOIN RUTAS_NUEVAS rn ON rn.id_ruta = rp.id_ruta
+        LEFT JOIN PUNTOS_INTERES1 pi ON pi.identificador = rp.id_punto_interes
+        WHERE mr.id_mercaderista = :mid AND rp.activa = 1
+    """), {"mid": merc.id})).fetchall()
+
+    result = []
+    for p in pdvs_rows:
+        visitas = (await db.execute(text("""
+            SELECT id_visita, id_cliente, estado, estado_data
+            FROM VISITAS_MERCADERISTA
+            WHERE id_mercaderista = :mid
+              AND identificador_punto_interes = :pid
+              AND CAST(fecha_visita AS DATE) = :hoy
+        """), {"mid": merc.id, "pid": p.id_punto_interes, "hoy": hoy})).fetchall()
+
+        listos = [v.id_cliente for v in visitas if v.estado in ('Finalizada', 'Completa')]
+        pendientes = [v.id_cliente for v in visitas if v.estado not in ('Finalizada', 'Completa')]
+        ultima = visitas[0] if visitas else None
+
+        result.append({
+            "punto_id": p.id_punto_interes,
+            "punto_nombre": p.punto_nombre or str(p.id_punto_interes),
+            "ruta_id": p.id_ruta,
+            "ruta_nombre": p.ruta_nombre,
+            "clientes_listos": [str(c) for c in listos],
+            "clientes_pendientes": [str(c) for c in pendientes],
+            "falta_desactivacion": False,
+            "ultima_visita_local_id": ultima.id_visita if ultima else None,
+            "ultima_visita_cliente_id": ultima.id_cliente if ultima else None,
+            "ultima_visita_cliente_nombre": str(ultima.id_cliente) if ultima else None,
+        })
+
+    return result

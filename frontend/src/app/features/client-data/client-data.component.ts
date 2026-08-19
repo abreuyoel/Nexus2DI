@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormControl, FormGroup } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -18,6 +18,7 @@ import * as XLSX from 'xlsx';
 
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-client-data',
@@ -27,7 +28,8 @@ import { AuthService } from '../../core/services/auth.service';
     MatCardModule, MatTableModule, MatPaginatorModule, MatSortModule,
     MatButtonModule, MatIconModule, MatSelectModule, MatInputModule,
     MatFormFieldModule, MatDatepickerModule, MatNativeDateModule,
-    MatProgressSpinnerModule, MatSnackBarModule
+    MatProgressSpinnerModule, MatSnackBarModule,
+    SearchableSelectComponent
   ],
   templateUrl: './client-data.component.html',
   styleUrls: ['./client-data.component.scss'],
@@ -66,6 +68,47 @@ export class ClientDataComponent implements OnInit {
     cuadrantes: [] as string[],
     estados: [] as string[]
   });
+
+  // Opciones transformadas para el componente app-searchable-select
+  regionesOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().regiones || []).map(r => ({ value: r, label: r }))
+  );
+
+  cadenasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().cadenas || []).map(c => ({ value: c, label: c }))
+  );
+
+  pdvsOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().pdvs || []).map(p => ({ value: String(p.id), label: p.nombre || String(p.id) }))
+  );
+
+  mercaderistasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().mercaderistas || []).map(m => ({ value: m, label: m }))
+  );
+
+  productosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().productos || []).map(p => ({ value: p, label: p }))
+  );
+
+  categoriasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().categorias || []).map(c => ({ value: c, label: c }))
+  );
+
+  departamentosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().departamentos || []).map(d => ({ value: d, label: d }))
+  );
+
+  cuadrantesOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().cuadrantes || []).map(q => ({ value: q, label: q }))
+  );
+
+  estadosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().estados || []).map(e => ({ value: e, label: e }))
+  );
+
+  onSelectChange(field: string, val: string): void {
+    this.filterForm.patchValue({ [field]: val || '' });
+  }
 
   filterForm = new FormGroup({
     fecha_inicio: new FormControl<Date | null>(null),

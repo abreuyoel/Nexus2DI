@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import List, Optional
 from datetime import datetime
 
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db, get_async_db, SessionLocal
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.models.chat import ChatMensaje, ChatConversacion, ChatParticipante, ChatMensajeLectura
@@ -38,26 +39,26 @@ def _resolve_cliente_id(user: Usuario, requested: Optional[int]) -> int:
     raise HTTPException(status_code=400, detail="cliente_id requerido")
 
 
-def _is_participant(db: Session, conversacion_id: int, user_id: int) -> bool:
-    row = db.execute(
+async def _is_participant(db: AsyncSession, conversacion_id: int, user_id: int) -> bool:
+    row = (await db.execute(
         text("SELECT 1 FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c AND id_usuario = :u"),
         {"c": conversacion_id, "u": user_id},
-    ).fetchone()
+    )).fetchone()
     return row is not None
 
 
-def _can_access_conversation(db: Session, conv: ChatConversacion, user: Usuario) -> bool:
+async def _can_access_conversation(db: AsyncSession, conv: ChatConversacion, user: Usuario) -> bool:
     """Coordinador exclusivo y admin pueden ver cualquier conversación.
     El resto debe ser participante."""
     if user.is_admin or user.is_coordinador_exclusivo:
         return True
-    return _is_participant(db, conv.id, user.id)
+    return await _is_participant(db, conv.id, user.id)
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # RECIBOS DE LECTURA (estilo WhatsApp)
 # ════════════════════════════════════════════════════════════════════════════
-def _mark_leidos(db: Session, user: Usuario, conv_id: Optional[int] = None,
+async def _mark_leidos(db: AsyncSession, user: Usuario, conv_id: Optional[int] = None,
                   visita_id: Optional[int] = None) -> List[int]:
     """Inserta un recibo de lectura por cada mensaje ajeno de la conversación
     (o del chat de visita legacy) que este usuario todavía no había leído, y
@@ -73,14 +74,14 @@ def _mark_leidos(db: Session, user: Usuario, conv_id: Optional[int] = None,
         where = "m.id_visita = :ref AND m.id_conversacion IS NULL"
         ref = visita_id
 
-    pending = db.execute(text(f"""
+    pending = (await db.execute(text(f"""
         SELECT m.id_mensaje FROM CHAT_MENSAJES_CLIENTE m
         WHERE {where} AND m.id_usuario <> :uid
           AND NOT EXISTS (
               SELECT 1 FROM CHAT_MENSAJE_LECTURAS l
               WHERE l.id_mensaje = m.id_mensaje AND l.id_usuario = :uid
           )
-    """), {"ref": ref, "uid": user.id}).fetchall()
+    """), {"ref": ref, "uid": user.id})).fetchall()
 
     ids = [r[0] for r in pending]
     if not ids:
@@ -90,11 +91,11 @@ def _mark_leidos(db: Session, user: Usuario, conv_id: Optional[int] = None,
     for mid in ids:
         db.add(ChatMensajeLectura(mensaje_id=mid, usuario_id=user.id,
                                    username=user.username, fecha_lectura=ahora))
-    db.commit()
+    await db.commit()
     return ids
 
 
-def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMensajeResponse]:
+async def _attach_leido_por(db: AsyncSession, mensajes: List[ChatMensaje]) -> List[ChatMensajeResponse]:
     """Construye ChatMensajeResponse a mano para cada mensaje, con su lista
     de lectores (leido_por) — no es un campo mapeado en el ORM, así que no
     se puede depender de la conversión automática de response_model."""
@@ -102,11 +103,11 @@ def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMens
     lecturas_map: dict[int, list[LectorInfo]] = {}
     if ids:
         ph = ",".join(str(int(i)) for i in ids)
-        rows = db.execute(text(f"""
+        rows = (await db.execute(text(f"""
             SELECT id_mensaje, id_usuario, username, fecha_lectura
             FROM CHAT_MENSAJE_LECTURAS WHERE id_mensaje IN ({ph})
             ORDER BY fecha_lectura
-        """)).fetchall()
+        """))).fetchall()
         for r in rows:
             lecturas_map.setdefault(r[0], []).append(
                 LectorInfo(id_usuario=r[1], username=r[2], fecha_lectura=r[3])
@@ -131,9 +132,9 @@ def _attach_leido_por(db: Session, mensajes: List[ChatMensaje]) -> List[ChatMens
 # DESTINATARIOS DISPONIBLES
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/recipients", response_model=RecipientsResponse)
-def get_recipients(
+async def get_recipients(
     cliente_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Devuelve los destinatarios disponibles para crear grupos ad-hoc de
@@ -142,7 +143,7 @@ def get_recipients(
     cid = _resolve_cliente_id(current_user, cliente_id)
 
     # Regiones con mercaderistas activos
-    regiones = db.execute(text("""
+    regiones = (await db.execute(text("""
         SELECT rn.cuadrante AS region, COUNT(DISTINCT mr.id_mercaderista) AS cnt
         FROM RUTAS_NUEVAS rn
         JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = rn.id_ruta
@@ -151,10 +152,10 @@ def get_recipients(
           AND rn.cuadrante IS NOT NULL AND rn.cuadrante <> ''
         GROUP BY rn.cuadrante
         ORDER BY rn.cuadrante
-    """), {"cid": cid}).fetchall()
+    """), {"cid": cid})).fetchall()
 
     # PDVs con mercaderistas
-    pdvs = db.execute(text("""
+    pdvs = (await db.execute(text("""
         SELECT pin.identificador,
                pin.punto_de_interes,
                rn.cuadrante AS region,
@@ -166,7 +167,7 @@ def get_recipients(
         WHERE rp.id_cliente = :cid
         GROUP BY pin.identificador, pin.punto_de_interes, rn.cuadrante
         ORDER BY pin.punto_de_interes
-    """), {"cid": cid}).fetchall()
+    """), {"cid": cid})).fetchall()
 
     return RecipientsResponse(
         regiones=[RegionRecipient(region=r[0], mercaderistas_count=r[1]) for r in regiones],
@@ -182,9 +183,9 @@ def get_recipients(
 # CREAR / LISTAR CONVERSACIONES (grupos region/pdv — equipo/visita están en
 # chat_grupos.py)
 # ════════════════════════════════════════════════════════════════════════════
-def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
+async def _get_region_user_ids(db: AsyncSession, cid: int, region: str) -> set[int]:
     """Mercaderistas de cierta región del cliente."""
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT DISTINCT u.id_usuario
         FROM RUTA_PROGRAMACION rp
         JOIN RUTAS_NUEVAS rn ON rp.id_ruta = rn.id_ruta
@@ -192,27 +193,27 @@ def _get_region_user_ids(db: Session, cid: int, region: str) -> set[int]:
         JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
         WHERE rp.id_cliente = :cid AND rn.cuadrante = :region
           AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid, "region": region}).fetchall()
+    """), {"cid": cid, "region": region})).fetchall()
     return {r[0] for r in rows}
 
 
-def _get_pdv_user_ids(db: Session, cid: int, pdv_id: str) -> set[int]:
+async def _get_pdv_user_ids(db: AsyncSession, cid: int, pdv_id: str) -> set[int]:
     """Mercaderistas asignados a un PDV del cliente."""
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT DISTINCT u.id_usuario
         FROM RUTA_PROGRAMACION rp
         JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rp.id_ruta
         JOIN USUARIOS u ON u.id_perfil = mr.id_mercaderista AND u.id_rol = 5
         WHERE rp.id_cliente = :cid AND rp.id_punto_interes = :pdv
           AND ISNULL(u.activo, 1) = 1
-    """), {"cid": cid, "pdv": pdv_id}).fetchall()
+    """), {"cid": cid, "pdv": pdv_id})).fetchall()
     return {r[0] for r in rows}
 
 
 @router.post("/conversations", response_model=ConversacionResponse, status_code=201)
-def create_conversation(
+async def create_conversation(
     body: CrearConversacionRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     cid = _resolve_cliente_id(current_user, body.cliente_id)
@@ -223,17 +224,17 @@ def create_conversation(
     if body.tipo == "group_region":
         if not body.region:
             raise HTTPException(status_code=400, detail="region requerida")
-        participantes |= _get_region_user_ids(db, cid, body.region)
+        participantes |= await _get_region_user_ids(db, cid, body.region)
         titulo = body.titulo or f"Mercaderistas · {body.region}"
 
     elif body.tipo == "group_pdv":
         if not body.punto_interes_id:
             raise HTTPException(status_code=400, detail="punto_interes_id requerido")
-        participantes |= _get_pdv_user_ids(db, cid, body.punto_interes_id)
+        participantes |= await _get_pdv_user_ids(db, cid, body.punto_interes_id)
         # Lookup nombre del PDV
-        row = db.execute(text("""
+        row = (await db.execute(text("""
             SELECT punto_de_interes FROM PUNTOS_INTERES1 WHERE identificador = :p
-        """), {"p": body.punto_interes_id}).fetchone()
+        """), {"p": body.punto_interes_id})).fetchone()
         pdv_name = row[0] if row else body.punto_interes_id
         titulo = body.titulo or f"Mercaderistas · {pdv_name}"
 
@@ -272,8 +273,8 @@ def create_conversation(
         )
         db.add(mensaje)
 
-    db.commit()
-    db.refresh(conv)
+    await db.commit()
+    await db.refresh(conv)
 
     return ConversacionResponse(
         id=conv.id,
@@ -292,9 +293,9 @@ def create_conversation(
 # LISTAR / VER CONVERSACIONES
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/conversations", response_model=List[ConversacionResponse])
-def list_conversations(
+async def list_conversations(
     cliente_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Listar las conversaciones del usuario actual.
@@ -322,7 +323,7 @@ def list_conversations(
                 c.fecha_creacion
             ) DESC
         """
-        rows = db.execute(text(query), {"cid": cliente_id}).fetchall()
+        rows = (await db.execute(text(query), {"cid": cliente_id})).fetchall()
     else:
         query = """
             SELECT c.id_conversacion, c.id_cliente, c.tipo, c.titulo, c.region,
@@ -345,7 +346,7 @@ def list_conversations(
                 c.fecha_creacion
             ) DESC
         """
-        rows = db.execute(text(query), {"uid": current_user.id}).fetchall()
+        rows = (await db.execute(text(query), {"uid": current_user.id})).fetchall()
 
     return [
         ConversacionResponse(
@@ -359,20 +360,20 @@ def list_conversations(
 
 
 @router.get("/conversations/{conv_id}", response_model=ConversacionResponse)
-def get_conversation(
+async def get_conversation(
     conv_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    conv = db.query(ChatConversacion).filter(ChatConversacion.id == conv_id).first()
+    conv = (await db.execute(select(ChatConversacion).filter(ChatConversacion.id == conv_id))).scalars().first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    if not _can_access_conversation(db, conv, current_user):
+    if not await _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso a esta conversación")
 
-    cnt = db.execute(text("""
+    cnt = (await db.execute(text("""
         SELECT COUNT(*) FROM CHAT_PARTICIPANTES WHERE id_conversacion = :c
-    """), {"c": conv_id}).scalar()
+    """), {"c": conv_id})).scalar()
 
     return ConversacionResponse(
         id=conv.id, cliente_id=conv.cliente_id, tipo=conv.tipo, titulo=conv.titulo,
@@ -385,25 +386,25 @@ def get_conversation(
 @router.get("/conversations/{conv_id}/messages", response_model=List[ChatMensajeResponse])
 async def get_conversation_messages(
     conv_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    conv = db.query(ChatConversacion).filter(ChatConversacion.id == conv_id).first()
+    conv = (await db.execute(select(ChatConversacion).filter(ChatConversacion.id == conv_id))).scalars().first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    if not _can_access_conversation(db, conv, current_user):
+    if not await _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso")
 
     # Marcar como leídos los mensajes ajenos (badge de no-leídos del inbox)
-    db.execute(text("""
+    await db.execute(text("""
         UPDATE CHAT_MENSAJES_CLIENTE
         SET visto = 1
         WHERE id_conversacion = :c AND id_usuario <> :u AND ISNULL(visto, 0) = 0
     """), {"c": conv_id, "u": current_user.id})
-    db.commit()
+    await db.commit()
 
     # Recibos de lectura por mensaje (tick doble) + avisar por websocket
-    leidos_ids = _mark_leidos(db, current_user, conv_id=conv_id)
+    leidos_ids = await _mark_leidos(db, current_user, conv_id=conv_id)
     if leidos_ids:
         try:
             await manager.broadcast_to_room(f"chat_conv_{conv_id}", {
@@ -417,29 +418,31 @@ async def get_conversation_messages(
         except Exception:
             pass
 
-    mensajes = db.query(ChatMensaje).filter(
-        ChatMensaje.conversacion_id == conv_id
-    ).order_by(ChatMensaje.created_at).all()
-    return _attach_leido_por(db, mensajes)
+    mensajes = (await db.execute(
+        select(ChatMensaje).filter(
+            ChatMensaje.conversacion_id == conv_id
+        ).order_by(ChatMensaje.created_at)
+    )).scalars().all()
+    return await _attach_leido_por(db, mensajes)
 
 
 @router.post("/conversations/{conv_id}/mark-read")
 async def mark_conversation_read(
     conv_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Marca como leídos (recibo por mensaje) los mensajes ajenos pendientes
     de esta conversación. `get_conversation_messages` ya hace esto al abrir
     el chat — este endpoint existe para que el frontend pueda marcarlo leído
     explícitamente sin recargar el historial completo."""
-    conv = db.query(ChatConversacion).filter(ChatConversacion.id == conv_id).first()
+    conv = (await db.execute(select(ChatConversacion).filter(ChatConversacion.id == conv_id))).scalars().first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    if not _can_access_conversation(db, conv, current_user):
+    if not await _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso")
 
-    leidos_ids = _mark_leidos(db, current_user, conv_id=conv_id)
+    leidos_ids = await _mark_leidos(db, current_user, conv_id=conv_id)
     if leidos_ids:
         try:
             await manager.broadcast_to_room(f"chat_conv_{conv_id}", {
@@ -459,13 +462,13 @@ async def mark_conversation_read(
 async def send_conversation_message(
     conv_id: int,
     data: ChatMensajeCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    conv = db.query(ChatConversacion).filter(ChatConversacion.id == conv_id).first()
+    conv = (await db.execute(select(ChatConversacion).filter(ChatConversacion.id == conv_id))).scalars().first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    if not _can_access_conversation(db, conv, current_user):
+    if not await _can_access_conversation(db, conv, current_user):
         raise HTTPException(status_code=403, detail="No tienes acceso")
 
     mensaje = ChatMensaje(
@@ -478,8 +481,8 @@ async def send_conversation_message(
         created_at=datetime.now(),
     )
     db.add(mensaje)
-    db.commit()
-    db.refresh(mensaje)
+    await db.commit()
+    await db.refresh(mensaje)
 
     # Broadcast WebSocket
     try:
@@ -502,9 +505,9 @@ async def send_conversation_message(
 # INBOX UNIFICADO (visitas + conversaciones)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/inbox", response_model=List[InboxItem])
-def get_chat_inbox(
+async def get_chat_inbox(
     cliente_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Inbox unificado: chats por visita + conversaciones nuevas.
@@ -544,7 +547,7 @@ def get_chat_inbox(
             GROUP BY cm.id_visita, p.punto_de_interes, p.identificador, v.fecha_visita
             ORDER BY last_date DESC
         """
-        rows = db.execute(text(visit_query), {"cid": cid, "uid": current_user.id}).fetchall()
+        rows = (await db.execute(text(visit_query), {"cid": cid, "uid": current_user.id})).fetchall()
         for r in rows:
             inbox.append(InboxItem(
                 kind="visit",
@@ -559,7 +562,7 @@ def get_chat_inbox(
 
     # ── Conversaciones ────────────────────────────────────────────────────
     if current_user.is_coordinador_exclusivo:
-        conv_rows = db.execute(text("""
+        conv_rows = (await db.execute(text("""
             SELECT c.id_conversacion, c.tipo, c.titulo, c.id_visita,
                    (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
@@ -573,9 +576,9 @@ def get_chat_inbox(
                     WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
                 c.fecha_creacion
             ) DESC
-        """), {"cid": cid}).fetchall()
+        """), {"cid": cid})).fetchall()
     else:
-        conv_rows = db.execute(text("""
+        conv_rows = (await db.execute(text("""
             SELECT c.id_conversacion, c.tipo, c.titulo, c.id_visita,
                    (SELECT TOP 1 mensaje FROM CHAT_MENSAJES_CLIENTE
                       WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC) AS last_msg,
@@ -592,7 +595,7 @@ def get_chat_inbox(
                     WHERE id_conversacion = c.id_conversacion ORDER BY fecha_envio DESC),
                 c.fecha_creacion
             ) DESC
-        """), {"uid": current_user.id}).fetchall()
+        """), {"uid": current_user.id})).fetchall()
 
     for r in conv_rows:
         inbox.append(InboxItem(
@@ -617,9 +620,9 @@ def get_chat_inbox(
 # CHAT POR VISITA — endpoints originales (compatibilidad)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/search-visits")
-def search_chat_visits(
+async def search_chat_visits(
     q: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     cliente_id = current_user.id_perfil if current_user.is_client else None
@@ -654,7 +657,7 @@ def search_chat_visits(
         params["q"] = f"%{q}%"
 
     query_str += " ORDER BY v.fecha_visita DESC"
-    rows = db.execute(text(query_str), params).fetchall()
+    rows = (await db.execute(text(query_str), params)).fetchall()
 
     results = []
     for row in rows:
@@ -676,33 +679,35 @@ def search_chat_visits(
 @router.get("/visit/{visita_id}/messages", response_model=List[ChatMensajeResponse])
 async def get_messages_by_visit(
     visita_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    mensajes = db.query(ChatMensaje).filter(
-        ChatMensaje.visita_id == visita_id, ChatMensaje.conversacion_id.is_(None)
-    ).order_by(ChatMensaje.created_at).all()
+    mensajes = (await db.execute(
+        select(ChatMensaje).filter(
+            ChatMensaje.visita_id == visita_id, ChatMensaje.conversacion_id.is_(None)
+        ).order_by(ChatMensaje.created_at)
+    )).scalars().all()
 
     for msg in mensajes:
         if msg.sender_nombre and msg.sender_nombre.isdigit():
             from app.models.mercaderista import Mercaderista
-            merc = db.query(Mercaderista).filter(Mercaderista.cedula == msg.sender_nombre).first()
+            merc = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == int(msg.sender_nombre)))).scalars().first()
             if merc and merc.nombre:
                 msg.sender_nombre = merc.nombre
 
     # Marcar como leídos los mensajes ajenos (badge de no-leídos del inbox
     # de chats de visita — antes este endpoint no lo hacía, a diferencia de
     # get_conversation_messages, dejando el contador de no-leídos "pegado").
-    db.execute(text("""
+    await db.execute(text("""
         UPDATE CHAT_MENSAJES_CLIENTE
         SET visto = 1
         WHERE id_visita = :v AND id_conversacion IS NULL
           AND id_usuario <> :u AND ISNULL(visto, 0) = 0
     """), {"v": visita_id, "u": current_user.id})
-    db.commit()
+    await db.commit()
 
     # Recibos de lectura por mensaje (tick doble) + avisar por websocket
-    leidos_ids = _mark_leidos(db, current_user, visita_id=visita_id)
+    leidos_ids = await _mark_leidos(db, current_user, visita_id=visita_id)
     if leidos_ids:
         try:
             await manager.broadcast_to_room(f"chat_{visita_id}", {
@@ -716,18 +721,18 @@ async def get_messages_by_visit(
         except Exception:
             pass
 
-    return _attach_leido_por(db, mensajes)
+    return await _attach_leido_por(db, mensajes)
 
 
 @router.post("/visit/{visita_id}/mark-read")
 async def mark_visit_read(
     visita_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Equivalente a mark_conversation_read pero para el chat de visita
     legacy (id_visita, sin id_conversacion)."""
-    leidos_ids = _mark_leidos(db, current_user, visita_id=visita_id)
+    leidos_ids = await _mark_leidos(db, current_user, visita_id=visita_id)
     if leidos_ids:
         try:
             await manager.broadcast_to_room(f"chat_{visita_id}", {
@@ -744,9 +749,9 @@ async def mark_visit_read(
 
 
 @router.post("/send", response_model=ChatMensajeResponse, status_code=201)
-def send_message(
+async def send_message(
     data: ChatMensajeCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     cliente_id = current_user.id_perfil if current_user.is_client else None
@@ -763,8 +768,8 @@ def send_message(
         created_at=datetime.now()
     )
     db.add(mensaje)
-    db.commit()
-    db.refresh(mensaje)
+    await db.commit()
+    await db.refresh(mensaje)
     from app.services.realtime import notify_event
     notify_event("chat.message", {"visita_id": mensaje.visita_id, "id": mensaje.id})
     return mensaje
@@ -797,8 +802,8 @@ async def websocket_chat(websocket: WebSocket, room: str):
                     created_at=datetime.now()
                 )
                 db.add(mensaje)
-                db.commit()
-                db.refresh(mensaje)
+                await db.commit()
+                await db.refresh(mensaje)
                 await manager.broadcast_to_room(f"chat_{room}", {
                     "id": mensaje.id,
                     "conversacion_id": mensaje.conversacion_id,

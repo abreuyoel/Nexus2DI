@@ -133,7 +133,7 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
           <span>Producto</span><span>Cód. Barras</span><span>Departamento</span><span>Categoría</span><span>Subcategoría</span><span>Marca</span><span>Productora</span><span>Presentación</span><span>Tamaño</span><span>Inagotable</span><span></span>
         </div>
         @for (p of productos(); track p.id) {
-          <div class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group min-w-[1520px]">
+          <div (click)="openDetails(p)" class="grid grid-cols-[1.7fr_1fr_1fr_1.1fr_1.1fr_1fr_1fr_1fr_0.9fr_0.7fr_56px] gap-3 items-center px-5 py-3.5 border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group min-w-[1520px] cursor-pointer">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-xl bg-violet-100 dark:bg-violet-900 flex items-center justify-center shrink-0"><mat-icon class="!text-base text-violet-500 dark:text-violet-400">inventory_2</mat-icon></div>
               <p class="font-bold text-slate-900 dark:text-white text-sm truncate">{{ p.producto_gu || '—' }}</p>
@@ -156,8 +156,8 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
               }
             </span>
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button *hasPerm="'products'; action:'write'" (click)="openPanel(p)" matTooltip="Editar" class="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900 hover:bg-violet-200 dark:hover:bg-violet-800 text-violet-500 dark:text-violet-400 flex items-center justify-center"><mat-icon class="!text-base">edit</mat-icon></button>
-              <button *hasPerm="'products'; action:'delete'" (click)="deleteProducto(p)" matTooltip="Eliminar" class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900 text-red-500 dark:text-red-400 flex items-center justify-center"><mat-icon class="!text-base">delete</mat-icon></button>
+              <button *hasPerm="'products'; action:'write'" (click)="openPanel(p); $event.stopPropagation()" matTooltip="Editar" class="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900 hover:bg-violet-200 dark:hover:bg-violet-800 text-violet-500 dark:text-violet-400 flex items-center justify-center"><mat-icon class="!text-base">edit</mat-icon></button>
+              <button *hasPerm="'products'; action:'delete'" (click)="deleteProducto(p); $event.stopPropagation()" matTooltip="Eliminar" class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900 text-red-500 dark:text-red-400 flex items-center justify-center"><mat-icon class="!text-base">delete</mat-icon></button>
             </div>
           </div>
         }
@@ -355,6 +355,140 @@ type CatTab = 'departamentos' | 'categorias' | 'subcategorias' | 'marcas' | 'pre
     </div>
   </div>
 }
+
+<!-- MODAL: DETALLES DEL PRODUCTO -->
+@if (detailsModalOpen() && selectedProduct()) {
+  <div class="fixed inset-0 z-[150] flex items-center justify-center p-4">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" (click)="closeDetails()"></div>
+    
+    <!-- Modal Card -->
+    <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/8 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-5 flex items-center justify-between text-white shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+            <mat-icon class="!text-xl text-white">inventory_2</mat-icon>
+          </div>
+          <div>
+            <h3 class="font-black text-sm uppercase tracking-wider text-white/90">Detalles del Producto</h3>
+            <p class="text-[10px] text-indigo-100 font-semibold">Ficha técnica del catálogo</p>
+          </div>
+        </div>
+        <button (click)="closeDetails()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
+          <mat-icon class="!text-lg">close</mat-icon>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="flex-grow p-6 overflow-y-auto space-y-6">
+        <!-- Title & Code -->
+        <div class="space-y-1">
+          <span class="text-[10px] font-black text-violet-500 uppercase tracking-widest block">Nombre</span>
+          <h2 class="text-xl font-black text-slate-900 dark:text-white leading-snug">{{ selectedProduct()?.producto_gu }}</h2>
+          @if (selectedProduct()?.cod_prod) {
+            <div class="flex items-center gap-1.5 mt-1.5">
+              <span class="text-[9px] font-black uppercase tracking-wider text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded">SKU / Cód. Barras</span>
+              <span class="text-xs font-mono font-bold text-slate-600 dark:text-slate-300">{{ selectedProduct()?.cod_prod }}</span>
+            </div>
+          }
+        </div>
+
+        <!-- Details Grid -->
+        <div class="grid grid-cols-2 gap-4">
+          <!-- Departamento -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Departamento</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.departamento">{{ selectedProduct()?.departamento || '—' }}</span>
+          </div>
+
+          <!-- Categoría -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Categoría</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.categoria">{{ selectedProduct()?.categoria || '—' }}</span>
+          </div>
+
+          <!-- Subcategoría -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Subcategoría</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.subcategoria">{{ selectedProduct()?.subcategoria || '—' }}</span>
+          </div>
+
+          <!-- Marca -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Marca</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.marca">{{ selectedProduct()?.marca || '—' }}</span>
+          </div>
+
+          <!-- Productora / Fabricante -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Productora</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.fabricante">{{ selectedProduct()?.fabricante || '—' }}</span>
+          </div>
+
+          <!-- Presentación -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Presentación</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.presentacion">{{ selectedProduct()?.presentacion || '—' }}</span>
+          </div>
+
+          <!-- Tamaño -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Tamaño</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block truncate" [title]="selectedProduct()?.tamano">{{ selectedProduct()?.tamano || '—' }}</span>
+          </div>
+
+          <!-- Gramos -->
+          <div class="p-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Peso (Gramos)</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1 block">{{ selectedProduct()?.gramos != null ? selectedProduct()?.gramos + ' g' : '—' }}</span>
+          </div>
+        </div>
+
+        <!-- Descripción BI & Inagotable -->
+        <div class="space-y-4">
+          @if (selectedProduct()?.descripcion_bi) {
+            <div class="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+              <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Descripción BI</span>
+              <p class="text-sm text-slate-700 dark:text-slate-300 font-semibold">{{ selectedProduct()?.descripcion_bi }}</p>
+            </div>
+          }
+
+          <!-- Inagotable Status -->
+          <div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <div>
+              <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Estado de Stock</span>
+              <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Define si el producto puede agotarse</span>
+            </div>
+            @if (selectedProduct()?.inagotable) {
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 text-xs font-black shadow-sm">
+                <mat-icon class="!text-xs">all_inclusive</mat-icon> Inagotable
+              </span>
+            } @else {
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-xs font-black">
+                <mat-icon class="!text-xs">inventory</mat-icon> Stock Limitado
+              </span>
+            }
+          </div>
+
+          @if (selectedProduct()?.comentario) {
+            <div class="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+              <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Comentario</span>
+              <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed italic">"{{ selectedProduct()?.comentario }}"</p>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-5 border-t border-slate-200 dark:border-white/8 bg-slate-50 dark:bg-slate-900 shrink-0">
+        <button type="button" (click)="closeDetails()" class="w-full py-3 bg-violet-600 hover:bg-violet-500 text-white font-black rounded-2xl text-sm transition-all active:scale-[0.98] shadow-lg shadow-violet-500/10">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+}
   `
 })
 export class ProductsComponent implements OnInit {
@@ -364,6 +498,8 @@ export class ProductsComponent implements OnInit {
   saving = signal(false);
   panelOpen = signal(false);
   editingId = signal<number | null>(null);
+  detailsModalOpen = signal(false);
+  selectedProduct = signal<Producto | null>(null);
 
   catList = signal<Cat[]>([]);
   subcatList = signal<SubCat[]>([]);
@@ -408,7 +544,10 @@ export class ProductsComponent implements OnInit {
 
   // ── Filtros: opciones searchable ──
   deptoFilterOptions = computed<SelectOption[]>(() => this.facetOpts().departamentos.map(d => ({ value: String(d.id), label: d.nombre })));
-  catFilterOptions = computed<SelectOption[]>(() => this.facetOpts().categorias.map(c => ({ value: String(c.id), label: c.nombre })));
+  catFilterOptions = computed<SelectOption[]>(() => {
+    const list = this.facetOpts().categorias.map(c => ({ value: String(c.id), label: c.nombre }));
+    return [{ value: '-1', label: '❌ Sin Categoría' }, ...list];
+  });
   subcatFilterOptions = computed<SelectOption[]>(() => this.facetOpts().subcategorias.map(s => ({ value: String(s.id), label: s.nombre })));
   marcaFilterOptions = computed<SelectOption[]>(() => this.facetOpts().marcas.map(m => ({ value: String(m.id), label: m.nombre })));
   productoraFilterOptions = computed<SelectOption[]>(() => this.facetOpts().productoras.map(p => ({ value: String(p.id), label: p.nombre })));
@@ -565,6 +704,16 @@ export class ProductsComponent implements OnInit {
   nextPage(): void { this.skipVal.update(v => v + this.pageSize()); this.loadProductos(); }
   onPageSize(val: number): void { this.pageSize.set(val); this.skipVal.set(0); this.loadProductos(); }
 
+  openDetails(p: Producto): void {
+    this.selectedProduct.set(p);
+    this.detailsModalOpen.set(true);
+  }
+
+  closeDetails(): void {
+    this.detailsModalOpen.set(false);
+    this.selectedProduct.set(null);
+  }
+
   openPanel(p: Producto | null): void {
     this.editingId.set(p?.id ?? null);
     this.formDept.set(p?.id_departamento ?? null);
@@ -584,7 +733,9 @@ export class ProductsComponent implements OnInit {
     });
     this.panelOpen.set(true);
   }
-  closePanel(): void { this.panelOpen.set(false); }
+  closePanel(): void {
+    this.panelOpen.set(false);
+  }
 
   saveProducto(): void {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
