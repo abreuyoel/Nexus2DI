@@ -71,6 +71,9 @@ export class ApiService {
   getCities(departamento?: string): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/points/cities/list`, { params: this.params({ departamento }) });
   }
+  getLocalities(ciudad?: string, departamento?: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.base}/api/points/localities/list`, { params: this.params({ ciudad, departamento }) });
+  }
   getChains(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/chains/list`); }
   deletePoint(id: string): Observable<object> { return this.http.delete<object>(`${this.base}/api/points/${id}`); }
   getJerarquiaN2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2/list`); }
