@@ -127,6 +127,25 @@ async def get_cities(
     return [r[0] for r in rows]
 
 
+@router.get("/localities/list")
+async def get_localities(
+    ciudad: Optional[str] = None,
+    departamento: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+    _: Usuario = Depends(get_current_user),
+):
+    query = select(PuntoInteres.localidad).filter(
+        PuntoInteres.localidad.isnot(None),
+        PuntoInteres.localidad != ''
+    )
+    if ciudad:
+        query = query.filter(PuntoInteres.ciudad == ciudad)
+    if departamento:
+        query = query.filter(PuntoInteres.departamento == departamento)
+    rows = (await db.execute(query.distinct().order_by(PuntoInteres.localidad))).scalars().all()
+    return list(rows)
+
+
 @router.get("/chains/list")
 async def get_chains(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(CanalVenta.nombre).filter(CanalVenta.activo == True).order_by(CanalVenta.nombre))).scalars().all()
