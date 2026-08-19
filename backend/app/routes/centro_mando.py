@@ -1,41 +1,31 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Dict, Any
 from datetime import date as _date, datetime, timedelta
 import calendar as _calendar
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.models.user import Usuario
 
 router = APIRouter(prefix="/api/centro-mando", tags=["Centro de Mando"])
 
-def execute_query(db: Session, query: str, params: tuple = (), timeout: int = 0):
-    """timeout (segundos, 0 = default del driver): para queries nuevas/no
-    probadas contra el volumen real de datos -- si algo sale mal (plan malo,
-    bloqueo por un DDL corriendo, etc.) falla rápido con un error claro en
-    vez de colgar la conexión (y el thread del pool, con --workers 1) hasta
-    que Cloudflare corta en 100s (524).
-
-    Se pone en la CONEXIÓN (conn.timeout), no en el cursor: esta versión de
-    pyodbc no tiene Cursor.timeout ('pyodbc.Cursor' object has no attribute
-    'timeout') -- eso rompía la llamada ANTES de ejecutar la query, así que
-    nunca llegaba a correr. La conexión es del pool de SQLAlchemy y se
-    reusa entre requests, así que el timeout se restaura al valor previo al
-    salir para no afectar a otras queries que usen esta misma conexión
-    después."""
-    conn = db.connection().connection
+async def execute_query(db: AsyncSession, query: str, params: tuple = (), timeout: int = 0):
+    conn = await db.connection()
+    raw_conn = await conn.get_raw_connection()
+    driver_conn = raw_conn.driver_connection
     prev_timeout = 0
     if timeout:
         try:
-            prev_timeout = conn.timeout
-            conn.timeout = timeout
+            prev_timeout = driver_conn.timeout
+            driver_conn.timeout = timeout
         except Exception:
-            timeout = 0  # no se pudo aplicar -- seguir sin timeout en vez de romper la query
+            timeout = 0
     try:
-        cursor = conn.cursor()
-        cursor.execute(query, params)
+        cursor = await driver_conn.cursor()
+        await cursor.execute(query, params)
         if cursor.description:
-            rows = cursor.fetchall()
+            rows = await cursor.fetchall()
             return rows
         return []
     except Exception as e:
@@ -44,7 +34,7 @@ def execute_query(db: Session, query: str, params: tuple = (), timeout: int = 0)
     finally:
         if timeout:
             try:
-                conn.timeout = prev_timeout
+                driver_conn.timeout = prev_timeout
             except Exception:
                 pass
 
@@ -61,12 +51,12 @@ DIAS_ES = {
 def _dia_es(fecha: _date) -> str:
     return DIAS_ES[fecha.strftime('%A')]
 
-def _clientes_de_analista(db: Session, analista_id: int) -> List[int]:
+async def _clientes_de_analista(db: AsyncSession, analista_id: int) -> List[int]:
     """Clientes que el analista tiene asignados vía analistas_rutas ->
     RUTA_PROGRAMACION (activa=1) — misma fuente de verdad que mk_analyst()."""
     if not analista_id:
         return []
-    rows = execute_query(db, """
+    rows = await execute_query(db, """
         SELECT DISTINCT rp.id_cliente
         FROM analistas_rutas ar
         JOIN RUTA_PROGRAMACION rp ON rp.id_ruta = ar.id_ruta
@@ -93,8 +83,8 @@ def mk_analyst(is_analyst: bool, analista_id: int, vm_a='vm', pin_a='pin', c_a='
     return f, [analista_id]
 
 @router.get("/clientes")
-def listar_clientes(
-    db: Session = Depends(get_db),
+async def listar_clientes(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     try:
@@ -112,7 +102,7 @@ def listar_clientes(
             """
             params = (current_user.id_perfil,)
 
-        rows = execute_query(db, f"""
+        rows = await execute_query(db, f"""
             SELECT DISTINCT c.id_cliente, c.cliente
             FROM CLIENTES c
             JOIN RUTA_PROGRAMACION rp ON rp.id_cliente = c.id_cliente
@@ -128,11 +118,11 @@ def listar_clientes(
         return {"success": False, "message": str(e), "clientes": []}
 
 @router.get("/horas-trabajadas")
-def horas_trabajadas(
+async def horas_trabajadas(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_analyst_or_admin),
 ):
     """Horas trabajadas y tiempo de traslado por mercaderista en el rango,
@@ -197,7 +187,7 @@ def horas_trabajadas(
 
         # 1) Horas trabajadas por día (span MIN/MAX), sumadas por mercaderista
         # -- misma forma que ya funcionaba antes del rediseño con traslado.
-        horas_rows = execute_query(db, f"""
+        horas_rows = await execute_query(db, f"""
             SELECT v.id_mercaderista, m.nombre,
                    CAST(f.fecha_registro AS DATE) AS dia,
                    MIN(f.fecha_registro), MAX(f.fecha_registro),
@@ -222,7 +212,7 @@ def horas_trabajadas(
 
         # 2) Tiempo de traslado: única pasada por el PDV de cada foto, sin
         # recalcular el join de arriba -- CTE referenciada una sola vez.
-        traslado_rows = execute_query(db, f"""
+        traslado_rows = await execute_query(db, f"""
             WITH base AS (
                 SELECT v.id_mercaderista,
                        v.identificador_punto_interes AS pdv,
@@ -270,11 +260,11 @@ def horas_trabajadas(
         return {"success": False, "message": str(e), "mercaderistas": []}
 
 @router.get("/resumen-dia")
-def resumen_dia(
+async def resumen_dia(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     try:
@@ -287,7 +277,7 @@ def resumen_dia(
         # Se acota a sus propios clientes (analistas_rutas), igual que ahí.
         analista_cliente_ids: List[int] = []
         if current_user.is_analyst and current_user.id_perfil:
-            analista_cliente_ids = _clientes_de_analista(db, current_user.id_perfil)
+            analista_cliente_ids = await _clientes_de_analista(db, current_user.id_perfil)
             if cliente_id and cliente_id not in analista_cliente_ids:
                 raise HTTPException(status_code=403, detail="No autorizado para este cliente")
         is_analyst_scoped = current_user.is_analyst and current_user.id_perfil and not cliente_id
@@ -327,7 +317,7 @@ def resumen_dia(
         cliente_tipo = None
         cliente_nombre = "Todos los clientes"
         if cliente_id:
-            cli_row = execute_query(db, "SELECT cliente, id_tipo_cliente FROM CLIENTES WHERE id_cliente = ?", (cliente_id,))
+            cli_row = await execute_query(db, "SELECT cliente, id_tipo_cliente FROM CLIENTES WHERE id_cliente = ?", (cliente_id,))
             if cli_row:
                 cliente_nombre = cli_row[0][0]
                 cliente_tipo = cli_row[0][1]
@@ -347,7 +337,7 @@ def resumen_dia(
                 JOIN RUTAS_NUEVAS rn        ON rn.id_ruta = rp.id_ruta
                 WHERE m.activo = 1 AND rp.activa = 1 AND rp.id_cliente = ?{serv_filter}
             """
-            asignados = execute_query(db, merc_asig_q, (cliente_id,))
+            asignados = await execute_query(db, merc_asig_q, (cliente_id,))
         else:
             cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             merc_asig_q = f"""
@@ -358,7 +348,7 @@ def resumen_dia(
                 JOIN RUTA_PROGRAMACION rp   ON rp.id_ruta = mr.id_ruta
                 WHERE m.activo = 1 AND rp.activa = 1{cli_filter}
             """
-            asignados = execute_query(db, merc_asig_q, tuple(analista_cliente_ids))
+            asignados = await execute_query(db, merc_asig_q, tuple(analista_cliente_ids))
 
         asignados_map = {r[0]: {"id_mercaderista": r[0], "nombre": r[1],
                                 "cedula": r[2], "tipo_campo": r[3]}
@@ -376,7 +366,7 @@ def resumen_dia(
                 WHERE m.activo = 1 AND rp.activa = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             """
-            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range + [cliente_id]))
+            plan_hoy = await execute_query(db, plan_hoy_q, tuple(days_in_range + [cliente_id]))
         else:
             cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             plan_hoy_q = f"""
@@ -387,7 +377,7 @@ def resumen_dia(
                 WHERE m.activo = 1 AND rp.activa = 1
                   AND rp.dia IN ({ph}){cli_filter}
             """
-            plan_hoy = execute_query(db, plan_hoy_q, tuple(days_in_range + analista_cliente_ids))
+            plan_hoy = await execute_query(db, plan_hoy_q, tuple(days_in_range + analista_cliente_ids))
             
         plan_counts = {}
         for r in plan_hoy:
@@ -416,7 +406,7 @@ def resumen_dia(
                       AND vm.id_cliente = ?
                 ) act_union
             """
-            activos_rows = execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id, d_desde, d_hasta, cliente_id))
+            activos_rows = await execute_query(db, activos_hoy_q, (d_desde, d_hasta, cliente_id, d_desde, d_hasta, cliente_id))
         else:
             cli_filter_ra = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             cli_filter_vm = f" AND vm.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
@@ -436,7 +426,7 @@ def resumen_dia(
                     WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE)){cli_filter_vm}
                 ) act_union
             """
-            activos_rows = execute_query(db, activos_hoy_q, tuple(params_ra + params_vm))
+            activos_rows = await execute_query(db, activos_hoy_q, tuple(params_ra + params_vm))
             
         act_counts = {}
         for r in activos_rows:
@@ -454,7 +444,7 @@ def resumen_dia(
                 WHERE mr.id_mercaderista IN ({ph2}) AND rp.activa = 1
                 GROUP BY mr.id_mercaderista
             """
-            for mid, n in execute_query(db, clas_q, tuple(ids)):
+            for mid, n in await execute_query(db, clas_q, tuple(ids)):
                 if cliente_tipo == 3:
                     asignados_map[mid]["tipo_servicio"] = "Exclusivo"
                 else:
@@ -478,7 +468,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             """
-            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range + [cliente_id]))
+            rutas_plan_rows = await execute_query(db, rutas_plan_q, tuple(days_in_range + [cliente_id]))
         else:
             cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             rutas_plan_q = f"""
@@ -490,7 +480,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}){cli_filter}
             """
-            rutas_plan_rows = execute_query(db, rutas_plan_q, tuple(days_in_range + analista_cliente_ids))
+            rutas_plan_rows = await execute_query(db, rutas_plan_q, tuple(days_in_range + analista_cliente_ids))
 
         ruta_merc_pairs = {}
         for r in rutas_plan_rows:
@@ -516,7 +506,7 @@ def resumen_dia(
             FROM RUTAS_ACTIVADAS ra
             WHERE ra.fecha_hora_activacion >= CAST(? AS DATE) AND ra.fecha_hora_activacion < DATEADD(day, 1, CAST(? AS DATE))
         """
-        ra_rows = execute_query(db, ra_q, (d_desde, d_hasta))
+        ra_rows = await execute_query(db, ra_q, (d_desde, d_hasta))
 
         # Agrupar estado por ruta_merc -- una ruta puede reactivarse y
         # finalizarse varias veces el mismo día (ej. reabrir una ya
@@ -563,7 +553,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}) AND rp.id_cliente = ?{serv_filter}
             """
-            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + [cliente_id]))
+            pois_plan_rows = await execute_query(db, pois_plan_q, tuple(days_in_range + [cliente_id]))
         else:
             cli_filter = f" AND rp.id_cliente IN ({cli_ph})" if is_analyst_scoped else ""
             pois_plan_q = f"""
@@ -578,7 +568,7 @@ def resumen_dia(
                 WHERE rp.activa = 1 AND m.activo = 1
                   AND rp.dia IN ({ph}){cli_filter}
             """
-            pois_plan_rows = execute_query(db, pois_plan_q, tuple(days_in_range + analista_cliente_ids))
+            pois_plan_rows = await execute_query(db, pois_plan_q, tuple(days_in_range + analista_cliente_ids))
 
         # Estado real por PUNTO (no por punto+mercaderista): tiene_act/tiene_des
         # sale de la foto existiendo, sin exigir Estado='Aprobada' -- "activo"/
@@ -604,7 +594,7 @@ def resumen_dia(
             WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE)){real_cli_filter}
             GROUP BY vm.identificador_punto_interes
         """
-        pois_reales_rows = execute_query(db, pois_reales_q, tuple(real_params))
+        pois_reales_rows = await execute_query(db, pois_reales_q, tuple(real_params))
         # .strip(): id_punto_interes/identificador_punto_interes pueden venir de
         # columnas CHAR de ancho fijo -- SQL Server las compara ignorando
         # espacios finales (por eso el cruce A/B daba 0 diferencias en SQL),
@@ -690,7 +680,7 @@ def resumen_dia(
             # sin marcador correspondiente (pyodbc.ProgrammingError: "SQL
             # contains N parameter markers, but M parameters were supplied").
             tradex_cli_params = analista_cliente_ids if is_analyst_scoped else []
-            tradex_rows = execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids + tradex_cli_params))
+            tradex_rows = await execute_query(db, tradex_pois_q, tuple(days_in_range + tradex_ids + tradex_cli_params))
 
             estado_visita_full_q = """
                 SELECT vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE),
@@ -701,7 +691,7 @@ def resumen_dia(
                 WHERE vm.fecha_visita >= CAST(? AS DATE) AND vm.fecha_visita < DATEADD(day, 1, CAST(? AS DATE))
                 GROUP BY vm.identificador_punto_interes, vm.id_mercaderista, vm.id_cliente, CAST(vm.fecha_visita AS DATE)
             """
-            ev_full = execute_query(db, estado_visita_full_q, (d_desde, d_hasta))
+            ev_full = await execute_query(db, estado_visita_full_q, (d_desde, d_hasta))
             ev_full_map = {(r[0], r[1], r[2], r[3]): {"act": bool(r[4]), "des": bool(r[5])}
                            for r in ev_full}
                            
@@ -842,11 +832,11 @@ def resumen_dia(
 
 
 @router.get("/activaciones")
-def get_activaciones(
+async def get_activaciones(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     cliente_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user)
 ):
     try:
@@ -972,7 +962,7 @@ def get_activaciones(
         # endpoint: dashboard, por_mercaderista, pendientes, gestion_por_dia).
 
         all_params = rango_params + ap
-        rows = execute_query(db, base_query, all_params)
+        rows = await execute_query(db, base_query, all_params)
 
         from app.services.azure_service import azure_service
         def _foto_url(path):
@@ -1086,7 +1076,7 @@ def get_activaciones(
         plan_query += af2
         plan_params = rango_params + ap2
         
-        plan_result = execute_query(db, plan_query, plan_params)
+        plan_result = await execute_query(db, plan_query, plan_params)
         
         total_planificadas = total
         if plan_result and len(plan_result) > 0:
@@ -1095,7 +1085,7 @@ def get_activaciones(
         # ── Planificadas por grupo (denominador real de las tarjetas) ──────────
         # Cuenta visitas planificadas (VISITAS_MERCADERISTA del período) por PDV,
         # por cliente y por mercaderista, respetando el filtro de analista/cliente.
-        def _planned_map(group_col: str, extra_join: str = "") -> dict:
+        async def _planned_map(group_col: str, extra_join: str = "") -> dict:
             q = (
                 "SELECT " + group_col + " AS gid, COUNT(DISTINCT vm2.id_visita) AS cnt "
                 "FROM VISITAS_MERCADERISTA vm2 "
@@ -1105,12 +1095,12 @@ def get_activaciones(
                 " WHERE 1=1" + rango_filter.replace("vm.", "vm2.") + af2 +
                 " GROUP BY " + group_col
             )
-            res = execute_query(db, q, plan_params)
+            res = await execute_query(db, q, plan_params)
             return {r[0]: int(r[1]) for r in (res or []) if r[0] is not None}
 
-        planned_pp = _planned_map("pin2.identificador")
-        planned_pc = _planned_map("c2.id_cliente")
-        planned_merc = _planned_map(
+        planned_pp = await _planned_map("pin2.identificador")
+        planned_pc = await _planned_map("c2.id_cliente")
+        planned_merc = await _planned_map(
             "vm2.id_mercaderista",
             "JOIN MERCADERISTAS m2 ON vm2.id_mercaderista = m2.id_mercaderista",
         )
@@ -1170,7 +1160,7 @@ def get_activaciones(
                 ORDER BY m.nombre, ISNULL(c.cliente,'')
             """
             pend_params = list(dias_rango) + ([cliente_id] if cliente_id else []) + ap_p
-            pend_rows = execute_query(db, pend_query, pend_params)
+            pend_rows = await execute_query(db, pend_query, pend_params)
 
             activated_pdv = {(v["id_mercaderista"], v["id_punto"]) for v in activaciones if v["id_foto_activacion"]}
             seen_pend = set()
@@ -1349,7 +1339,7 @@ def get_activaciones(
             GROUP BY CAST(vm4.fecha_visita AS DATE), c4.cliente
             ORDER BY fecha DESC, c4.cliente
         """
-        gpd_rows = execute_query(db, gestion_query, gpd_ap)
+        gpd_rows = await execute_query(db, gestion_query, gpd_ap)
         gpd_c = {}; gpd_f = set()
         for r in gpd_rows:
             fs = r[0].strftime('%Y-%m-%d'); cl = r[1]; gpd_f.add(fs)

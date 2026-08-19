@@ -37,9 +37,9 @@ class Usuario(Base):
     # lazy="select" en lugar de "joined": el JOIN a ROLES ocurría en CADA
     # carga de Usuario aunque casi nunca se necesite rol_obj directamente.
     # rol_nombre ahora usa un dict local (cero queries extra).
-    rol_obj = relationship(Rol, lazy="select", foreign_keys=[id_rol])
-    sesiones = relationship("SesionActiva", back_populates="usuario", cascade="all, delete-orphan")
-    solicitudes = relationship("Solicitud", back_populates="usuario", cascade="all, delete-orphan")
+    rol_obj = relationship(Rol, lazy="noload", foreign_keys=[id_rol])
+    sesiones = relationship("SesionActiva", back_populates="usuario", cascade="all, delete-orphan", lazy="noload")
+    solicitudes = relationship("Solicitud", back_populates="usuario", cascade="all, delete-orphan", lazy="noload")
     permisos = relationship("UserPermission", back_populates="usuario", cascade="all, delete-orphan", lazy="noload")
 
     @property

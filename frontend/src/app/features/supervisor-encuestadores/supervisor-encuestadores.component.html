@@ -752,7 +752,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Nro MPPS</label>
             <input type="text" [(ngModel)]="currentMedico.nro_MPPS"
@@ -764,10 +764,28 @@
               class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
           </div>
           <div>
-            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Universidad
-              Grad.</label>
-            <input type="text" [(ngModel)]="currentMedico.universidad_graduacion"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">1ra Universidad</label>
+            <app-searchable-select
+              [options]="universidadesOpts"
+              [value]="currentMedico.universidad_graduacion"
+              (valueChange)="currentMedico.universidad_graduacion = $event"
+              placeholder="Seleccionar universidad..."
+              searchPlaceholder="Buscar universidad..."
+              allLabel="Sin asignar"
+              icon="school"
+            ></app-searchable-select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">2da Universidad</label>
+            <app-searchable-select
+              [options]="universidadesOpts"
+              [value]="currentMedico.segunda_universidad_graduacion"
+              (valueChange)="currentMedico.segunda_universidad_graduacion = $event"
+              placeholder="Seleccionar universidad..."
+              searchPlaceholder="Buscar universidad..."
+              allLabel="Sin asignar"
+              icon="school"
+            ></app-searchable-select>
           </div>
         </div>
 
@@ -1169,9 +1187,12 @@
             <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.id_medico_externo }}</span>
           </div>
           <div>
-            <span class="block text-[9px] uppercase font-bold text-slate-500">Universidad</span>
-            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.universidad_graduacion || '—'
-              }}</span>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">1ra Universidad</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.universidad_graduacion || '—' }}</span>
+          </div>
+          <div>
+            <span class="block text-[9px] uppercase font-bold text-slate-500">2da Universidad</span>
+            <span class="text-xs font-semibold text-slate-200">{{ currentMedicoDetail?.segunda_universidad_graduacion || '—' }}</span>
           </div>
           <div>
             <span class="block text-[9px] uppercase font-bold text-slate-500">Nro MPPS</span>

@@ -68,3 +68,43 @@ def client_route_ids(db: Session, user: Usuario) -> Optional[List[int]]:
         SELECT id_ruta FROM CLIENTES_RUTAS WHERE id_usuario = :uid AND activo = 1
     """), {"uid": user.id}).fetchall()
     return [r[0] for r in rows] if rows else None
+
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+async def async_coordinator_client_ids(db: AsyncSession, user: Usuario) -> Optional[List[int]]:
+    """Lista de id_cliente visibles. None = todos (sin filtro)."""
+    if user.is_admin or user.is_coordinador_general:
+        return None
+
+    if user.is_coordinador_exclusivo:
+        result = await db.execute(text(f"""
+            SELECT DISTINCT rp.id_cliente
+            FROM RUTA_PROGRAMACION rp
+            WHERE rp.activa = 1 AND rp.id_cliente IS NOT NULL
+              AND rp.id_cliente NOT IN (
+                    SELECT rp2.id_cliente FROM RUTA_PROGRAMACION rp2
+                    WHERE rp2.activa = 1 AND rp2.id_cliente IS NOT NULL
+                      AND rp2.id_ruta IN ({_RUTAS_COMPARTIDAS})
+              )
+        """))
+        return [r[0] for r in result.fetchall()]
+
+    if user.is_coordinador_tradex:
+        result = await db.execute(text(f"""
+            SELECT DISTINCT rp.id_cliente
+            FROM RUTA_PROGRAMACION rp
+            WHERE rp.activa = 1 AND rp.id_cliente IS NOT NULL
+              AND rp.id_ruta IN ({_RUTAS_COMPARTIDAS})
+        """))
+        return [r[0] for r in result.fetchall()]
+
+    # cliente normal (rol 1/9/12): solo su perfil
+    return [user.id_perfil] if user.id_perfil else []
+
+async def async_client_route_ids(db: AsyncSession, user: Usuario) -> Optional[List[int]]:
+    result = await db.execute(text("""
+        SELECT id_ruta FROM CLIENTES_RUTAS WHERE id_usuario = :uid AND activo = 1
+    """), {"uid": user.id})
+    rows = result.fetchall()
+    return [r[0] for r in rows] if rows else None

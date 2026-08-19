@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import or_, desc, func, select, update, delete as sa_delete
 from typing import List, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario as User
 from app.models.encuestador import JornadaEncuestador, CentroSalud, EncuestaCentro, Medico, MedicoCentroEncuesta, MedicoConsultorio, CatalogoEncuestador
@@ -21,24 +22,30 @@ def check_rol_encuestador(current_user: User):
         raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Encuestadores.")
 
 @router.get("/jornada-activa")
-def api_jornada_activa(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_jornada_activa(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    jornada = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).order_by(desc(JornadaEncuestador.id_jornada)).first()
+    jornada = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        ).order_by(desc(JornadaEncuestador.id_jornada))
+    )).scalars().first()
     
     if not jornada:
         return {"success": True, "activa": False}
         
-    medicos_registrados = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).join(
-        EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
-    ).filter(EncuestaCentro.id_jornada == jornada.id_jornada).scalar() or 0
+    medicos_registrados = (await db.execute(
+        select(func.count(MedicoCentroEncuesta.id_medico_centro)).join(
+            EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
+        ).filter(EncuestaCentro.id_jornada == jornada.id_jornada)
+    )).scalar() or 0
     
-    centros_visitados = db.query(func.count(func.distinct(EncuestaCentro.id_centro))).filter(
-        EncuestaCentro.id_jornada == jornada.id_jornada
-    ).scalar() or 0
+    centros_visitados = (await db.execute(
+        select(func.count(func.distinct(EncuestaCentro.id_centro))).filter(
+            EncuestaCentro.id_jornada == jornada.id_jornada
+        )
+    )).scalar() or 0
     
     return {
         "success": True,
@@ -52,13 +59,15 @@ def api_jornada_activa(db: Session = Depends(get_db), current_user: User = Depen
     }
 
 @router.post("/activar-jornada")
-def api_activar_jornada(req: JornadaActivarRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_activar_jornada(req: JornadaActivarRequest, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    existente = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).first()
+    existente = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        )
+    )).scalars().first()
     if existente:
         return {"success": True, "id_jornada": existente.id_jornada, "ya_activa": True}
         
@@ -71,8 +80,8 @@ def api_activar_jornada(req: JornadaActivarRequest, db: Session = Depends(get_db
         estado_geo=req.estado_geo.strip() if req.estado_geo else None
     )
     db.add(nueva_jornada)
-    db.commit()
-    db.refresh(nueva_jornada)
+    await db.commit()
+    await db.refresh(nueva_jornada)
     
     return {
         "success": True, 
@@ -81,34 +90,38 @@ def api_activar_jornada(req: JornadaActivarRequest, db: Session = Depends(get_db
     }
 
 @router.post("/finalizar-jornada")
-def api_finalizar_jornada(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_finalizar_jornada(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    jornada = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).first()
+    jornada = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        )
+    )).scalars().first()
     
     if jornada:
         # Cerrar encuestas abiertas
-        encuestas_abiertas = db.query(EncuestaCentro).filter(
-            EncuestaCentro.id_jornada == jornada.id_jornada,
-            EncuestaCentro.estado == 'Abierta'
-        ).all()
+        encuestas_abiertas = (await db.execute(
+            select(EncuestaCentro).filter(
+                EncuestaCentro.id_jornada == jornada.id_jornada,
+                EncuestaCentro.estado == 'Abierta'
+            )
+        )).scalars().all()
         for e in encuestas_abiertas:
             e.estado = 'Cerrada'
             
         jornada.estado = 'Finalizada'
         jornada.fecha_fin = datetime.utcnow()
-        db.commit()
+        await db.commit()
         
     return {"success": True, "message": "Jornada finalizada"}
 
 @router.get("/centros")
-def api_centros_list(q: str = "", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_centros_list(q: str = "", db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    query = db.query(CentroSalud)
+    query = select(CentroSalud)
     if q.strip():
         search = f"%{q.strip()}%"
         query = query.filter(
@@ -118,7 +131,7 @@ def api_centros_list(q: str = "", db: Session = Depends(get_db), current_user: U
                 CentroSalud.estado.ilike(search)
             )
         )
-    centros = query.order_by(CentroSalud.nombre_centro).limit(50).all()
+    centros = (await db.execute(query.order_by(CentroSalud.nombre_centro).limit(50))).scalars().all()
     
     return {
         "success": True,
@@ -137,7 +150,7 @@ import json
 from app.models.solicitud import Solicitud
 
 @router.post("/centros")
-def api_centros_create(req: CentroSaludCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_centros_create(req: CentroSaludCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
     datos_centro = {
@@ -149,12 +162,14 @@ def api_centros_create(req: CentroSaludCreate, db: Session = Depends(get_db), cu
     
     # Prevenir duplicados si la cola offline reintenta el POST por timeout
     search_str = f'%"nombre_centro": "{req.nombre_centro.strip()}"%'
-    existente = db.query(Solicitud).filter(
-        Solicitud.user_id == current_user.id,
-        Solicitud.tipo == "creacion_centro_salud",
-        Solicitud.estado == "pendiente",
-        Solicitud.descripcion.like(search_str)
-    ).first()
+    existente = (await db.execute(
+        select(Solicitud).filter(
+            Solicitud.user_id == current_user.id,
+            Solicitud.tipo == "creacion_centro_salud",
+            Solicitud.estado == "pendiente",
+            Solicitud.descripcion.like(search_str)
+        )
+    )).scalars().first()
     
     if existente:
         return {
@@ -170,8 +185,8 @@ def api_centros_create(req: CentroSaludCreate, db: Session = Depends(get_db), cu
         estado="pendiente"
     )
     db.add(nueva_solicitud)
-    db.commit()
-    db.refresh(nueva_solicitud)
+    await db.commit()
+    await db.refresh(nueva_solicitud)
     
     return {
         "success": True,
@@ -180,37 +195,43 @@ def api_centros_create(req: CentroSaludCreate, db: Session = Depends(get_db), cu
     }
 
 @router.get("/encuesta-abierta")
-def api_encuesta_abierta(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_encuesta_abierta(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    jornada = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).first()
+    jornada = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        )
+    )).scalars().first()
     
     if not jornada:
         return {"success": True, "tiene_encuesta": False, "jornada_activa": False}
         
-    encuesta = db.query(EncuestaCentro, CentroSalud).join(
-        CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro
-    ).filter(
-        EncuestaCentro.id_jornada == jornada.id_jornada,
-        EncuestaCentro.estado == 'Abierta'
-    ).order_by(desc(EncuestaCentro.id_encuesta)).first()
+    encuesta = (await db.execute(
+        select(EncuestaCentro, CentroSalud).join(
+            CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro
+        ).filter(
+            EncuestaCentro.id_jornada == jornada.id_jornada,
+            EncuestaCentro.estado == 'Abierta'
+        ).order_by(desc(EncuestaCentro.id_encuesta))
+    )).first()
     
     if not encuesta:
         return {"success": True, "tiene_encuesta": False, "jornada_activa": True, "id_jornada": jornada.id_jornada}
         
     ec, cs = encuesta
-    medicos_cargados = db.query(Medico, MedicoCentroEncuesta).join(
-        MedicoCentroEncuesta, MedicoCentroEncuesta.id_medico == Medico.id_medico
-    ).filter(
-        MedicoCentroEncuesta.id_encuesta == ec.id_encuesta
-    ).order_by(desc(MedicoCentroEncuesta.id_medico_centro)).all()
+    medicos_cargados = (await db.execute(
+        select(Medico, MedicoCentroEncuesta).join(
+            MedicoCentroEncuesta, MedicoCentroEncuesta.id_medico == Medico.id_medico
+        ).filter(
+            MedicoCentroEncuesta.id_encuesta == ec.id_encuesta
+        ).order_by(desc(MedicoCentroEncuesta.id_medico_centro))
+    )).all()
     
     medicos_resp = []
     for m, mce in medicos_cargados:
-        first_consultorio = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).first()
+        first_consultorio = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().first()
         val = first_consultorio.valor_consulta_rango if first_consultorio else 'N/A'
         pacs = first_consultorio.promedio_pacientes_semanal_rango if first_consultorio else 'N/A'
         medicos_resp.append({
@@ -242,21 +263,25 @@ def api_encuesta_abierta(db: Session = Depends(get_db), current_user: User = Dep
     }
 
 @router.post("/encuestas")
-def api_encuestas_crear(req: EncuestaCentroCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_encuestas_crear(req: EncuestaCentroCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    jornada = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).first()
+    jornada = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        )
+    )).scalars().first()
     
     if not jornada:
         raise HTTPException(status_code=400, detail="Debes activar una jornada primero")
         
-    existente = db.query(EncuestaCentro).filter(
-        EncuestaCentro.id_jornada == jornada.id_jornada,
-        EncuestaCentro.estado == 'Abierta'
-    ).first()
+    existente = (await db.execute(
+        select(EncuestaCentro).filter(
+            EncuestaCentro.id_jornada == jornada.id_jornada,
+            EncuestaCentro.estado == 'Abierta'
+        )
+    )).scalars().first()
     
     if existente:
         if existente.id_centro == req.id_centro:
@@ -281,52 +306,58 @@ def api_encuestas_crear(req: EncuestaCentroCreate, db: Session = Depends(get_db)
     # 'Abierta') es la protección real -- si se pierde la carrera, se
     # devuelve la encuesta que sí ganó en vez de un 500.
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError:
-        db.rollback()
-        ganadora = db.query(EncuestaCentro).filter(
-            EncuestaCentro.id_jornada == jornada.id_jornada,
-            EncuestaCentro.estado == 'Abierta'
-        ).first()
+        await db.rollback()
+        ganadora = (await db.execute(
+            select(EncuestaCentro).filter(
+                EncuestaCentro.id_jornada == jornada.id_jornada,
+                EncuestaCentro.estado == 'Abierta'
+            )
+        )).scalars().first()
         if ganadora:
             return {"success": True, "id_encuesta": ganadora.id_encuesta, "id_jornada": jornada.id_jornada}
         raise HTTPException(status_code=409, detail="Ya tienes una encuesta abierta.")
-    db.refresh(nueva_encuesta)
+    await db.refresh(nueva_encuesta)
 
     return {"success": True, "id_encuesta": nueva_encuesta.id_encuesta, "id_jornada": jornada.id_jornada}
 
 @router.post("/encuestas/{id_encuesta}/cerrar")
-def api_encuesta_cerrar(id_encuesta: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_encuesta_cerrar(id_encuesta: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    encuesta = db.query(EncuestaCentro).filter(
-        EncuestaCentro.id_encuesta == id_encuesta,
-        EncuestaCentro.id_usuario == current_user.id
-    ).first()
+    encuesta = (await db.execute(
+        select(EncuestaCentro).filter(
+            EncuestaCentro.id_encuesta == id_encuesta,
+            EncuestaCentro.id_usuario == current_user.id
+        )
+    )).scalars().first()
     
     if encuesta:
         encuesta.estado = 'Cerrada'
-        db.commit()
+        await db.commit()
         
     return {"success": True}
 
 @router.get("/medicos/buscar")
-def api_medicos_buscar(q: str = "", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_medicos_buscar(q: str = "", db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
     if not q.strip():
         return {"success": True, "medicos": []}
         
     search = f"%{q.strip()}%"
-    medicos = db.query(Medico).filter(
-        or_(
-            Medico.id_medico_externo.ilike(search),
-            Medico.apellido1.ilike(search),
-            Medico.apellido2.ilike(search),
-            Medico.nombre1.ilike(search),
-            Medico.nombre2.ilike(search)
-        )
-    ).order_by(Medico.apellido1, Medico.nombre1).limit(25).all()
+    medicos = (await db.execute(
+        select(Medico).filter(
+            or_(
+                Medico.id_medico_externo.ilike(search),
+                Medico.apellido1.ilike(search),
+                Medico.apellido2.ilike(search),
+                Medico.nombre1.ilike(search),
+                Medico.nombre2.ilike(search)
+            )
+        ).order_by(Medico.apellido1, Medico.nombre1).limit(25)
+    )).scalars().all()
     
     return {
         "success": True,
@@ -356,20 +387,24 @@ def api_medicos_buscar(q: str = "", db: Session = Depends(get_db), current_user:
     }
 
 @router.post("/medico-centro")
-def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_medico_centro_save(req: MedicoCentroCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    jornada = db.query(JornadaEncuestador).filter(
-        JornadaEncuestador.id_usuario == current_user.id,
-        JornadaEncuestador.estado == 'En Progreso'
-    ).first()
+    jornada = (await db.execute(
+        select(JornadaEncuestador).filter(
+            JornadaEncuestador.id_usuario == current_user.id,
+            JornadaEncuestador.estado == 'En Progreso'
+        )
+    )).scalars().first()
     if not jornada:
         raise HTTPException(status_code=400, detail="No tienes jornada activa")
         
-    encuesta = db.query(EncuestaCentro).filter(
-        EncuestaCentro.id_jornada == jornada.id_jornada,
-        EncuestaCentro.estado == 'Abierta'
-    ).first()
+    encuesta = (await db.execute(
+        select(EncuestaCentro).filter(
+            EncuestaCentro.id_jornada == jornada.id_jornada,
+            EncuestaCentro.estado == 'Abierta'
+        )
+    )).scalars().first()
     if not encuesta:
         raise HTTPException(status_code=400, detail="No tienes encuesta abierta")
         
@@ -381,15 +416,17 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
             
         existente = None
         if req.id_medico_externo and req.id_medico_externo != "000000" and req.id_medico_externo.strip() != "":
-            existente = db.query(Medico).filter(Medico.id_medico_externo == req.id_medico_externo).first()
+            existente = (await db.execute(select(Medico).filter(Medico.id_medico_externo == req.id_medico_externo))).scalars().first()
         else:
             # Si no hay cédula, intentamos evitar duplicar el mismo médico en reintentos offline de la cola
             # matcheando por nombre exacto.
-            existente = db.query(Medico).filter(
-                func.lower(Medico.nombre1) == req.nombre1.lower(),
-                func.lower(Medico.apellido1) == req.apellido1.lower(),
-                func.lower(Medico.especialidad) == req.especialidad.lower()
-            ).order_by(desc(Medico.id_medico)).first()
+            existente = (await db.execute(
+                select(Medico).filter(
+                    func.lower(Medico.nombre1) == req.nombre1.lower(),
+                    func.lower(Medico.apellido1) == req.apellido1.lower(),
+                    func.lower(Medico.especialidad) == req.especialidad.lower()
+                ).order_by(desc(Medico.id_medico))
+            )).scalars().first()
             
         if existente:
             id_medico = existente.id_medico
@@ -415,14 +452,16 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
                 instagram=req.instagram
             )
             db.add(nuevo_medico)
-            db.commit()
-            db.refresh(nuevo_medico)
+            await db.commit()
+            await db.refresh(nuevo_medico)
             id_medico = nuevo_medico.id_medico
             
-    dup = db.query(MedicoCentroEncuesta).filter(
-        MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta,
-        MedicoCentroEncuesta.id_medico == id_medico
-    ).first()
+    dup = (await db.execute(
+        select(MedicoCentroEncuesta).filter(
+            MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta,
+            MedicoCentroEncuesta.id_medico == id_medico
+        )
+    )).scalars().first()
 
     if dup:
         raise HTTPException(status_code=409, detail="Este médico ya fue registrado en esta encuesta del centro.")
@@ -458,12 +497,14 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
     # MedicoConsultorio de arriba se revierten con el rollback, así que
     # tampoco quedan consultorios duplicados sueltos.
     try:
-        db.commit()
+        await db.commit()
     except IntegrityError:
-        db.rollback()
-        cnt = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
-            MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
-        ).scalar() or 0
+        await db.rollback()
+        cnt = (await db.execute(
+            select(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
+                MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
+            )
+        )).scalar() or 0
         return {
             "success": True,
             "id_medico": id_medico,
@@ -472,9 +513,11 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
             "ya_registrado": True,
         }
 
-    cnt = db.query(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
-        MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
-    ).scalar() or 0
+    cnt = (await db.execute(
+        select(func.count(MedicoCentroEncuesta.id_medico_centro)).filter(
+            MedicoCentroEncuesta.id_encuesta == encuesta.id_encuesta
+        )
+    )).scalar() or 0
 
     return {
         "success": True,
@@ -484,7 +527,7 @@ def api_medico_centro_save(req: MedicoCentroCreate, db: Session = Depends(get_db
     }
 
 @router.get("/medico/{id_medico}")
-def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_medico_detalle(id_medico: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     """Datos completos de un médico ya registrado + todos sus consultorios,
     para precargar el formulario en modo edición. El médico es una entidad
     global (compartida entre todos los centros donde se lo haya registrado,
@@ -494,11 +537,11 @@ def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_us
     el formulario de alta, solo que ahora también se puede guardar."""
     check_rol_encuestador(current_user)
 
-    medico = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    medico = (await db.execute(select(Medico).filter(Medico.id_medico == id_medico))).scalars().first()
     if not medico:
         raise HTTPException(status_code=404, detail="Médico no encontrado")
 
-    consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).order_by(MedicoConsultorio.id_consultorio).all()
+    consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).order_by(MedicoConsultorio.id_consultorio))).scalars().all()
 
     return {
         "success": True,
@@ -535,14 +578,14 @@ def api_medico_detalle(id_medico: int, db: Session = Depends(get_db), current_us
     }
 
 @router.post("/medico/{id_medico}/editar")
-def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     """Edita los datos propios del médico y reemplaza por completo su lista
     de consultorios (delete-then-insert, mismo shape que el alta) -- más
     simple y menos propenso a errores que tratar de diffear cuál consultorio
     es cuál cuando el formulario no manda ids estables por fila."""
     check_rol_encuestador(current_user)
 
-    medico = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    medico = (await db.execute(select(Medico).filter(Medico.id_medico == id_medico))).scalars().first()
     if not medico:
         raise HTTPException(status_code=404, detail="Médico no encontrado")
 
@@ -570,7 +613,7 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
     # matchea "¿ya existe este médico?" al buscarlo desde otro centro;
     # cambiarla desde acá podría duplicarlo en vez de identificarlo.
 
-    db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).delete()
+    await db.execute(sa_delete(MedicoConsultorio).where(MedicoConsultorio.id_medico == id_medico))
     for cons in req.consultorios:
         db.add(MedicoConsultorio(
             id_medico=id_medico,
@@ -582,19 +625,19 @@ def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: Session = Dep
             promedio_pacientes_semanal_rango=cons.promedio_pacientes_semanal_rango,
         ))
 
-    db.commit()
+    await db.commit()
     return {"success": True, "id_medico": id_medico}
 
 @router.get("/catalogos")
-def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
-    especialidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "especialidad").order_by(CatalogoEncuestador.nombre).all()
-    subespecialidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "subespecialidad").order_by(CatalogoEncuestador.nombre).all()
-    universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
-    estados = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre).all()
-    ciudades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre).all()
-    universidades = db.query(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre).all()
+    especialidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "especialidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
+    subespecialidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "subespecialidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
+    universidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
+    estados = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre))).scalars().all()
+    ciudades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre))).scalars().all()
+    universidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
 
     return {
         "valor_consulta_rangos": [
@@ -611,12 +654,11 @@ def api_catalogos(db: Session = Depends(get_db), current_user: User = Depends(ge
         ],
         "dias_consulta": ["Lunes", "Martes", "Miércoles", "Jueves",
                           "Viernes", "Sábado", "Domingo"],
-        "especialidades": [e[0] for e in especialidades],
-        "subespecialidades": [s[0] for s in subespecialidades],
-        "universidades": [u[0] for u in universidades],
-        "estados": [est[0] for est in estados],
-        "ciudades": [c[0] for c in ciudades],
-        "universidades": [u[0] for u in universidades],
+        "especialidades": list(especialidades),
+        "subespecialidades": list(subespecialidades),
+        "universidades": list(universidades),
+        "estados": list(estados),
+        "ciudades": list(ciudades),
     }
 
 class CatalogoCreate(BaseModel):
@@ -627,7 +669,7 @@ class CatalogoUpdate(BaseModel):
     nombre: str
 
 @router.post("/catalogos")
-def api_catalogos_create(req: CatalogoCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos_create(req: CatalogoCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
     tipo = req.tipo.strip().lower()
@@ -638,10 +680,12 @@ def api_catalogos_create(req: CatalogoCreate, db: Session = Depends(get_db), cur
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
         
-    existente = db.query(CatalogoEncuestador).filter(
-        CatalogoEncuestador.tipo == tipo,
-        CatalogoEncuestador.nombre == nombre
-    ).first()
+    existente = (await db.execute(
+        select(CatalogoEncuestador).filter(
+            CatalogoEncuestador.tipo == tipo,
+            CatalogoEncuestador.nombre == nombre
+        )
+    )).scalars().first()
     
     if existente:
         return {"success": True, "id": existente.id, "message": "Elemento ya existe"}
@@ -654,20 +698,20 @@ def api_catalogos_create(req: CatalogoCreate, db: Session = Depends(get_db), cur
         creado_en=datetime.utcnow()
     )
     db.add(nuevo)
-    db.commit()
-    db.refresh(nuevo)
+    await db.commit()
+    await db.refresh(nuevo)
     
     return {"success": True, "id": nuevo.id, "message": "Elemento agregado"}
 
 @router.put("/catalogos/{id_catalogo}")
-def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
     
     nuevo_nombre = req.nombre.strip()
     if not nuevo_nombre:
         raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
         
-    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    item = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
         
@@ -678,31 +722,31 @@ def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: Session = De
     # Actualizar en cascada en la tabla medicos
     if viejo_nombre != nuevo_nombre:
         if item.tipo == "especialidad":
-            db.query(Medico).filter(Medico.especialidad == viejo_nombre).update({"especialidad": nuevo_nombre})
+            await db.execute(update(Medico).where(Medico.especialidad == viejo_nombre).values(especialidad=nuevo_nombre))
         elif item.tipo == "subespecialidad":
-            db.query(Medico).filter(Medico.sub_especialidad == viejo_nombre).update({"sub_especialidad": nuevo_nombre})
+            await db.execute(update(Medico).where(Medico.sub_especialidad == viejo_nombre).values(sub_especialidad=nuevo_nombre))
         elif item.tipo == "universidad":
-            db.query(Medico).filter(Medico.universidad_graduacion == viejo_nombre).update({"universidad_graduacion": nuevo_nombre})
+            await db.execute(update(Medico).where(Medico.universidad_graduacion == viejo_nombre).values(universidad_graduacion=nuevo_nombre))
         elif item.tipo == "estado":
-            db.query(Medico).filter(Medico.estado == viejo_nombre).update({"estado": nuevo_nombre})
+            await db.execute(update(Medico).where(Medico.estado == viejo_nombre).values(estado=nuevo_nombre))
         elif item.tipo == "ciudad":
-            db.query(Medico).filter(Medico.ciudad == viejo_nombre).update({"ciudad": nuevo_nombre})
+            await db.execute(update(Medico).where(Medico.ciudad == viejo_nombre).values(ciudad=nuevo_nombre))
             
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Elemento actualizado correctamente"}
 
 @router.get("/catalogos-gestion")
-def api_catalogos_gestion(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos_gestion(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
-    items = db.query(CatalogoEncuestador).order_by(CatalogoEncuestador.tipo, CatalogoEncuestador.nombre).all()
+    items = (await db.execute(select(CatalogoEncuestador).order_by(CatalogoEncuestador.tipo, CatalogoEncuestador.nombre))).scalars().all()
     
     # Pre-cargar conteos de médicos por campo para máxima velocidad
     from sqlalchemy import func
-    esp_counts = dict(db.query(Medico.especialidad, func.count(Medico.id_medico)).group_by(Medico.especialidad).all())
-    subesp_counts = dict(db.query(Medico.sub_especialidad, func.count(Medico.id_medico)).group_by(Medico.sub_especialidad).all())
-    uni_counts = dict(db.query(Medico.universidad_graduacion, func.count(Medico.id_medico)).group_by(Medico.universidad_graduacion).all())
-    est_counts = dict(db.query(Medico.estado, func.count(Medico.id_medico)).group_by(Medico.estado).all())
-    ciu_counts = dict(db.query(Medico.ciudad, func.count(Medico.id_medico)).group_by(Medico.ciudad).all())
+    esp_counts = dict((await db.execute(select(Medico.especialidad, func.count(Medico.id_medico)).group_by(Medico.especialidad))).fetchall())
+    subesp_counts = dict((await db.execute(select(Medico.sub_especialidad, func.count(Medico.id_medico)).group_by(Medico.sub_especialidad))).fetchall())
+    uni_counts = dict((await db.execute(select(Medico.universidad_graduacion, func.count(Medico.id_medico)).group_by(Medico.universidad_graduacion))).fetchall())
+    est_counts = dict((await db.execute(select(Medico.estado, func.count(Medico.id_medico)).group_by(Medico.estado))).fetchall())
+    ciu_counts = dict((await db.execute(select(Medico.ciudad, func.count(Medico.id_medico)).group_by(Medico.ciudad))).fetchall())
     
     result = []
     for i in items:
@@ -734,13 +778,13 @@ def api_catalogos_gestion(db: Session = Depends(get_db), current_user: User = De
     }
 
 @router.get("/catalogos/{id_catalogo}/detalles")
-def api_catalogos_detalles(id_catalogo: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos_detalles(id_catalogo: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
-    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    item = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
         
-    medicos_query = db.query(Medico)
+    medicos_query = select(Medico)
     if item.tipo == "especialidad":
         medicos_query = medicos_query.filter(Medico.especialidad == item.nombre)
     elif item.tipo == "subespecialidad":
@@ -752,7 +796,7 @@ def api_catalogos_detalles(id_catalogo: int, db: Session = Depends(get_db), curr
     elif item.tipo == "ciudad":
         medicos_query = medicos_query.filter(Medico.ciudad == item.nombre)
         
-    medicos = medicos_query.limit(50).all()
+    medicos = (await db.execute(medicos_query.limit(50))).scalars().all()
     medicos_data = [{
         "id_medico": m.id_medico,
         "id_externo": m.id_medico_externo,
@@ -778,13 +822,13 @@ def api_catalogos_detalles(id_catalogo: int, db: Session = Depends(get_db), curr
     }
 
 @router.delete("/catalogos/{id_catalogo}")
-def api_catalogos_delete(id_catalogo: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_catalogos_delete(id_catalogo: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
-    item = db.query(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo).first()
+    item = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
-    db.delete(item)
-    db.commit()
+    await db.delete(item)
+    await db.commit()
     return {"success": True, "message": "Elemento eliminado"}
 
 # --- ENDPOINTS DE CORRECCIONES DE SUPERVISOR ---
@@ -794,24 +838,26 @@ class EncuestaCentroUpdate(BaseModel):
     notas_generales: Optional[str] = None
 
 @router.get("/correcciones-pendientes")
-def api_correcciones_pendientes(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def api_correcciones_pendientes(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
-    encuestas = db.query(EncuestaCentro).filter(
-        EncuestaCentro.id_usuario == current_user.id,
-        EncuestaCentro.requiere_correccion == True
-    ).order_by(desc(EncuestaCentro.id_encuesta)).all()
+    encuestas = (await db.execute(
+        select(EncuestaCentro).filter(
+            EncuestaCentro.id_usuario == current_user.id,
+            EncuestaCentro.requiere_correccion == True
+        ).order_by(desc(EncuestaCentro.id_encuesta))
+    )).scalars().all()
     
     result = []
     for e in encuestas:
-        centro = db.query(CentroSalud).filter(CentroSalud.id_centro == e.id_centro).first()
+        centro = (await db.execute(select(CentroSalud).filter(CentroSalud.id_centro == e.id_centro))).scalars().first()
         
         # Obtener médicos registrados en esta encuesta
-        medicos_rel = db.query(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta).all()
+        medicos_rel = (await db.execute(select(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta))).scalars().all()
         medicos_list = []
         for mr in medicos_rel:
-            m = db.query(Medico).filter(Medico.id_medico == mr.id_medico).first()
+            m = (await db.execute(select(Medico).filter(Medico.id_medico == mr.id_medico))).scalars().first()
             if m:
-                consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).all()
+                consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().all()
                 medicos_list.append({
                     "id_medico": m.id_medico,
                     "id_medico_externo": m.id_medico_externo,
@@ -860,17 +906,19 @@ def api_correcciones_pendientes(db: Session = Depends(get_db), current_user: Use
     return result
 
 @router.put("/encuestas/{id_encuesta}")
-def api_encuesta_corregir(
+async def api_encuesta_corregir(
     id_encuesta: int,
     req: EncuestaCentroUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     check_rol_encuestador(current_user)
-    encuesta = db.query(EncuestaCentro).filter(
-        EncuestaCentro.id_encuesta == id_encuesta,
-        EncuestaCentro.id_usuario == current_user.id
-    ).first()
+    encuesta = (await db.execute(
+        select(EncuestaCentro).filter(
+            EncuestaCentro.id_encuesta == id_encuesta,
+            EncuestaCentro.id_usuario == current_user.id
+        )
+    )).scalars().first()
     
     if not encuesta:
         raise HTTPException(status_code=404, detail="Encuesta no encontrada o no te pertenece")
@@ -882,7 +930,7 @@ def api_encuesta_corregir(
     encuesta.notas_generales = req.notas_generales
     encuesta.requiere_correccion = False  # Al guardar la corrección, se quita la alerta
     
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Encuesta corregida exitosamente"}
 
 class ConsultorioUpdate(BaseModel):
@@ -915,26 +963,28 @@ class MedicoCentroUpdateReq(BaseModel):
     consultorios: List[ConsultorioUpdate] = []
 
 @router.put("/medicos/{id_medico}")
-def api_medico_corregir(
+async def api_medico_corregir(
     id_medico: int,
     req: MedicoCentroUpdateReq,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ):
     check_rol_encuestador(current_user)
     
     # Verificar que el médico esté registrado en una encuesta de este usuario
-    vinculo = db.query(MedicoCentroEncuesta).join(
-        EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
-    ).filter(
-        MedicoCentroEncuesta.id_medico == id_medico,
-        EncuestaCentro.id_usuario == current_user.id
-    ).first()
+    vinculo = (await db.execute(
+        select(MedicoCentroEncuesta).join(
+            EncuestaCentro, EncuestaCentro.id_encuesta == MedicoCentroEncuesta.id_encuesta
+        ).filter(
+            MedicoCentroEncuesta.id_medico == id_medico,
+            EncuestaCentro.id_usuario == current_user.id
+        )
+    )).scalars().first()
     
     if not vinculo:
         raise HTTPException(status_code=403, detail="No tienes permisos para modificar este médico")
         
-    m = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    m = (await db.execute(select(Medico).filter(Medico.id_medico == id_medico))).scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Médico no encontrado")
         
@@ -958,7 +1008,7 @@ def api_medico_corregir(
     m.instagram = req.instagram
 
     # Actualizar consultorios
-    db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).delete()
+    await db.execute(sa_delete(MedicoConsultorio).where(MedicoConsultorio.id_medico == id_medico))
     for cons in req.consultorios:
         c = MedicoConsultorio(
             id_medico=id_medico,
@@ -971,6 +1021,6 @@ def api_medico_corregir(
         )
         db.add(c)
         
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Datos de médico actualizados correctamente"}
 

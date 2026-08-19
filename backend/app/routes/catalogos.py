@@ -1,7 +1,9 @@
+from sqlalchemy import select, update, func
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Type
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.models.user import Usuario
 from app.models.punto import PuntoInteres
@@ -34,12 +36,12 @@ CATALOG_USAGE = {
 }
 
 
-def _count_usage(db: Session, usage_model, usage_column, value: str) -> int:
-    return db.query(usage_model).filter(usage_column == value).count()
+async def _count_usage(db: AsyncSession, usage_model, usage_column, value: str) -> int:
+    return (await db.execute(select(func.count()).select_from(usage_model).filter(usage_column == value))).scalar() or 0
 
 
-def _list_usage_ids(db: Session, usage_column, sample_column, value: str, limit: int = 5) -> list[str]:
-    rows = db.query(sample_column).filter(usage_column == value).limit(limit).all()
+async def _list_usage_ids(db: AsyncSession, usage_column, sample_column, value: str, limit: int = 5) -> list[str]:
+    rows = (await db.execute(select(sample_column).filter(usage_column == value).limit(limit))).scalars().all()
     return [r[0] for r in rows]
 
 
@@ -59,55 +61,56 @@ def _ciudad_to_response(c: Ciudad) -> dict:
 
 @router.get("/ciudades", response_model=List[CiudadResponse])
 @router.get("/ciudades/", response_model=List[CiudadResponse])
-def list_ciudades(
+async def list_ciudades(
     departamento_id: Optional[int] = None,
     departamento: Optional[str] = None,
     activo: Optional[bool] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    q = db.query(Ciudad).join(DepartamentoGeo, Ciudad.departamento_id == DepartamentoGeo.id)
+    q = select(Ciudad).join(DepartamentoGeo, Ciudad.departamento_id == DepartamentoGeo.id)
     if departamento_id is not None:
         q = q.filter(Ciudad.departamento_id == departamento_id)
     if departamento:
         q = q.filter(DepartamentoGeo.nombre == departamento)
     if activo is not None:
         q = q.filter(Ciudad.activo == activo)
-    return [_ciudad_to_response(c) for c in q.order_by(Ciudad.nombre).all()]
+    rows = (await db.execute(q.order_by(Ciudad.nombre))).scalars().all()
+    return [_ciudad_to_response(c) for c in rows]
 
 
 @router.post("/ciudades", response_model=CiudadResponse, status_code=201)
 @router.post("/ciudades/", response_model=CiudadResponse, status_code=201)
-def create_ciudad(
+async def create_ciudad(
     data: CiudadCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
-    dep = db.query(DepartamentoGeo).filter(DepartamentoGeo.id == data.departamento_id).first()
+    dep = (await db.execute(select(DepartamentoGeo).filter(DepartamentoGeo.id == data.departamento_id))).scalars().first()
     if not dep:
         raise HTTPException(status_code=404, detail="Departamento no existe")
     nombre = data.nombre.strip()
-    exists = db.query(Ciudad).filter(
+    exists = (await db.execute(select(Ciudad).filter(
         Ciudad.departamento_id == data.departamento_id,
         Ciudad.nombre == nombre,
-    ).first()
+    ))).scalars().first()
     if exists:
         raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}' en {dep.nombre}")
     c = Ciudad(nombre=nombre, departamento_id=data.departamento_id, activo=data.activo)
     db.add(c)
-    db.commit()
-    db.refresh(c)
+    await db.commit()
+    await db.refresh(c)
     return _ciudad_to_response(c)
 
 
 @router.put("/ciudades/{ciudad_id}", response_model=CiudadResponse)
-def update_ciudad(
+async def update_ciudad(
     ciudad_id: int,
     data: CiudadUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
-    c = db.query(Ciudad).filter(Ciudad.id == ciudad_id).first()
+    c = (await db.execute(select(Ciudad).filter(Ciudad.id == ciudad_id))).scalars().first()
     if not c:
         raise HTTPException(status_code=404, detail="Ciudad no encontrada")
 
@@ -116,22 +119,22 @@ def update_ciudad(
     nuevo_dep_id = data.departamento_id if data.departamento_id is not None else c.departamento_id
 
     if nuevo_dep_id != c.departamento_id:
-        dep = db.query(DepartamentoGeo).filter(DepartamentoGeo.id == nuevo_dep_id).first()
+        dep = (await db.execute(select(DepartamentoGeo).filter(DepartamentoGeo.id == nuevo_dep_id))).scalars().first()
         if not dep:
             raise HTTPException(status_code=404, detail="Departamento no existe")
 
     if nuevo_nombre != old_nombre or nuevo_dep_id != c.departamento_id:
-        clash = db.query(Ciudad).filter(
+        clash = (await db.execute(select(Ciudad).filter(
             Ciudad.departamento_id == nuevo_dep_id,
             Ciudad.nombre == nuevo_nombre,
             Ciudad.id != ciudad_id,
-        ).first()
+        ))).scalars().first()
         if clash:
             raise HTTPException(status_code=409, detail="Ya existe esa ciudad en el departamento")
 
     if nuevo_nombre != old_nombre:
-        db.query(PuntoInteres).filter(PuntoInteres.ciudad == old_nombre).update(
-            {PuntoInteres.ciudad: nuevo_nombre}, synchronize_session=False
+        await db.execute(
+            update(PuntoInteres).where(PuntoInteres.ciudad == old_nombre).values(ciudad=nuevo_nombre)
         )
 
     c.nombre = nuevo_nombre
@@ -139,25 +142,25 @@ def update_ciudad(
     if data.activo is not None:
         c.activo = data.activo
 
-    db.commit()
-    db.refresh(c)
+    await db.commit()
+    await db.refresh(c)
     return _ciudad_to_response(c)
 
 
 @router.delete("/ciudades/{ciudad_id}")
-def delete_ciudad(
+async def delete_ciudad(
     ciudad_id: int,
     force: bool = Query(False),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'delete')),
 ):
-    c = db.query(Ciudad).filter(Ciudad.id == ciudad_id).first()
+    c = (await db.execute(select(Ciudad).filter(Ciudad.id == ciudad_id))).scalars().first()
     if not c:
         raise HTTPException(status_code=404, detail="Ciudad no encontrada")
 
-    usage = _count_usage(db, PuntoInteres, PuntoInteres.ciudad, c.nombre)
+    usage = await _count_usage(db, PuntoInteres, PuntoInteres.ciudad, c.nombre)
     if usage > 0 and not force:
-        sample = _list_usage_ids(db, PuntoInteres.ciudad, PuntoInteres.id, c.nombre)
+        sample = await _list_usage_ids(db, PuntoInteres.ciudad, PuntoInteres.id, c.nombre)
         raise HTTPException(
             status_code=409,
             detail={
@@ -168,7 +171,7 @@ def delete_ciudad(
         )
 
     db.delete(c)
-    db.commit()
+    await db.commit()
     return {"message": "Eliminada", "usage_count": usage, "force": force}
 
 
@@ -179,45 +182,45 @@ def delete_ciudad(
 
 @router.get("/servicios", response_model=List[ServicioResponse])
 @router.get("/servicios/", response_model=List[ServicioResponse])
-def list_servicios(
+async def list_servicios(
     activo: Optional[bool] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    q = db.query(Servicio)
+    q = select(Servicio)
     if activo is not None:
         q = q.filter(Servicio.activo == activo)
-    return q.order_by(Servicio.nombre).all()
+    return (await db.execute(q.order_by(Servicio.nombre))).scalars().all()
 
 
 @router.post("/servicios", response_model=ServicioResponse, status_code=201)
 @router.post("/servicios/", response_model=ServicioResponse, status_code=201)
-def create_servicio(
+async def create_servicio(
     data: ServicioCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
     nombre = data.nombre.strip()
     prefijo = data.prefijo.strip().upper()
-    if db.query(Servicio).filter(Servicio.nombre == nombre).first():
+    if (await db.execute(select(Servicio).filter(Servicio.nombre == nombre))).scalars().first():
         raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}'")
-    if db.query(Servicio).filter(Servicio.prefijo == prefijo).first():
+    if (await db.execute(select(Servicio).filter(Servicio.prefijo == prefijo))).scalars().first():
         raise HTTPException(status_code=409, detail=f"El prefijo '{prefijo}' ya lo usa otro servicio -- las rutas se numerarían mezcladas")
     item = Servicio(nombre=nombre, prefijo=prefijo, activo=data.activo)
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return item
 
 
 @router.put("/servicios/{item_id}", response_model=ServicioResponse)
-def update_servicio(
+async def update_servicio(
     item_id: int,
     data: ServicioUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
-    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    item = (await db.execute(select(Servicio).filter(Servicio.id == item_id))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="No encontrado")
 
@@ -226,18 +229,18 @@ def update_servicio(
     nuevo_prefijo = data.prefijo.strip().upper() if data.prefijo is not None else item.prefijo
 
     if nuevo_nombre != old_nombre:
-        clash = db.query(Servicio).filter(Servicio.nombre == nuevo_nombre, Servicio.id != item_id).first()
+        clash = (await db.execute(select(Servicio).filter(Servicio.nombre == nuevo_nombre, Servicio.id != item_id))).scalars().first()
         if clash:
             raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo_nombre}'")
 
     if nuevo_prefijo != item.prefijo:
-        clash = db.query(Servicio).filter(Servicio.prefijo == nuevo_prefijo, Servicio.id != item_id).first()
+        clash = (await db.execute(select(Servicio).filter(Servicio.prefijo == nuevo_prefijo, Servicio.id != item_id))).scalars().first()
         if clash:
             raise HTTPException(status_code=409, detail=f"El prefijo '{nuevo_prefijo}' ya lo usa otro servicio")
 
     if nuevo_nombre != old_nombre:
-        db.query(Ruta).filter(Ruta.servicio == old_nombre).update(
-            {Ruta.servicio: nuevo_nombre}, synchronize_session=False
+        await db.execute(
+            update(Ruta).where(Ruta.servicio == old_nombre).values(servicio=nuevo_nombre)
         )
 
     item.nombre = nuevo_nombre
@@ -245,25 +248,25 @@ def update_servicio(
     if data.activo is not None:
         item.activo = data.activo
 
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return item
 
 
 @router.delete("/servicios/{item_id}")
-def delete_servicio(
+async def delete_servicio(
     item_id: int,
     force: bool = Query(False),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'delete')),
 ):
-    item = db.query(Servicio).filter(Servicio.id == item_id).first()
+    item = (await db.execute(select(Servicio).filter(Servicio.id == item_id))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="No encontrado")
 
-    usage = _count_usage(db, Ruta, Ruta.servicio, item.nombre)
+    usage = await _count_usage(db, Ruta, Ruta.servicio, item.nombre)
     if usage > 0 and not force:
-        sample = _list_usage_ids(db, Ruta.servicio, Ruta.nombre, item.nombre)
+        sample = await _list_usage_ids(db, Ruta.servicio, Ruta.nombre, item.nombre)
         raise HTTPException(
             status_code=409,
             detail={
@@ -274,7 +277,7 @@ def delete_servicio(
         )
 
     db.delete(item)
-    db.commit()
+    await db.commit()
     return {"message": "Eliminado", "usage_count": usage, "force": force}
 
 
@@ -283,16 +286,16 @@ def delete_servicio(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/estados", response_model=List[CatalogoResponse])
-def get_estados(db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def get_estados(db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     from app.models.catalogo import Estado
-    estados = db.query(Estado).order_by(Estado.nombre).all()
+    estados = (await db.execute(select(Estado).order_by(Estado.nombre))).scalars().all()
     if not estados:
-        departamentos = db.query(DepartamentoGeo).filter(DepartamentoGeo.activo == True).all()
+        departamentos = (await db.execute(select(DepartamentoGeo).filter(DepartamentoGeo.activo == True))).scalars().all()
         for dep in departamentos:
             nuevo = Estado(nombre=dep.nombre, activo=True)
             db.add(nuevo)
-        db.commit()
-        estados = db.query(Estado).order_by(Estado.nombre).all()
+        await db.commit()
+        estados = (await db.execute(select(Estado).order_by(Estado.nombre))).scalars().all()
         
     return estados
 
@@ -320,48 +323,48 @@ def _resolve_generic(catalog: str) -> Type:
 
 @router.get("/{catalog}", response_model=List[CatalogoResponse])
 @router.get("/{catalog}/", response_model=List[CatalogoResponse])
-def list_catalog(
+async def list_catalog(
     catalog: str,
     activo: Optional[bool] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
     Model = _resolve_generic(catalog)
-    q = db.query(Model)
+    q = select(Model)
     if activo is not None:
         q = q.filter(Model.activo == activo)
-    return q.order_by(Model.nombre).all()
+    return (await db.execute(q.order_by(Model.nombre))).scalars().all()
 
 
 @router.post("/{catalog}", response_model=CatalogoResponse, status_code=201)
 @router.post("/{catalog}/", response_model=CatalogoResponse, status_code=201)
-def create_catalog_item(
+async def create_catalog_item(
     catalog: str,
     data: CatalogoCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
     Model = _resolve_generic(catalog)
     nombre = data.nombre.strip()
-    if db.query(Model).filter(Model.nombre == nombre).first():
+    if (await db.execute(select(Model).filter(Model.nombre == nombre))).scalars().first():
         raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}'")
     item = Model(nombre=nombre, activo=data.activo)
     db.add(item)
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return item
 
 
 @router.put("/{catalog}/{item_id}", response_model=CatalogoResponse)
-def update_catalog_item(
+async def update_catalog_item(
     catalog: str,
     item_id: int,
     data: CatalogoUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'write')),
 ):
     Model = _resolve_generic(catalog)
-    item = db.query(Model).filter(Model.id == item_id).first()
+    item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="No encontrado")
 
@@ -370,39 +373,39 @@ def update_catalog_item(
     if data.nombre is not None:
         nuevo = data.nombre.strip()
         if nuevo != old_nombre:
-            if db.query(Model).filter(Model.nombre == nuevo).first():
+            if (await db.execute(select(Model).filter(Model.nombre == nuevo))).scalars().first():
                 raise HTTPException(status_code=409, detail=f"Ya existe '{nuevo}'")
             usage_model, usage_column, _sample = CATALOG_USAGE[catalog]
-            db.query(usage_model).filter(usage_column == old_nombre).update(
-                {usage_column: nuevo}, synchronize_session=False
+            await db.execute(
+                update(usage_model).where(usage_column == old_nombre).values({usage_column: nuevo})
             )
             item.nombre = nuevo
 
     if data.activo is not None:
         item.activo = data.activo
 
-    db.commit()
-    db.refresh(item)
+    await db.commit()
+    await db.refresh(item)
     return item
 
 
 @router.delete("/{catalog}/{item_id}")
-def delete_catalog_item(
+async def delete_catalog_item(
     catalog: str,
     item_id: int,
     force: bool = Query(False, description="Si true, elimina aunque hayan PDV referenciados"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('points', 'delete')),
 ):
     Model = _resolve_generic(catalog)
-    item = db.query(Model).filter(Model.id == item_id).first()
+    item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="No encontrado")
 
     usage_model, usage_column, sample_column = CATALOG_USAGE[catalog]
-    usage = _count_usage(db, usage_model, usage_column, item.nombre)
+    usage = await _count_usage(db, usage_model, usage_column, item.nombre)
     if usage > 0 and not force:
-        sample = _list_usage_ids(db, usage_column, sample_column, item.nombre)
+        sample = await _list_usage_ids(db, usage_column, sample_column, item.nombre)
         unidad = "ruta(s)" if usage_model is Ruta else "punto(s) de venta"
         raise HTTPException(
             status_code=409,
@@ -414,5 +417,5 @@ def delete_catalog_item(
         )
 
     db.delete(item)
-    db.commit()
+    await db.commit()
     return {"message": "Eliminado", "usage_count": usage, "force": force}

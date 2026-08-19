@@ -19,10 +19,11 @@ from datetime import datetime, date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.core.config import settings
 from app.models.user import Usuario as User
@@ -62,9 +63,9 @@ def _puede_gestionar(current_user: User) -> bool:
 # ════════════════════════════════════════════════════════════════════
 
 @router.get("/catalogo")
-def get_catalogo(id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_catalogo(id_cliente: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT cv.id_catalogo, cv.id_producto, p.producto_gutrade AS nombre,
                c.nombre AS categoria, m.nombre AS marca,
                cv.precio_unitario, cv.unidades_por_caja, cv.presentacion_venta,
@@ -79,7 +80,7 @@ def get_catalogo(id_cliente: int, db: Session = Depends(get_db), current_user: U
         LEFT JOIN INVENTARIO_CACHE_EXTERNO ie ON ie.id_producto = cv.id_producto AND ie.id_cliente = cv.id_cliente
         WHERE cv.id_cliente = :c AND cv.activo = 1
         ORDER BY c.nombre, p.producto_gutrade
-    """), {"c": id_cliente}).fetchall()
+    """), {"c": id_cliente})).fetchall()
     return [{
         "id_catalogo": r.id_catalogo, "id_producto": r.id_producto, "nombre": r.nombre,
         "categoria": r.categoria, "marca": r.marca, "precio_unitario": float(r.precio_unitario),
@@ -91,15 +92,15 @@ def get_catalogo(id_cliente: int, db: Session = Depends(get_db), current_user: U
 
 
 @router.get("/catalogo/buscar-codigo-barras")
-def buscar_por_codigo_barras(codigo: str, id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def buscar_por_codigo_barras(codigo: str, id_cliente: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         SELECT cv.id_catalogo, cv.id_producto, p.producto_gutrade AS nombre, cv.precio_unitario
         FROM CATALOGO_VENTA cv
         JOIN PRODUCTS p ON p.id_product = cv.id_producto
         WHERE cv.id_cliente = :c AND cv.activo = 1
           AND COALESCE(cv.codigo_barras, p.cod_bar) = :cod
-    """), {"c": id_cliente, "cod": codigo}).fetchone()
+    """), {"c": id_cliente, "cod": codigo})).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Producto no encontrado por ese código de barras")
     return {"id_catalogo": row.id_catalogo, "id_producto": row.id_producto, "nombre": row.nombre, "precio_unitario": float(row.precio_unitario)}
@@ -109,22 +110,22 @@ def buscar_por_codigo_barras(codigo: str, id_cliente: int, db: Session = Depends
 # PEDIDOS -- helpers
 # ════════════════════════════════════════════════════════════════════
 
-def _siguiente_numero_pedido(db: Session) -> str:
+async def _siguiente_numero_pedido(db: AsyncSession) -> str:
     anio = datetime.now().year
-    ultimo = db.execute(text(
+    ultimo = (await db.execute(text(
         "SELECT MAX(id_pedido) FROM PEDIDOS"
-    )).scalar() or 0
+    ))).scalar() or 0
     return f"PED-{anio}-{ultimo + 1:06d}"
 
 
-def _credito_cliente(db: Session, id_cliente: int):
-    return db.execute(text(
+async def _credito_cliente(db: AsyncSession, id_cliente: int):
+    return (await db.execute(text(
         "SELECT limite_credito, saldo_actual, dias_mora, bloqueado FROM CREDITO_CLIENTE WHERE id_cliente = :c"
-    ), {"c": id_cliente}).fetchone()
+    ), {"c": id_cliente})).fetchone()
 
 
-def _armar_pedido_response(db: Session, id_pedido: int) -> dict:
-    p = db.execute(text("""
+async def _armar_pedido_response(db: AsyncSession, id_pedido: int) -> dict:
+    p = (await db.execute(text("""
         SELECT pe.id_pedido, pe.numero_pedido, pe.id_cliente, c.cliente AS nombre_cliente,
                pe.id_usuario_vendedor, u.username AS vendedor, pe.identificador_punto_interes,
                pe.fecha, pe.estado, pe.subtotal, pe.descuento_total, pe.impuestos, pe.total,
@@ -134,13 +135,13 @@ def _armar_pedido_response(db: Session, id_pedido: int) -> dict:
         JOIN CLIENTES c ON c.id_cliente = pe.id_cliente
         JOIN USUARIOS u ON u.id_usuario = pe.id_usuario_vendedor
         WHERE pe.id_pedido = :id
-    """), {"id": id_pedido}).fetchone()
+    """), {"id": id_pedido})).fetchone()
     if not p:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    lineas = db.execute(text("""
+    lineas = (await db.execute(text("""
         SELECT id_linea, id_producto, nombre_producto, cantidad, precio_unitario, descuento_pct, subtotal_linea
         FROM PEDIDO_LINEAS WHERE id_pedido = :id ORDER BY id_linea
-    """), {"id": id_pedido}).fetchall()
+    """), {"id": id_pedido})).fetchall()
     return {
         "id_pedido": p.id_pedido, "numero_pedido": p.numero_pedido,
         "id_cliente": p.id_cliente, "cliente": p.nombre_cliente,
@@ -161,13 +162,13 @@ def _armar_pedido_response(db: Session, id_pedido: int) -> dict:
     }
 
 
-def _crear_pedido(db: Session, current_user: User, payload: dict, origen: str = "app") -> dict:
+async def _crear_pedido(db: AsyncSession, current_user: User, payload: dict, origen: str = "app") -> dict:
     id_cliente = payload.get("id_cliente")
     lineas_in = payload.get("lineas") or []
     if not id_cliente or not lineas_in:
         raise HTTPException(status_code=400, detail="id_cliente y al menos una línea son requeridos")
 
-    credito = _credito_cliente(db, id_cliente)
+    credito = await _credito_cliente(db, id_cliente)
     if credito and credito.bloqueado:
         raise HTTPException(status_code=403, detail=f"Cliente bloqueado por crédito (mora: {credito.dias_mora} días). No se puede registrar el pedido.")
 
@@ -179,11 +180,11 @@ def _crear_pedido(db: Session, current_user: User, payload: dict, origen: str = 
         cantidad = li.get("cantidad")
         if not id_producto or not cantidad or cantidad <= 0:
             raise HTTPException(status_code=400, detail="Cada línea necesita id_producto y cantidad > 0")
-        cat = db.execute(text("""
+        cat = (await db.execute(text("""
             SELECT cv.precio_unitario, cv.descuento_max_pct, p.producto_gutrade AS nombre
             FROM CATALOGO_VENTA cv JOIN PRODUCTS p ON p.id_product = cv.id_producto
             WHERE cv.id_producto = :pid AND cv.id_cliente = :cid AND cv.activo = 1
-        """), {"pid": id_producto, "cid": id_cliente}).fetchone()
+        """), {"pid": id_producto, "cid": id_cliente})).fetchone()
         if not cat:
             raise HTTPException(status_code=400, detail=f"El producto {id_producto} no está en el catálogo de este cliente")
         descuento_pct = float(li.get("descuento_pct") or 0)
@@ -202,9 +203,9 @@ def _crear_pedido(db: Session, current_user: User, payload: dict, origen: str = 
 
     impuestos = 0.0  # IVA/impuestos: a definir con el cliente -- estructura lista, tasa en 0 por ahora.
     total = subtotal - descuento_total + impuestos
-    numero_pedido = _siguiente_numero_pedido(db)
+    numero_pedido = await _siguiente_numero_pedido(db)
 
-    ins = db.execute(text("""
+    ins = (await db.execute(text("""
         INSERT INTO PEDIDOS (numero_pedido, id_cliente, id_usuario_vendedor, identificador_punto_interes,
                               fecha, estado, subtotal, descuento_total, impuestos, total,
                               latitud, longitud, notas, origen, id_visita)
@@ -217,32 +218,32 @@ def _crear_pedido(db: Session, current_user: User, payload: dict, origen: str = 
         "sub": subtotal, "desc": descuento_total, "imp": impuestos, "tot": total,
         "lat": payload.get("latitud"), "lon": payload.get("longitud"),
         "notas": payload.get("notas"), "origen": origen, "visita": payload.get("id_visita"),
-    }).fetchone()
+    })).fetchone()
     id_pedido = ins.id_pedido
 
     for l in lineas_resueltas:
-        db.execute(text("""
+        await db.execute(text("""
             INSERT INTO PEDIDO_LINEAS (id_pedido, id_producto, nombre_producto, cantidad, precio_unitario, descuento_pct, subtotal_linea)
             VALUES (:pid, :prod, :nombre, :cant, :precio, :desc, :sub)
         """), {"pid": id_pedido, "prod": l["id_producto"], "nombre": l["nombre_producto"],
                 "cant": l["cantidad"], "precio": l["precio_unitario"], "desc": l["descuento_pct"], "sub": l["subtotal_linea"]})
 
-    db.commit()
+    await db.commit()
 
-    resultado = _armar_pedido_response(db, id_pedido)
+    resultado = await _armar_pedido_response(db, id_pedido)
 
     notify_event("pedido.created", {"id_pedido": id_pedido, "numero_pedido": numero_pedido, "id_cliente": id_cliente, "total": total})
 
     # Notificaciones best-effort -- nunca deben romper la creación del pedido, ya committeado arriba.
     try:
-        cliente_email = db.execute(text("SELECT email FROM USUARIOS WHERE id_perfil = :c AND id_rol = 1"), {"c": id_cliente}).scalar()
+        cliente_email = (await db.execute(text("SELECT email FROM USUARIOS WHERE id_perfil = :c AND id_rol = 1"), {"c": id_cliente})).scalar()
         if cliente_email:
             email_service.enviar(
                 cliente_email, f"Confirmación de pedido {numero_pedido}",
                 email_service.html_confirmacion_pedido(numero_pedido, resultado["cliente"], total, resultado["lineas"]),
             )
         if total >= UMBRAL_PEDIDO_GRANDE:
-            supervisores = db.execute(text("SELECT email FROM USUARIOS WHERE id_rol = 6 AND email IS NOT NULL")).fetchall()
+            supervisores = (await db.execute(text("SELECT email FROM USUARIOS WHERE id_rol = 6 AND email IS NOT NULL"))).fetchall()
             for s in supervisores:
                 email_service.enviar(
                     s.email, f"Pedido grande: {numero_pedido}",
@@ -259,16 +260,16 @@ def _crear_pedido(db: Session, current_user: User, payload: dict, origen: str = 
 # ════════════════════════════════════════════════════════════════════
 
 @router.post("/pedidos")
-def crear_pedido(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def crear_pedido(payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    return {"success": True, "pedido": _crear_pedido(db, current_user, payload, origen="app")}
+    return {"success": True, "pedido": await _crear_pedido(db, current_user, payload, origen="app")}
 
 
 @router.get("/pedidos")
-def listar_pedidos(
+async def listar_pedidos(
     estado: Optional[str] = None, id_cliente: Optional[int] = None,
     desde: Optional[str] = None, hasta: Optional[str] = None,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user),
 ):
     _check_acceso_ventas(current_user)
     where = ["1=1"]
@@ -289,7 +290,7 @@ def listar_pedidos(
         where.append("pe.fecha < DATEADD(day, 1, CAST(:hasta AS DATE))")
         params["hasta"] = hasta
 
-    rows = db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT pe.id_pedido, pe.numero_pedido, pe.id_cliente, c.cliente AS nombre_cliente,
                u.username AS vendedor, pe.fecha, pe.estado, pe.total, pe.origen
         FROM PEDIDOS pe
@@ -297,7 +298,7 @@ def listar_pedidos(
         JOIN USUARIOS u ON u.id_usuario = pe.id_usuario_vendedor
         WHERE {' AND '.join(where)}
         ORDER BY pe.id_pedido DESC
-    """), params).fetchall()
+    """), params)).fetchall()
     return [{
         "id_pedido": r.id_pedido, "numero_pedido": r.numero_pedido,
         "id_cliente": r.id_cliente, "cliente": r.nombre_cliente, "vendedor": r.vendedor,
@@ -307,22 +308,22 @@ def listar_pedidos(
 
 
 @router.get("/pedidos/{id_pedido}")
-def detalle_pedido(id_pedido: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def detalle_pedido(id_pedido: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    resultado = _armar_pedido_response(db, id_pedido)
+    resultado = await _armar_pedido_response(db, id_pedido)
     if not _puede_gestionar(current_user) and resultado["id_usuario_vendedor"] != current_user.id:
         raise HTTPException(status_code=403, detail="No puedes ver pedidos de otro vendedor")
     return resultado
 
 
 @router.post("/pedidos/{id_pedido}/estado")
-def cambiar_estado_pedido(id_pedido: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def cambiar_estado_pedido(id_pedido: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
     nuevo_estado = payload.get("estado")
     if nuevo_estado not in ESTADOS_VALIDOS:
         raise HTTPException(status_code=400, detail=f"Estado inválido. Válidos: {', '.join(ESTADOS_VALIDOS)}")
 
-    actual = db.execute(text("SELECT estado, id_usuario_vendedor FROM PEDIDOS WHERE id_pedido = :id"), {"id": id_pedido}).fetchone()
+    actual = (await db.execute(text("SELECT estado, id_usuario_vendedor FROM PEDIDOS WHERE id_pedido = :id"), {"id": id_pedido})).fetchone()
     if not actual:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -336,26 +337,26 @@ def cambiar_estado_pedido(id_pedido: int, payload: dict, db: Session = Depends(g
         raise HTTPException(status_code=400, detail=f"No se puede pasar de '{actual.estado}' a '{nuevo_estado}' con tu rol")
 
     if nuevo_estado == "Aprobado":
-        db.execute(text("UPDATE PEDIDOS SET estado=:e, aprobado_por=:u, fecha_aprobacion=GETDATE() WHERE id_pedido=:id"),
+        await db.execute(text("UPDATE PEDIDOS SET estado=:e, aprobado_por=:u, fecha_aprobacion=GETDATE() WHERE id_pedido=:id"),
                    {"e": nuevo_estado, "u": current_user.id, "id": id_pedido})
     else:
-        db.execute(text("UPDATE PEDIDOS SET estado=:e WHERE id_pedido=:id"), {"e": nuevo_estado, "id": id_pedido})
-    db.commit()
+        await db.execute(text("UPDATE PEDIDOS SET estado=:e WHERE id_pedido=:id"), {"e": nuevo_estado, "id": id_pedido})
+    await db.commit()
 
     notify_event("pedido.status_changed", {"id_pedido": id_pedido, "estado": nuevo_estado})
     return {"success": True, "id_pedido": id_pedido, "estado": nuevo_estado}
 
 
 @router.post("/pedidos/{id_pedido}/firma")
-async def subir_firma_pedido(id_pedido: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def subir_firma_pedido(id_pedido: int, file: UploadFile = File(...), db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    existe = db.execute(text("SELECT id_pedido FROM PEDIDOS WHERE id_pedido = :id"), {"id": id_pedido}).fetchone()
+    existe = (await db.execute(text("SELECT id_pedido FROM PEDIDOS WHERE id_pedido = :id"), {"id": id_pedido})).fetchone()
     if not existe:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     raw = await file.read()
     res = process_and_upload_photo(raw, file.content_type or "image/jpeg", prefix="ventas/firmas")
-    db.execute(text("UPDATE PEDIDOS SET firma_cliente_url = :url WHERE id_pedido = :id"), {"url": res["blob_path"], "id": id_pedido})
-    db.commit()
+    await db.execute(text("UPDATE PEDIDOS SET firma_cliente_url = :url WHERE id_pedido = :id"), {"url": res["blob_path"], "id": id_pedido})
+    await db.commit()
     return {"success": True, "url": res.get("url")}
 
 
@@ -382,7 +383,7 @@ def _mejor_match(nombre_texto: str, candidatos: list[dict], umbral: float = 0.45
 @router.post("/pedidos/ocr")
 async def procesar_nota_ocr(
     id_cliente: int = Form(...), file: UploadFile = File(...),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user),
 ):
     _check_acceso_ventas(current_user)
     raw = await file.read()
@@ -393,20 +394,20 @@ async def procesar_nota_ocr(
         # Igual guardamos la foto -- el vendedor puede reintentar o cargar a mano,
         # pero la evidencia de la nota física no se pierde.
         foto = process_and_upload_photo(raw, file.content_type or "image/jpeg", prefix="ventas/notas_ocr")
-        db.execute(text("""
+        await db.execute(text("""
             INSERT INTO PEDIDO_NOTAS_OCR (id_usuario, foto_url, estado, error_mensaje)
             VALUES (:u, :url, 'descartado', :err)
         """), {"u": current_user.id, "url": foto["blob_path"], "err": str(e)})
-        db.commit()
+        await db.commit()
         raise HTTPException(status_code=422, detail=str(e))
 
     foto = process_and_upload_photo(raw, file.content_type or "image/jpeg", prefix="ventas/notas_ocr")
 
-    catalogo = db.execute(text("""
+    catalogo = (await db.execute(text("""
         SELECT cv.id_producto, p.producto_gutrade AS nombre, cv.precio_unitario
         FROM CATALOGO_VENTA cv JOIN PRODUCTS p ON p.id_product = cv.id_producto
         WHERE cv.id_cliente = :c AND cv.activo = 1
-    """), {"c": id_cliente}).fetchall()
+    """), {"c": id_cliente})).fetchall()
     candidatos = [{"id_producto": r.id_producto, "nombre": r.nombre, "precio_unitario": float(r.precio_unitario)} for r in catalogo]
 
     productos_propuestos = []
@@ -417,7 +418,7 @@ async def procesar_nota_ocr(
             "match": match,
         })
 
-    ins = db.execute(text("""
+    ins = (await db.execute(text("""
         INSERT INTO PEDIDO_NOTAS_OCR (id_usuario, foto_url, texto_ocr, json_ia, estado)
         OUTPUT INSERTED.id
         VALUES (:u, :url, :texto, :json_ia, 'pendiente_revision')
@@ -425,9 +426,9 @@ async def procesar_nota_ocr(
         "u": current_user.id, "url": foto["blob_path"],
         "texto": extraido.get("cliente_texto"),
         "json_ia": __import__("json").dumps(extraido, ensure_ascii=False),
-    }).fetchone()
+    })).fetchone()
 
-    db.commit()
+    await db.commit()
     return {
         "success": True, "id_nota_ocr": ins.id, "id_cliente": id_cliente,
         "cliente_texto": extraido.get("cliente_texto"), "fecha_texto": extraido.get("fecha_texto"),
@@ -438,21 +439,21 @@ async def procesar_nota_ocr(
 
 
 @router.post("/pedidos/ocr/{id_nota}/confirmar")
-def confirmar_nota_ocr(id_nota: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def confirmar_nota_ocr(id_nota: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     """El vendedor ya revisó/corrigió la propuesta en pantalla -- acá llega la
     versión final (payload igual al de POST /pedidos), y se crea el pedido
     real con origen='ocr', enlazado a la nota."""
     _check_acceso_ventas(current_user)
-    nota = db.execute(text("SELECT id, estado FROM PEDIDO_NOTAS_OCR WHERE id = :id"), {"id": id_nota}).fetchone()
+    nota = (await db.execute(text("SELECT id, estado FROM PEDIDO_NOTAS_OCR WHERE id = :id"), {"id": id_nota})).fetchone()
     if not nota:
         raise HTTPException(status_code=404, detail="Nota OCR no encontrada")
     if nota.estado == "confirmado":
         raise HTTPException(status_code=400, detail="Esta nota ya fue confirmada")
 
-    resultado = _crear_pedido(db, current_user, payload, origen="ocr")
-    db.execute(text("UPDATE PEDIDO_NOTAS_OCR SET estado='confirmado', id_pedido=:pid WHERE id=:id"),
+    resultado = await _crear_pedido(db, current_user, payload, origen="ocr")
+    await db.execute(text("UPDATE PEDIDO_NOTAS_OCR SET estado='confirmado', id_pedido=:pid WHERE id=:id"),
                {"pid": resultado["id_pedido"], "id": id_nota})
-    db.commit()
+    await db.commit()
     return {"success": True, "pedido": resultado}
 
 
@@ -461,9 +462,9 @@ def confirmar_nota_ocr(id_nota: int, payload: dict, db: Session = Depends(get_db
 # ════════════════════════════════════════════════════════════════════
 
 @router.get("/credito/{id_cliente}")
-def get_credito(id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_credito(id_cliente: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    c = _credito_cliente(db, id_cliente)
+    c = await _credito_cliente(db, id_cliente)
     if not c:
         return {"id_cliente": id_cliente, "limite_credito": 0, "saldo_actual": 0, "dias_mora": 0, "bloqueado": False, "configurado": False}
     return {"id_cliente": id_cliente, "limite_credito": float(c.limite_credito), "saldo_actual": float(c.saldo_actual),
@@ -471,25 +472,25 @@ def get_credito(id_cliente: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.post("/credito/{id_cliente}")
-def set_credito(id_cliente: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def set_credito(id_cliente: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Solo un administrador puede configurar crédito")
-    existe = db.execute(text("SELECT id_cliente FROM CREDITO_CLIENTE WHERE id_cliente = :c"), {"c": id_cliente}).fetchone()
+    existe = (await db.execute(text("SELECT id_cliente FROM CREDITO_CLIENTE WHERE id_cliente = :c"), {"c": id_cliente})).fetchone()
     params = {
         "c": id_cliente, "lim": payload.get("limite_credito", 0), "saldo": payload.get("saldo_actual", 0),
         "mora": payload.get("dias_mora", 0), "bloq": 1 if payload.get("bloqueado") else 0,
     }
     if existe:
-        db.execute(text("""
+        await db.execute(text("""
             UPDATE CREDITO_CLIENTE SET limite_credito=:lim, saldo_actual=:saldo, dias_mora=:mora,
                    bloqueado=:bloq, actualizado_en=GETDATE() WHERE id_cliente=:c
         """), params)
     else:
-        db.execute(text("""
+        await db.execute(text("""
             INSERT INTO CREDITO_CLIENTE (id_cliente, limite_credito, saldo_actual, dias_mora, bloqueado)
             VALUES (:c, :lim, :saldo, :mora, :bloq)
         """), params)
-    db.commit()
+    await db.commit()
     return {"success": True}
 
 
@@ -497,7 +498,7 @@ METODOS_PAGO_VALIDOS = ["Transferencia", "Efectivo", "Zelle", "Pago Móvil", "Ot
 
 
 @router.post("/credito/{id_cliente}/pago")
-def registrar_pago(id_cliente: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def registrar_pago(id_cliente: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     """Registra un cobro/abono puntual -- a diferencia de set_credito (que
     sobrescribe el saldo entero, solo admin), esto lo puede cargar el
     vendedor que cobró en la calle: decrementa saldo_actual y deja un
@@ -515,32 +516,32 @@ def registrar_pago(id_cliente: int, payload: dict, db: Session = Depends(get_db)
     referencia = (payload.get("referencia") or "").strip() or None
     notas = (payload.get("notas") or "").strip() or None
 
-    c = _credito_cliente(db, id_cliente)
+    c = await _credito_cliente(db, id_cliente)
     saldo_antes = float(c.saldo_actual) if c else 0.0
     saldo_despues = saldo_antes - monto
 
     if c:
-        db.execute(text(
+        await db.execute(text(
             "UPDATE CREDITO_CLIENTE SET saldo_actual = :s, actualizado_en = GETDATE() WHERE id_cliente = :c"
         ), {"s": saldo_despues, "c": id_cliente})
     else:
         # Cliente sin fila en CREDITO_CLIENTE todavía (nunca se le configuró
         # límite) -- un pago igual debe quedar registrado, arranca en saldo
         # negativo (a favor del cliente) en vez de fallar.
-        db.execute(text("""
+        await db.execute(text("""
             INSERT INTO CREDITO_CLIENTE (id_cliente, limite_credito, saldo_actual, dias_mora, bloqueado)
             VALUES (:c, 0, :s, 0, 0)
         """), {"c": id_cliente, "s": saldo_despues})
 
-    row = db.execute(text("""
+    row = (await db.execute(text("""
         INSERT INTO PAGOS_CLIENTE (id_cliente, monto, metodo_pago, referencia, notas, id_usuario_registro, saldo_antes, saldo_despues)
         OUTPUT INSERTED.id_pago, INSERTED.fecha_pago
         VALUES (:c, :m, :met, :ref, :notas, :u, :sa, :sd)
     """), {
         "c": id_cliente, "m": monto, "met": metodo, "ref": referencia, "notas": notas,
         "u": current_user.id, "sa": saldo_antes, "sd": saldo_despues,
-    }).fetchone()
-    db.commit()
+    })).fetchone()
+    await db.commit()
 
     notify_event("credito.pago_registrado", {"id_cliente": id_cliente, "monto": monto, "saldo_despues": saldo_despues})
     return {
@@ -551,16 +552,16 @@ def registrar_pago(id_cliente: int, payload: dict, db: Session = Depends(get_db)
 
 
 @router.get("/credito/{id_cliente}/pagos")
-def get_pagos_cliente(id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_pagos_cliente(id_cliente: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT pc.id_pago, pc.monto, pc.metodo_pago, pc.referencia, pc.notas,
                pc.fecha_pago, pc.saldo_antes, pc.saldo_despues, u.username AS registrado_por
         FROM PAGOS_CLIENTE pc
         JOIN USUARIOS u ON u.id_usuario = pc.id_usuario_registro
         WHERE pc.id_cliente = :c
         ORDER BY pc.fecha_pago DESC
-    """), {"c": id_cliente}).fetchall()
+    """), {"c": id_cliente})).fetchall()
     return [{
         "id_pago": r.id_pago, "monto": float(r.monto), "metodo_pago": r.metodo_pago,
         "referencia": r.referencia, "notas": r.notas,
@@ -575,13 +576,13 @@ def get_pagos_cliente(id_cliente: int, db: Session = Depends(get_db), current_us
 # ════════════════════════════════════════════════════════════════════
 
 @router.get("/inventario/{id_cliente}")
-def get_inventario(id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_inventario(id_cliente: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     _check_acceso_ventas(current_user)
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT ie.id_producto, p.producto_gutrade AS nombre, ie.cantidad_disponible, ie.fuente, ie.ultima_actualizacion
         FROM INVENTARIO_CACHE_EXTERNO ie JOIN PRODUCTS p ON p.id_product = ie.id_producto
         WHERE ie.id_cliente = :c ORDER BY ie.cantidad_disponible ASC
-    """), {"c": id_cliente}).fetchall()
+    """), {"c": id_cliente})).fetchall()
     return [{
         "id_producto": r.id_producto, "nombre": r.nombre, "cantidad_disponible": r.cantidad_disponible,
         "fuente": r.fuente, "ultima_actualizacion": r.ultima_actualizacion.isoformat() if r.ultima_actualizacion else None,
@@ -590,7 +591,7 @@ def get_inventario(id_cliente: int, db: Session = Depends(get_db), current_user:
 
 
 @router.post("/inventario/{id_cliente}/sincronizar-manual")
-def sincronizar_inventario_manual(id_cliente: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def sincronizar_inventario_manual(id_cliente: int, payload: dict, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     """Carga manual (o desde un job futuro que consuma la API real de DUSA)
     del inventario: payload = {items: [{id_producto, cantidad_disponible}]}.
     Mientras no exista la integración real, esto es lo que alimenta la
@@ -599,7 +600,7 @@ def sincronizar_inventario_manual(id_cliente: int, payload: dict, db: Session = 
         raise HTTPException(status_code=403, detail="Solo admin/supervisor puede sincronizar inventario")
     items = payload.get("items") or []
     for it in items:
-        db.execute(text("""
+        await db.execute(text("""
             MERGE INVENTARIO_CACHE_EXTERNO AS target
             USING (SELECT :pid AS id_producto, :cid AS id_cliente) AS src
             ON target.id_producto = src.id_producto AND target.id_cliente = src.id_cliente
@@ -607,7 +608,7 @@ def sincronizar_inventario_manual(id_cliente: int, payload: dict, db: Session = 
             WHEN NOT MATCHED THEN INSERT (id_producto, id_cliente, cantidad_disponible, fuente, ultima_actualizacion)
                 VALUES (:pid, :cid, :cant, :fuente, GETDATE());
         """), {"pid": it["id_producto"], "cid": id_cliente, "cant": it["cantidad_disponible"], "fuente": payload.get("fuente", "MANUAL")})
-    db.commit()
+    await db.commit()
     return {"success": True, "actualizados": len(items)}
 
 
@@ -616,9 +617,9 @@ def sincronizar_inventario_manual(id_cliente: int, payload: dict, db: Session = 
 # ════════════════════════════════════════════════════════════════════
 
 @router.get("/dashboard")
-def dashboard(
+async def dashboard(
     desde: Optional[str] = None, hasta: Optional[str] = None, id_cliente: Optional[int] = None,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user),
 ):
     _check_acceso_ventas(current_user)
     desde = desde or (date.today() - timedelta(days=30)).isoformat()
@@ -634,34 +635,34 @@ def dashboard(
         params["cliente"] = id_cliente
     where_sql = " AND ".join(where)
 
-    resumen = db.execute(text(f"""
+    resumen = (await db.execute(text(f"""
         SELECT COUNT(*) AS pedidos, COALESCE(SUM(pe.total), 0) AS total_vendido,
                COALESCE(AVG(pe.total), 0) AS ticket_promedio
         FROM PEDIDOS pe WHERE {where_sql}
-    """), params).fetchone()
+    """), params)).fetchone()
 
-    por_vendedor = db.execute(text(f"""
+    por_vendedor = (await db.execute(text(f"""
         SELECT u.username AS vendedor, COUNT(*) AS pedidos, SUM(pe.total) AS total
         FROM PEDIDOS pe JOIN USUARIOS u ON u.id_usuario = pe.id_usuario_vendedor
         WHERE {where_sql} GROUP BY u.username ORDER BY total DESC
-    """), params).fetchall()
+    """), params)).fetchall()
 
-    por_dia = db.execute(text(f"""
+    por_dia = (await db.execute(text(f"""
         SELECT CAST(pe.fecha AS DATE) AS dia, SUM(pe.total) AS total, COUNT(*) AS pedidos
         FROM PEDIDOS pe WHERE {where_sql} GROUP BY CAST(pe.fecha AS DATE) ORDER BY dia
-    """), params).fetchall()
+    """), params)).fetchall()
 
-    top_productos = db.execute(text(f"""
+    top_productos = await db.execute(text(f"""
         SELECT pl.nombre_producto, SUM(pl.cantidad) AS unidades, SUM(pl.subtotal_linea) AS total
         FROM PEDIDO_LINEAS pl JOIN PEDIDOS pe ON pe.id_pedido = pl.id_pedido
         WHERE {where_sql} GROUP BY pl.nombre_producto ORDER BY total DESC
     """), params).fetchmany(10)
 
-    por_estado = db.execute(text(f"""
+    por_estado = (await db.execute(text(f"""
         SELECT pe.estado, COUNT(*) AS cantidad FROM PEDIDOS pe WHERE {where_sql} GROUP BY pe.estado
-    """), params).fetchall()
+    """), params)).fetchall()
 
-    top_clientes = db.execute(text(f"""
+    top_clientes = await db.execute(text(f"""
         SELECT c.cliente, COUNT(*) AS pedidos, SUM(pe.total) AS total
         FROM PEDIDOS pe JOIN CLIENTES c ON c.id_cliente = pe.id_cliente
         WHERE {where_sql} GROUP BY c.cliente ORDER BY total DESC
@@ -687,9 +688,9 @@ MIN_PEDIDOS_PRONOSTICO = 3  # semanas CON al menos un pedido confirmado -- 8 sem
 
 
 @router.get("/pronostico")
-def pronostico_pedidos(
+async def pronostico_pedidos(
     id_cliente: Optional[int] = None, horizonte_semanas: int = 4,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user),
 ):
     """Proyecta el volumen de pedidos (monto total) de las próximas semanas
     por cliente. Agrega PEDIDOS confirmados (no Borrador, no Rechazado -- un
@@ -717,12 +718,12 @@ def pronostico_pedidos(
         params["cliente"] = id_cliente
     where_sql = " AND ".join(where)
 
-    rows = db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT pe.id_cliente, c.cliente, pe.fecha, pe.total
         FROM PEDIDOS pe JOIN CLIENTES c ON c.id_cliente = pe.id_cliente
         WHERE {where_sql}
         ORDER BY pe.fecha
-    """), params).fetchall()
+    """), params)).fetchall()
 
     por_cliente: dict = {}
     for r in rows:

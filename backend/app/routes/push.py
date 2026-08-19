@@ -1,7 +1,8 @@
+from sqlalchemy import select, delete as sa_delete
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.models.foto import PushSubscription
@@ -18,23 +19,23 @@ class SubscriptionCreate(BaseModel):
 
 
 @router.get("/vapid-public-key")
-def get_vapid_key():
+async def get_vapid_key():
     return {"public_key": settings.VAPID_PUBLIC_KEY}
 
 
 @router.post("/subscribe")
-def subscribe(
+async def subscribe(
     data: SubscriptionCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    existing = db.query(PushSubscription).filter(
-        PushSubscription.endpoint == data.endpoint
-    ).first()
+    existing = (await db.execute(
+        select(PushSubscription).filter(PushSubscription.endpoint == data.endpoint)
+    )).scalars().first()
     if existing:
         existing.p256dh = data.p256dh
         existing.auth = data.auth
-        db.commit()
+        await db.commit()
         return {"message": "Suscripción actualizada"}
 
     sub = PushSubscription(
@@ -45,16 +46,16 @@ def subscribe(
         mercaderista_cedula=data.mercaderista_cedula,
     )
     db.add(sub)
-    db.commit()
+    await db.commit()
     return {"message": "Suscripción creada exitosamente"}
 
 
 @router.delete("/unsubscribe")
-def unsubscribe(
+async def unsubscribe(
     endpoint: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    db.query(PushSubscription).filter(PushSubscription.endpoint == endpoint).delete()
-    db.commit()
+    await db.execute(sa_delete(PushSubscription).where(PushSubscription.endpoint == endpoint))
+    await db.commit()
     return {"message": "Suscripción eliminada"}

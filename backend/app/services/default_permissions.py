@@ -9,6 +9,7 @@ que concederlos explícitamente en CADA rol seedeado, porque en cuanto un
 usuario tiene alguna fila de permisos, ese fallback universal deja de
 aplicarle (auth.service.ts: canAccess -> si hasAnyPerms() ignora el array
 roles por completo)."""
+from typing import Any
 from sqlalchemy.orm import Session
 from app.models.user import Usuario, UserPermission
 
@@ -97,7 +98,9 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
 }
 
 
-def seed_default_permissions(db: Session, usuario: Usuario, overwrite: bool = False) -> int:
+from sqlalchemy import select, delete
+
+def seed_default_permissions(db: Any, usuario: Usuario, overwrite: bool = False) -> int:
     """Crea filas usuario_permisos según ROLE_DEFAULT_PERMISSIONS para el rol
     del usuario. Si overwrite=True, borra antes las filas existentes de ese
     usuario (usado en el backfill sobre usuarios ya existentes). Devuelve la
@@ -106,11 +109,38 @@ def seed_default_permissions(db: Session, usuario: Usuario, overwrite: bool = Fa
     if not grants:
         return 0
     if overwrite:
-        db.query(UserPermission).filter(UserPermission.user_id == usuario.id).delete()
+        db.execute(delete(UserPermission).where(UserPermission.user_id == usuario.id))
         db.flush()
     creados = 0
     for clave, flags in grants.items():
-        existente = db.query(UserPermission).filter_by(user_id=usuario.id, module=clave).first()
+        stmt = select(UserPermission).filter_by(user_id=usuario.id, module=clave)
+        existente = db.execute(stmt).scalars().first()
+        if existente:
+            continue
+        db.add(UserPermission(
+            user_id=usuario.id, module=clave,
+            can_read=flags.get("read", False), can_write=flags.get("write", False),
+            can_delete=flags.get("delete", False), can_see_all=flags.get("see_all", False),
+        ))
+        creados += 1
+    return creados
+
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
+
+async def async_seed_default_permissions(db: AsyncSession, usuario: Usuario, overwrite: bool = False) -> int:
+    grants = ROLE_DEFAULT_PERMISSIONS.get(usuario.rol)
+    if not grants:
+        return 0
+    if overwrite:
+        await db.execute(delete(UserPermission).where(UserPermission.user_id == usuario.id))
+        await db.flush()
+    creados = 0
+    for clave, flags in grants.items():
+        stmt = select(UserPermission).filter_by(user_id=usuario.id, module=clave)
+        result = await db.execute(stmt)
+        existente = result.scalars().first()
         if existente:
             continue
         db.add(UserPermission(

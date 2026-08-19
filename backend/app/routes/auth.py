@@ -1,9 +1,11 @@
+from sqlalchemy import select, update
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.core.dependencies import get_current_user, _cache_invalidate
 from app.core.config import settings
@@ -22,21 +24,21 @@ logger = logging.getLogger("app.auth")
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
     ip = get_client_ip(request)
     logger.info(f"Intento de login para usuario: {data.username}")
     try:
-        user = db.query(Usuario).filter(
+        user = (await db.execute(select(Usuario).filter(
             Usuario.username == data.username,
             Usuario.activo == True,
-        ).first()
+        ))).scalars().first()
 
         if not user or not verify_password(data.password, user.password):
             logger.warning(f"Credenciales inválidas para: {data.username}")
             log_action(db, action="LOGIN_FAILED", entity_type="Auth",
                        username=data.username, ip_address=ip, status="FAILED",
                        changes={"motivo": "Credenciales inválidas"})
-            db.commit()
+            await db.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
 
         rol = user.rol
@@ -46,11 +48,11 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
         if user.is_mercaderista:
             merc = None
             if user.id_perfil:
-                merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first()
+                merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == user.id_perfil))).scalars().first()
             if not merc:
                 try:
                     cedula_val = int(user.username)
-                    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+                    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == cedula_val))).scalars().first()
                 except ValueError:
                     pass
             if merc:
@@ -71,36 +73,36 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
         log_action(db, action="LOGIN", entity_type="Auth",
                    user_id=user.id, username=user.username, rol=rol, ip_address=ip)
-        db.commit()
+        await db.commit()
 
         return TokenResponse(access_token=token, rol=rol, username=username_display, user_id=user.id)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error inesperado en login: {str(e)}", exc_info=True)
-        db.rollback()
+        await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 @router.post("/login-mercaderista", response_model=TokenResponse)
 @limiter.limit("5/minute")
-def login_mercaderista(data: LoginMercaderistaRequest, request: Request, db: Session = Depends(get_db)):
+async def login_mercaderista(data: LoginMercaderistaRequest, request: Request, db: AsyncSession = Depends(get_async_db)):
     ip = get_client_ip(request)
-    user = db.query(Usuario).filter(
+    user = (await db.execute(select(Usuario).filter(
         Usuario.username == data.cedula,
         Usuario.id_rol == 5,
         Usuario.activo == True,
-    ).first()
+    ))).scalars().first()
     if not user or not verify_password(data.password, user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Cédula o contraseña incorrecta")
 
     merc = None
     if user.id_perfil:
-        merc = db.query(Mercaderista).filter(Mercaderista.id == user.id_perfil).first()
+        merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == user.id_perfil))).scalars().first()
     if not merc:
         try:
             cedula_val = int(user.username)
-            merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+            merc = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == cedula_val))).scalars().first()
         except ValueError:
             pass
 
@@ -123,7 +125,7 @@ def login_mercaderista(data: LoginMercaderistaRequest, request: Request, db: Ses
 
     log_action(db, action="LOGIN", entity_type="Auth",
                user_id=user.id, username=user.username, rol="mercaderista", ip_address=ip)
-    db.commit()
+    await db.commit()
 
     return TokenResponse(
         access_token=token,
@@ -134,34 +136,38 @@ def login_mercaderista(data: LoginMercaderistaRequest, request: Request, db: Ses
 
 
 @router.post("/logout")
-def logout(request: Request, current_user: Usuario = Depends(get_current_user), db: Session = Depends(get_db)):
+async def logout(request: Request, current_user: Usuario = Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     ip = get_client_ip(request)
 
     # Invalidar el cache de autenticación inmediatamente
     _cache_invalidate(token)
 
-    db.query(SesionActiva).filter(
-        SesionActiva.session_token == token,
-        SesionActiva.activa == True,
-    ).update({
-        "activa": False,
-        "fecha_cierre": datetime.now(timezone.utc),
-        "motivo_cierre": "Logout voluntario",
-    })
+    await db.execute(
+        update(SesionActiva)
+        .where(
+            SesionActiva.session_token == token,
+            SesionActiva.activa == True,
+        )
+        .values(
+            activa=False,
+            fecha_cierre=datetime.now(timezone.utc),
+            motivo_cierre="Logout voluntario",
+        )
+    )
 
     log_action(db, action="LOGOUT", entity_type="Auth",
                user_id=current_user.id, username=current_user.username,
                rol=current_user.rol, ip_address=ip)
-    db.commit()
+    await db.commit()
     return {"message": "Sesión cerrada exitosamente"}
 
 
 @router.get("/me", response_model=UsuarioCurrentResponse)
-def get_me(
+async def get_me(
     credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False)),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     from app.core.dependencies import _cache_get
     from app.models.user import UserPermission
@@ -174,9 +180,9 @@ def get_me(
         _, perms = _cache_get(token)
     if perms is None:
         try:
-            perms = db.query(UserPermission).filter(
+            perms = (await db.execute(select(UserPermission).filter(
                 UserPermission.user_id == current_user.id
-            ).all()
+            ))).scalars().all()
         except Exception:
             perms = []
 
@@ -186,11 +192,11 @@ def get_me(
         try:
             merc = None
             if current_user.id_perfil:
-                merc = db.query(Mercaderista).filter(Mercaderista.id == current_user.id_perfil).first()
+                merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == current_user.id_perfil))).scalars().first()
             if not merc:
                 try:
                     cedula_val = int(current_user.username)
-                    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula_val).first()
+                    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == cedula_val))).scalars().first()
                 except ValueError:
                     pass
             if merc:
@@ -222,11 +228,11 @@ def get_me(
 
 
 @router.post("/change-password")
-def change_password(
+async def change_password(
     data: ConfirmResetPasswordRequest,
     request: Request,
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     ip = get_client_ip(request)
     current_user.password = get_password_hash(data.new_password)
@@ -234,5 +240,5 @@ def change_password(
                user_id=current_user.id, username=current_user.username,
                rol=current_user.rol, ip_address=ip,
                entity_id=current_user.id, entity_name=current_user.username)
-    db.commit()
+    await db.commit()
     return {"message": "Contraseña actualizada exitosamente"}

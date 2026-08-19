@@ -317,15 +317,15 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
           <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-              <input formControlName="departamento" placeholder="Ej: Zulia" list="dept-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="dept-list">@for (r of regions(); track $index) { <option [value]="r">{{ r }}</option> }</datalist>
+              <app-searchable-select [options]="regionOpts()" [value]="form.get('departamento')?.value || ''"
+                (valueChange)="form.get('departamento')?.setValue($event)" icon="public"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar departamento..." allLabel="Ninguno"></app-searchable-select>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
-              <input formControlName="ciudad" placeholder="Ej: Maracaibo" list="city-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="city-list">@for (c of formCities(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
+              <app-searchable-select [options]="formCiudadOpts()" [value]="form.get('ciudad')?.value || ''"
+                (valueChange)="form.get('ciudad')?.setValue($event)" icon="location_city"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar ciudad..." allLabel="Ninguno"></app-searchable-select>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Localidad</label>
@@ -334,30 +334,30 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta</label>
-              <input formControlName="cadena" placeholder="Ej: Moderno" list="canal-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="canal-list">@for (c of chains(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
+              <app-searchable-select [options]="cadenaOpts()" [value]="form.get('cadena')?.value || ''"
+                (valueChange)="form.get('cadena')?.setValue($event)" icon="hub"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar canal..." allLabel="Ninguno"></app-searchable-select>
             </div>
           </div>
 
           <div class="grid grid-cols-3 gap-4">
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
-              <input formControlName="jerarquia_n2" placeholder="Ej: Supermercado" list="jn2-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn2-list">@for (j of jerarquias(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
+              <app-searchable-select [options]="jerarquiaOpts()" [value]="form.get('jerarquia_n2')?.value || ''"
+                (valueChange)="form.get('jerarquia_n2')?.setValue($event)" icon="store"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar tipo..." allLabel="Ninguno"></app-searchable-select>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio</label>
-              <input formControlName="jerarquia_n2_2" placeholder="Ej: Alkosto" list="jn22-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn22-list">@for (j of jerarquias2(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
+              <app-searchable-select [options]="jerarquia2Opts()" [value]="form.get('jerarquia_n2_2')?.value || ''"
+                (valueChange)="form.get('jerarquia_n2_2')?.setValue($event)" icon="account_tree"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar subtipo..." allLabel="Ninguno"></app-searchable-select>
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance</label>
-              <input formControlName="nivel_de_alcance" placeholder="Ej: Regional" list="alcance-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="alcance-list">@for (n of nivelesAlcance(); track $index) { <option [value]="n">{{ n }}</option> }</datalist>
+              <app-searchable-select [options]="nivelAlcanceOpts()" [value]="form.get('nivel_de_alcance')?.value || ''"
+                (valueChange)="form.get('nivel_de_alcance')?.setValue($event)" icon="radar"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar alcance..." allLabel="Ninguno"></app-searchable-select>
             </div>
           </div>
 
@@ -576,6 +576,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   jerarquia2Opts = computed<SelectOption[]>(() => this.jerarquias2().map(j => ({ value: j, label: j })));
   nivelAlcanceOpts = computed<SelectOption[]>(() => this.nivelesAlcance().map(n => ({ value: n, label: n })));
   cadenaOpts = computed<SelectOption[]>(() => this.chains().map(c => ({ value: c, label: c })));
+  formCiudadOpts = computed<SelectOption[]>(() => this.formCities().map(c => ({ value: c, label: c })));
 
   private search$ = new Subject<string>();
   private mapInstance: maplibregl.Map | null = null;

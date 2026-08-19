@@ -101,8 +101,8 @@ interface ProductBalanceState {
             [style.width]="progressPercent() + '%'"></div>
         </div>
 
-        <!-- Search Bar -->
-        <div class="px-4 py-3 shrink-0">
+        <!-- Search Bar & Toggles -->
+        <div class="px-4 py-3 shrink-0 space-y-3">
           <div class="relative">
             <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</mat-icon>
             <input type="text" [ngModel]="searchQuery()" (ngModelChange)="onSearchChange($event)"
@@ -113,6 +113,16 @@ interface ProductBalanceState {
                 <mat-icon class="!text-sm">close</mat-icon>
               </button>
             }
+          </div>
+          
+          <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-100 dark:border-white/5">
+            <span class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest pl-2">Agrupación</span>
+            <button (click)="verSinCategorias.set(!verSinCategorias())"
+              class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all"
+              [ngClass]="verSinCategorias() ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-white/5'">
+              <mat-icon class="!text-sm">{{ verSinCategorias() ? 'list' : 'grid_view' }}</mat-icon>
+              {{ verSinCategorias() ? 'Ver sin categorías (Plano)' : 'Ver por categorías' }}
+            </button>
           </div>
         </div>
 
@@ -372,6 +382,7 @@ export class BalanceFormComponent implements OnInit {
   // ─── Products and balances ───
   allProducts = signal<ProductBalanceState[]>([]);
   searchQuery = signal<string>('');
+  verSinCategorias = signal(false);
 
   // ─── Category expansion ───
   expandedCategories = signal<Record<string, boolean>>({});
@@ -402,8 +413,12 @@ export class BalanceFormComponent implements OnInit {
   });
 
   groupedProducts = computed(() => {
+    const prods = this.filteredProducts();
+    if (this.verSinCategorias()) {
+      return [{ categoria: 'Todos los Productos', products: prods }];
+    }
     const groups: Record<string, ProductBalanceState[]> = {};
-    this.filteredProducts().forEach(p => {
+    prods.forEach(p => {
       const cat = p.categoria || 'Sin Categoría';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(p);
@@ -419,8 +434,8 @@ export class BalanceFormComponent implements OnInit {
   }
 
   isCategoryExpanded(cat: string): boolean {
-    // Si hay una búsqueda activa, auto-expandir todas las categorías con coincidencias
-    if (this.searchQuery().trim() !== '') {
+    // Si hay una búsqueda activa o la vista plana, auto-expandir todas las categorías
+    if (this.searchQuery().trim() !== '' || this.verSinCategorias()) {
       return true;
     }
     return this.expandedCategories()[cat] !== false;

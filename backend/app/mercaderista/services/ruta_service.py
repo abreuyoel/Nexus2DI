@@ -9,6 +9,8 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import cast, Date
 
+from app.core.timezone import get_adjusted_now, get_adjusted_today
+
 from app.models.mercaderista import Mercaderista, MercaderistaRuta
 from app.models.ruta import Ruta, RutaProgramacion, RutaActivada
 from app.models.punto import PuntoInteres
@@ -41,9 +43,9 @@ class RutaService:
             raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
         return merc
 
-    def _dia_semana_hoy(self) -> dict:
+    def _dia_semana_hoy(self, merc_id: int) -> dict:
         """Devuelve el día de la semana en español y la fecha actual."""
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc_id)
         return {
             "dia_semana": DAY_MAP_ES[hoy.weekday()],
             "fecha": hoy.isoformat(),
@@ -125,7 +127,7 @@ class RutaService:
         )
 
         # Obtener todas las visitas de este mercaderista hoy de una sola vez
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, mercaderista_id)
         visitas_hoy_db = (
             self.db.query(Visita.punto_id, Visita.id_cliente, Visita.id, Visita.estado)
             .filter(
@@ -189,8 +191,8 @@ class RutaService:
         Separa en rutas fijas y variables. Incluye campo 'activada' desde RUTAS_ACTIVADAS.
         """
         merc = self._get_mercaderista(current_user)
-        dia_info = self._dia_semana_hoy()
-        hoy = date.today()
+        dia_info = self._dia_semana_hoy(merc.id)
+        hoy = get_adjusted_today(self.db, merc.id)
 
         rutas_asignadas = self.get_rutas_asignadas(merc.id)
         pdvs = self.get_pdvs_programados(merc.id, dia_info["dia_numero"])
@@ -251,7 +253,7 @@ class RutaService:
         Equivale al endpoint GET /api/merc/ruta/{id_ruta}/pdvs de mercaderista_portal.py.
         """
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         programaciones = (
             self.db.query(
@@ -328,12 +330,12 @@ class RutaService:
         Equivale a getProgramacion() de la APK — un solo endpoint para el dashboard.
         """
         merc = self._get_mercaderista(current_user)
-        dia_info = self._dia_semana_hoy()
+        dia_info = self._dia_semana_hoy(merc.id)
 
         # Rutas (misma lógica que get_mis_rutas)
         rutas_asignadas = self.get_rutas_asignadas(merc.id)
         pdvs = self.get_pdvs_programados(merc.id, dia_info["dia_numero"])
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         # Consultar RUTAS_ACTIVADAS para hoy
         today_start = datetime.combine(hoy, datetime.min.time())

@@ -4,8 +4,9 @@ Permite navegar: Regiones → Cadenas → Puntos → Visitas/Fotos
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from app.db.session import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.services.visibility import client_route_ids
@@ -45,9 +46,9 @@ def _get_cliente_id(user: Usuario, requested_cliente_id: Optional[int] = None) -
 
 # ─── SELECTOR DE CLIENTES (solo Coordinador Exclusivo) ──────────────────────
 @router.get("/exclusive-clients")
-def get_exclusive_clients(
+async def get_exclusive_clients(
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Lista de clientes para que el Coordinador Exclusivo elija.
 
@@ -75,7 +76,7 @@ def get_exclusive_clients(
 
         ORDER BY c.cliente
     """)
-    rows = db.execute(query).fetchall()
+    rows = (await db.execute(query)).fetchall()
     return [
         {
             "id_cliente": r[0],
@@ -88,11 +89,11 @@ def get_exclusive_clients(
 
 # ─── DASHBOARD ───────────────────────────────────────────────────────────────
 @router.get("/dashboard")
-def get_client_dashboard(
+async def get_client_dashboard(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     id_dashboard: Optional[int] = Query(None, description="ID específico de dashboard a cargar"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener la configuración del dashboard para el cliente (por defecto el más reciente)."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -104,7 +105,7 @@ def get_client_dashboard(
         WHERE id_cliente = :cliente_id AND ISNULL(activo, 1) = 1
         ORDER BY ISNULL(es_principal, 0) DESC, fecha_creacion DESC, id_dashboard DESC
     """)
-    all_rows = db.execute(list_query, {"cliente_id": resolved_cliente_id}).fetchall()
+    all_rows = (await db.execute(list_query, {"cliente_id": resolved_cliente_id})).fetchall()
 
     if not all_rows:
         return {"has_dashboard": False, "url_html": None, "dashboards": []}
@@ -138,12 +139,12 @@ def get_client_dashboard(
 
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 @router.get("/summary")
-def get_client_summary(
+async def get_client_summary(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     fecha_inicio: Optional[date] = Query(None, description="Filtro opcional de inicio"),
     fecha_fin: Optional[date] = Query(None, description="Filtro opcional de fin"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener un resumen de actividad para el cliente.
 
@@ -173,7 +174,7 @@ def get_client_summary(
         WHERE vm.id_cliente = :cliente_id
           AND {fecha_filter}
     """)
-    recent_visits = db.execute(query_visits, params).scalar() or 0
+    recent_visits = (await db.execute(query_visits, params)).scalar() or 0
 
     query_photos = text(f"""
         SELECT COUNT(ft.id_foto)
@@ -183,7 +184,7 @@ def get_client_summary(
           AND {fecha_filter}
           AND ft.Estado = 'Aprobada'
     """)
-    recent_photos = db.execute(query_photos, params).scalar() or 0
+    recent_photos = (await db.execute(query_photos, params)).scalar() or 0
 
     query_messages = text(f"""
         SELECT COUNT(cm.id_mensaje)
@@ -193,7 +194,7 @@ def get_client_summary(
           AND {fecha_filter}
           AND cm.fecha_envio >= DATEADD(hour, -48, GETDATE())
     """)
-    recent_messages = db.execute(query_messages, params).scalar() or 0
+    recent_messages = (await db.execute(query_messages, params)).scalar() or 0
 
     return {
         "recent_visits": recent_visits,
@@ -205,10 +206,10 @@ def get_client_summary(
 
 # ─── REGIONES ────────────────────────────────────────────────────────────────
 @router.get("/regions")
-def get_client_regions(
+async def get_client_regions(
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener las regiones geográficas del cliente."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -221,17 +222,17 @@ def get_client_regions(
           AND rn.cuadrante != ''
         ORDER BY rn.cuadrante
     """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id}).fetchall()
+    rows = (await db.execute(query, {"cliente_id": resolved_cliente_id})).fetchall()
     return [{"region": r[0]} for r in rows if r[0]]
 
 
 # ─── CADENAS POR REGIÓN ─────────────────────────────────────────────────────
 @router.get("/chains/{region}")
-def get_client_chains_by_region(
+async def get_client_chains_by_region(
     region: str,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener las cadenas comerciales de una región para el cliente."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -246,17 +247,17 @@ def get_client_chains_by_region(
           AND pin.jerarquia_nivel_2_2 != ''
         ORDER BY pin.jerarquia_nivel_2_2
     """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id, "region": region}).fetchall()
+    rows = (await db.execute(query, {"cliente_id": resolved_cliente_id, "region": region})).fetchall()
     return [{"cadena": r[0]} for r in rows if r[0]]
 
 
 # ─── PUNTOS POR REGIÓN ──────────────────────────────────────────────────────
 @router.get("/points/{region}")
-def get_client_points_by_region(
+async def get_client_points_by_region(
     region: str,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener los puntos de venta de una región para el cliente."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -274,7 +275,7 @@ def get_client_points_by_region(
           AND rn.cuadrante = :region
         ORDER BY pin.punto_de_interes
     """)
-    rows = db.execute(query, {"cliente_id": resolved_cliente_id, "region": region}).fetchall()
+    rows = (await db.execute(query, {"cliente_id": resolved_cliente_id, "region": region})).fetchall()
     return [
         {
             "identificador": r[0],
@@ -289,11 +290,11 @@ def get_client_points_by_region(
 
 # ─── VISITAS + FOTOS DE UN PUNTO ─────────────────────────────────────────────
 @router.get("/point/{point_id}/visits")
-def get_client_point_visits(
+async def get_client_point_visits(
     point_id: str,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener las visitas de un punto con sus fotos agrupadas por tipo."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -311,7 +312,7 @@ def get_client_point_visits(
           AND vm.id_cliente = :cliente_id
         ORDER BY vm.fecha_visita DESC
     """)
-    visit_rows = db.execute(visits_query, {"point_id": point_id, "cliente_id": resolved_cliente_id}).fetchall()
+    visit_rows = (await db.execute(visits_query, {"point_id": point_id, "cliente_id": resolved_cliente_id})).fetchall()
 
     if not visit_rows:
         return []
@@ -334,7 +335,7 @@ def get_client_point_visits(
         ORDER BY ft.id_tipo_foto, ft.fecha_registro DESC
     """)
     params = {f"vid_{i}": vid for i, vid in enumerate(visit_ids)}
-    photo_rows = db.execute(photos_query, params).fetchall()
+    photo_rows = (await db.execute(photos_query, params)).fetchall()
 
     # Generar SAS URLs
     from app.services.azure_service import azure_service
@@ -383,7 +384,7 @@ def _map_tipo_foto(id_tipo: int | None) -> str:
 
 # ─── MIS VISITAS (GLOBAL) ───────────────────────────────────────────────────
 @router.get("/mis-visitas")
-def get_client_mis_visitas(
+async def get_client_mis_visitas(
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
     ruta: Optional[str] = None,
@@ -391,7 +392,7 @@ def get_client_mis_visitas(
     punto_id: Optional[str] = None,
     cliente_id: Optional[int] = Query(None, description="Solo coordinador exclusivo"),
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """Obtener todas las visitas del cliente en un rango de fechas, con filtros."""
     resolved_cliente_id = _get_cliente_id(current_user, cliente_id)
@@ -401,7 +402,8 @@ def get_client_mis_visitas(
     # aplica al coordinador exclusivo (su alcance de clientes es otro mecanismo).
     route_ids = None
     if current_user.rol == "client":
-        route_ids = client_route_ids(db, current_user)
+        from app.services.visibility import async_client_route_ids
+        route_ids = await async_client_route_ids(db, current_user)
     route_filter_sql = ""
     if route_ids is not None:
         ids_csv = ",".join(str(int(i)) for i in route_ids) if route_ids else "-1"
@@ -479,7 +481,7 @@ def get_client_mis_visitas(
 
     query_str += " ORDER BY vm.id_visita DESC, ft.id_tipo_foto, ft.id_foto DESC"
     
-    rows = db.execute(text(query_str), params).fetchall()
+    rows = (await db.execute(text(query_str), params)).fetchall()
 
     CATEGORIAS_CONFIG = {
         1: ('Gestión', 'Gestión'),
@@ -583,9 +585,9 @@ def get_client_mis_visitas(
     base_where += route_filter_sql
     base_params = {"cliente_id": resolved_cliente_id, "fecha_inicio_sql": fecha_inicio_sql, "fecha_fin_sql": fecha_fin_sql}
 
-    def _build(extra_clauses: str, extra_params: dict, select_cols: str, order_by: str):
+    async def _build(extra_clauses: str, extra_params: dict, select_cols: str, order_by: str):
         sql = f"SELECT DISTINCT {select_cols} {base_where} {extra_clauses} ORDER BY {order_by}"
-        return db.execute(text(sql), {**base_params, **extra_params}).fetchall()
+        return (await db.execute(text(sql), {**base_params, **extra_params})).fetchall()
 
     # Rutas: aplican filtros cadena + punto (no ruta)
     ruta_extra, ruta_params = "", {}
@@ -593,7 +595,7 @@ def get_client_mis_visitas(
         ruta_extra += " AND pin.jerarquia_nivel_2_2 = :cadena"; ruta_params["cadena"] = cadena
     if punto_id:
         ruta_extra += " AND pin.identificador = :punto_id"; ruta_params["punto_id"] = punto_id
-    rutas_rows = _build(ruta_extra, ruta_params, "ISNULL(rn.ruta, 'Sin ruta') AS ruta", "ISNULL(rn.ruta, 'Sin ruta')")
+    rutas_rows = await _build(ruta_extra, ruta_params, "ISNULL(rn.ruta, 'Sin ruta') AS ruta", "ISNULL(rn.ruta, 'Sin ruta')")
     rutas = sorted({r[0] for r in rutas_rows if r[0]})
 
     # Cadenas: aplican filtros region + punto (no cadena)
@@ -602,7 +604,7 @@ def get_client_mis_visitas(
         cadena_extra += " AND ISNULL(rn.ruta, 'Sin ruta') = :ruta"; cadena_params["ruta"] = ruta
     if punto_id:
         cadena_extra += " AND pin.identificador = :punto_id"; cadena_params["punto_id"] = punto_id
-    cadenas_rows = _build(cadena_extra, cadena_params, "pin.jerarquia_nivel_2_2 AS cadena", "pin.jerarquia_nivel_2_2")
+    cadenas_rows = await _build(cadena_extra, cadena_params, "pin.jerarquia_nivel_2_2 AS cadena", "pin.jerarquia_nivel_2_2")
     cadenas = sorted({r[0] for r in cadenas_rows if r[0]})
 
     # Puntos: aplican filtros region + cadena (no punto)
@@ -611,7 +613,7 @@ def get_client_mis_visitas(
         punto_extra += " AND ISNULL(rn.ruta, 'Sin ruta') = :ruta"; punto_params["ruta"] = ruta
     if cadena:
         punto_extra += " AND pin.jerarquia_nivel_2_2 = :cadena"; punto_params["cadena"] = cadena
-    puntos_rows = _build(
+    puntos_rows = await _build(
         punto_extra, punto_params,
         "pin.identificador AS punto_id, pin.punto_de_interes AS punto_nombre",
         "pin.punto_de_interes",

@@ -1,8 +1,9 @@
+from sqlalchemy import select, func
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from datetime import datetime
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.core.dependencies import require_admin
 from app.models.user import Usuario
 from app.models.audit import AuditLog
@@ -13,7 +14,7 @@ ENTITY_TYPES = ["Auth", "Usuario", "Foto", "PuntoInteres", "Producto", "Sesion",
 
 
 @router.get("/logs")
-def get_audit_logs(
+async def get_audit_logs(
     entity_type: Optional[str] = None,
     action: Optional[str] = None,
     user_id: Optional[int] = None,
@@ -23,27 +24,28 @@ def get_audit_logs(
     status: Optional[str] = None,
     limit: int = Query(100, le=500),
     offset: int = 0,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    q = db.query(AuditLog)
+    stmt = select(AuditLog)
     if entity_type:
-        q = q.filter(AuditLog.entity_type == entity_type)
+        stmt = stmt.filter(AuditLog.entity_type == entity_type)
     if action:
-        q = q.filter(AuditLog.action.ilike(f"%{action}%"))
+        stmt = stmt.filter(AuditLog.action.ilike(f"%{action}%"))
     if user_id:
-        q = q.filter(AuditLog.user_id == user_id)
+        stmt = stmt.filter(AuditLog.user_id == user_id)
     if username:
-        q = q.filter(AuditLog.username.ilike(f"%{username}%"))
+        stmt = stmt.filter(AuditLog.username.ilike(f"%{username}%"))
     if from_date:
-        q = q.filter(AuditLog.timestamp >= from_date)
+        stmt = stmt.filter(AuditLog.timestamp >= from_date)
     if to_date:
-        q = q.filter(AuditLog.timestamp <= to_date)
+        stmt = stmt.filter(AuditLog.timestamp <= to_date)
     if status:
-        q = q.filter(AuditLog.status == status)
+        stmt = stmt.filter(AuditLog.status == status)
 
-    total = q.count()
-    logs = q.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit).all()
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+    logs = (await db.execute(stmt.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit))).scalars().all()
 
     return {
         "total": total,
@@ -70,5 +72,6 @@ def get_audit_logs(
 
 
 @router.get("/entity-types")
-def get_entity_types(_: Usuario = Depends(require_admin)):
+async def get_entity_types(_: Usuario = Depends(require_admin)):
     return ENTITY_TYPES
+
