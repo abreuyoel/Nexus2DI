@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Union
 
 
 class ClienteBase(BaseModel):
@@ -37,7 +37,7 @@ class PuntoInteresBase(BaseModel):
     latitud: Optional[str] = None
     longitud: Optional[str] = None
     rif: Optional[str] = None
-    radio: Optional[str] = None
+    radio: Optional[Union[str, int, float]] = None
 
 
 class PuntoInteresCreate(PuntoInteresBase):
@@ -57,7 +57,7 @@ class PuntoInteresUpdate(BaseModel):
     latitud: Optional[str] = None
     longitud: Optional[str] = None
     rif: Optional[str] = None
-    radio: Optional[str] = None
+    radio: Optional[Union[str, int, float]] = None
 
 
 class PuntoInteresResponse(PuntoInteresBase):
@@ -81,7 +81,7 @@ class PuntoInteresClienteResponse(BaseModel):
     jerarquia_n2_2: Optional[str] = None
     nivel_de_alcance: Optional[str] = None
     rif: Optional[str] = None
-    radio: Optional[str] = None
+    radio: Optional[Union[str, int, float]] = None
     fecha_creado: Optional[str] = None
 
     class Config:
