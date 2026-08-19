@@ -59,11 +59,16 @@ USER 10001
 
 EXPOSE 8000
 
-# 1 solo worker: app/websockets/manager.py + app/services/realtime.py
-# mantienen las conexiones WebSocket activas en memoria de UN proceso — con
-# más workers, un evento emitido en el worker A nunca llegaría a un cliente
-# conectado al worker B. Ver plan de despliegue para el camino a escalar
-# (mover ese estado a pub/sub sobre Redis).
+# 2 workers (restaurado 19 ago 2026): app/services/redis_pubsub.py ya saca
+# el estado de WebSocket de la memoria de un solo proceso (pub/sub sobre
+# Redis, Fase A/B/C validadas 4 ago) -- este valor YA se había subido a 2 ese
+# mismo día, con limits.cpu subido a "4" (2 núcleos por worker, ver
+# k8s/backend-deployment.yaml) para que ambos workers no compitan por el
+# mismo techo. El merge de 2cb723b (11 ago, módulo mercaderista, rama vieja
+# de antes de esta migración) lo revirtió a 1 en silencio -- ningún commit
+# lo decidió a propósito, quedó así 8 días sin que nadie lo notara. Si se
+# vuelve a tocar este archivo, confirmar que limits.cpu siga en "4" antes de
+# subir --workers de nuevo.
 #
 # --proxy-headers + --forwarded-allow-ips='*': sin esto, uvicorn ignora el
 # X-Forwarded-Proto que manda el nginx del frontend (ver frontend/nginx.conf)
@@ -73,4 +78,4 @@ EXPOSE 8000
 # '*' es seguro acá: este proceso solo es alcanzable vía el Service interno
 # del cluster (nunca expuesto directo a internet), así que no hay un
 # atacante externo que pueda falsificar el header saltándose a nginx.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips=*"]
