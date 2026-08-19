@@ -83,7 +83,14 @@ async def create_point(
     db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
-    punto = PuntoInteres(**data.model_dump())
+    from datetime import datetime
+    punto_data = data.model_dump()
+    if punto_data.get("tiempo_minimo") is None:
+        punto_data["tiempo_minimo"] = 15
+    if punto_data.get("fecha_creado") is None:
+        punto_data["fecha_creado"] = datetime.now()
+
+    punto = PuntoInteres(**punto_data)
     db.add(punto)
     db.flush()
 
@@ -267,7 +274,7 @@ async def delete_point(
         )
 
     nombre = getattr(punto, 'nombre', point_id)
-    db.delete(punto)
+    await db.delete(punto)
 
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,

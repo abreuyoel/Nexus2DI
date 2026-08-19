@@ -298,11 +298,9 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
                 }
               </div>
               <input formControlName="id"
-                [attr.readonly]="editingId() ? true : null"
-                [class.opacity-60]="!!editingId()"
-                [class.cursor-not-allowed]="!!editingId()"
-                placeholder="Ej: AKT0006_1"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                readonly="true"
+                placeholder="Se generará al escribir el nombre..."
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors opacity-60 cursor-not-allowed"
                 [class.border-red-500]="form.get('id')?.invalid && form.get('id')?.touched">
               @if (!editingId()) {
                 <p class="text-[10px] text-slate-400">Se genera según la jerarquía del punto</p>
@@ -311,7 +309,11 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre del Punto *</label>
               <input formControlName="nombre" placeholder="Nombre del establecimiento"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                [class.border-red-500]="form.get('nombre')?.invalid && form.get('nombre')?.touched">
+              @if (form.get('nombre')?.invalid && form.get('nombre')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El nombre es obligatorio.</p>
+              }
             </div>
           </div>
 
@@ -323,16 +325,24 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 
           <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento *</label>
               <app-searchable-select [options]="regionOpts()" [value]="form.get('departamento')?.value || ''"
                 (valueChange)="form.get('departamento')?.setValue($event)" icon="public"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar departamento..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar departamento..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('departamento')?.invalid && form.get('departamento')?.touched"></app-searchable-select>
+              @if (form.get('departamento')?.invalid && form.get('departamento')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El departamento es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad *</label>
               <app-searchable-select [options]="formCiudadOpts()" [value]="form.get('ciudad')?.value || ''"
                 (valueChange)="form.get('ciudad')?.setValue($event)" icon="location_city"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar ciudad..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar ciudad..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('ciudad')?.invalid && form.get('ciudad')?.touched"></app-searchable-select>
+              @if (form.get('ciudad')?.invalid && form.get('ciudad')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">La ciudad es obligatoria.</p>
+              }
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Localidad</label>
@@ -340,31 +350,47 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta *</label>
               <app-searchable-select [options]="cadenaOpts()" [value]="form.get('cadena')?.value || ''"
                 (valueChange)="form.get('cadena')?.setValue($event)" icon="hub"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar canal..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar canal..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('cadena')?.invalid && form.get('cadena')?.touched"></app-searchable-select>
+              @if (form.get('cadena')?.invalid && form.get('cadena')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El canal es obligatorio.</p>
+              }
             </div>
           </div>
 
           <div class="grid grid-cols-3 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio *</label>
               <app-searchable-select [options]="jerarquiaOpts()" [value]="form.get('jerarquia_n2')?.value || ''"
                 (valueChange)="form.get('jerarquia_n2')?.setValue($event)" icon="store"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar tipo..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar tipo..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('jerarquia_n2')?.invalid && form.get('jerarquia_n2')?.touched"></app-searchable-select>
+              @if (form.get('jerarquia_n2')?.invalid && form.get('jerarquia_n2')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El tipo de negocio es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio *</label>
               <app-searchable-select [options]="jerarquia2Opts()" [value]="form.get('jerarquia_n2_2')?.value || ''"
                 (valueChange)="form.get('jerarquia_n2_2')?.setValue($event)" icon="account_tree"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar subtipo..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar subtipo..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('jerarquia_n2_2')?.invalid && form.get('jerarquia_n2_2')?.touched"></app-searchable-select>
+              @if (form.get('jerarquia_n2_2')?.invalid && form.get('jerarquia_n2_2')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El subtipo de negocio es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance *</label>
               <app-searchable-select [options]="nivelAlcanceOpts()" [value]="form.get('nivel_de_alcance')?.value || ''"
                 (valueChange)="form.get('nivel_de_alcance')?.setValue($event)" icon="radar"
-                placeholder="Seleccionar..." searchPlaceholder="Buscar alcance..." allLabel="Ninguno"></app-searchable-select>
+                placeholder="Seleccionar..." searchPlaceholder="Buscar alcance..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('nivel_de_alcance')?.invalid && form.get('nivel_de_alcance')?.touched"></app-searchable-select>
+              @if (form.get('nivel_de_alcance')?.invalid && form.get('nivel_de_alcance')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El alcance es obligatorio.</p>
+              }
             </div>
           </div>
 
@@ -375,9 +401,16 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Radio (metros)</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Radio (metros) *</label>
               <input formControlName="radio" placeholder="100" type="number"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                [class.border-red-500]="form.get('radio')?.invalid && form.get('radio')?.touched">
+              @if (form.get('radio')?.invalid && form.get('radio')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">
+                  @if (form.get('radio')?.errors?.['required']) { El radio es obligatorio. }
+                  @else { Debe ser un número mayor o igual a 1. }
+                </p>
+              }
             </div>
           </div>
 
@@ -385,14 +418,28 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
           <div class="space-y-3">
             <div class="grid grid-cols-2 gap-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Latitud</label>
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Latitud *</label>
                 <input formControlName="latitud" placeholder="Ej: 10.481910" (change)="syncMapCenter()"
-                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                  [class.border-red-500]="form.get('latitud')?.invalid && form.get('latitud')?.touched">
+                @if (form.get('latitud')?.invalid && form.get('latitud')?.touched) {
+                  <p class="text-[11px] text-red-500 font-semibold mt-1">
+                    @if (form.get('latitud')?.errors?.['required']) { La latitud es obligatoria. }
+                    @else { Debe ser un número válido (ej: 10.48). }
+                  </p>
+                }
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Longitud</label>
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Longitud *</label>
                 <input formControlName="longitud" placeholder="Ej: -66.903606" (change)="syncMapCenter()"
-                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                  [class.border-red-500]="form.get('longitud')?.invalid && form.get('longitud')?.touched">
+                @if (form.get('longitud')?.invalid && form.get('longitud')?.touched) {
+                  <p class="text-[11px] text-red-500 font-semibold mt-1">
+                    @if (form.get('longitud')?.errors?.['required']) { La longitud es obligatoria. }
+                    @else { Debe ser un número válido (ej: -66.90). }
+                  </p>
+                }
               </div>
             </div>
             <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 relative" style="height:280px">
