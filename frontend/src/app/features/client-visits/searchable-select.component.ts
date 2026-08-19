@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, input, model, ViewChild } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, computed, HostListener, ElementRef, inject, ViewChild, HostBinding } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
@@ -15,22 +15,23 @@ export interface SelectOption {
   template: `
 <div class="ss-wrap" [class.ss-open]="open()">
   <button type="button" class="ss-trigger" (click)="toggle()">
-    <mat-icon class="ss-trigger-icon">{{ icon() }}</mat-icon>
+    <mat-icon class="ss-trigger-icon">{{ icon }}</mat-icon>
     <span class="ss-trigger-text" [class.ss-placeholder]="!selectedLabel()">
-      {{ selectedLabel() || placeholder() }}
+      {{ selectedLabel() || placeholder }}
     </span>
     <mat-icon class="ss-trigger-chevron">{{ open() ? 'expand_less' : 'expand_more' }}</mat-icon>
   </button>
 
   @if (open()) {
-    <div class="ss-panel" [class.ss-panel-right]="align() === 'right'">
+    <div class="ss-panel" [class.ss-panel-right]="align === 'right'">
       <div class="ss-search">
         <mat-icon class="ss-search-icon">search</mat-icon>
         <input #searchInput
           [ngModel]="search()"
           (ngModelChange)="onSearchInput($event)"
           (keydown.escape)="close()"
-          [placeholder]="searchPlaceholder()">
+          (keydown.enter)="onEnterKey($event)"
+          [placeholder]="searchPlaceholder">
         @if (search()) {
           <button type="button" class="ss-clear-search" (click)="onSearchInput('')">
             <mat-icon>close</mat-icon>
@@ -40,24 +41,31 @@ export interface SelectOption {
 
       <div class="ss-list">
         <button type="button" class="ss-item ss-item-all"
-          [class.ss-active]="!value()"
+          [class.ss-active]="!value"
           (click)="pick('')">
           <mat-icon class="ss-item-icon">all_inclusive</mat-icon>
-          <span>{{ allLabel() }}</span>
+          <span>{{ allLabel }}</span>
         </button>
+
+        @if (allowCustom && search().trim() && !hasExactMatch()) {
+          <button type="button" class="ss-item ss-add-custom" (click)="pick(search().trim())">
+            <mat-icon class="ss-item-icon">add_circle</mat-icon>
+            <span class="ss-item-label font-bold">Añadir "{{ search().trim() }}"</span>
+          </button>
+        }
 
         @for (opt of filtered(); track opt.value) {
           <button type="button" class="ss-item"
-            [class.ss-active]="opt.value === value()"
+            [class.ss-active]="opt.value === value"
             (click)="pick(opt.value)">
             <span class="ss-item-label">{{ opt.label }}</span>
-            @if (opt.value === value()) {
+            @if (opt.value === value) {
               <mat-icon class="ss-check">check</mat-icon>
             }
           </button>
         }
 
-        @if (filtered().length === 0) {
+        @if (filtered().length === 0 && (!search().trim() || hasExactMatch())) {
           <div class="ss-empty">
             <mat-icon>search_off</mat-icon>
             <span>Sin coincidencias</span>
@@ -69,43 +77,52 @@ export interface SelectOption {
 </div>
   `,
   styles: [`
+    :host { display: block; position: relative; z-index: 1; }
+    :host(.ss-open), :host:has(.ss-open), .ss-wrap.ss-open { z-index: 99999 !important; position: relative; }
     .ss-wrap { position: relative; width: 100%; }
     .ss-trigger {
       display: flex; align-items: center; gap: .5rem;
       width: 100%; padding: .55rem .75rem;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.08);
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
       border-radius: .75rem;
-      color: inherit; cursor: pointer;
+      color: #0f172a; cursor: pointer;
       font: inherit; text-align: left;
       transition: border-color .15s, background .15s;
     }
-    .ss-trigger:hover { border-color: rgba(124,58,237,.5); }
-    .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.08); }
+    :host-context(.dark) .ss-trigger {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      color: inherit;
+    }
+    .ss-trigger:hover { border-color: #7c3aed; }
+    :host-context(.dark) .ss-trigger:hover { border-color: rgba(124,58,237,.5); }
+    .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.04); }
+    :host-context(.dark) .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.08); }
     .ss-trigger-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .7; }
     .ss-trigger-text { flex: 1; font-size: .875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ss-placeholder { opacity: .5; font-weight: 400; }
     .ss-trigger-chevron { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .5; }
 
     .ss-panel {
-      position: absolute; z-index: 1000; top: calc(100% + 4px); left: 0;
+      position: absolute; z-index: 99999; top: calc(100% + 4px); left: 0;
       min-width: 100%; width: max-content; max-width: min(380px, 90vw);
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1;
       border-radius: .75rem;
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1);
+      box-shadow: 0 20px 35px -5px rgba(0,0,0,0.25), 0 10px 15px -6px rgba(0,0,0,0.2);
       overflow: hidden;
       animation: ss-fade .12s ease-out;
-      color: #1e293b;
+      color: #0f172a;
       transition: background 0.3s, border-color 0.3s;
     }
     .ss-panel-right { left: auto; right: 0; }
 
     :host-context(.dark) .ss-panel {
-      background: #1f2937;
-      border-color: rgba(255,255,255,0.1);
-      color: #f1f5f9;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      background: #0f172a !important;
+      border-color: #334155;
+      color: #f8fafc;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.7);
     }
 
     @keyframes ss-fade {
@@ -150,21 +167,42 @@ export interface SelectOption {
       font-size: .875rem; transition: all .15s;
     }
     :host-context(.dark) .ss-item { color: #cbd5e1; }
-    .ss-item:hover { background: #f1f5f9; color: #7c3aed; }
+    .ss-item:hover { background: #f1f5f9; color: #6d28d9; }
     :host-context(.dark) .ss-item:hover { background: rgba(255,255,255,0.05); color: #a78bfa; }
     
-    .ss-active { background: #f5f3ff; color: #7c3aed; font-weight: 600; }
+    .ss-active { background: #f5f3ff; color: #6d28d9; font-weight: 600; }
     :host-context(.dark) .ss-active { background: rgba(124,58,237,0.15); color: #a78bfa; }
 
     .ss-item-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .7; }
     .ss-item-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ss-check { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; color: #7c3aed; }
+    .ss-check { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; color: #6d28d9; }
     :host-context(.dark) .ss-check { color: #a78bfa; }
 
     .ss-item-all { border-bottom: 1px solid #f1f5f9; border-radius: 0; margin-bottom: 4px; padding-bottom: .6rem; color: #64748b; }
     :host-context(.dark) .ss-item-all { border-bottom-color: rgba(255,255,255,0.05); color: #94a3b8; }
-    .ss-item-all:hover { color: #7c3aed; }
+    .ss-item-all:hover { color: #6d28d9; }
     :host-context(.dark) .ss-item-all:hover { color: #a78bfa; }
+
+    .ss-add-custom {
+      border-bottom: 1px solid #e2e8f0;
+      background: #f0fdf4;
+      color: #16a34a;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    :host-context(.dark) .ss-add-custom {
+      border-bottom-color: rgba(255,255,255,0.08);
+      background: rgba(22,163,74,0.15);
+      color: #4ade80;
+    }
+    .ss-add-custom:hover {
+      background: #dcfce7;
+      color: #15803d;
+    }
+    :host-context(.dark) .ss-add-custom:hover {
+      background: rgba(22,163,74,0.25);
+      color: #86efac;
+    }
 
     .ss-empty {
       display: flex; flex-direction: column; align-items: center; gap: .5rem;
@@ -174,14 +212,33 @@ export interface SelectOption {
   `]
 })
 export class SearchableSelectComponent {
-  options = input<SelectOption[]>([]);
-  value = model<string>('');
-  placeholder = input<string>('Selecciona...');
-  searchPlaceholder = input<string>('Buscar...');
-  allLabel = input<string>('Todos');
-  icon = input<string>('list');
-  align = input<'left' | 'right'>('left');
-  disabled = input<boolean>(false);
+  @HostBinding('class.ss-open') get isHostOpen() { return this.open(); }
+
+  private _options = signal<SelectOption[]>([]);
+  private _value = signal<string>('');
+
+  @Input() set options(val: SelectOption[]) {
+    this._options.set(val || []);
+  }
+  get options(): SelectOption[] {
+    return this._options();
+  }
+
+  @Input() set value(val: string) {
+    this._value.set(val ?? '');
+  }
+  get value(): string {
+    return this._value();
+  }
+
+  @Input() placeholder: string = 'Selecciona...';
+  @Input() searchPlaceholder: string = 'Buscar...';
+  @Input() allLabel: string = 'Todos';
+  @Input() icon: string = 'list';
+  @Input() align: 'left' | 'right' = 'left';
+  @Input() disabled: boolean = false;
+  @Input() allowCustom: boolean = false;
+
   @Output() valueChange = new EventEmitter<string>();
   @Output() searchChange = new EventEmitter<string>();
 
@@ -192,15 +249,16 @@ export class SearchableSelectComponent {
   @ViewChild('searchInput') searchInput?: ElementRef<HTMLInputElement>;
 
   selectedLabel = computed(() => {
-    const opts = this.options() || [];
-    const val = (this.value() ?? '').toString();
+    const opts = this._options() || [];
+    const val = (this._value() ?? '').toString();
+    if (!val) return '';
     const opt = opts.find(o => o && String(o.value) === val);
-    return opt ? (opt.label ?? '') : '';
+    return opt ? (opt.label ?? '') : val;
   });
 
   filtered = computed(() => {
     const q = (this.search() ?? '').toString().trim().toLowerCase();
-    const opts = this.options() || [];
+    const opts = this._options() || [];
     if (!q) return opts;
     return opts.filter(o => {
       if (!o) return false;
@@ -210,13 +268,33 @@ export class SearchableSelectComponent {
     });
   });
 
+  hasExactMatch = computed(() => {
+    const q = (this.search() ?? '').toString().trim().toLowerCase();
+    if (!q) return true;
+    const opts = this._options() || [];
+    return opts.some(o => o && (o.label ?? '').toString().toLowerCase() === q);
+  });
+
   onSearchInput(val: string): void {
     this.search.set(val);
     this.searchChange.emit(val);
   }
 
+  onEnterKey(e: Event): void {
+    e.preventDefault();
+    const q = (this.search() ?? '').toString().trim();
+    if (!q) return;
+    const opts = this._options() || [];
+    const exact = opts.find(o => o && (o.label ?? '').toString().toLowerCase() === q.toLowerCase());
+    if (exact) {
+      this.pick(exact.value);
+    } else if (this.allowCustom) {
+      this.pick(q);
+    }
+  }
+
   toggle(): void {
-    if (this.disabled()) return;
+    if (this.disabled) return;
     this.open.update(v => !v);
     if (this.open()) {
       this.onSearchInput('');
@@ -225,7 +303,7 @@ export class SearchableSelectComponent {
   }
   close(): void { this.open.set(false); }
   pick(v: string): void {
-    this.value.set(v);
+    this._value.set(v);
     this.valueChange.emit(v);
     this.close();
   }

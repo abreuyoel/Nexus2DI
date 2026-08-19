@@ -289,13 +289,18 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificador *</label>
+              <div class="flex items-center justify-between">
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identificador *</label>
+                @if (!editingId()) {
+                  <button type="button" (click)="forceGenerateId()" class="text-[10px] font-bold text-primary-600 hover:text-primary-500 select-none bg-transparent border-none p-0 outline-none cursor-pointer">
+                    Autogenerar
+                  </button>
+                }
+              </div>
               <input formControlName="id"
-                [attr.readonly]="editingId() ? true : null"
-                [class.opacity-60]="!!editingId()"
-                [class.cursor-not-allowed]="!!editingId()"
-                placeholder="Ej: AKT0006_1"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                readonly="true"
+                placeholder="Se generará al escribir el nombre..."
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors opacity-60 cursor-not-allowed"
                 [class.border-red-500]="form.get('id')?.invalid && form.get('id')?.touched">
               @if (!editingId()) {
                 <p class="text-[10px] text-slate-400">Se genera según la jerarquía del punto</p>
@@ -304,7 +309,11 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nombre del Punto *</label>
               <input formControlName="nombre" placeholder="Nombre del establecimiento"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                [class.border-red-500]="form.get('nombre')?.invalid && form.get('nombre')?.touched">
+              @if (form.get('nombre')?.invalid && form.get('nombre')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El nombre es obligatorio.</p>
+              }
             </div>
           </div>
 
@@ -316,48 +325,73 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 
           <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-              <input formControlName="departamento" placeholder="Ej: Zulia" list="dept-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="dept-list">@for (r of regions(); track $index) { <option [value]="r">{{ r }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento *</label>
+              <app-searchable-select [options]="regionOpts()" [value]="form.get('departamento')?.value || ''"
+                (valueChange)="form.get('departamento')?.setValue($event)" icon="public" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar departamento..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('departamento')?.invalid && form.get('departamento')?.touched"></app-searchable-select>
+              @if (form.get('departamento')?.invalid && form.get('departamento')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El departamento es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad</label>
-              <input formControlName="ciudad" placeholder="Ej: Maracaibo" list="city-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="city-list">@for (c of formCities(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Ciudad *</label>
+              <app-searchable-select [options]="formCiudadOpts()" [value]="form.get('ciudad')?.value || ''"
+                (valueChange)="form.get('ciudad')?.setValue($event)" icon="location_city" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar ciudad..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('ciudad')?.invalid && form.get('ciudad')?.touched"></app-searchable-select>
+              @if (form.get('ciudad')?.invalid && form.get('ciudad')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">La ciudad es obligatoria.</p>
+              }
             </div>
             <div class="space-y-1.5">
               <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Localidad</label>
-              <input formControlName="localidad" placeholder="Ej: Centro"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+              <app-searchable-select [options]="formLocalidadOpts()" [value]="form.get('localidad')?.value || ''"
+                (valueChange)="form.get('localidad')?.setValue($event)" icon="near_me" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar localidad..." allLabel="Ninguno"></app-searchable-select>
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta</label>
-              <input formControlName="cadena" placeholder="Ej: Moderno" list="canal-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="canal-list">@for (c of chains(); track $index) { <option [value]="c">{{ c }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Canal de Venta *</label>
+              <app-searchable-select [options]="cadenaOpts()" [value]="form.get('cadena')?.value || ''"
+                (valueChange)="form.get('cadena')?.setValue($event)" icon="hub" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar canal..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('cadena')?.invalid && form.get('cadena')?.touched"></app-searchable-select>
+              @if (form.get('cadena')?.invalid && form.get('cadena')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El canal es obligatorio.</p>
+              }
             </div>
           </div>
 
           <div class="grid grid-cols-3 gap-4">
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio</label>
-              <input formControlName="jerarquia_n2" placeholder="Ej: Supermercado" list="jn2-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn2-list">@for (j of jerarquias(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tipo de Negocio *</label>
+              <app-searchable-select [options]="jerarquiaOpts()" [value]="form.get('jerarquia_n2')?.value || ''"
+                (valueChange)="form.get('jerarquia_n2')?.setValue($event)" icon="store" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar tipo..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('jerarquia_n2')?.invalid && form.get('jerarquia_n2')?.touched"></app-searchable-select>
+              @if (form.get('jerarquia_n2')?.invalid && form.get('jerarquia_n2')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El tipo de negocio es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio</label>
-              <input formControlName="jerarquia_n2_2" placeholder="Ej: Alkosto" list="jn22-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="jn22-list">@for (j of jerarquias2(); track $index) { <option [value]="j">{{ j }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Subtipo de Negocio *</label>
+              <app-searchable-select [options]="jerarquia2Opts()" [value]="form.get('jerarquia_n2_2')?.value || ''"
+                (valueChange)="form.get('jerarquia_n2_2')?.setValue($event)" icon="account_tree" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar subtipo..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('jerarquia_n2_2')?.invalid && form.get('jerarquia_n2_2')?.touched"></app-searchable-select>
+              @if (form.get('jerarquia_n2_2')?.invalid && form.get('jerarquia_n2_2')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El subtipo de negocio es obligatorio.</p>
+              }
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance</label>
-              <input formControlName="nivel_de_alcance" placeholder="Ej: Regional" list="alcance-list"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
-              <datalist id="alcance-list">@for (n of nivelesAlcance(); track $index) { <option [value]="n">{{ n }}</option> }</datalist>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Alcance *</label>
+              <app-searchable-select [options]="nivelAlcanceOpts()" [value]="form.get('nivel_de_alcance')?.value || ''"
+                (valueChange)="form.get('nivel_de_alcance')?.setValue($event)" icon="radar" [allowCustom]="true"
+                placeholder="Seleccionar..." searchPlaceholder="Buscar alcance..." allLabel="Ninguno"
+                [class.border-red-500]="form.get('nivel_de_alcance')?.invalid && form.get('nivel_de_alcance')?.touched"></app-searchable-select>
+              @if (form.get('nivel_de_alcance')?.invalid && form.get('nivel_de_alcance')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">El alcance es obligatorio.</p>
+              }
             </div>
           </div>
 
@@ -368,9 +402,16 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
             </div>
             <div class="space-y-1.5">
-              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Radio (metros)</label>
+              <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Radio (metros) *</label>
               <input formControlName="radio" placeholder="100" type="number"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                [class.border-red-500]="form.get('radio')?.invalid && form.get('radio')?.touched">
+              @if (form.get('radio')?.invalid && form.get('radio')?.touched) {
+                <p class="text-[11px] text-red-500 font-semibold mt-1">
+                  @if (form.get('radio')?.errors?.['required']) { El radio es obligatorio. }
+                  @else { Debe ser un número mayor o igual a 1. }
+                </p>
+              }
             </div>
           </div>
 
@@ -378,14 +419,28 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
           <div class="space-y-3">
             <div class="grid grid-cols-2 gap-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Latitud</label>
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Latitud *</label>
                 <input formControlName="latitud" placeholder="Ej: 10.481910" (change)="syncMapCenter()"
-                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                  [class.border-red-500]="form.get('latitud')?.invalid && form.get('latitud')?.touched">
+                @if (form.get('latitud')?.invalid && form.get('latitud')?.touched) {
+                  <p class="text-[11px] text-red-500 font-semibold mt-1">
+                    @if (form.get('latitud')?.errors?.['required']) { La latitud es obligatoria. }
+                    @else { Debe ser un número válido (ej: 10.48). }
+                  </p>
+                }
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Longitud</label>
+                <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Longitud *</label>
                 <input formControlName="longitud" placeholder="Ej: -66.903606" (change)="syncMapCenter()"
-                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors">
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-4 py-2.5 text-sm font-mono font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none transition-colors"
+                  [class.border-red-500]="form.get('longitud')?.invalid && form.get('longitud')?.touched">
+                @if (form.get('longitud')?.invalid && form.get('longitud')?.touched) {
+                  <p class="text-[11px] text-red-500 font-semibold mt-1">
+                    @if (form.get('longitud')?.errors?.['required']) { La longitud es obligatoria. }
+                    @else { Debe ser un número válido (ej: -66.90). }
+                  </p>
+                }
               </div>
             </div>
             <div class="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 relative" style="height:280px">
@@ -438,39 +493,51 @@ import { ConfirmService } from '../../../shared/components/confirm-dialog/confir
 
       <div class="flex-1 overflow-y-auto px-6 py-5">
         <div class="grid grid-cols-2 gap-3">
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5 col-span-2">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dirección</span>
             <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.direccion || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
-            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dpto / Ciudad</span>
-            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.departamento || '—' }} / {{ detailPoint()!.ciudad || '—' }}</p>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Departamento</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.departamento || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ciudad</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.ciudad || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Localidad</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.localidad || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Canal de Venta</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.cadena || '—' }}</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Negocio</span>
             <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.jerarquia_n2 || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subtipo</span>
             <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.jerarquia_n2_2 || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
-            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Canal</span>
-            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.cadena || '—' }}</p>
-          </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alcance</span>
             <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.nivel_de_alcance || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">RIF</span>
             <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.rif || '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5">
-            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Radio (m)</span>
-            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.radio || '—' }}</p>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Radio</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ detailPoint()!.radio ? detailPoint()!.radio + ' m' : '—' }}</p>
           </div>
-          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3 py-2.5 col-span-2">
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5">
+            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tiempo Mín. Visita</span>
+            <p class="text-sm font-semibold text-slate-800 dark:text-white">{{ (detailPoint()!.tiempo_minimo || 15) }} min</p>
+          </div>
+          <div class="space-y-1 bg-slate-50 dark:bg-slate-800 rounded-xl px-3.5 py-2.5 col-span-2">
             <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Coordenadas</span>
             <p class="text-sm font-mono font-semibold text-slate-800 dark:text-white">
               @if (detailPoint()!.latitud && detailPoint()!.longitud) {
@@ -557,6 +624,7 @@ export class PointsComponent implements OnInit, OnDestroy {
   regions = signal<string[]>([]);
   filterCities = signal<string[]>([]);
   formCities = signal<string[]>([]);
+  formLocalities = signal<string[]>([]);
   chains = signal<string[]>([]);
   jerarquias = signal<string[]>([]);
   jerarquias2 = signal<string[]>([]);
@@ -576,6 +644,8 @@ export class PointsComponent implements OnInit, OnDestroy {
   jerarquia2Opts = computed<SelectOption[]>(() => this.jerarquias2().map(j => ({ value: j, label: j })));
   nivelAlcanceOpts = computed<SelectOption[]>(() => this.nivelesAlcance().map(n => ({ value: n, label: n })));
   cadenaOpts = computed<SelectOption[]>(() => this.chains().map(c => ({ value: c, label: c })));
+  formCiudadOpts = computed<SelectOption[]>(() => this.formCities().map(c => ({ value: c, label: c })));
+  formLocalidadOpts = computed<SelectOption[]>(() => this.formLocalities().map(l => ({ value: l, label: l })));
 
   private search$ = new Subject<string>();
   private mapInstance: maplibregl.Map | null = null;
@@ -630,6 +700,45 @@ export class PointsComponent implements OnInit, OnDestroy {
         },
         error: (err) => console.error('[PointsComponent] Error fetching form cities:', err)
       });
+      // Recargar localidades del departamento
+      this.api.getLocalities(undefined, depStr || undefined).subscribe({
+        next: list => this.formLocalities.set(Array.isArray(list) ? list.filter(x => typeof x === 'string') : []),
+        error: () => {}
+      });
+    });
+
+    // Al cambiar la ciudad en el form, recargar localidades de esa ciudad
+    this.form.get('ciudad')?.valueChanges.pipe(
+      debounceTime(200),
+      distinctUntilChanged()
+    ).subscribe((ciudad) => {
+      const ciudadStr = typeof ciudad === 'string' ? ciudad.trim() : '';
+      const depStr = this.form.get('departamento')?.value || '';
+      this.api.getLocalities(ciudadStr || undefined, depStr || undefined).subscribe({
+        next: list => this.formLocalities.set(Array.isArray(list) ? list.filter(x => typeof x === 'string') : []),
+        error: (err) => console.error('[PointsComponent] Error fetching form localities:', err)
+      });
+    });
+
+    // Al cambiar el nombre del punto, autogenerar el identificador si estamos creando uno nuevo
+    this.form.get('nombre')?.valueChanges.pipe(
+      debounceTime(400),
+      distinctUntilChanged()
+    ).subscribe((name) => {
+      const nameStr = typeof name === 'string' ? name.trim() : '';
+      if (!this.editingId() && nameStr && nameStr.length >= 3) {
+        const currentId = this.form.get('id')?.value?.trim();
+        if (!currentId) {
+          this.api.generatePointId(nameStr).subscribe({
+            next: (res) => {
+              if (res && res.id) {
+                this.form.patchValue({ id: res.id });
+              }
+            },
+            error: (err) => console.error('[PointsComponent] Error generating point ID:', err)
+          });
+        }
+      }
     });
   }
 
@@ -729,6 +838,25 @@ export class PointsComponent implements OnInit, OnDestroy {
   prevPage(): void { this.skip.update(v => Math.max(0, v - this.pageSize())); this.loadAll(); }
   nextPage(): void { this.skip.update(v => v + this.pageSize()); this.loadAll(); }
   onPageSizeChange(size: number): void { this.pageSize.set(+size); this.skip.set(0); this.loadAll(); }
+  forceGenerateId(): void {
+    const name = this.form.get('nombre')?.value?.trim() || '';
+    if (!name) {
+      this.snack.open('Primero escribe el nombre del punto', 'OK', { duration: 2500 });
+      return;
+    }
+    this.api.generatePointId(name).subscribe({
+      next: (res) => {
+        if (res && res.id) {
+          this.form.patchValue({ id: res.id });
+          this.snack.open('Identificador generado', 'OK', { duration: 2000 });
+        }
+      },
+      error: (err) => {
+        console.error('[PointsComponent] Error generating point ID:', err);
+        this.snack.open('Error al generar el identificador', 'OK', { duration: 3000 });
+      }
+    });
+  }
 
   openPanel(p: PuntoInteres | null): void {
     console.log('[PointsComponent] openPanel called. Point:', p);
@@ -742,6 +870,17 @@ export class PointsComponent implements OnInit, OnDestroy {
       longitud: p?.longitud ?? '', rif: p?.rif ?? '', radio: p?.radio ?? ''
     });
     this.panelOpen.set(true);
+    const depStr = p?.departamento || '';
+    const ciudadStr = p?.ciudad || '';
+    if (depStr) {
+      this.api.getCities(depStr).subscribe({ next: d => this.formCities.set(d || []), error: () => {} });
+    } else {
+      this.formCities.set([]);
+    }
+    this.api.getLocalities(ciudadStr || undefined, depStr || undefined).subscribe({
+      next: list => this.formLocalities.set(Array.isArray(list) ? list.filter(x => typeof x === 'string') : []),
+      error: () => {}
+    });
     setTimeout(() => this.initMap(), 250);
   }
 

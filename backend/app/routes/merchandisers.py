@@ -1,8 +1,10 @@
+from sqlalchemy import select
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import date
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_admin
 from app.models.user import Usuario
 from app.models.mercaderista import Mercaderista, MercaderistaRuta
@@ -16,69 +18,69 @@ router = APIRouter(prefix="/api/merchandisers", tags=["Mercaderistas"])
 
 
 @router.get("", response_model=List[MercaderistaResponse])
-def list_mercaderistas(
-    db: Session = Depends(get_db),
+async def list_mercaderistas(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    return db.query(Mercaderista).filter(Mercaderista.activo == True).all()
+    return (await db.execute(select(Mercaderista).filter(Mercaderista.activo == True).order_by(Mercaderista.nombre.asc()))).scalars().all()
 
 
 @router.post("", response_model=MercaderistaResponse, status_code=201)
-def create_mercaderista(
+async def create_mercaderista(
     data: MercaderistaCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    existing = db.query(Mercaderista).filter(Mercaderista.cedula == data.cedula).first()
+    existing = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == data.cedula))).scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un mercaderista con esa cédula")
     merc = Mercaderista(**data.model_dump())
     db.add(merc)
-    db.commit()
-    db.refresh(merc)
+    await db.commit()
+    await db.refresh(merc)
     return merc
 
 
 @router.get("/{mercaderista_id}", response_model=MercaderistaResponse)
-def get_mercaderista(
+async def get_mercaderista(
     mercaderista_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.id == mercaderista_id).first()
+    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == mercaderista_id))).scalars().first()
     if not merc:
         raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
     return merc
 
 
 @router.patch("/{mercaderista_id}", response_model=MercaderistaResponse)
-def update_mercaderista(
+async def update_mercaderista(
     mercaderista_id: int,
     data: MercaderistaUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.id == mercaderista_id).first()
+    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == mercaderista_id))).scalars().first()
     if not merc:
         raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
     for key, value in data.model_dump(exclude_none=True).items():
         setattr(merc, key, value)
-    db.commit()
-    db.refresh(merc)
+    await db.commit()
+    await db.refresh(merc)
     return merc
 
 
 @router.delete("/{mercaderista_id}")
-def delete_mercaderista(
+async def delete_mercaderista(
     mercaderista_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.id == mercaderista_id).first()
+    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.id == mercaderista_id))).scalars().first()
     if not merc:
         raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
     db.delete(merc)
-    db.commit()
+    await db.commit()
     return {"message": "Mercaderista eliminado"}
 
 
@@ -87,7 +89,7 @@ async def upload_photo(
     visita_id: int = Form(...),
     id_tipo_foto: int = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     file_bytes = await file.read()
@@ -104,35 +106,39 @@ async def upload_photo(
         camera_model=result.get("camera_model"),
     )
     db.add(foto)
-    db.commit()
-    db.refresh(foto)
+    await db.commit()
+    await db.refresh(foto)
     return {"id": foto.id, "blob_path": foto.blob_path, "estado": foto.estado}
 
 
 @router.get("/{cedula}/active-points")
-def get_active_points(
+async def get_active_points(
     cedula: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    merc = db.query(Mercaderista).filter(Mercaderista.cedula == cedula).first()
+    try:
+        ced_int = int(str(cedula).strip())
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
+    merc = (await db.execute(select(Mercaderista).filter(Mercaderista.cedula == ced_int))).scalars().first()
     if not merc:
         raise HTTPException(status_code=404, detail="Mercaderista no encontrado")
     today = date.today()
-    visitas = db.query(Visita).filter(
+    visitas = (await db.execute(select(Visita).filter(
         Visita.mercaderista_id == merc.id,
         Visita.fecha == today,
-    ).all()
+    ))).scalars().all()
     return [{"visita_id": v.id, "punto_id": v.punto_id, "estado": v.estado} for v in visitas]
 
 
 @router.get("/foto/{foto_id}/metadatos", response_model=FotoMetadatosResponse)
-def get_foto_metadatos(
+async def get_foto_metadatos(
     foto_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    foto = db.query(Foto).filter(Foto.id == foto_id).first()
+    foto = (await db.execute(select(Foto).filter(Foto.id == foto_id))).scalars().first()
     if not foto:
         raise HTTPException(status_code=404, detail="Foto no encontrada")
     return FotoMetadatosResponse(

@@ -19,8 +19,10 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.security import decode_token
 from app.models.user import Usuario, UserPermission
 
@@ -95,9 +97,9 @@ def get_cache_stats() -> dict:
 # Dependencia principal — get_current_user
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ) -> Usuario:
     if credentials is None or not credentials.credentials:
         raise HTTPException(
@@ -120,12 +122,14 @@ def get_current_user(
     from app.models.sesion import SesionActiva
     from sqlalchemy.orm import joinedload
 
-    session = (
-        db.query(SesionActiva)
+    stmt_session = (
+        select(SesionActiva)
         .options(joinedload(SesionActiva.usuario))
         .filter(SesionActiva.session_token == token, SesionActiva.activa == True)
-        .first()
     )
+    result_session = await db.execute(stmt_session)
+    session = result_session.scalars().first()
+
     if not session or not session.usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -136,9 +140,9 @@ def get_current_user(
 
     # Cargar permisos del usuario junto con la sesión (un solo round-trip adicional
     # en el cache MISS, pero el resultado queda en cache los próximos 60s)
-    perms = db.query(UserPermission).filter(
-        UserPermission.user_id == usuario.id
-    ).all()
+    stmt_perms = select(UserPermission).filter(UserPermission.user_id == usuario.id)
+    result_perms = await db.execute(stmt_perms)
+    perms = result_perms.scalars().all()
 
     # expunge: usuario/perms quedan en _auth_cache (memoria del proceso) mucho
     # más allá del ciclo de vida de esta sesión de request -- sin esto,
@@ -197,10 +201,10 @@ def require_permission(clave: str, action: str = "read", fallback_roles: tuple =
     - Admin (id_rol=8): acceso total sin restricciones.
     - Permisos cargados desde cache (0 queries extra en cache HIT).
     - Si no tiene la fila: usa los fallback_roles."""
-    def _checker(
+    async def _checker(
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
         current_user: Usuario = Depends(get_current_user),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_async_db),
     ) -> Usuario:
         if current_user.id_rol == 8 or current_user.is_admin or current_user.rol in ("admin", "superadmin"):
             return current_user
@@ -213,9 +217,9 @@ def require_permission(clave: str, action: str = "read", fallback_roles: tuple =
 
         # Fallback: cargar permisos desde DB si no están en cache
         if perms is None:
-            perms = db.query(UserPermission).filter(
-                UserPermission.user_id == current_user.id
-            ).all()
+            stmt_perms = select(UserPermission).filter(UserPermission.user_id == current_user.id)
+            result_perms = await db.execute(stmt_perms)
+            perms = result_perms.scalars().all()
 
         if perms:
             p = next((x for x in perms if x.module == clave), None)

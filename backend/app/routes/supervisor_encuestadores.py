@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import or_, desc, func, select, delete as sa_delete
 from typing import List, Optional
 from datetime import datetime, date
 from pydantic import BaseModel
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import require_permission
 from app.models.user import Usuario as User
 from app.models.encuestador import (
@@ -61,6 +62,7 @@ class MedicoEditRequest(BaseModel):
     especialidad: str
     sub_especialidad: Optional[str] = None
     universidad_graduacion: Optional[str] = None
+    segunda_universidad_graduacion: Optional[str] = None
     nro_MPPS: Optional[str] = None
     nro_colegiado: Optional[str] = None
     ciudad: str
@@ -80,23 +82,23 @@ class MedicoCentroSaveRequest(BaseModel):
 # --- ENDPOINTS ---
 
 @router.get("/encuestadores")
-def get_encuestadores(
-    db: Session = Depends(get_db),
+async def get_encuestadores(
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
     # Trae usuarios con rol admin (8), supervisor (10), analista (11), encuestador (12) o cliente_encuestador (13)
-    encuestadores = db.query(User).filter(User.id_rol.in_((8, 10, 11, 12, 13))).order_by(User.username).all()
+    encuestadores = (await db.execute(select(User).filter(User.id_rol.in_((8, 10, 11, 12, 13))).order_by(User.username))).scalars().all()
     result = []
     for u in encuestadores:
         # Buscar perfil de Encuestador si existe por cédula/username o id_perfil
         nombre_real = u.username
         perf = None
         if u.id_perfil:
-            perf = db.query(Encuestador).filter(Encuestador.id == u.id_perfil).first()
+            perf = (await db.execute(select(Encuestador).filter(Encuestador.id == u.id_perfil))).scalars().first()
         if not perf:
             try:
                 ced = int(u.username)
-                perf = db.query(Encuestador).filter(Encuestador.cedula == ced).first()
+                perf = (await db.execute(select(Encuestador).filter(Encuestador.cedula == ced))).scalars().first()
             except ValueError:
                 pass
         if perf:
@@ -115,30 +117,33 @@ def get_encuestadores(
 # --- JORNADAS ---
 
 @router.get("/jornadas")
-def list_jornadas(
+async def list_jornadas(
     user_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
-    # Subquery to count surveys per journey in one go
-    encuestas_count_sub = db.query(
-        EncuestaCentro.id_jornada,
-        func.count(EncuestaCentro.id_encuesta).label("encuestas_count")
-    ).group_by(EncuestaCentro.id_jornada).subquery()
+    encuestas_count_sub = (
+        select(
+            EncuestaCentro.id_jornada,
+            func.count(EncuestaCentro.id_encuesta).label("encuestas_count")
+        )
+        .group_by(EncuestaCentro.id_jornada)
+        .subquery()
+    )
 
-    query = db.query(
-        JornadaEncuestador,
-        User.username,
-        func.coalesce(encuestas_count_sub.c.encuestas_count, 0).label("encuestas_count")
-    ).outerjoin(
-        User, User.id == JornadaEncuestador.id_usuario
-    ).outerjoin(
-        encuestas_count_sub, encuestas_count_sub.c.id_jornada == JornadaEncuestador.id_jornada
+    stmt = (
+        select(
+            JornadaEncuestador,
+            User.username,
+            func.coalesce(encuestas_count_sub.c.encuestas_count, 0).label("encuestas_count")
+        )
+        .outerjoin(User, User.id == JornadaEncuestador.id_usuario)
+        .outerjoin(encuestas_count_sub, encuestas_count_sub.c.id_jornada == JornadaEncuestador.id_jornada)
     )
 
     if user_id:
-        query = query.filter(JornadaEncuestador.id_usuario == user_id)
-    jornadas = query.order_by(desc(JornadaEncuestador.id_jornada)).all()
+        stmt = stmt.filter(JornadaEncuestador.id_usuario == user_id)
+    jornadas = (await db.execute(stmt.order_by(desc(JornadaEncuestador.id_jornada)))).all()
 
     result = []
     for j, username, encuestas_count in jornadas:
@@ -159,31 +164,31 @@ def list_jornadas(
     return result
 
 @router.get("/jornadas/{id_jornada}/detalle")
-def get_jornada_detalle(
+async def get_jornada_detalle(
     id_jornada: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
-    jornada = db.query(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada).first()
+    jornada = (await db.execute(select(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada))).scalars().first()
     if not jornada:
         raise HTTPException(status_code=404, detail="Jornada no encontrada")
 
-    u = db.query(User).filter(User.id == jornada.id_usuario).first()
+    u = (await db.execute(select(User).filter(User.id == jornada.id_usuario))).scalars().first()
 
     # Obtener encuestas realizadas en esta jornada
-    encuestas = db.query(EncuestaCentro).filter(EncuestaCentro.id_jornada == id_jornada).all()
+    encuestas = (await db.execute(select(EncuestaCentro).filter(EncuestaCentro.id_jornada == id_jornada))).scalars().all()
     encuestas_list = []
     
     for e in encuestas:
-        centro = db.query(CentroSalud).filter(CentroSalud.id_centro == e.id_centro).first()
+        centro = (await db.execute(select(CentroSalud).filter(CentroSalud.id_centro == e.id_centro))).scalars().first()
         
         # Obtener médicos registrados en esta encuesta
-        medicos_rel = db.query(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta).all()
+        medicos_rel = (await db.execute(select(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta))).scalars().all()
         medicos_list = []
         for mr in medicos_rel:
-            m = db.query(Medico).filter(Medico.id_medico == mr.id_medico).first()
+            m = (await db.execute(select(Medico).filter(Medico.id_medico == mr.id_medico))).scalars().first()
             if m:
-                consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).all()
+                consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().all()
                 medicos_list.append({
                     "id_medico": m.id_medico,
                     "id_medico_externo": m.id_medico_externo,
@@ -195,6 +200,7 @@ def get_jornada_detalle(
                     "especialidad": m.especialidad,
                     "sub_especialidad": m.sub_especialidad,
                     "universidad_graduacion": m.universidad_graduacion,
+                    "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
                     "nro_MPPS": m.nro_MPPS,
                     "nro_colegiado": m.nro_colegiado,
                     "ciudad": m.ciudad,
@@ -241,9 +247,9 @@ def get_jornada_detalle(
     }
 
 @router.post("/jornadas")
-def create_jornada(
+async def create_jornada(
     req: JornadaRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
     jornada = JornadaEncuestador(
@@ -258,18 +264,18 @@ def create_jornada(
         notas=req.notas
     )
     db.add(jornada)
-    db.commit()
-    db.refresh(jornada)
+    await db.commit()
+    await db.refresh(jornada)
     return {"success": True, "id_jornada": jornada.id_jornada}
 
 @router.put("/jornadas/{id_jornada}")
-def update_jornada(
+async def update_jornada(
     id_jornada: int,
     req: JornadaRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
-    j = db.query(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada).first()
+    j = (await db.execute(select(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada))).scalars().first()
     if not j:
         raise HTTPException(status_code=404, detail="Jornada no encontrada")
 
@@ -283,59 +289,60 @@ def update_jornada(
     j.estado_geo = req.estado_geo
     j.notas = req.notas
 
-    db.commit()
+    await db.commit()
     return {"success": True}
 
 @router.delete("/jornadas/{id_jornada}")
-def delete_jornada(
+async def delete_jornada(
     id_jornada: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "delete", fallback_roles=("admin", "supervisor")))
 ):
-    j = db.query(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada).first()
+    j = (await db.execute(select(JornadaEncuestador).filter(JornadaEncuestador.id_jornada == id_jornada))).scalars().first()
     if not j:
         raise HTTPException(status_code=404, detail="Jornada no encontrada")
 
-    # Eliminar encuestas de esta jornada
-    db.query(EncuestaCentro).filter(EncuestaCentro.id_jornada == id_jornada).delete()
-    db.delete(j)
-    db.commit()
+    await db.execute(sa_delete(EncuestaCentro).where(EncuestaCentro.id_jornada == id_jornada))
+    await db.delete(j)
+    await db.commit()
     return {"success": True}
 
 
 # --- ENCUESTAS ---
 
 @router.get("/encuestas")
-def list_encuestas(
+async def list_encuestas(
     user_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
-    # Subquery to count doctors per survey in one go
-    medicos_count_sub = db.query(
-        MedicoCentroEncuesta.id_encuesta,
-        func.count(MedicoCentroEncuesta.id_medico).label("medicos_count")
-    ).group_by(MedicoCentroEncuesta.id_encuesta).subquery()
+    medicos_count_sub = (
+        select(
+            MedicoCentroEncuesta.id_encuesta,
+            func.count(MedicoCentroEncuesta.id_medico).label("medicos_count")
+        )
+        .group_by(MedicoCentroEncuesta.id_encuesta)
+        .subquery()
+    )
 
-    query = db.query(
-        EncuestaCentro,
-        User.username,
-        CentroSalud.nombre_centro,
-        CentroSalud.ciudad,
-        CentroSalud.estado,
-        func.coalesce(medicos_count_sub.c.medicos_count, 0).label("medicos_count")
-    ).outerjoin(
-        User, User.id == EncuestaCentro.id_usuario
-    ).outerjoin(
-        CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro
-    ).outerjoin(
-        medicos_count_sub, medicos_count_sub.c.id_encuesta == EncuestaCentro.id_encuesta
+    stmt = (
+        select(
+            EncuestaCentro,
+            User.username,
+            CentroSalud.nombre_centro,
+            CentroSalud.ciudad,
+            CentroSalud.estado,
+            func.coalesce(medicos_count_sub.c.medicos_count, 0).label("medicos_count")
+        )
+        .outerjoin(User, User.id == EncuestaCentro.id_usuario)
+        .outerjoin(CentroSalud, CentroSalud.id_centro == EncuestaCentro.id_centro)
+        .outerjoin(medicos_count_sub, medicos_count_sub.c.id_encuesta == EncuestaCentro.id_encuesta)
     )
 
     if user_id:
-        query = query.filter(EncuestaCentro.id_usuario == user_id)
+        stmt = stmt.filter(EncuestaCentro.id_usuario == user_id)
         
-    encuestas = query.order_by(desc(EncuestaCentro.id_encuesta)).all()
+    encuestas = (await db.execute(stmt.order_by(desc(EncuestaCentro.id_encuesta)))).all()
 
     result = []
     for e, username, nombre_centro, ciudad, estado, medicos_count in encuestas:
@@ -360,9 +367,9 @@ def list_encuestas(
     return result
 
 @router.post("/encuestas")
-def create_encuesta(
+async def create_encuesta(
     req: EncuestaRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
     encuesta = EncuestaCentro(
@@ -377,18 +384,18 @@ def create_encuesta(
         requiere_correccion=req.requiere_correccion
     )
     db.add(encuesta)
-    db.commit()
-    db.refresh(encuesta)
+    await db.commit()
+    await db.refresh(encuesta)
     return {"success": True, "id_encuesta": encuesta.id_encuesta}
 
 @router.put("/encuestas/{id_encuesta}")
-def update_encuesta(
+async def update_encuesta(
     id_encuesta: int,
     req: EncuestaRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
-    e = db.query(EncuestaCentro).filter(EncuestaCentro.id_encuesta == id_encuesta).first()
+    e = (await db.execute(select(EncuestaCentro).filter(EncuestaCentro.id_encuesta == id_encuesta))).scalars().first()
     if not e:
         raise HTTPException(status_code=404, detail="Encuesta no encontrada")
 
@@ -402,49 +409,48 @@ def update_encuesta(
     e.observacion_supervisor = req.observacion_supervisor
     e.requiere_correccion = req.requiere_correccion
 
-    db.commit()
+    await db.commit()
     return {"success": True}
 
 @router.delete("/encuestas/{id_encuesta}")
-def delete_encuesta(
+async def delete_encuesta(
     id_encuesta: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "delete", fallback_roles=("admin", "supervisor")))
 ):
-    e = db.query(EncuestaCentro).filter(EncuestaCentro.id_encuesta == id_encuesta).first()
+    e = (await db.execute(select(EncuestaCentro).filter(EncuestaCentro.id_encuesta == id_encuesta))).scalars().first()
     if not e:
         raise HTTPException(status_code=404, detail="Encuesta no encontrada")
 
-    # Eliminar relaciones de médicos asociadas a esta encuesta
-    db.query(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == id_encuesta).delete()
-    db.delete(e)
-    db.commit()
+    await db.execute(sa_delete(MedicoCentroEncuesta).where(MedicoCentroEncuesta.id_encuesta == id_encuesta))
+    await db.delete(e)
+    await db.commit()
     return {"success": True}
 
 
 # --- MEDICOS ---
 
 @router.get("/medicos")
-def list_medicos(
+async def list_medicos(
     q: str = "",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
-    query = db.query(Medico)
+    stmt = select(Medico)
     if q.strip():
         search = f"%{q.strip()}%"
-        query = query.filter(
+        stmt = stmt.filter(
             or_(
                 Medico.id_medico_externo.ilike(search),
                 Medico.nombre1.ilike(search),
                 Medico.apellido1.ilike(search)
             )
         )
-    medicos = query.order_by(Medico.apellido1, Medico.nombre1).limit(100).all()
+    medicos = (await db.execute(stmt.order_by(Medico.apellido1, Medico.nombre1).limit(100))).scalars().all()
 
     result = []
     for m in medicos:
-        consultorios = db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico).all()
+        consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().all()
         result.append({
             "id_medico": m.id_medico,
             "id_medico_externo": m.id_medico_externo,
@@ -455,6 +461,7 @@ def list_medicos(
             "especialidad": m.especialidad,
             "sub_especialidad": m.sub_especialidad,
             "universidad_graduacion": m.universidad_graduacion,
+            "segunda_universidad_graduacion": m.segunda_universidad_graduacion,
             "nro_MPPS": m.nro_MPPS,
             "nro_colegiado": m.nro_colegiado,
             "ciudad": m.ciudad,
@@ -478,9 +485,9 @@ def list_medicos(
     return result
 
 @router.post("/medicos")
-def create_medico_centro(
+async def create_medico_centro(
     req: MedicoCentroSaveRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
     id_medico = req.id_medico
@@ -489,7 +496,7 @@ def create_medico_centro(
             raise HTTPException(status_code=400, detail="Faltan datos del médico para crear")
         
         # Verificar duplicado por id externo
-        existente = db.query(Medico).filter(Medico.id_medico_externo == req.medico_data.id_medico_externo).first()
+        existente = (await db.execute(select(Medico).filter(Medico.id_medico_externo == req.medico_data.id_medico_externo))).scalars().first()
         if existente:
             id_medico = existente.id_medico
         else:
@@ -502,6 +509,7 @@ def create_medico_centro(
                 especialidad=req.medico_data.especialidad,
                 sub_especialidad=req.medico_data.sub_especialidad,
                 universidad_graduacion=req.medico_data.universidad_graduacion,
+                segunda_universidad_graduacion=req.medico_data.segunda_universidad_graduacion,
                 nro_MPPS=req.medico_data.nro_MPPS,
                 nro_colegiado=req.medico_data.nro_colegiado,
                 ciudad=req.medico_data.ciudad,
@@ -529,25 +537,27 @@ def create_medico_centro(
                 db.add(c)
 
     # Vincular a la encuesta
-    dup = db.query(MedicoCentroEncuesta).filter(
-        MedicoCentroEncuesta.id_encuesta == req.id_encuesta,
-        MedicoCentroEncuesta.id_medico == id_medico
-    ).first()
+    dup = (await db.execute(
+        select(MedicoCentroEncuesta).filter(
+            MedicoCentroEncuesta.id_encuesta == req.id_encuesta,
+            MedicoCentroEncuesta.id_medico == id_medico
+        )
+    )).scalars().first()
     
     if not dup:
         db.add(MedicoCentroEncuesta(id_encuesta=req.id_encuesta, id_medico=id_medico))
     
-    db.commit()
+    await db.commit()
     return {"success": True, "id_medico": id_medico}
 
 @router.put("/medicos/{id_medico}")
-def update_medico(
+async def update_medico(
     id_medico: int,
     req: MedicoEditRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
 ):
-    m = db.query(Medico).filter(Medico.id_medico == id_medico).first()
+    m = (await db.execute(select(Medico).filter(Medico.id_medico == id_medico))).scalars().first()
     if not m:
         raise HTTPException(status_code=404, detail="Médico no encontrado")
 
@@ -559,6 +569,7 @@ def update_medico(
     m.especialidad = req.especialidad
     m.sub_especialidad = req.sub_especialidad
     m.universidad_graduacion = req.universidad_graduacion
+    m.segunda_universidad_graduacion = req.segunda_universidad_graduacion
     m.nro_MPPS = req.nro_MPPS
     m.nro_colegiado = req.nro_colegiado
     m.ciudad = req.ciudad
@@ -569,8 +580,7 @@ def update_medico(
     m.linkedin = req.linkedin
     m.instagram = req.instagram
 
-    # Actualizar consultorios: eliminamos y recreamos
-    db.query(MedicoConsultorio).filter(MedicoConsultorio.id_medico == id_medico).delete()
+    await db.execute(sa_delete(MedicoConsultorio).where(MedicoConsultorio.id_medico == id_medico))
     for cons in req.consultorios:
         c = MedicoConsultorio(
             id_medico=id_medico,
@@ -583,32 +593,33 @@ def update_medico(
         )
         db.add(c)
 
-    db.commit()
+    await db.commit()
     return {"success": True}
 
 @router.delete("/medicos/{id_medico}")
-def delete_medico_relacion(
+async def delete_medico_relacion(
     id_medico: int,
     id_encuesta: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "delete", fallback_roles=("admin", "supervisor")))
 ):
-    # Desvincular de la encuesta
-    db.query(MedicoCentroEncuesta).filter(
-        MedicoCentroEncuesta.id_encuesta == id_encuesta,
-        MedicoCentroEncuesta.id_medico == id_medico
-    ).delete()
-    db.commit()
+    await db.execute(
+        sa_delete(MedicoCentroEncuesta).where(
+            MedicoCentroEncuesta.id_encuesta == id_encuesta,
+            MedicoCentroEncuesta.id_medico == id_medico
+        )
+    )
+    await db.commit()
     return {"success": True}
 
 # --- CENTROS (REUTILIZADOS) ---
 
 @router.get("/centros")
-def get_centros_list(
-    db: Session = Depends(get_db),
+async def get_centros_list(
+    db: AsyncSession = Depends(get_async_db),
     _: User = Depends(require_permission("supervisor-encuestadores", "read", fallback_roles=("admin", "supervisor")))
 ):
-    centros = db.query(CentroSalud).order_by(CentroSalud.nombre_centro).all()
+    centros = (await db.execute(select(CentroSalud).order_by(CentroSalud.nombre_centro))).scalars().all()
     return {
         "success": True,
         "centros": [

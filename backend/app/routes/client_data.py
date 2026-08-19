@@ -1,13 +1,46 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import List, Optional
 from datetime import date, timedelta
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
-from app.models.user import Usuario
+from app.models.user import Usuario, UserPermission
 
 router = APIRouter(prefix="/api/client-data", tags=["Client Data"])
+
+# Clave del módulo en la tabla usuario_permisos / MODULOS
+_DATA_MODULE_KEY = "data"
+
+
+async def _solo_propios_filter(user: Usuario, db: AsyncSession, alias: str = "b") -> tuple[str, dict]:
+    """Filtra los balances para mostrar SOLO los productos del propio cliente.
+
+    Se aplica cuando el usuario cliente tiene una fila en `usuario_permisos`
+    con module='data' y can_see_all=False (y can_read=True).
+    En ese caso el cliente solo ve sus productos (b.id_cliente = id_perfil),
+    NO toda la categoría (que incluiría productos de la competencia).
+
+    Si no existe la fila, o can_see_all=True, se devuelve ('', {}) y
+    el comportamiento normal (toda la categoría) se mantiene.
+    """
+    if not user.is_client or not user.id_perfil:
+        return "", {}
+
+    perm = (await db.execute(
+        select(UserPermission).filter(
+            UserPermission.user_id == user.id,
+            UserPermission.module == _DATA_MODULE_KEY,
+        )
+    )).scalars().first()
+
+    # Solo aplica si existe la fila, tiene lectura permitida y can_see_all=False
+    if perm and perm.can_read and not perm.can_see_all:
+        frag = f" AND {alias}.id_cliente = :solo_propios_id_cliente"
+        return frag, {"solo_propios_id_cliente": int(user.id_perfil)}
+
+    return "", {}
 
 
 def _analyst_filter(user: Usuario, alias: str = "b"):
@@ -41,7 +74,7 @@ def _analyst_filter(user: Usuario, alias: str = "b"):
     return frag, {"analista_id": int(user.id_perfil)}
 
 
-def _client_route_filter(user: Usuario, db: Session, alias: str = "b"):
+async def _async_client_route_filter(user: Usuario, db: AsyncSession, alias: str = "b"):
     """Restringe a un cliente (id_rol=1, rol == 'client') con filas en
     CLIENTES_RUTAS a solo los balances de SUS rutas asignadas -- mismo
     criterio que client_photos.py::get_client_visits (route_filter_sql).
@@ -58,8 +91,8 @@ def _client_route_filter(user: Usuario, db: Session, alias: str = "b"):
     """
     if user.rol != "client":
         return "", {}
-    from app.services.visibility import client_route_ids
-    route_ids = client_route_ids(db, user)
+    from app.services.visibility import async_client_route_ids
+    route_ids = await async_client_route_ids(db, user)
     if route_ids is None:
         return "", {}
     ids_csv = ",".join(str(int(i)) for i in route_ids) if route_ids else "-1"
@@ -72,12 +105,12 @@ def _client_route_filter(user: Usuario, db: Session, alias: str = "b"):
 
 
 @router.get("/filters")
-def get_client_data_filters(
-    db: Session = Depends(get_db),
+async def get_client_data_filters(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    from app.services.visibility import coordinator_client_ids
-    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+    from app.services.visibility import async_coordinator_client_ids
+    visible_ids = (await async_coordinator_client_ids(db, current_user)) if current_user.is_client else None
 
     # We will get distinct products, chains, regions, pdvs, and mercaderistas
     query_params = {}
@@ -94,9 +127,14 @@ def get_client_data_filters(
     where_clause += af
     query_params.update(ap)
 
-    cf, cp = _client_route_filter(current_user, db)
+    cf, cp = await _async_client_route_filter(current_user, db)
     where_clause += cf
     query_params.update(cp)
+
+    # Filtro: solo productos propios (si el permiso can_see_all=False está activo)
+    spf, spp = await _solo_propios_filter(current_user, db)
+    where_clause += spf
+    query_params.update(spp)
 
     if current_user.is_client:
         # Mismo criterio que /balances: el cliente solo debe ver (y filtrar
@@ -107,49 +145,56 @@ def get_client_data_filters(
         )"""
 
     # Get distinct productos
-    productos = db.execute(text(f"SELECT DISTINCT producto FROM BALANCES_TOTALES b {where_clause} AND producto IS NOT NULL"), query_params).scalars().all()
+    res_prod = await db.execute(text(f"SELECT DISTINCT producto FROM BALANCES_TOTALES b {where_clause} AND producto IS NOT NULL"), query_params)
+    productos = res_prod.scalars().all()
 
     # Get distinct mercaderistas
-    mercaderistas = db.execute(text(f"SELECT DISTINCT mercaderista FROM BALANCES_TOTALES b {where_clause} AND mercaderista IS NOT NULL"), query_params).scalars().all()
+    res_merc = await db.execute(text(f"SELECT DISTINCT mercaderista FROM BALANCES_TOTALES b {where_clause} AND mercaderista IS NOT NULL"), query_params)
+    mercaderistas = res_merc.scalars().all()
 
     # Get distinct categorias (categoría de producto, columna propia de BALANCES_TOTALES)
-    categorias = db.execute(text(f"SELECT DISTINCT categoria FROM BALANCES_TOTALES b {where_clause} AND categoria IS NOT NULL"), query_params).scalars().all()
+    res_cat = await db.execute(text(f"SELECT DISTINCT categoria FROM BALANCES_TOTALES b {where_clause} AND categoria IS NOT NULL"), query_params)
+    categorias = res_cat.scalars().all()
 
     # Get distinct PDVs (identificadores)
-    pdvs = db.execute(text(f"""
+    res_pdvs = await db.execute(text(f"""
         SELECT DISTINCT p.identificador, p.punto_de_interes
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
         {where_clause}
-    """), query_params).fetchall()
+    """), query_params)
+    pdvs = res_pdvs.fetchall()
 
     # Get distinct cadenas
-    cadenas = db.execute(text(f"""
+    res_cadenas = await db.execute(text(f"""
         SELECT DISTINCT p.jerarquia_nivel_2 as cadena
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
         {where_clause} AND p.jerarquia_nivel_2 IS NOT NULL
-    """), query_params).scalars().all()
+    """), query_params)
+    cadenas = res_cadenas.scalars().all()
 
     # Get distinct regions
-    regiones = db.execute(text(f"""
+    res_reg = await db.execute(text(f"""
         SELECT DISTINCT p.jerarquia_nivel_2_2 as region
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
         {where_clause} AND p.jerarquia_nivel_2_2 IS NOT NULL
-    """), query_params).scalars().all()
+    """), query_params)
+    regiones = res_reg.scalars().all()
 
     # Get distinct departamentos
-    departamentos = db.execute(text(f"""
+    res_dep = await db.execute(text(f"""
         SELECT DISTINCT p.departamento
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
         {where_clause} AND p.departamento IS NOT NULL
-    """), query_params).scalars().all()
+    """), query_params)
+    departamentos = res_dep.scalars().all()
 
     # Get distinct cuadrantes (via RUTA_PROGRAMACION -> RUTAS_NUEVAS; RUTAS_NUEVAS no tiene FK directa
     # a punto_interes, y un punto puede tener varias filas de programación activa, por eso se agrega con MIN)
-    cuadrantes = db.execute(text(f"""
+    res_cuad = await db.execute(text(f"""
         SELECT DISTINCT rc.cuadrante
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
@@ -161,15 +206,17 @@ def get_client_data_filters(
             GROUP BY rp.id_punto_interes
         ) rc ON rc.id_punto_interes = p.identificador
         {where_clause} AND rc.cuadrante IS NOT NULL
-    """), query_params).scalars().all()
+    """), query_params)
+    cuadrantes = res_cuad.scalars().all()
 
     # Get distinct estados (estado de la visita)
-    estados = db.execute(text(f"""
+    res_est = await db.execute(text(f"""
         SELECT DISTINCT v.estado
         FROM BALANCES_TOTALES b
         LEFT JOIN VISITAS_MERCADERISTA v ON b.id_visita = v.id_visita
         {where_clause} AND v.estado IS NOT NULL
-    """), query_params).scalars().all()
+    """), query_params)
+    estados = res_est.scalars().all()
 
     return {
         "productos": sorted(productos),
@@ -203,7 +250,7 @@ _SORT_COLUMNS = {
 
 
 @router.get("/balances")
-def get_client_balances(
+async def get_client_balances(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     producto: Optional[str] = None,
@@ -224,11 +271,11 @@ def get_client_balances(
     # la tabla en pantalla nunca lo pide. Con page_size limitado a 500 arriba,
     # sin esta vía de escape el export quedaría cortado a 500 filas.
     export_all: bool = Query(False),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    from app.services.visibility import coordinator_client_ids
-    visible_ids = coordinator_client_ids(db, current_user) if current_user.is_client else None
+    from app.services.visibility import async_coordinator_client_ids
+    visible_ids = (await async_coordinator_client_ids(db, current_user)) if current_user.is_client else None
 
     # Default to last 30 days if no dates provided
     if not fecha_inicio and not fecha_fin:
@@ -262,9 +309,14 @@ def get_client_balances(
     base_query += af
     params.update(ap)
 
-    cf, cp = _client_route_filter(current_user, db)
+    cf, cp = await _async_client_route_filter(current_user, db)
     base_query += cf
     params.update(cp)
+
+    # Filtro: solo productos propios (si el permiso can_see_all=False está activo)
+    spf, spp = await _solo_propios_filter(current_user, db)
+    base_query += spf
+    params.update(spp)
 
     if fecha_inicio:
         base_query += " AND b.fecha_balance >= :fecha_inicio"
@@ -323,7 +375,7 @@ def get_client_balances(
         # balances antes de que la visita quede Revisado).
         base_query += " AND v.estado = 'Revisado'"
 
-    total = db.execute(text(f"SELECT COUNT(*) AS total {base_query}"), params).scalar() or 0
+    total = (await db.execute(text(f"SELECT COUNT(*) AS total {base_query}"), params)).scalar() or 0
 
     order_col = _SORT_COLUMNS.get(sort_by or "", "b.fecha_balance")
     order_dir = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
@@ -356,7 +408,7 @@ def get_client_balances(
         params["skip"] = page * page_size
         params["page_size"] = page_size
 
-    rows = db.execute(text(data_query), params).fetchall()
+    rows = (await db.execute(text(data_query), params)).fetchall()
 
     results = []
     for row in rows:

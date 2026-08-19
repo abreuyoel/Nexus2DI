@@ -44,6 +44,20 @@ spec:
           envFrom:
             - configMapRef: { name: nexus2di-backend-config }
             - secretRef: { name: nexus2di-backend-secret }
+          env:
+            - name: UVICORN_WORKERS
+              # Bajado de 6 a 2 (19 ago 2026, mismo día que se subió a 6):
+              # 6 workers compitiendo por los mismos 4 núcleos de
+              # limits.cpu de abajo es peor que el primer intento fallido
+              # del 4 de agosto (2 workers sobre "2" núcleos) -- y
+              # DB_POOL_SIZE/DB_MAX_OVERFLOW (configmap) están calibrados
+              # para 2 workers x 2 réplicas = 4 procesos x 25 conexiones =
+              # 100 total, el techo ya validado contra SQL Server. Con 6
+              # workers hubieran sido 12 procesos x 25 = hasta 300
+              # conexiones. Si se quiere subir de 2 en el futuro, subir
+              # limits.cpu y bajar el pool por proceso en la misma
+              # proporción ANTES, no después.
+              value: "2"
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 10

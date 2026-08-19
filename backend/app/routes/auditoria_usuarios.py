@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import Optional, List
 from datetime import datetime
 import json
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/api/auditoria-usuarios", tags=["Auditoría de Usuari
 
 @router.get("")
 @router.get("/")
-def get_auditoria_usuarios(
+async def get_auditoria_usuarios(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     accion: Optional[str] = None,
@@ -22,7 +23,7 @@ def get_auditoria_usuarios(
     search: Optional[str] = None,
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Consulta el historial de auditoría de creación, edición, borrado y asignación de roles de usuarios."""
@@ -57,7 +58,7 @@ def get_auditoria_usuarios(
     where_sql = " AND ".join(f"({c})" for c in where_clauses)
 
     count_query = text(f"SELECT COUNT(*) FROM AUDIT_LOG WHERE {where_sql}")
-    total = db.execute(count_query, params).scalar() or 0
+    total = (await db.execute(count_query, params)).scalar() or 0
 
     query = text(f"""
         SELECT id, user_id, username, rol, ip_address, action, entity_type, entity_id, entity_name, changes, status, timestamp
@@ -67,7 +68,7 @@ def get_auditoria_usuarios(
         OFFSET :skip ROWS FETCH NEXT :limit ROWS ONLY
     """)
 
-    rows = db.execute(query, params).fetchall()
+    rows = (await db.execute(query, params)).fetchall()
 
     result = []
     for r in rows:

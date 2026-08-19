@@ -3,11 +3,12 @@ para el diseño completo (Capa 1: línea base por percentiles, Capa 2: señal
 de riesgo + urgencia temporal)."""
 import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db, get_async_db, SessionLocal
 from app.core.dependencies import require_permission
 
 logger = logging.getLogger("app")
@@ -42,7 +43,7 @@ def _recalcular_alertas_background():
 
 
 @router.post("/linea-base/recalcular")
-def recalcular_linea_base(
+async def recalcular_linea_base(
     background_tasks: BackgroundTasks, sincrono: bool = False,
     db: Session = Depends(get_db),
     current_user=Depends(require_permission('plan-accion.recalcular', 'read')),
@@ -61,7 +62,7 @@ def recalcular_linea_base(
 
 
 @router.post("/alertas/recalcular")
-def recalcular_alertas(
+async def recalcular_alertas(
     background_tasks: BackgroundTasks, sincrono: bool = False,
     db: Session = Depends(get_db),
     current_user=Depends(require_permission('plan-accion.recalcular', 'read')),
@@ -77,26 +78,24 @@ def recalcular_alertas(
 
 
 @router.get("/alertas")
-def listar_alertas(
+async def listar_alertas(
     riesgo: Optional[str] = None, urgente: Optional[bool] = None,
     id_cliente: Optional[int] = None, identificador_pdv: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_permission('plan-accion', 'read')),
 ):
     where = "WHERE 1=1"
-    params: list = []
+    params: dict = {}
     if riesgo:
-        where += " AND riesgo = ?"; params.append(riesgo)
+        where += " AND a.riesgo = :riesgo"; params["riesgo"] = riesgo
     if urgente is not None:
-        where += " AND urgente = ?"; params.append(1 if urgente else 0)
+        where += " AND a.urgente = :urgente"; params["urgente"] = 1 if urgente else 0
     if id_cliente:
-        where += " AND id_cliente = ?"; params.append(id_cliente)
+        where += " AND a.id_cliente = :id_cliente"; params["id_cliente"] = id_cliente
     if identificador_pdv:
-        where += " AND identificador_pdv = ?"; params.append(identificador_pdv)
+        where += " AND a.identificador_pdv = :identificador_pdv"; params["identificador_pdv"] = identificador_pdv
 
-    conn = db.connection().connection
-    cursor = conn.cursor()
-    cursor.execute(f"""
+    q = f"""
         SELECT a.id_alerta, a.identificador_pdv, pi.punto_de_interes, a.id_product, a.producto,
                a.id_cliente, c.cliente, a.caras_actual, a.caras_anterior, a.tendencia,
                a.riesgo, a.urgente, a.dias_hasta_proxima_visita, a.dias_para_llegar_a_cero, a.fecha_calculo
@@ -105,9 +104,9 @@ def listar_alertas(
         LEFT JOIN CLIENTES c ON c.id_cliente = a.id_cliente
         {where}
         ORDER BY a.urgente DESC, a.riesgo ASC, a.dias_para_llegar_a_cero ASC
-    """, tuple(params))
-    cols = [d[0] for d in cursor.description]
-    items = [dict(zip(cols, row)) for row in cursor.fetchall()]
+    """
+    rows = (await db.execute(text(q), params)).mappings().all()
+    items = [dict(r) for r in rows]
 
     return {
         "total": len(items),
@@ -117,7 +116,7 @@ def listar_alertas(
 
 
 @router.get("/pronostico")
-def pronostico_quiebre(
+async def pronostico_quiebre(
     id_cliente: Optional[int] = None, horizonte_semanas: int = 6,
     db: Session = Depends(get_db),
     current_user=Depends(require_permission('plan-accion', 'read')),
@@ -136,11 +135,7 @@ def pronostico_quiebre(
 
 
 @router.get("/linea-base/info")
-def info_linea_base(db: Session = Depends(get_db), current_user=Depends(require_permission('plan-accion', 'read'))):
-    conn = db.connection().connection
-    cursor = conn.cursor()
-    cursor.execute("SELECT TOP 1 fecha_calculo FROM QUIEBRE_LINEA_BASE ORDER BY fecha_calculo DESC")
-    row = cursor.fetchone()
-    cursor.execute("SELECT COUNT(*) FROM QUIEBRE_LINEA_BASE")
-    n_grupos = cursor.fetchone()[0]
-    return {"calculada": row is not None, "fecha_calculo": row[0].isoformat() if row else None, "grupos": n_grupos}
+async def info_linea_base(db: AsyncSession = Depends(get_async_db), current_user=Depends(require_permission('plan-accion', 'read'))):
+    row = (await db.execute(text("SELECT TOP 1 fecha_calculo FROM QUIEBRE_LINEA_BASE ORDER BY fecha_calculo DESC"))).fetchone()
+    n_grupos = (await db.execute(text("SELECT COUNT(*) FROM QUIEBRE_LINEA_BASE"))).scalar() or 0
+    return {"calculada": row is not None, "fecha_calculo": row[0].isoformat() if row and row[0] else None, "grupos": n_grupos}

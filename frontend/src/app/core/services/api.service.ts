@@ -71,6 +71,9 @@ export class ApiService {
   getCities(departamento?: string): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/points/cities/list`, { params: this.params({ departamento }) });
   }
+  getLocalities(ciudad?: string, departamento?: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.base}/api/points/localities/list`, { params: this.params({ ciudad, departamento }) });
+  }
   getChains(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/chains/list`); }
   deletePoint(id: string): Observable<object> { return this.http.delete<object>(`${this.base}/api/points/${id}`); }
   getJerarquiaN2(): Observable<string[]> { return this.http.get<string[]>(`${this.base}/api/points/jerarquia_n2/list`); }
@@ -81,6 +84,9 @@ export class ApiService {
   }
   getPointPhotos(pointId: number, estado?: string): Observable<object[]> {
     return this.http.get<object[]>(`${this.base}/api/points/${pointId}/photos`, { params: this.params({ estado }) });
+  }
+  generatePointId(name: string): Observable<{ id: string }> {
+    return this.http.get<{ id: string }>(`${this.base}/api/points/generate-id`, { params: this.params({ name }) });
   }
 
   // --- CATÁLOGOS PDV ---
@@ -318,8 +324,8 @@ export class ApiService {
   }
 
   // ── Admin: Grupos de Chat ──────────────────────────────────────────────
-  adminListarGruposChat(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos`);
+  adminListarGruposChat(q: string = '', page: number = 1, limit: number = 10): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/admin/chat-grupos`, { params: this.params({ q, page, limit }) });
   }
   adminListarClientesParaGrupos(q: string = ''): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos/clientes`, { params: this.params({ q }) });

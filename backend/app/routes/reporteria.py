@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import Optional
 from datetime import date, timedelta
 import pandas as pd
 import io
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.models.user import Usuario
 from app.models.visita import Visita
@@ -18,11 +19,11 @@ router = APIRouter(prefix="/api/reports", tags=["Reportería"])
 
 
 @router.get("/summary")
-def get_report_summary(
+async def get_report_summary(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     ruta_id: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_analyst_or_admin),
 ):
     if not fecha_inicio:
@@ -41,29 +42,33 @@ def get_report_summary(
         visita_filters.append(Visita.ruta_id == ruta_id)
 
     # 1) Visitas: agregación SQL pura (una sola fila, sin traer objetos a memoria).
-    visitas_stats = db.query(
-        func.count(Visita.id).label("total"),
-        func.sum(case((Visita.estado == "completada", 1), else_=0)).label("completadas"),
-        func.sum(case((Visita.estado == "pendiente", 1), else_=0)).label("pendientes"),
-    ).filter(*visita_filters).first()
+    visitas_row = (await db.execute(
+        select(
+            func.count(Visita.id).label("total"),
+            func.sum(case((Visita.estado == "completada", 1), else_=0)).label("completadas"),
+            func.sum(case((Visita.estado == "pendiente", 1), else_=0)).label("pendientes"),
+        ).filter(*visita_filters)
+    )).first()
 
-    total = int(visitas_stats.total or 0)
-    completadas = int(visitas_stats.completadas or 0)
-    pendientes = int(visitas_stats.pendientes or 0)
+    total = int(visitas_row.total or 0) if visitas_row else 0
+    completadas = int(visitas_row.completadas or 0) if visitas_row else 0
+    pendientes = int(visitas_row.pendientes or 0) if visitas_row else 0
 
     # 2) Fotos: JOIN directo contra las visitas del rango. Evita el IN(...)
     #    gigante que rompía con más de ~2100 parámetros en SQL Server.
-    fotos_stats = db.query(
-        func.count(Foto.id).label("total"),
-        func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
-        func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
-        func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes"),
-    ).join(Visita, Foto.visita_id == Visita.id).filter(*visita_filters).first()
+    fotos_row = (await db.execute(
+        select(
+            func.count(Foto.id).label("total"),
+            func.sum(case((Foto.estado == "aprobada", 1), else_=0)).label("aprobadas"),
+            func.sum(case((Foto.estado == "rechazada", 1), else_=0)).label("rechazadas"),
+            func.sum(case((Foto.estado == "pendiente", 1), else_=0)).label("pendientes"),
+        ).join(Visita, Foto.visita_id == Visita.id).filter(*visita_filters)
+    )).first()
 
-    fotos_total = int(fotos_stats.total or 0)
-    fotos_aprobadas = int(fotos_stats.aprobadas or 0)
-    fotos_rechazadas = int(fotos_stats.rechazadas or 0)
-    fotos_pendientes = int(fotos_stats.pendientes or 0)
+    fotos_total = int(fotos_row.total or 0) if fotos_row else 0
+    fotos_aprobadas = int(fotos_row.aprobadas or 0) if fotos_row else 0
+    fotos_rechazadas = int(fotos_row.rechazadas or 0) if fotos_row else 0
+    fotos_pendientes = int(fotos_row.pendientes or 0) if fotos_row else 0
 
     return {
         "periodo": {"inicio": str(fecha_inicio), "fin": str(fecha_fin)},
@@ -83,11 +88,11 @@ def get_report_summary(
 
 
 @router.get("/chart-data")
-def get_chart_data(
+async def get_chart_data(
     tipo: str = "visitas_por_dia",
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_analyst_or_admin),
 ):
     if not fecha_inicio:
@@ -97,13 +102,15 @@ def get_chart_data(
 
     if tipo == "visitas_por_dia":
         from sqlalchemy import func
-        results = db.query(
-            Visita.fecha,
-            func.count(Visita.id).label("total"),
-        ).filter(
-            Visita.fecha >= fecha_inicio,
-            Visita.fecha <= fecha_fin,
-        ).group_by(Visita.fecha).order_by(Visita.fecha).all()
+        results = (await db.execute(
+            select(
+                Visita.fecha,
+                func.count(Visita.id).label("total"),
+            ).filter(
+                Visita.fecha >= fecha_inicio,
+                Visita.fecha <= fecha_fin,
+            ).group_by(Visita.fecha).order_by(Visita.fecha)
+        )).all()
 
         return {
             "labels": [str(r.fecha) for r in results],
@@ -113,10 +120,12 @@ def get_chart_data(
 
     elif tipo == "fotos_por_estado":
         from sqlalchemy import func
-        results = db.query(
-            Foto.estado,
-            func.count(Foto.id).label("total"),
-        ).group_by(Foto.estado).all()
+        results = (await db.execute(
+            select(
+                Foto.estado,
+                func.count(Foto.id).label("total"),
+            ).group_by(Foto.estado)
+        )).all()
 
         return {
             "labels": [r.estado for r in results],
@@ -128,20 +137,20 @@ def get_chart_data(
 
 
 @router.get("/activated-routes")
-def get_activated_routes(
-    db: Session = Depends(get_db),
+async def get_activated_routes(
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
     today = date.today()
-    activadas = db.query(RutaActivada).filter(RutaActivada.fecha == today).all()
+    activadas = (await db.execute(select(RutaActivada).filter(RutaActivada.fecha == today))).scalars().all()
     return [{"ruta_id": a.ruta_id, "cedula": a.mercaderista_cedula, "hora": str(a.activada_at)} for a in activadas]
 
 @router.get("/export-visitas-filtros")
-def get_export_visitas_filtros(
+async def get_export_visitas_filtros(
     id_cliente: int = Query(...),
     fecha_inicio: Optional[date] = Query(None),
     fecha_fin: Optional[date] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_analyst_or_admin),
 ):
     """Valores reales (SELECT DISTINCT) de cuadrante/departamento/categoría
@@ -158,7 +167,7 @@ def get_export_visitas_filtros(
         fecha_filter += " AND v.fecha_visita <= :fecha_fin"
         params["fecha_fin"] = fecha_fin
 
-    cuadrantes = db.execute(text(f"""
+    cuadrantes = (await db.execute(text(f"""
         SELECT DISTINCT rc.cuadrante
         FROM VISITAS_MERCADERISTA v
         JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
@@ -170,16 +179,16 @@ def get_export_visitas_filtros(
             GROUP BY rp.id_punto_interes
         ) rc ON rc.id_punto_interes = p.identificador
         WHERE v.id_cliente = :id_cliente AND rc.cuadrante IS NOT NULL {fecha_filter}
-    """), params).scalars().all()
+    """), params)).scalars().all()
 
-    departamentos = db.execute(text(f"""
+    departamentos = (await db.execute(text(f"""
         SELECT DISTINCT p.departamento
         FROM VISITAS_MERCADERISTA v
         JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
         WHERE v.id_cliente = :id_cliente AND p.departamento IS NOT NULL {fecha_filter}
-    """), params).scalars().all()
+    """), params)).scalars().all()
 
-    categorias = db.execute(text(f"""
+    categorias = (await db.execute(text(f"""
         SELECT DISTINCT valor FROM (
             SELECT p.jerarquia_nivel_2 AS valor
             FROM VISITAS_MERCADERISTA v
@@ -191,7 +200,7 @@ def get_export_visitas_filtros(
             JOIN PUNTOS_INTERES1 p ON v.identificador_punto_interes = p.identificador
             WHERE v.id_cliente = :id_cliente {fecha_filter}
         ) x WHERE valor IS NOT NULL
-    """), params).scalars().all()
+    """), params)).scalars().all()
 
     return {
         "cuadrantes": sorted(cuadrantes),
@@ -201,14 +210,14 @@ def get_export_visitas_filtros(
 
 
 @router.get("/export-visitas")
-def export_visitas_excel(
+async def export_visitas_excel(
     id_cliente: int = Query(...),
     fecha_inicio: date = Query(...),
     fecha_fin: date = Query(...),
     cuadrante: Optional[str] = Query(None),
     departamento: Optional[str] = Query(None),
     categoria: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_analyst_or_admin),
 ):
     try:
@@ -257,7 +266,7 @@ def export_visitas_excel(
             params["categoria"] = categoria
 
         # Execute query
-        result = db.execute(text(query), params).fetchall()
+        result = (await db.execute(text(query), params)).fetchall()
         
         # Convert to pandas DataFrame
         if not result:

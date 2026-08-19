@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, signal, computed } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormControl, FormGroup } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -18,6 +18,7 @@ import * as XLSX from 'xlsx';
 
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
 @Component({
   selector: 'app-client-data',
@@ -27,7 +28,8 @@ import { AuthService } from '../../core/services/auth.service';
     MatCardModule, MatTableModule, MatPaginatorModule, MatSortModule,
     MatButtonModule, MatIconModule, MatSelectModule, MatInputModule,
     MatFormFieldModule, MatDatepickerModule, MatNativeDateModule,
-    MatProgressSpinnerModule, MatSnackBarModule
+    MatProgressSpinnerModule, MatSnackBarModule,
+    SearchableSelectComponent
   ],
   templateUrl: './client-data.component.html',
   styleUrls: ['./client-data.component.scss'],
@@ -67,6 +69,47 @@ export class ClientDataComponent implements OnInit {
     estados: [] as string[]
   });
 
+  // Opciones transformadas para el componente app-searchable-select
+  regionesOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().regiones || []).map(r => ({ value: r, label: r }))
+  );
+
+  cadenasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().cadenas || []).map(c => ({ value: c, label: c }))
+  );
+
+  pdvsOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().pdvs || []).map(p => ({ value: String(p.id), label: p.nombre || String(p.id) }))
+  );
+
+  mercaderistasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().mercaderistas || []).map(m => ({ value: m, label: m }))
+  );
+
+  productosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().productos || []).map(p => ({ value: p, label: p }))
+  );
+
+  categoriasOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().categorias || []).map(c => ({ value: c, label: c }))
+  );
+
+  departamentosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().departamentos || []).map(d => ({ value: d, label: d }))
+  );
+
+  cuadrantesOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().cuadrantes || []).map(q => ({ value: q, label: q }))
+  );
+
+  estadosOpts = computed<SelectOption[]>(() =>
+    (this.filterOptions().estados || []).map(e => ({ value: e, label: e }))
+  );
+
+  onSelectChange(field: string, val: string): void {
+    this.filterForm.patchValue({ [field]: val || '' });
+  }
+
   filterForm = new FormGroup({
     fecha_inicio: new FormControl<Date | null>(null),
     fecha_fin: new FormControl<Date | null>(null),
@@ -88,6 +131,14 @@ export class ClientDataComponent implements OnInit {
   get puedeEditar(): boolean {
     const u = this.auth.currentUser();
     return !!u && (u.rol === 'admin' || u.rol === 'analyst');
+  }
+
+  isPanama(obj: any): boolean {
+    if (!obj) return false;
+    const dep = (obj.departamento || '').toLowerCase();
+    const reg = (obj.region || '').toLowerCase();
+    const cuad = (obj.cuadrante || '').toLowerCase();
+    return dep.includes('panam') || reg.includes('panam') || cuad.includes('panam');
   }
 
   constructor(private api: ApiService, private datePipe: DatePipe, private snack: MatSnackBar, private auth: AuthService) {}
@@ -251,19 +302,22 @@ export class ClientDataComponent implements OnInit {
 
   /** Descarga el Excel de una sola visita. */
   exportVisit(v: any): void {
-    const data = v.items.map((it: any) => ({
-      'Producto': it.producto,
-      'Categoría': it.categoria,
-      'Departamento': it.departamento,
-      'Cuadrante': it.cuadrante,
-      'Estado': it.estado,
-      'Inv. Inicial': it.inv_inicial,
-      'Inv. Final': it.inv_final,
-      'Inv. Depósito': it.inv_deposito,
-      'Caras': it.caras,
-      'Precio Bs': it.precio_bs,
-      'Precio $': it.precio_ds,
-    }));
+    const data = v.items.map((it: any) => {
+      const isPan = this.isPanama(it);
+      return {
+        'Producto': it.producto,
+        'Categoría': it.categoria,
+        'Departamento': it.departamento,
+        'Cuadrante': it.cuadrante,
+        'Estado': it.estado,
+        'Inv. Inicial': it.inv_inicial,
+        'Inv. Final': it.inv_final,
+        'Inv. Depósito': it.inv_deposito,
+        'Caras': it.caras,
+        'Precio Bs': isPan ? null : it.precio_bs,
+        'Precio $': isPan ? it.precio_bs : it.precio_ds,
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Visita ${v.visita_id}`);
@@ -279,24 +333,27 @@ export class ClientDataComponent implements OnInit {
     const params = { ...this.buildFilterParams(), export_all: true };
     this.api.getClientDataBalances(params).subscribe({
       next: (res) => {
-        const dataToExport = res.items.map(item => ({
-          'Visita ID': item.visita_id,
-          'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
-          'Región': item.region,
-          'Cadena': item.cadena,
-          'PDV': item.pdv_nombre,
-          'Mercaderista': item.mercaderista,
-          'Producto': item.producto,
-          'Categoría': item.categoria,
-          'Departamento': item.departamento,
-          'Cuadrante': item.cuadrante,
-          'Estado': item.estado,
-          'Inventario Inicial': item.inv_inicial,
-          'Inventario Final': item.inv_final,
-          'Caras': item.caras,
-          'Precio Bs': item.precio_bs,
-          'Precio $': item.precio_ds
-        }));
+        const dataToExport = res.items.map(item => {
+          const isPan = this.isPanama(item);
+          return {
+            'Visita ID': item.visita_id,
+            'Fecha': item.fecha_balance ? this.datePipe.transform(item.fecha_balance, 'dd/MM/yyyy HH:mm') : '',
+            'Región': item.region,
+            'Cadena': item.cadena,
+            'PDV': item.pdv_nombre,
+            'Mercaderista': item.mercaderista,
+            'Producto': item.producto,
+            'Categoría': item.categoria,
+            'Departamento': item.departamento,
+            'Cuadrante': item.cuadrante,
+            'Estado': item.estado,
+            'Inventario Inicial': item.inv_inicial,
+            'Inventario Final': item.inv_final,
+            'Caras': item.caras,
+            'Precio Bs': isPan ? null : item.precio_bs,
+            'Precio $': isPan ? item.precio_bs : item.precio_ds
+          };
+        });
 
         const ws: XLSX.WorkSheet = XLSX.utils.json_to_sheet(dataToExport);
         const wb: XLSX.WorkBook = XLSX.utils.book_new();

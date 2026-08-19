@@ -59,16 +59,21 @@ USER 10001
 
 EXPOSE 8000
 
-# 2 workers (restaurado 19 ago 2026): app/services/redis_pubsub.py ya saca
-# el estado de WebSocket de la memoria de un solo proceso (pub/sub sobre
-# Redis, Fase A/B/C validadas 4 ago) -- este valor YA se había subido a 2 ese
-# mismo día, con limits.cpu subido a "4" (2 núcleos por worker, ver
-# k8s/backend-deployment.yaml) para que ambos workers no compitan por el
-# mismo techo. El merge de 2cb723b (11 ago, módulo mercaderista, rama vieja
-# de antes de esta migración) lo revirtió a 1 en silencio -- ningún commit
-# lo decidió a propósito, quedó así 8 días sin que nadie lo notara. Si se
-# vuelve a tocar este archivo, confirmar que limits.cpu siga en "4" antes de
-# subir --workers de nuevo.
+# --workers vía env var UVICORN_WORKERS (forma shell del CMD, aportado por
+# zek3rdc 19 ago) -- esto es justo lo que hacía falta: el valor por
+# ambiente ya no vive hardcodeado en este archivo, así que un merge entre
+# main/qa nunca más lo puede pisar en silencio (ver el default "2" abajo,
+# que YA fue revertido sin querer dos veces en este archivo antes de este
+# cambio -- una vez el 11 ago por un merge de rama vieja, otra vez el 19 ago
+# por un valor "6" sin CPU/pool recalculado, ver k8s/backend-deployment.yaml).
+#
+# Default 2 (no 1): es el valor validado el 4 ago -- Fase A/B/C de
+# redis_pubsub.py ya sacan el estado de WebSocket de la memoria de un solo
+# proceso, así que 2 workers es seguro EN CUANTO limits.cpu y DB_POOL_SIZE
+# estén calibrados para esa cantidad de procesos (ver k8s/backend-
+# deployment.yaml y k8s/configmap-backend.yaml). Si se sube este número acá
+# o en el Deployment, hay que subir limits.cpu y bajar DB_POOL_SIZE/
+# DB_MAX_OVERFLOW en la misma proporción -- eso fue lo que faltó el 19 ago.
 #
 # --proxy-headers + --forwarded-allow-ips='*': sin esto, uvicorn ignora el
 # X-Forwarded-Proto que manda el nginx del frontend (ver frontend/nginx.conf)
@@ -78,4 +83,4 @@ EXPOSE 8000
 # '*' es seguro acá: este proceso solo es alcanzable vía el Service interno
 # del cluster (nunca expuesto directo a internet), así que no hay un
 # atacante externo que pueda falsificar el header saltándose a nginx.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips=*"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --proxy-headers --forwarded-allow-ips='*'

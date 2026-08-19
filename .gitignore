@@ -6,7 +6,15 @@ backend/.env
 backend/app.db
 backend/*.log
 backend/.pytest_cache/
+.venv/
+venv/
+.venv*
+*.venv
 backend/.venv
+**/.venv/
+**/venv/
+env/
+ENV/
 
 frontend/node_modules/
 frontend/dist/

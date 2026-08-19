@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
-from typing import List
-from app.db.session import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import or_, func, select, delete
+from typing import List, Optional
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import require_admin, get_current_user, require_permission, _cache_invalidate_user
 from app.core.security import get_password_hash
 from app.models.mercaderista import Mercaderista
@@ -13,7 +14,7 @@ from app.schemas.user import UsuarioCreate, UsuarioUpdate, UsuarioResponse, Upda
 from app.schemas.cliente import ClienteCreate, ClienteResponse
 from app.services.audit_service import log_action
 from app.services.realtime import notify_event
-from app.services.default_permissions import seed_default_permissions
+from app.services.default_permissions import seed_default_permissions, async_seed_default_permissions
 from app.core.request_ip import get_client_ip
 
 router = APIRouter(prefix="/api/users", tags=["Usuarios"])
@@ -24,18 +25,16 @@ from app.models.ejecutivo import Ejecutivo
 
 @router.get("")
 @router.get("/")
-def list_users(
+async def list_users(
     skip: int = 0,
-    limit: int = 100,
+    limit: Optional[int] = Query(None),
     search: str = Query(None, alias="q"),
-    id_rol: int = Query(None),
-    rol: str = Query(None),
-    db: Session = Depends(get_db),
+    id_rol: Optional[int] = Query(None),
+    rol: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',))),
 ):
-    effective_limit = min(max(1, limit), 300)
-
-    q = db.query(
+    q = select(
         Usuario,
         Cliente.nombre.label('cliente_nombre'),
         Analista.nombre.label('analista_nombre'),
@@ -85,7 +84,13 @@ def list_users(
             )
         )
 
-    users = q.order_by(Usuario.id).offset(skip).limit(effective_limit).all()
+    q = q.order_by(Usuario.id.desc())
+    if skip:
+        q = q.offset(skip)
+    if limit is not None:
+        q = q.limit(min(max(1, limit), 5000))
+
+    users = (await db.execute(q)).all()
 
     result = []
     for u, c_nombre, a_nombre, m_nombre, e_nombre, ej_nombre in users:
@@ -97,13 +102,13 @@ def list_users(
 
 @router.post("")
 @router.post("/")
-def create_user(
+async def create_user(
     data: UsuarioCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin',))),
 ):
-    existing = db.query(Usuario).filter(Usuario.username == data.username).first()
+    existing = (await db.execute(select(Usuario).filter(Usuario.username == data.username))).scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
 
@@ -112,11 +117,11 @@ def create_user(
     if data.id_rol in (12, 13) and not id_perfil and data.cedula:
         try:
             cedula_int = int(str(data.cedula).strip())
-            enc = db.query(Encuestador).filter(Encuestador.cedula == cedula_int).first()
+            enc = (await db.execute(select(Encuestador).filter(Encuestador.cedula == cedula_int))).scalars().first()
             if not enc:
                 enc = Encuestador(cedula=cedula_int, nombre=data.username, activo=data.activo if data.activo is not None else True)
                 db.add(enc)
-                db.flush()
+                await db.flush()
             id_perfil = enc.id
         except Exception:
             pass
@@ -131,8 +136,8 @@ def create_user(
         password=get_password_hash(data.password),
     )
     db.add(user)
-    db.flush()  # get user.id before commit
-    seed_default_permissions(db, user)
+    await db.flush()  # get user.id before commit
+    await async_seed_default_permissions(db, user)
 
     log_action(db, action="CREATE_USER", entity_type="Usuario",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
@@ -149,20 +154,20 @@ def create_user(
                        "activo": data.activo
                    }
                })
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     notify_event("user.created", {"id": user.id, "username": user.username})
     return user
 
 
 @router.delete("/{user_id}")
-def delete_user(
+async def delete_user(
     user_id: int,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('users', 'delete', fallback_roles=('admin',))),
 ):
-    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    user = (await db.execute(select(Usuario).filter(Usuario.id == user_id))).scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     username = user.username
@@ -180,20 +185,20 @@ def delete_user(
                ip_address=get_client_ip(request),
                entity_id=user_id, entity_name=username,
                changes={"old": old_values, "new": None})
-    db.commit()
+    await db.commit()
     notify_event("user.deleted", {"id": user_id})
     return {"message": "Usuario eliminado"}
 
 
 @router.patch("/{user_id}", response_model=UsuarioResponse)
-def update_user(
+async def update_user(
     user_id: int,
     data: UsuarioUpdate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin',))),
 ):
-    user = db.query(Usuario).filter(Usuario.id == user_id).first()
+    user = (await db.execute(select(Usuario).filter(Usuario.id == user_id))).scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
@@ -221,8 +226,8 @@ def update_user(
                ip_address=get_client_ip(request),
                entity_id=user_id, entity_name=user.username,
                changes={"old": old_values, "new": new_values, "modified_fields": list(update_data.keys())})
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     # Invalidar cache si el usuario fue desactivado o cambió rol
     if "activo" in update_data or "id_rol" in update_data:
         _cache_invalidate_user(user_id)
@@ -231,55 +236,55 @@ def update_user(
 
 
 @router.get("/analysts", response_model=List[UsuarioResponse])
-def get_analysts(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    return db.query(Usuario).filter(Usuario.id_rol == 2, Usuario.activo == True).all()
+async def get_analysts(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    return (await db.execute(select(Usuario).filter(Usuario.id_rol == 2, Usuario.activo == True))).scalars().all()
 
 
 @router.get("/supervisors", response_model=List[UsuarioResponse])
-def get_supervisors(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    return db.query(Usuario).filter(Usuario.id_rol == 6, Usuario.activo == True).all()
+async def get_supervisors(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    return (await db.execute(select(Usuario).filter(Usuario.id_rol == 6, Usuario.activo == True))).scalars().all()
 
 
 @router.get("/clients-list", response_model=List[ClienteResponse])
-def list_clients(db: Session = Depends(get_db), _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',)))):
-    return db.query(Cliente).filter(Cliente.activo == True).all()
+async def list_clients(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin',)))):
+    return (await db.execute(select(Cliente).filter(Cliente.activo == True))).scalars().all()
 
 
 @router.post("/clients", response_model=ClienteResponse, status_code=201)
-def add_client(
+async def add_client(
     data: ClienteCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin',))),
 ):
     client = Cliente(**data.model_dump())
     db.add(client)
-    db.commit()
-    db.refresh(client)
+    await db.commit()
+    await db.refresh(client)
     notify_event("client.created", {"id": getattr(client, "id_cliente", None)})
     return client
 
 
 @router.get("/{user_id}/permissions", response_model=List[PermissionResponse])
-def get_user_permissions(
+async def get_user_permissions(
     user_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_admin),
 ):
-    return db.query(UserPermission).filter(UserPermission.user_id == user_id).all()
+    return (await db.execute(select(UserPermission).filter(UserPermission.user_id == user_id))).scalars().all()
 
 
 @router.post("/{user_id}/permissions")
-def update_user_permissions(
+async def update_user_permissions(
     user_id: int,
     data: UpdatePermissionsRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_admin),
 ):
-    target = db.query(Usuario).filter(Usuario.id == user_id).first()
+    target = (await db.execute(select(Usuario).filter(Usuario.id == user_id))).scalars().first()
     
     # 0. Obtener permisos anteriores
-    old_perms_list = db.query(UserPermission).filter(UserPermission.user_id == user_id).all()
+    old_perms_list = (await db.execute(select(UserPermission).filter(UserPermission.user_id == user_id))).scalars().all()
     old_permissions = [
         {
             "module": p.module,
@@ -295,17 +300,20 @@ def update_user_permissions(
     sent_modules = [p['module'] for p in data.permissions]
     
     # 2. Borrar los permisos existentes que ya no están en la lista (ahora son 'inherit')
-    db.query(UserPermission).filter(
-        UserPermission.user_id == user_id,
-        UserPermission.module.notin_(sent_modules) if sent_modules else True
-    ).delete(synchronize_session=False)
+    if sent_modules:
+        await db.execute(delete(UserPermission).where(
+            UserPermission.user_id == user_id,
+            UserPermission.module.notin_(sent_modules)
+        ))
+    else:
+        await db.execute(delete(UserPermission).where(UserPermission.user_id == user_id))
 
     # 3. Actualizar o insertar los enviados
     for p in data.permissions:
-        existing = db.query(UserPermission).filter(
+        existing = (await db.execute(select(UserPermission).filter(
             UserPermission.user_id == user_id,
             UserPermission.module == p['module']
-        ).first()
+        ))).scalars().first()
         if existing:
             existing.can_read = p.get('can_read', existing.can_read)
             existing.can_write = p.get('can_write', existing.can_write)
@@ -330,7 +338,7 @@ def update_user_permissions(
                    "new": data.permissions,
                    "permissions": data.permissions
                })
-    db.commit()
+    await db.commit()
     # Invalidar cache del usuario: sus permisos han cambiado
     _cache_invalidate_user(user_id)
     return {"message": "Permisos actualizados"}
@@ -350,12 +358,12 @@ _ROL_NOMBRES: dict[int, str] = {
 }
 
 @router.get("/slim")
-def list_users_slim(
+async def list_users_slim(
     limit: int = Query(300, ge=1, le=500),
     search: str = Query(None, alias="q"),
     rol: str = Query(None),
     id_rol: int = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
     """Lista ligera de usuarios para selectores y dropdowns.
@@ -363,7 +371,7 @@ def list_users_slim(
     Hasta 10x más rápido que GET /api/users para este caso de uso."""
     effective_limit = min(max(1, limit), 500)
 
-    q = db.query(
+    q = select(
         Usuario.id,
         Usuario.username,
         Usuario.id_rol,
@@ -388,7 +396,7 @@ def list_users_slim(
             )
         )
 
-    rows = q.order_by(Usuario.username).limit(effective_limit).all()
+    rows = (await db.execute(q.order_by(Usuario.username).limit(effective_limit))).all()
     return [
         {
             "id": r.id,
@@ -427,9 +435,9 @@ class EncuestadorUpdate(BaseModel):
     password: Optional[str] = None
 
 @router.get("/encuestadores")
-def get_encuestadores_list(db: Session = Depends(get_db), _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin', 'supervisor')))):
-    encuestadores = db.query(Encuestador).order_by(Encuestador.nombre).all()
-    users_enc = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil.isnot(None)).all()
+async def get_encuestadores_list(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(require_permission('users', 'read', fallback_roles=('admin', 'supervisor')))):
+    encuestadores = (await db.execute(select(Encuestador).order_by(Encuestador.nombre))).scalars().all()
+    users_enc = (await db.execute(select(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil.isnot(None)))).scalars().all()
     user_map = {u.id_perfil: u for u in users_enc}
 
     return [{
@@ -447,12 +455,12 @@ def get_encuestadores_list(db: Session = Depends(get_db), _: Usuario = Depends(r
     } for e in encuestadores]
 
 @router.post("/encuestadores", status_code=201)
-def create_encuestador_item(
+async def create_encuestador_item(
     data: EncuestadorCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin', 'supervisor')))
 ):
-    existente = db.query(Encuestador).filter(Encuestador.cedula == data.cedula).first()
+    existente = (await db.execute(select(Encuestador).filter(Encuestador.cedula == data.cedula))).scalars().first()
     if existente:
         raise HTTPException(status_code=400, detail=f"Ya existe un encuestador con la cédula {data.cedula}")
 
@@ -464,10 +472,10 @@ def create_encuestador_item(
         activo=data.activo
     )
     db.add(enc)
-    db.flush()
+    await db.flush()
 
     if data.username and data.password:
-        user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip()).first()
+        user_existente = (await db.execute(select(Usuario).filter(Usuario.username == data.username.strip()))).scalars().first()
         if user_existente:
             raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
         nuevo_user = Usuario(
@@ -480,11 +488,11 @@ def create_encuestador_item(
             activo=data.activo
         )
         db.add(nuevo_user)
-        db.flush()
-        seed_default_permissions(db, nuevo_user)
+        await db.flush()
+        await async_seed_default_permissions(db, nuevo_user)
 
-    db.commit()
-    db.refresh(enc)
+    await db.commit()
+    await db.refresh(enc)
     return {
         "id": enc.id,
         "id_encuestador": enc.id,
@@ -496,13 +504,13 @@ def create_encuestador_item(
     }
 
 @router.put("/encuestadores/{id_encuestador}")
-def update_encuestador_item(
+async def update_encuestador_item(
     id_encuestador: int,
     data: EncuestadorUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('users', 'write', fallback_roles=('admin', 'supervisor')))
 ):
-    enc = db.query(Encuestador).filter(Encuestador.id == id_encuestador).first()
+    enc = (await db.execute(select(Encuestador).filter(Encuestador.id == id_encuestador))).scalars().first()
     if not enc:
         raise HTTPException(status_code=404, detail="Encuestador no encontrado")
 
@@ -517,7 +525,7 @@ def update_encuestador_item(
     if data.activo is not None:
         enc.activo = data.activo
 
-    user = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id).first()
+    user = (await db.execute(select(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id))).scalars().first()
     if user:
         if data.activo is not None:
             user.activo = data.activo
@@ -526,14 +534,14 @@ def update_encuestador_item(
         if data.cedula is not None:
             user.cedula = str(data.cedula)
         if data.username and data.username.strip() and data.username.strip() != user.username:
-            user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip(), Usuario.id != user.id).first()
+            user_existente = (await db.execute(select(Usuario).filter(Usuario.username == data.username.strip(), Usuario.id != user.id))).scalars().first()
             if user_existente:
                 raise HTTPException(status_code=400, detail="El nombre de usuario ya está en uso")
             user.username = data.username.strip()
         if data.password and data.password.strip():
             user.password = get_password_hash(data.password.strip())
     elif data.username and data.username.strip():
-        user_existente = db.query(Usuario).filter(Usuario.username == data.username.strip()).first()
+        user_existente = (await db.execute(select(Usuario).filter(Usuario.username == data.username.strip()))).scalars().first()
         if user_existente:
             raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
         nuevo_user = Usuario(
@@ -546,26 +554,26 @@ def update_encuestador_item(
             activo=enc.activo
         )
         db.add(nuevo_user)
-        db.flush()
-        seed_default_permissions(db, nuevo_user)
+        await db.flush()
+        await async_seed_default_permissions(db, nuevo_user)
 
-    db.commit()
+    await db.commit()
     return {"message": "Encuestador actualizado", "id": enc.id}
 
 @router.delete("/encuestadores/{id_encuestador}")
-def delete_encuestador_item(
+async def delete_encuestador_item(
     id_encuestador: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('users', 'delete', fallback_roles=('admin', 'supervisor')))
 ):
-    enc = db.query(Encuestador).filter(Encuestador.id == id_encuestador).first()
+    enc = (await db.execute(select(Encuestador).filter(Encuestador.id == id_encuestador))).scalars().first()
     if not enc:
         raise HTTPException(status_code=404, detail="Encuestador no encontrado")
 
-    user = db.query(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id).first()
+    user = (await db.execute(select(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id))).scalars().first()
     if user:
         db.delete(user)
 
     db.delete(enc)
-    db.commit()
+    await db.commit()
     return {"message": "Encuestador eliminado"}

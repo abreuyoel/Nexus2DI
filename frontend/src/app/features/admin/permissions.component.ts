@@ -61,7 +61,8 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
     } @else {
       <!-- Encabezado de columnas -->
       <div class="grid grid-cols-[1fr_90px_90px_90px_90px] gap-2 px-4 py-2 text-[10px] font-black text-slate-500 uppercase tracking-widest sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-        <span>Módulo / Botón</span><span class="text-center">Lectura</span><span class="text-center">Modificar</span><span class="text-center">Eliminar</span><span class="text-center">Ver todo</span>
+        <span>Módulo / Botón</span><span class="text-center">Lectura</span><span class="text-center">Modificar</span><span class="text-center">Eliminar</span>
+        <span class="text-center">Ver todo</span>
       </div>
       @for (root of roots(); track root.id) {
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl mb-3 overflow-hidden">
@@ -82,8 +83,54 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
             </span>
             <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_write" class="w-5 h-5 accent-violet-600"></span>
             <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_delete" class="w-5 h-5 accent-violet-600"></span>
-            <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_see_all" class="w-5 h-5 accent-amber-500"></span>
+            @if (root.clave !== 'data') {
+              <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_see_all" class="w-5 h-5 accent-amber-500"></span>
+            } @else {
+              <span class="text-center text-slate-400 dark:text-slate-600 text-xs">↓</span>
+            }
           </div>
+          <!-- ── Card especial: Filtro de productos para el módulo Data ── -->
+          @if (root.clave === 'data') {
+            <div class="px-5 py-4 border-b border-slate-100 dark:border-white/5"
+                 [class]="perms[root.clave].can_see_all ? 'bg-slate-50 dark:bg-slate-800/30' : 'bg-amber-50 dark:bg-amber-950/25'">
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-start gap-3">
+                  <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                       [class]="perms[root.clave].can_see_all ? 'bg-slate-200 dark:bg-slate-700' : 'bg-amber-500/20'">
+                    <mat-icon class="!text-lg" [class]="perms[root.clave].can_see_all ? 'text-slate-500' : 'text-amber-500'">
+                      {{ perms[root.clave].can_see_all ? 'category' : 'person_pin' }}
+                    </mat-icon>
+                  </div>
+                  <div>
+                    <p class="font-black text-sm" [class]="perms[root.clave].can_see_all ? 'text-slate-700 dark:text-slate-300' : 'text-amber-800 dark:text-amber-300'">
+                      Filtro de productos en la sección Data
+                    </p>
+                    <p class="text-xs mt-0.5 leading-relaxed" [class]="perms[root.clave].can_see_all ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-400'">
+                      @if (perms[root.clave].can_see_all) {
+                        Ve <strong>toda la categoría</strong> — incluyendo productos de marcas y competencia.
+                      } @else {
+                        Ve <strong>solo sus productos propios</strong> — no verá marcas ni competencia.
+                      }
+                    </p>
+                  </div>
+                </div>
+                <div class="flex flex-col items-center gap-1.5 shrink-0">
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" [(ngModel)]="perms[root.clave].can_see_all" class="sr-only peer">
+                    <div class="w-12 h-6 bg-amber-400 rounded-full peer peer-focus:ring-2 peer-focus:ring-amber-300
+                                peer-checked:bg-emerald-500
+                                after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                                after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
+                                peer-checked:after:translate-x-6"></div>
+                  </label>
+                  <span class="text-[10px] font-black tracking-tight"
+                        [class]="perms[root.clave].can_see_all ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">
+                    {{ perms[root.clave].can_see_all ? 'Categoría completa' : 'Solo propios' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          }
           <!-- acciones/botones hijos -->
           @for (h of hijos(root.id); track h.id) {
             <div class="grid grid-cols-[1fr_90px_90px_90px_90px] gap-2 items-center px-4 py-2.5 border-b border-slate-100 dark:border-white/5 last:border-0">

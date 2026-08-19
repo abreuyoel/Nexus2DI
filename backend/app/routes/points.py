@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select, func
 from typing import List, Optional, Union
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.models.user import Usuario
 from app.models.punto import PuntoInteres
@@ -16,17 +17,17 @@ from app.core.request_ip import get_client_ip
 router = APIRouter(prefix="/api/points", tags=["Puntos de Interés"])
 
 
-def _apply_client_pdv_filter(query, current_user: Usuario, db: Session):
+async def _apply_client_pdv_filter(query, current_user: Usuario, db: AsyncSession):
     """Si el usuario es cliente puro (id_rol=1), restringe la consulta de
     PuntoInteres a los que están en RUTA_PROGRAMACION para su id_cliente
     (USUARIOS.id_perfil). Retorna la query sin modificar para otros roles."""
     if current_user.rol != "client" or not current_user.id_perfil:
         return query
-    ids_pdv = db.execute(text("""
+    ids_pdv = (await db.execute(text("""
         SELECT DISTINCT rp.id_punto_interes
         FROM RUTA_PROGRAMACION rp
         WHERE rp.id_cliente = :cid AND rp.activa = 1
-    """), {"cid": int(current_user.id_perfil)}).scalars().all()
+    """), {"cid": int(current_user.id_perfil)})).scalars().all()
     if not ids_pdv:
         return query.filter(PuntoInteres.id == None)  # noqa: E711
     return query.filter(PuntoInteres.id.in_(ids_pdv))
@@ -34,7 +35,7 @@ def _apply_client_pdv_filter(query, current_user: Usuario, db: Session):
 
 @router.get("", response_model=List[Union[PuntoInteresResponse, PuntoInteresClienteResponse]])
 @router.get("/", response_model=List[Union[PuntoInteresResponse, PuntoInteresClienteResponse]], include_in_schema=False)
-def list_points(
+async def list_points(
     region: Optional[str] = None,
     ciudad: Optional[str] = None,
     cadena: Optional[str] = None,
@@ -44,12 +45,12 @@ def list_points(
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    query = db.query(PuntoInteres)
+    query = select(PuntoInteres)
     # Filtrar PDVs por cliente si es rol 'client'
-    query = _apply_client_pdv_filter(query, current_user, db)
+    query = await _apply_client_pdv_filter(query, current_user, db)
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -67,7 +68,7 @@ def list_points(
             PuntoInteres.nombre.ilike(f"%{search}%") |
             PuntoInteres.id.ilike(f"%{search}%")
         )
-    rows = query.order_by(PuntoInteres.nombre).offset(skip).limit(limit).all()
+    rows = (await db.execute(query.order_by(PuntoInteres.nombre).offset(skip).limit(limit))).scalars().all()
     # El cliente no recibe coordenadas geográficas
     if current_user.rol == "client":
         return [PuntoInteresClienteResponse.model_validate(r) for r in rows]
@@ -76,13 +77,20 @@ def list_points(
 
 @router.post("", response_model=PuntoInteresResponse, status_code=201)
 @router.post("/", response_model=PuntoInteresResponse, status_code=201, include_in_schema=False)
-def create_point(
+async def create_point(
     data: PuntoInteresCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
-    punto = PuntoInteres(**data.model_dump())
+    from datetime import datetime
+    punto_data = data.model_dump()
+    if punto_data.get("tiempo_minimo") is None:
+        punto_data["tiempo_minimo"] = 15
+    if punto_data.get("fecha_creado") is None:
+        punto_data["fecha_creado"] = datetime.now()
+
+    punto = PuntoInteres(**punto_data)
     db.add(punto)
     db.flush()
 
@@ -91,60 +99,108 @@ def create_point(
                ip_address=get_client_ip(request),
                entity_id=punto.id, entity_name=getattr(punto, 'nombre', str(punto.id)),
                changes=data.model_dump())
-    db.commit()
-    db.refresh(punto)
+    await db.commit()
+    await db.refresh(punto)
     return punto
 
 
 @router.get("/regions/list")
-def get_regions(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(DepartamentoGeo.nombre).filter(DepartamentoGeo.activo == True).order_by(DepartamentoGeo.nombre).all()
-    return [r[0] for r in rows]
+async def get_regions(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(select(DepartamentoGeo.nombre).filter(DepartamentoGeo.activo == True).order_by(DepartamentoGeo.nombre))).scalars().all()
+    return list(rows)
 
 
 @router.get("/cities/list")
-def get_cities(
+async def get_cities(
     departamento: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
     """Lista ciudades activas. Si se pasa ?departamento=Nombre devuelve sólo las
     de ese departamento."""
-    q = db.query(Ciudad.nombre).filter(Ciudad.activo == True)
+    q = select(Ciudad.nombre).filter(Ciudad.activo == True)
     if departamento:
         q = q.join(DepartamentoGeo, Ciudad.departamento_id == DepartamentoGeo.id).filter(
             DepartamentoGeo.nombre == departamento
         )
-    rows = q.order_by(Ciudad.nombre).all()
+    rows = (await db.execute(q.order_by(Ciudad.nombre))).all()
     return [r[0] for r in rows]
+
+
+@router.get("/localities/list")
+async def get_localities(
+    ciudad: Optional[str] = None,
+    departamento: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_db),
+    _: Usuario = Depends(get_current_user),
+):
+    query = select(PuntoInteres.localidad).filter(
+        PuntoInteres.localidad.isnot(None),
+        PuntoInteres.localidad != ''
+    )
+    if ciudad:
+        query = query.filter(PuntoInteres.ciudad == ciudad)
+    if departamento:
+        query = query.filter(PuntoInteres.departamento == departamento)
+    rows = (await db.execute(query.distinct().order_by(PuntoInteres.localidad))).scalars().all()
+    return list(rows)
 
 
 @router.get("/chains/list")
-def get_chains(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(CanalVenta.nombre).filter(CanalVenta.activo == True).order_by(CanalVenta.nombre).all()
-    return [r[0] for r in rows]
+async def get_chains(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(select(CanalVenta.nombre).filter(CanalVenta.activo == True).order_by(CanalVenta.nombre))).scalars().all()
+    return list(rows)
 
 
 @router.get("/jerarquia_n2/list")
-def get_jerarquia_n2(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(TipoNegocio.nombre).filter(TipoNegocio.activo == True).order_by(TipoNegocio.nombre).all()
-    return [r[0] for r in rows]
+async def get_jerarquia_n2(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(select(TipoNegocio.nombre).filter(TipoNegocio.activo == True).order_by(TipoNegocio.nombre))).scalars().all()
+    return list(rows)
 
 
 @router.get("/jerarquia_n2_2/list")
-def get_jerarquia_n2_2(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(SubtipoNegocio.nombre).filter(SubtipoNegocio.activo == True).order_by(SubtipoNegocio.nombre).all()
-    return [r[0] for r in rows]
+async def get_jerarquia_n2_2(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(select(SubtipoNegocio.nombre).filter(SubtipoNegocio.activo == True).order_by(SubtipoNegocio.nombre))).scalars().all()
+    return list(rows)
 
 
 @router.get("/nivel_alcance/list")
-def get_nivel_alcance(db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.query(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre).all()
-    return [r[0] for r in rows]
+async def get_nivel_alcance(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(select(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre))).scalars().all()
+    return list(rows)
+
+
+@router.get("/generate-id")
+async def generate_point_id(
+    name: str = Query(...),
+    db: AsyncSession = Depends(get_async_db),
+    _: Usuario = Depends(get_current_user),
+):
+    import re
+    clean_name = re.sub(r'[^a-zA-Z]', '', name).upper()
+    prefix = clean_name[:3] if len(clean_name) >= 3 else (clean_name + "PDV")[:3]
+    
+    query = select(PuntoInteres.id).filter(PuntoInteres.id.like(f"{prefix}%"))
+    rows = (await db.execute(query)).scalars().all()
+    
+    max_num = 0
+    for rid in rows:
+        digits = re.findall(r'\d+', rid)
+        if digits:
+            try:
+                num = int(digits[-1])
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+                
+    next_num = max_num + 1
+    generated_id = f"{prefix}{next_num:04d}"
+    return {"id": generated_id}
 
 
 @router.get("/count")
-def count_points(
+async def count_points(
     region: Optional[str] = None,
     ciudad: Optional[str] = None,
     cadena: Optional[str] = None,
@@ -152,11 +208,11 @@ def count_points(
     jerarquia_n2_2: Optional[str] = None,
     nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    query = db.query(PuntoInteres)
-    query = _apply_client_pdv_filter(query, current_user, db)
+    query = select(func.count()).select_from(PuntoInteres)
+    query = await _apply_client_pdv_filter(query, current_user, db)
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -174,16 +230,17 @@ def count_points(
             PuntoInteres.nombre.ilike(f"%{search}%") |
             PuntoInteres.id.ilike(f"%{search}%")
         )
-    return {"total": query.count()}
+    total = (await db.execute(query)).scalar() or 0
+    return {"total": total}
 
 
 @router.get("/{point_id}")
-def get_point(
+async def get_point(
     point_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
+    punto = (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == point_id))).scalars().first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
     # El cliente no recibe coordenadas geográficas
@@ -193,13 +250,13 @@ def get_point(
 
 
 @router.delete("/{point_id}")
-def delete_point(
+async def delete_point(
     point_id: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'delete', fallback_roles=("admin", "analyst", "atc"))),
 ):
-    punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
+    punto = (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == point_id))).scalars().first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
 
@@ -222,10 +279,10 @@ def delete_point(
     ]
     motivos = []
     for tabla, columna, etiqueta in tablas_bloqueantes:
-        existe = db.execute(
+        existe = (await db.execute(
             text(f"SELECT TOP 1 1 FROM {tabla} WHERE {columna} = :pid"),
             {"pid": point_id},
-        ).first()
+        )).first()
         if existe:
             motivos.append(etiqueta)
     if motivos:
@@ -236,25 +293,25 @@ def delete_point(
         )
 
     nombre = getattr(punto, 'nombre', point_id)
-    db.delete(punto)
+    await db.delete(punto)
 
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=point_id, entity_name=nombre)
-    db.commit()
+    await db.commit()
     return {"message": "Punto eliminado"}
 
 
 @router.put("/{point_id}", response_model=PuntoInteresResponse)
-def update_point(
+async def update_point(
     point_id: str,
     data: PuntoInteresUpdate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'write', fallback_roles=("admin", "analyst", "atc"))),
 ):
-    punto = db.query(PuntoInteres).filter(PuntoInteres.id == point_id).first()
+    punto = (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == point_id))).scalars().first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
     changes = data.model_dump(exclude_none=True)
@@ -266,16 +323,16 @@ def update_point(
                ip_address=get_client_ip(request),
                entity_id=point_id, entity_name=getattr(punto, 'nombre', point_id),
                changes=changes)
-    db.commit()
-    db.refresh(punto)
+    await db.commit()
+    await db.refresh(punto)
     return punto
 
 
 @router.post("/merge-and-delete")
-def merge_and_delete_point_endpoint(
+async def merge_and_delete_point_endpoint(
     payload: dict,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('points', 'delete', fallback_roles=("admin", "analyst"))),
 ):
     pdv_eliminar = payload.get("pdv_id_eliminar")

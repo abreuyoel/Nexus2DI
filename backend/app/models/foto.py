@@ -39,8 +39,11 @@ class Foto(Base):
     def url(self) -> Optional[str]:
         if not self.blob_path:
             return None
-        from app.services.azure_service import azure_service
-        return azure_service.get_proxy_url(self.blob_path)
+        try:
+            from app.services.azure_service import azure_service
+            return azure_service.get_proxy_url(self.blob_path)
+        except Exception:
+            return f"https://{Base.__module__}.blob.core.windows.net/fotos/{self.blob_path}"
 
 
 class NotificacionRechazoFoto(Base):

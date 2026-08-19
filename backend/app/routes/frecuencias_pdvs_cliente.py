@@ -4,11 +4,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Form
 import io
 import pandas as pd
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import text, select, delete as sa_delete
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
-from app.db.session import get_db
+from app.db.session import get_async_db
 from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.cliente import Cliente
@@ -22,25 +22,24 @@ from app.schemas.frecuencia_pdv_cliente import (
 router = APIRouter(prefix="/api/frecuencias-pdvs-cliente", tags=["Frecuencias PDVs Cliente"])
 
 
-def _query_con_joins(db: Session):
+def _build_stmt():
     return (
-        db.query(FrecuenciaPdvCliente, Cliente.nombre, PuntoInteres.nombre, Usuario.username)
+        select(
+            FrecuenciaPdvCliente,
+            Cliente.nombre.label("cliente_nombre"),
+            PuntoInteres.nombre.label("pdv_nombre"),
+            Usuario.username.label("usuario_username")
+        )
         .outerjoin(Cliente, Cliente.id == FrecuenciaPdvCliente.id_cliente)
         .outerjoin(PuntoInteres, PuntoInteres.id == FrecuenciaPdvCliente.id_punto_interes)
         .outerjoin(Usuario, Usuario.id == FrecuenciaPdvCliente.id_usuario)
     )
 
 
-def _scope_analista(q, current_user: Usuario):
-    """Restringe a las (PDV, cliente) cubiertas por las rutas asignadas al
-    analista via analistas_rutas -> RUTA_PROGRAMACION (activa=1) -- misma
-    fuente de verdad que mk_analyst() (centro_mando.py) y _analyst_filter()
-    (client_data.py). Antes este endpoint no tenía NINGÚN filtro por
-    analista: cualquier analista veía las frecuencias de TODOS los clientes.
-    Admin (y cualquier no-analista) no se restringe."""
+def _scope_analista_stmt(stmt, current_user: Usuario):
     if not (current_user.is_analyst and current_user.id_perfil):
-        return q
-    return q.filter(text("""
+        return stmt
+    return stmt.filter(text("""
         EXISTS (
             SELECT 1 FROM RUTA_PROGRAMACION rp_a
             JOIN analistas_rutas ar_a ON rp_a.id_ruta = ar_a.id_ruta
@@ -51,45 +50,48 @@ def _scope_analista(q, current_user: Usuario):
     """)).params(analista_id=int(current_user.id_perfil))
 
 
-def _to_resp(f: FrecuenciaPdvCliente, cliente_nombre=None, pdv_nombre=None, usuario_username=None) -> FrecuenciaPdvClienteResponse:
+def _to_resp(row) -> FrecuenciaPdvClienteResponse:
+    f = row.FrecuenciaPdvCliente
     return FrecuenciaPdvClienteResponse(
         id=f.id, id_cliente=f.id_cliente, id_punto_interes=f.id_punto_interes,
         frecuencia_semanal=float(f.frecuencia_semanal), observaciones=f.observaciones, activo=f.activo,
         fecha_creacion=f.fecha_creacion, fecha_modificacion=f.fecha_modificacion, id_usuario=f.id_usuario,
-        cliente_nombre=cliente_nombre, pdv_nombre=pdv_nombre, usuario_username=usuario_username,
+        cliente_nombre=row.cliente_nombre, pdv_nombre=row.pdv_nombre, usuario_username=row.usuario_username,
     )
 
 
 @router.get("", response_model=List[FrecuenciaPdvClienteResponse])
-def list_frecuencias(
+async def list_frecuencias(
     id_cliente: Optional[int] = Query(None),
     id_punto_interes: Optional[str] = Query(None),
     activo: Optional[bool] = Query(None),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
-    q = _query_con_joins(db)
+    stmt = _build_stmt()
     if id_cliente is not None:
-        q = q.filter(FrecuenciaPdvCliente.id_cliente == id_cliente)
+        stmt = stmt.filter(FrecuenciaPdvCliente.id_cliente == id_cliente)
     if id_punto_interes is not None:
-        q = q.filter(FrecuenciaPdvCliente.id_punto_interes == id_punto_interes)
+        stmt = stmt.filter(FrecuenciaPdvCliente.id_punto_interes == id_punto_interes)
     if activo is not None:
-        q = q.filter(FrecuenciaPdvCliente.activo == activo)
-    q = _scope_analista(q, current_user)
-    return [_to_resp(f, cn, pn, un) for f, cn, pn, un in q.order_by(FrecuenciaPdvCliente.id.desc()).all()]
+        stmt = stmt.filter(FrecuenciaPdvCliente.activo == activo)
+    stmt = _scope_analista_stmt(stmt, current_user)
+    stmt = stmt.order_by(FrecuenciaPdvCliente.id.desc())
+    rows = (await db.execute(stmt)).all()
+    return [_to_resp(row) for row in rows]
 
 
 @router.get("/pdvs-disponibles/{id_cliente}")
-def pdvs_disponibles_cliente(
+async def pdvs_disponibles_cliente(
     id_cliente: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read')),
 ):
     """PDVs unicos donde aparece el cliente en RUTA_PROGRAMACION, marcando la
     frecuencia ya asignada (si existe) para poder editarla en la carga masiva.
     Si el que pregunta es analista, solo ve los PDVs de ESE cliente que caen
     dentro de sus propias rutas asignadas (analistas_rutas)."""
-    if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
+    if not (await db.execute(select(Cliente).filter(Cliente.id == id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
     scope_sql = ""
     params = {"cid": id_cliente}
@@ -99,16 +101,16 @@ def pdvs_disponibles_cliente(
                 WHERE ar_a.id_ruta = rp.id_ruta AND ar_a.id_analista = :analista_id)
         """
         params["analista_id"] = int(current_user.id_perfil)
-    rows = db.execute(text(f"""
+    rows = (await db.execute(text(f"""
         SELECT DISTINCT rp.id_punto_interes, rp.punto_interes
         FROM RUTA_PROGRAMACION rp
         WHERE rp.id_cliente = :cid AND rp.activa = 1 AND rp.id_punto_interes IS NOT NULL
         {scope_sql}
         ORDER BY rp.punto_interes
-    """), params).fetchall()
+    """), params)).fetchall()
     existentes = {
         f.id_punto_interes: f
-        for f in db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id_cliente == id_cliente).all()
+        for f in (await db.execute(select(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id_cliente == id_cliente))).scalars().all()
     }
     resultado = []
     for pdv_id, pdv_nombre in rows:
@@ -124,21 +126,23 @@ def pdvs_disponibles_cliente(
 
 
 @router.post("/bulk")
-def bulk_upsert_frecuencias(
+async def bulk_upsert_frecuencias(
     data: FrecuenciaBulkCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.carga_masiva', 'read')),
 ):
     """Crea o actualiza (upsert) varias frecuencias de una vez para un mismo
     cliente — pensado para la carga masiva desde los PDVs de su programación."""
-    if not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
+    if not (await db.execute(select(Cliente).filter(Cliente.id == data.id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
     creados = 0
     actualizados = 0
     for item in data.items:
-        existente = db.query(FrecuenciaPdvCliente).filter_by(
-            id_cliente=data.id_cliente, id_punto_interes=item.id_punto_interes
-        ).first()
+        existente = (await db.execute(
+            select(FrecuenciaPdvCliente).filter_by(
+                id_cliente=data.id_cliente, id_punto_interes=item.id_punto_interes
+            )
+        )).scalars().first()
         if existente:
             existente.frecuencia_semanal = item.frecuencia_semanal
             existente.observaciones = item.observaciones
@@ -153,28 +157,27 @@ def bulk_upsert_frecuencias(
                 activo=True, id_usuario=current_user.id,
             ))
             creados += 1
-    db.commit()
+    await db.commit()
     return {"creados": creados, "actualizados": actualizados}
 
 
 @router.get("/{id_frecuencia}", response_model=FrecuenciaPdvClienteResponse)
-def get_frecuencia(id_frecuencia: int, db: Session = Depends(get_db), _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read'))):
-    row = _query_con_joins(db).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
+async def get_frecuencia(id_frecuencia: int, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente', 'read'))):
+    row = (await db.execute(_build_stmt().filter(FrecuenciaPdvCliente.id == id_frecuencia))).first()
     if not row:
         raise HTTPException(404, "Registro no encontrado")
-    f, cn, pn, un = row
-    return _to_resp(f, cn, pn, un)
+    return _to_resp(row)
 
 
 @router.post("", response_model=FrecuenciaPdvClienteResponse, status_code=201)
-def create_frecuencia(
+async def create_frecuencia(
     data: FrecuenciaPdvClienteCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.crear', 'read')),
 ):
-    if not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
+    if not (await db.execute(select(Cliente).filter(Cliente.id == data.id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
-    if not db.query(PuntoInteres).filter(PuntoInteres.id == data.id_punto_interes).first():
+    if not (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == data.id_punto_interes))).scalars().first():
         raise HTTPException(404, "PDV no existe")
     f = FrecuenciaPdvCliente(
         id_cliente=data.id_cliente, id_punto_interes=data.id_punto_interes,
@@ -182,59 +185,59 @@ def create_frecuencia(
         activo=data.activo, id_usuario=current_user.id,
     )
     db.add(f)
-    db.commit()
-    db.refresh(f)
-    return get_frecuencia(f.id, db, current_user)
+    await db.commit()
+    await db.refresh(f)
+    return await get_frecuencia(f.id, db, current_user)
 
 
 @router.put("/{id_frecuencia}", response_model=FrecuenciaPdvClienteResponse)
-def update_frecuencia(
+async def update_frecuencia(
     id_frecuencia: int,
     data: FrecuenciaPdvClienteUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.editar', 'read')),
 ):
-    f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
+    f = (await db.execute(select(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia))).scalars().first()
     if not f:
         raise HTTPException(404, "Registro no encontrado")
-    if data.id_cliente is not None and not db.query(Cliente).filter(Cliente.id == data.id_cliente).first():
+    if data.id_cliente is not None and not (await db.execute(select(Cliente).filter(Cliente.id == data.id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
-    if data.id_punto_interes is not None and not db.query(PuntoInteres).filter(PuntoInteres.id == data.id_punto_interes).first():
+    if data.id_punto_interes is not None and not (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == data.id_punto_interes))).scalars().first():
         raise HTTPException(404, "PDV no existe")
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(f, k, v)
     f.id_usuario = current_user.id
     f.fecha_modificacion = datetime.utcnow()
-    db.commit()
-    return get_frecuencia(id_frecuencia, db, current_user)
+    await db.commit()
+    return await get_frecuencia(id_frecuencia, db, current_user)
 
 
 @router.delete("/{id_frecuencia}")
-def delete_frecuencia(
+async def delete_frecuencia(
     id_frecuencia: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.eliminar', 'read')),
 ):
-    f = db.query(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia).first()
+    f = (await db.execute(select(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id == id_frecuencia))).scalars().first()
     if not f:
         raise HTTPException(404, "Registro no encontrado")
-    db.delete(f)
-    db.commit()
+    await db.delete(f)
+    await db.commit()
     return {"detail": "Registro eliminado"}
 
 
 @router.post("/importar-excel")
-def importar_excel_frecuencias(
+async def importar_excel_frecuencias(
     id_cliente: int = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission('frecuencias-pdvs-cliente.carga_masiva', 'read')),
 ):
     """
     Recibe el archivo Excel cargado por el usuario, valida que corresponda al cliente,
     y realiza el upsert de frecuencias de forma masiva y optimizada en la base de datos.
     """
-    if not db.query(Cliente).filter(Cliente.id == id_cliente).first():
+    if not (await db.execute(select(Cliente).filter(Cliente.id == id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
         
     try:
@@ -286,9 +289,11 @@ def importar_excel_frecuencias(
             obs_raw = row[col_obs]
             obs_val = str(obs_raw).strip() if not pd.isna(obs_raw) else None
             
-            existente = db.query(FrecuenciaPdvCliente).filter_by(
-                id_cliente=id_cliente, id_punto_interes=id_pdv
-            ).first()
+            existente = (await db.execute(
+                select(FrecuenciaPdvCliente).filter_by(
+                    id_cliente=id_cliente, id_punto_interes=id_pdv
+                )
+            )).scalars().first()
             
             if existente:
                 existente.frecuencia_semanal = freq_val
@@ -305,10 +310,11 @@ def importar_excel_frecuencias(
                 ))
                 creados += 1
                 
-        db.commit()
+        await db.commit()
         return {"creados": creados, "actualizados": actualizados}
         
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(500, f"Error al procesar el archivo Excel en el servidor: {str(e)}")
+
