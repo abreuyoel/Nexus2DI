@@ -102,4 +102,6 @@ export interface PuntoInteres {
   longitud?: string;
   rif?: string;
   radio?: string;
+  tiempo_minimo?: number;
+  fecha_creado?: string;
 }

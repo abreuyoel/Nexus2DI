@@ -30,6 +30,7 @@ export interface SelectOption {
           [ngModel]="search()"
           (ngModelChange)="onSearchInput($event)"
           (keydown.escape)="close()"
+          (keydown.enter)="onEnterKey($event)"
           [placeholder]="searchPlaceholder">
         @if (search()) {
           <button type="button" class="ss-clear-search" (click)="onSearchInput('')">
@@ -46,6 +47,13 @@ export interface SelectOption {
           <span>{{ allLabel }}</span>
         </button>
 
+        @if (allowCustom && search().trim() && !hasExactMatch()) {
+          <button type="button" class="ss-item ss-add-custom" (click)="pick(search().trim())">
+            <mat-icon class="ss-item-icon">add_circle</mat-icon>
+            <span class="ss-item-label font-bold">Añadir "{{ search().trim() }}"</span>
+          </button>
+        }
+
         @for (opt of filtered(); track opt.value) {
           <button type="button" class="ss-item"
             [class.ss-active]="opt.value === value"
@@ -57,7 +65,7 @@ export interface SelectOption {
           </button>
         }
 
-        @if (filtered().length === 0) {
+        @if (filtered().length === 0 && (!search().trim() || hasExactMatch())) {
           <div class="ss-empty">
             <mat-icon>search_off</mat-icon>
             <span>Sin coincidencias</span>
@@ -175,6 +183,27 @@ export interface SelectOption {
     .ss-item-all:hover { color: #6d28d9; }
     :host-context(.dark) .ss-item-all:hover { color: #a78bfa; }
 
+    .ss-add-custom {
+      border-bottom: 1px solid #e2e8f0;
+      background: #f0fdf4;
+      color: #16a34a;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    :host-context(.dark) .ss-add-custom {
+      border-bottom-color: rgba(255,255,255,0.08);
+      background: rgba(22,163,74,0.15);
+      color: #4ade80;
+    }
+    .ss-add-custom:hover {
+      background: #dcfce7;
+      color: #15803d;
+    }
+    :host-context(.dark) .ss-add-custom:hover {
+      background: rgba(22,163,74,0.25);
+      color: #86efac;
+    }
+
     .ss-empty {
       display: flex; flex-direction: column; align-items: center; gap: .5rem;
       padding: 2rem 1rem; color: #94a3b8; font-size: .875rem;
@@ -208,6 +237,7 @@ export class SearchableSelectComponent {
   @Input() icon: string = 'list';
   @Input() align: 'left' | 'right' = 'left';
   @Input() disabled: boolean = false;
+  @Input() allowCustom: boolean = false;
 
   @Output() valueChange = new EventEmitter<string>();
   @Output() searchChange = new EventEmitter<string>();
@@ -221,8 +251,9 @@ export class SearchableSelectComponent {
   selectedLabel = computed(() => {
     const opts = this._options() || [];
     const val = (this._value() ?? '').toString();
+    if (!val) return '';
     const opt = opts.find(o => o && String(o.value) === val);
-    return opt ? (opt.label ?? '') : '';
+    return opt ? (opt.label ?? '') : val;
   });
 
   filtered = computed(() => {
@@ -237,9 +268,29 @@ export class SearchableSelectComponent {
     });
   });
 
+  hasExactMatch = computed(() => {
+    const q = (this.search() ?? '').toString().trim().toLowerCase();
+    if (!q) return true;
+    const opts = this._options() || [];
+    return opts.some(o => o && (o.label ?? '').toString().toLowerCase() === q);
+  });
+
   onSearchInput(val: string): void {
     this.search.set(val);
     this.searchChange.emit(val);
+  }
+
+  onEnterKey(e: Event): void {
+    e.preventDefault();
+    const q = (this.search() ?? '').toString().trim();
+    if (!q) return;
+    const opts = this._options() || [];
+    const exact = opts.find(o => o && (o.label ?? '').toString().toLowerCase() === q.toLowerCase());
+    if (exact) {
+      this.pick(exact.value);
+    } else if (this.allowCustom) {
+      this.pick(q);
+    }
   }
 
   toggle(): void {
