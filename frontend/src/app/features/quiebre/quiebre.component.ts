@@ -35,6 +35,15 @@ export class QuiebreComponent implements OnInit {
   lineaBaseFecha = signal<string | null>(null);
   lineaBaseGrupos = signal(0);
 
+  // S1 -- Fase 2, pronóstico sobre lo que N2 ya marcó en riesgo.
+  pronosticoAbierto = signal(false);
+  pronosticoCargado = signal(false);
+  cargandoPronostico = signal(false);
+  pronosticoCandidatos = signal(0);
+  pronosticoConHistorial = signal(0);
+  pronosticoMinSemanas = signal(8);
+  pronosticoItems = signal<any[]>([]);
+
   filtroRiesgo = '';
   filtroUrgente = false;
   filtroCliente = '';
@@ -117,6 +126,29 @@ export class QuiebreComponent implements OnInit {
         setTimeout(() => { this.recalculandoBase.set(false); this.loadLineaBaseInfo(); }, 20000);
       },
       error: () => { this.recalculandoBase.set(false); this.snack.open('Error al recalcular la línea base', 'OK', { duration: 3000 }); },
+    });
+  }
+
+  togglePronostico(): void {
+    this.pronosticoAbierto.set(!this.pronosticoAbierto());
+    if (this.pronosticoAbierto() && !this.pronosticoCargado()) this.cargarPronostico();
+  }
+
+  cargarPronostico(): void {
+    this.cargandoPronostico.set(true);
+    this.api.getPronosticoQuiebre().subscribe({
+      next: (res) => {
+        this.pronosticoCandidatos.set(res?.candidatos_de_n2 || 0);
+        this.pronosticoConHistorial.set(res?.con_historial_suficiente || 0);
+        this.pronosticoMinSemanas.set(res?.min_semanas_requeridas || 8);
+        this.pronosticoItems.set((res?.pronosticos || []).filter((p: any) => p.suficiente_historial));
+        this.pronosticoCargado.set(true);
+        this.cargandoPronostico.set(false);
+      },
+      error: () => {
+        this.cargandoPronostico.set(false);
+        this.snack.open('Error al calcular el pronóstico', 'OK', { duration: 3000 });
+      },
     });
   }
 

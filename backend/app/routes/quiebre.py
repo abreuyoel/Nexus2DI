@@ -116,6 +116,25 @@ def listar_alertas(
     }
 
 
+@router.get("/pronostico")
+def pronostico_quiebre(
+    id_cliente: Optional[int] = None, horizonte_semanas: int = 6,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission('plan-accion', 'read')),
+):
+    """S1 -- Fase 2 de Quiebre. Pronostica, para las combinaciones SKU×PDV
+    que N2 YA marcó en riesgo, cuántas semanas de historial real hay y --
+    si alcanza el mínimo -- una proyección de `caras` a futuro con banda de
+    error. Las combinaciones sin suficiente historial se listan igual, con
+    suficiente_historial=false, nunca se omiten en silencio."""
+    from app.services.quiebre_forecast_service import calcular_pronostico_quiebre
+    try:
+        return calcular_pronostico_quiebre(db, id_cliente=id_cliente, horizonte_semanas=horizonte_semanas)
+    except Exception as e:
+        logger.error(f"[S1] Error calculando pronóstico: {e}")
+        raise HTTPException(status_code=500, detail="Error calculando el pronóstico de quiebre")
+
+
 @router.get("/linea-base/info")
 def info_linea_base(db: Session = Depends(get_db), current_user=Depends(require_permission('plan-accion', 'read'))):
     conn = db.connection().connection

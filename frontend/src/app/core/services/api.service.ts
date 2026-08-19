@@ -675,6 +675,9 @@ export class ApiService {
   recalcularQuiebreAlertas(sincrono = false): Observable<any> {
     return this.http.post<any>(`${this.base}/api/quiebre/alertas/recalcular`, {}, { params: this.params({ sincrono }) });
   }
+  getPronosticoQuiebre(opts: { id_cliente?: number; horizonte_semanas?: number } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre/pronostico`, { params: this.params(opts) });
+  }
 
   // --- QUIEBRE POR CADENA (agregado, sin atribución de marca) ---
   getQuiebrePorCadena(diasVentana = 30): Observable<any> {
