@@ -98,6 +98,12 @@ export const routes: Routes = [
         data: { roles: ['admin', 'analyst'] },
       },
       {
+        path: 'quiebre-cadena',
+        loadComponent: () => import('./features/quiebre-cadena/quiebre-cadena.component').then((m) => m.QuiebreCadenaComponent),
+        canActivate: [roleGuard],
+        data: { roles: ['admin', 'analyst'] },
+      },
+      {
         path: 'clientes-rutas',
         loadComponent: () => import('./features/clientes-rutas/clientes-rutas.component').then((m) => m.ClientesRutasComponent),
         canActivate: [roleGuard],

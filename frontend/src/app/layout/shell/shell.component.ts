@@ -65,6 +65,7 @@ export class ShellComponent implements OnInit {
     { label: 'Centro de Mando Auditoría', icon: 'fact_check', route: '/centro-mando-auditoria', roles: ['admin', 'analyst'] },
     { label: 'Plan de Acción', icon: 'assignment_late', route: '/plan-accion', roles: ['admin', 'analyst'] },
     { label: 'Quiebre Dinámico', icon: 'trending_down', route: '/quiebre', roles: ['admin', 'analyst'] },
+    { label: 'Quiebre por Cadena', icon: 'store_mall_directory', route: '/quiebre-cadena', roles: ['admin', 'analyst'] },
     { label: 'Rutas', icon: 'route', route: '/routes', roles: ['admin', 'analyst'], module: 'rutas' },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['admin', 'supervisor', 'atc'] },
     { label: 'Usuarios', icon: 'people', route: '/users', roles: ['admin'], module: 'users' },

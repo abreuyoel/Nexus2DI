@@ -676,6 +676,11 @@ export class ApiService {
     return this.http.post<any>(`${this.base}/api/quiebre/alertas/recalcular`, {}, { params: this.params({ sincrono }) });
   }
 
+  // --- QUIEBRE POR CADENA (agregado, sin atribución de marca) ---
+  getQuiebrePorCadena(diasVentana = 30): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/quiebre-cadena`, { params: this.params({ dias_ventana: diasVentana }) });
+  }
+
   // --- CLIENT CATEGORIES ---
   getClientCategories(clientId: number): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/clients/${clientId}/categorias`);

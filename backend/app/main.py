@@ -275,6 +275,9 @@ from app.routes import auditoria_usuarios
 app.include_router(auditoria_usuarios.router)
 from app.routes import quiebre
 app.include_router(quiebre.router)
+
+from app.routes import quiebre_cadena
+app.include_router(quiebre_cadena.router)
 from app.routes import cobertura_encuestas
 app.include_router(cobertura_encuestas.router)
 

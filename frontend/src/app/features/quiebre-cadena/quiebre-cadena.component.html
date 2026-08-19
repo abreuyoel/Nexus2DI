@@ -1,0 +1,85 @@
+<div class="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+  <div>
+    <h1 class="text-3xl font-bold text-slate-800 dark:text-white tracking-tight">Quiebre por Cadena</h1>
+    <p class="text-slate-500 dark:text-slate-400 mt-1 max-w-3xl">Tasa de quiebre agregada por cadena de PDV y departamento -- pensada como
+      producto para la cadena (Farmatodo, Locatel, Gama, Automercados Plaza's...), no para una marca puntual. Sin
+      atribución de marca a propósito.</p>
+  </div>
+
+  <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-2xl px-4 py-3 flex items-start gap-2.5">
+    <mat-icon class="!text-lg text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">info</mat-icon>
+    <p class="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">Cobertura parcial a propósito: esto solo cuenta las marcas/categorías
+      que EPRAN ya monitorea en cada cadena hoy, no un barrido de tienda completa (eso es Auditor de Data, todavía
+      no construido). Usar así en cualquier material de venta.</p>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3">
+    <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Ventana</label>
+    <select [(ngModel)]="diasVentana" (ngModelChange)="cargar()"
+      class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-lg px-3 py-1.5 text-sm font-semibold outline-none focus:border-primary-500">
+      <option [ngValue]="14">Últimos 14 días</option>
+      <option [ngValue]="30">Últimos 30 días</option>
+      <option [ngValue]="60">Últimos 60 días</option>
+      <option [ngValue]="90">Últimos 90 días</option>
+    </select>
+    <button type="button" (click)="cargar()"
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary-500/40 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 text-sm font-bold transition-all">
+      <mat-icon class="!text-base">refresh</mat-icon> Recalcular
+    </button>
+    @if (totalEvaluados()) {
+    <span class="text-xs text-slate-400 ml-auto">{{ totalEvaluados() }} combinaciones SKU×PDV evaluadas en los últimos {{ ventanaDias() }} días</span>
+    }
+  </div>
+
+  @if (loading()) {
+  <div class="flex flex-col items-center justify-center py-16 gap-4">
+    <mat-spinner diameter="40" strokeWidth="4"></mat-spinner>
+  </div>
+  } @else if (!cadenas().length) {
+  <div class="py-16 text-center opacity-40">
+    <mat-icon class="!text-5xl">store_mall_directory</mat-icon>
+    <p class="font-bold mt-2">No hay suficientes datos todavía en esta ventana.</p>
+  </div>
+  } @else {
+  <div class="space-y-3">
+    @for (c of cadenas(); track c.cadena) {
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden">
+      <button type="button" (click)="toggle(c.cadena)" class="w-full flex items-center justify-between gap-4 p-4 text-left">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-10 shrink-0 rounded-xl bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+            <mat-icon class="!text-lg">store_mall_directory</mat-icon>
+          </div>
+          <div class="min-w-0">
+            <div class="font-black text-slate-800 dark:text-white truncate">{{ c.cadena }}</div>
+            <div class="text-xs text-slate-400">{{ c.en_quiebre }} de {{ c.sku_pdv_evaluados }} combinaciones en quiebre</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+          <span class="text-2xl font-black" [ngClass]="claseTasa(c.tasa_quiebre_pct)">{{ c.tasa_quiebre_pct }}%</span>
+          <mat-icon class="text-slate-400">{{ expandida.has(c.cadena) ? 'expand_less' : 'expand_more' }}</mat-icon>
+        </div>
+      </button>
+
+      @if (expandida.has(c.cadena)) {
+      <div class="border-t border-slate-100 dark:border-white/5 p-4 pt-3 space-y-2">
+        <div class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Por departamento</div>
+        @for (d of c.departamentos; track d.departamento) {
+        <div class="flex items-center justify-between gap-3 py-2 border-b border-slate-50 dark:border-white/5 last:border-0">
+          <span class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{{ d.departamento }}</span>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-xs text-slate-400">{{ d.en_quiebre }}/{{ d.sku_pdv_evaluados }}</span>
+            <span class="text-sm font-black" [ngClass]="claseTasa(d.tasa_quiebre_pct)">{{ d.tasa_quiebre_pct }}%</span>
+          </div>
+        </div>
+        }
+        @if (!c.departamentos.length) {
+        <p class="text-xs text-slate-400 italic">Sin departamentos con suficientes muestras todavía.</p>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</div>
