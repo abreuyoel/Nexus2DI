@@ -31,6 +31,34 @@ export class SkuCompetenciaComponent implements OnInit {
   clienteId: number | null = null;
   grupos = signal<Grupo[]>([]);
 
+  // ── S3 roadmap: deriva de precio propio vs. competencia ──
+  activeTab = signal<'mapeo' | 'deriva'>('mapeo');
+  loadingDeriva = signal(false);
+  derivaItems = signal<any[]>([]);
+  umbralPct = 15;
+  private derivaCargadaParaCliente: number | null = null;
+
+  setTab(tab: 'mapeo' | 'deriva'): void {
+    this.activeTab.set(tab);
+    if (tab === 'deriva' && this.clienteId && this.derivaCargadaParaCliente !== this.clienteId) {
+      this.loadDerivaPrecio();
+    }
+  }
+
+  loadDerivaPrecio(): void {
+    if (!this.clienteId) return;
+    this.loadingDeriva.set(true);
+    this.derivaCargadaParaCliente = this.clienteId;
+    this.api.getDerivaPrecio(this.clienteId, this.umbralPct).subscribe({
+      next: (d) => { this.derivaItems.set(d || []); this.loadingDeriva.set(false); },
+      error: () => { this.derivaItems.set([]); this.loadingDeriva.set(false); this.snack.open('Error al calcular la deriva de precio', 'OK', { duration: 3000 }); },
+    });
+  }
+
+  estadoDerivaLabel(estado: string): string {
+    return { critico: 'Ya cruzó el umbral', alerta: 'Tendencia hacia el umbral', atencion: 'Movimiento inusual', ok: 'Estable', sin_datos: 'Sin historial suficiente' }[estado] || estado;
+  }
+
   // Filtros de productoras y categorías
   cargandoFiltros = signal(false);
   todasProductoras = signal<any[]>([]);
@@ -89,8 +117,11 @@ export class SkuCompetenciaComponent implements OnInit {
   onClienteChange(): void {
     this.resultadosPropio.set([]); this.buscarPropio = '';
     this.cerrarBuscadorCompetencia();
+    this.derivaItems.set([]);
+    this.derivaCargadaParaCliente = null;
     if (!this.clienteId) { this.grupos.set([]); return; }
     this.loadGrupos();
+    if (this.activeTab() === 'deriva') this.loadDerivaPrecio();
   }
 
   loadGrupos(): void {

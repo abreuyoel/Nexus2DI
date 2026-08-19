@@ -21,6 +21,12 @@ from app.models.solicitud import Solicitud
 
 router = APIRouter(prefix="/api/vendedor", tags=["Vendedor"])
 
+# Antes razon_no_venta era texto libre -- imposible de agregar en un reporte
+# ("no compró" tenía 30 variantes distintas escritas a mano). Catálogo
+# cerrado + "Otro" con texto, mismo patrón que ya usa el resto de la app
+# (especialidad/universidad en el módulo de encuestadores).
+RAZONES_NO_VENTA = ["Precio", "Competencia", "Sin stock", "Cerrado", "Otro"]
+
 
 def check_rol_vendedor(current_user: User):
     if current_user.id_rol != 9 and not current_user.is_admin:
@@ -100,6 +106,12 @@ def get_clientes(db: Session = Depends(get_db), current_user: User = Depends(get
     return [{"id_cliente": r.id_cliente, "nombre": r.cliente} for r in rows]
 
 
+@router.get("/razones-no-venta")
+def get_razones_no_venta(current_user: User = Depends(get_current_user)):
+    check_rol_vendedor(current_user)
+    return RAZONES_NO_VENTA
+
+
 @router.post("/registrar-visita")
 def registrar_visita(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     check_rol_vendedor(current_user)
@@ -120,9 +132,16 @@ def registrar_visita(payload: dict, db: Session = Depends(get_db), current_user:
         if monto <= 0:
             raise HTTPException(status_code=400, detail="El monto debe ser mayor que cero")
     else:
-        razon = (payload.get("razon_no_venta") or "").strip()
-        if not razon:
-            raise HTTPException(status_code=400, detail="La razón de no venta es requerida")
+        categoria = (payload.get("razon_categoria") or "").strip()
+        detalle = (payload.get("razon_no_venta") or "").strip()
+        if categoria not in RAZONES_NO_VENTA:
+            raise HTTPException(status_code=400, detail=f"razon_categoria debe ser una de: {', '.join(RAZONES_NO_VENTA)}")
+        if categoria == "Otro" and not detalle:
+            raise HTTPException(status_code=400, detail="Especificá el detalle cuando la razón es 'Otro'")
+        # Se guarda como "Categoría" o "Categoría: detalle" en la misma
+        # columna de texto que ya existía -- sin migrar el histórico viejo
+        # (texto libre previo a este fix) a una columna nueva.
+        razon = f"{categoria}: {detalle}" if detalle and categoria == "Otro" else categoria
 
     j = _jornada_activa(db, current_user.id)
     if not j:

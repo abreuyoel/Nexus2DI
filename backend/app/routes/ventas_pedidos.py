@@ -493,6 +493,83 @@ def set_credito(id_cliente: int, payload: dict, db: Session = Depends(get_db), c
     return {"success": True}
 
 
+METODOS_PAGO_VALIDOS = ["Transferencia", "Efectivo", "Zelle", "Pago Móvil", "Otro"]
+
+
+@router.post("/credito/{id_cliente}/pago")
+def registrar_pago(id_cliente: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Registra un cobro/abono puntual -- a diferencia de set_credito (que
+    sobrescribe el saldo entero, solo admin), esto lo puede cargar el
+    vendedor que cobró en la calle: decrementa saldo_actual y deja un
+    registro auditable en PAGOS_CLIENTE (saldo antes/después)."""
+    _check_acceso_ventas(current_user)
+    try:
+        monto = float(payload.get("monto"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="El monto es requerido y debe ser numérico")
+    if monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor que cero")
+    metodo = (payload.get("metodo_pago") or "").strip()
+    if metodo not in METODOS_PAGO_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"metodo_pago debe ser una de: {', '.join(METODOS_PAGO_VALIDOS)}")
+    referencia = (payload.get("referencia") or "").strip() or None
+    notas = (payload.get("notas") or "").strip() or None
+
+    c = _credito_cliente(db, id_cliente)
+    saldo_antes = float(c.saldo_actual) if c else 0.0
+    saldo_despues = saldo_antes - monto
+
+    if c:
+        db.execute(text(
+            "UPDATE CREDITO_CLIENTE SET saldo_actual = :s, actualizado_en = GETDATE() WHERE id_cliente = :c"
+        ), {"s": saldo_despues, "c": id_cliente})
+    else:
+        # Cliente sin fila en CREDITO_CLIENTE todavía (nunca se le configuró
+        # límite) -- un pago igual debe quedar registrado, arranca en saldo
+        # negativo (a favor del cliente) en vez de fallar.
+        db.execute(text("""
+            INSERT INTO CREDITO_CLIENTE (id_cliente, limite_credito, saldo_actual, dias_mora, bloqueado)
+            VALUES (:c, 0, :s, 0, 0)
+        """), {"c": id_cliente, "s": saldo_despues})
+
+    row = db.execute(text("""
+        INSERT INTO PAGOS_CLIENTE (id_cliente, monto, metodo_pago, referencia, notas, id_usuario_registro, saldo_antes, saldo_despues)
+        OUTPUT INSERTED.id_pago, INSERTED.fecha_pago
+        VALUES (:c, :m, :met, :ref, :notas, :u, :sa, :sd)
+    """), {
+        "c": id_cliente, "m": monto, "met": metodo, "ref": referencia, "notas": notas,
+        "u": current_user.id, "sa": saldo_antes, "sd": saldo_despues,
+    }).fetchone()
+    db.commit()
+
+    notify_event("credito.pago_registrado", {"id_cliente": id_cliente, "monto": monto, "saldo_despues": saldo_despues})
+    return {
+        "success": True, "id_pago": row.id_pago,
+        "fecha_pago": row.fecha_pago.isoformat() if row.fecha_pago else None,
+        "saldo_antes": saldo_antes, "saldo_despues": saldo_despues,
+    }
+
+
+@router.get("/credito/{id_cliente}/pagos")
+def get_pagos_cliente(id_cliente: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_acceso_ventas(current_user)
+    rows = db.execute(text("""
+        SELECT pc.id_pago, pc.monto, pc.metodo_pago, pc.referencia, pc.notas,
+               pc.fecha_pago, pc.saldo_antes, pc.saldo_despues, u.username AS registrado_por
+        FROM PAGOS_CLIENTE pc
+        JOIN USUARIOS u ON u.id_usuario = pc.id_usuario_registro
+        WHERE pc.id_cliente = :c
+        ORDER BY pc.fecha_pago DESC
+    """), {"c": id_cliente}).fetchall()
+    return [{
+        "id_pago": r.id_pago, "monto": float(r.monto), "metodo_pago": r.metodo_pago,
+        "referencia": r.referencia, "notas": r.notas,
+        "fecha_pago": r.fecha_pago.isoformat() if r.fecha_pago else None,
+        "saldo_antes": float(r.saldo_antes), "saldo_despues": float(r.saldo_despues),
+        "registrado_por": r.registrado_por,
+    } for r in rows]
+
+
 # ════════════════════════════════════════════════════════════════════
 # INVENTARIO (caché externa -- lista para conectar a la futura API de DUSA)
 # ════════════════════════════════════════════════════════════════════

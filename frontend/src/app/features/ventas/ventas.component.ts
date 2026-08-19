@@ -191,10 +191,19 @@ type ProductoOcrPropuesto = {
       </div>
 
       @if (creditoCliente()?.bloqueado) {
-        <div class="bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
+        <div class="bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900 rounded-xl px-4 py-3 mb-3 flex items-center gap-2">
           <mat-icon class="text-red-600 dark:text-red-400">block</mat-icon>
-          <span class="text-sm text-red-700 dark:text-red-300 font-semibold">Cliente bloqueado por crédito ({{ creditoCliente()?.dias_mora }} días de mora) — no se pueden tomar pedidos.</span>
+          <span class="text-sm text-red-700 dark:text-red-300 font-semibold flex-1">Cliente bloqueado por crédito ({{ creditoCliente()?.dias_mora }} días de mora) — no se pueden tomar pedidos.</span>
         </div>
+        <button (click)="abrirPagoModal()" class="w-full mb-4 p-3 bg-white dark:bg-slate-900 border-2 border-amber-500 dark:border-amber-700 rounded-2xl text-left flex items-center gap-3 shadow-sm">
+          <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950 flex items-center justify-center"><mat-icon class="text-amber-600 dark:text-amber-400">payments</mat-icon></div>
+          <p class="font-black text-sm text-slate-800 dark:text-white">Registrar cobro/abono</p>
+        </button>
+      } @else {
+        <button (click)="abrirPagoModal()" class="w-full mb-4 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/8 rounded-2xl text-left flex items-center gap-3 shadow-sm">
+          <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950 flex items-center justify-center"><mat-icon class="text-amber-600 dark:text-amber-400">payments</mat-icon></div>
+          <p class="font-bold text-sm text-slate-700 dark:text-slate-300">Registrar cobro/abono</p>
+        </button>
       }
 
       <div class="grid gap-3">
@@ -367,6 +376,51 @@ type ProductoOcrPropuesto = {
       </div>
     </div>
   }
+
+  <!-- Picker de motivo de "no hubo venta" -->
+  @if (showRazonModal()) {
+    <div class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center" (click)="showRazonModal.set(false)">
+      <div class="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:w-96 p-4 border border-slate-200 dark:border-white/10" (click)="$event.stopPropagation()">
+        <h3 class="font-black text-slate-800 dark:text-white mb-3">¿Por qué no hubo venta?</h3>
+        <div class="space-y-2">
+          @for (r of razonesNoVenta; track r) {
+            <button (click)="elegirRazonNoVenta(r)" class="w-full text-left px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-sm text-slate-700 dark:text-slate-200">{{ r }}</button>
+          }
+        </div>
+        <button (click)="showRazonModal.set(false)" class="w-full mt-3 py-2 text-sm font-bold text-slate-500 dark:text-slate-400">Cancelar</button>
+      </div>
+    </div>
+  }
+
+  <!-- Registrar cobro/abono -->
+  @if (showPagoModal()) {
+    <div class="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center" (click)="showPagoModal.set(false)">
+      <div class="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:w-96 p-4 border border-slate-200 dark:border-white/10" (click)="$event.stopPropagation()">
+        <h3 class="font-black text-slate-800 dark:text-white mb-3">Registrar cobro/abono -- {{ clienteSel()?.nombre }}</h3>
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Monto (USD)</label>
+        <input type="number" [(ngModel)]="pagoMonto" min="0.01" step="0.01" placeholder="0.00"
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-amber-500 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm font-bold outline-none mb-3">
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Método</label>
+        <div class="grid grid-cols-3 gap-2 mb-3">
+          @for (m of metodosPago; track m) {
+            <button (click)="pagoMetodo = m" class="px-2 py-2 rounded-xl text-xs font-bold border transition-colors"
+              [class.bg-amber-500]="pagoMetodo === m" [class.text-white]="pagoMetodo === m" [class.border-amber-500]="pagoMetodo === m"
+              [class.bg-slate-50]="pagoMetodo !== m" [class.dark:bg-slate-800]="pagoMetodo !== m" [class.text-slate-600]="pagoMetodo !== m" [class.dark:text-slate-300]="pagoMetodo !== m" [class.border-slate-200]="pagoMetodo !== m" [class.dark:border-white/10]="pagoMetodo !== m">{{ m }}</button>
+          }
+        </div>
+        <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Referencia (opcional)</label>
+        <input [(ngModel)]="pagoReferencia" placeholder="Nro. de comprobante..."
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/10 focus:border-amber-500 text-slate-800 dark:text-white rounded-xl px-3 py-2.5 text-sm outline-none mb-4">
+        <div class="flex gap-2">
+          <button (click)="showPagoModal.set(false)" class="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10">Cancelar</button>
+          <button (click)="registrarPago()" [disabled]="!pagoMonto || pagoMonto <= 0 || !pagoMetodo || registrandoPago()"
+            class="flex-1 py-2.5 rounded-xl text-sm font-black text-white bg-amber-600 hover:bg-amber-500 disabled:opacity-40 flex items-center justify-center gap-1.5">
+            @if (registrandoPago()) { <mat-spinner diameter="16" strokeWidth="3" class="!text-white"></mat-spinner> } @else { Registrar }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>
   `,
 })
@@ -390,6 +444,20 @@ export class VentasComponent implements OnInit {
   clienteSel = signal<Cli | null>(null);
   creditoCliente = signal<{ bloqueado: boolean; dias_mora: number } | null>(null);
   registrando = signal(false);
+
+  // Motivo de "no hubo venta" -- fuente de verdad en el backend
+  // (RAZONES_NO_VENTA, vendedor.py); duplicado acá porque es una lista
+  // chica y estable, no vale la pena un round-trip solo para esto.
+  readonly razonesNoVenta = ['Precio', 'Competencia', 'Sin stock', 'Cerrado', 'Otro'];
+  showRazonModal = signal(false);
+
+  // Registrar pago/abono
+  readonly metodosPago = ['Transferencia', 'Efectivo', 'Zelle', 'Pago Móvil', 'Otro'];
+  showPagoModal = signal(false);
+  registrandoPago = signal(false);
+  pagoMonto: number | null = null;
+  pagoMetodo = '';
+  pagoReferencia = '';
 
   searchPdv = '';
   searchCliente = '';
@@ -652,12 +720,29 @@ export class VentasComponent implements OnInit {
   }
 
   // ── NO HUBO VENTA (visita sin pedido -- se mantiene el registro histórico) ──
-  async noHuboVenta() {
-    const razon = await this.confirmDialog.promptText('Motivo por el que no hubo venta:', { title: 'No hubo venta', placeholder: 'Escribe el motivo…', required: true, confirmText: 'Registrar' });
-    if (!razon?.trim()) return;
+  // Antes esto era un promptText libre -- imposible de reportar ("no compró"
+  // tenía 30 variantes escritas a mano). Ahora abre el picker de categorías;
+  // "Otro" sigue usando el prompt libre para el detalle.
+  noHuboVenta() {
+    if (!this.pdvSel() || !this.clienteSel()) return;
+    this.showRazonModal.set(true);
+  }
+
+  async elegirRazonNoVenta(categoria: string) {
+    this.showRazonModal.set(false);
+    let detalle = '';
+    if (categoria === 'Otro') {
+      const texto = await this.confirmDialog.promptText('Detalle:', { title: 'Otro motivo', placeholder: 'Escribe el motivo…', required: true, confirmText: 'Registrar' });
+      if (!texto?.trim()) return;
+      detalle = texto.trim();
+    }
+    await this.enviarNoHuboVenta(categoria, detalle);
+  }
+
+  private async enviarNoHuboVenta(categoria: string, detalle: string) {
     const pdv = this.pdvSel(), cli = this.clienteSel();
     if (!pdv || !cli) return;
-    const payload = { id_punto_interes: pdv.identificador, id_cliente: cli.id_cliente, vendio: false, razon_no_venta: razon.trim() };
+    const payload = { id_punto_interes: pdv.identificador, id_cliente: cli.id_cliente, vendio: false, razon_categoria: categoria, razon_no_venta: detalle };
     this.registrando.set(true);
     if (!navigator.onLine) {
       this.offline.enqueue({ url: `${this.API}/registrar-visita`, jsonBody: payload, label: `No venta ${cli.nombre}` });
@@ -676,6 +761,32 @@ export class VentasComponent implements OnInit {
         this.step.set('clientes');
       },
       error: e => { this.registrando.set(false); this.err(e); },
+    });
+  }
+
+  // ── Registrar pago/abono (requiere señal -- el cobro es un movimiento de
+  // cuenta real, no algo que tenga sentido dejar en la cola offline como
+  // los pedidos) ──
+  abrirPagoModal() {
+    this.pagoMonto = null; this.pagoMetodo = ''; this.pagoReferencia = '';
+    this.showPagoModal.set(true);
+  }
+
+  registrarPago() {
+    const cli = this.clienteSel();
+    if (!cli || !this.pagoMonto || this.pagoMonto <= 0 || !this.pagoMetodo) return;
+    this.registrandoPago.set(true);
+    this.post<any>(`/credito/${cli.id_cliente}/pago`, {
+      monto: this.pagoMonto, metodo_pago: this.pagoMetodo, referencia: this.pagoReferencia.trim() || null,
+    }).subscribe({
+      next: res => {
+        this.registrandoPago.set(false);
+        this.showPagoModal.set(false);
+        this.snack.open(`Pago registrado. Saldo: $${res.saldo_despues.toFixed(2)}`, 'OK', { duration: 3000 });
+        const c = this.creditoCliente();
+        if (c) this.creditoCliente.set({ ...c, dias_mora: res.saldo_despues <= 0 ? 0 : c.dias_mora });
+      },
+      error: e => { this.registrandoPago.set(false); this.err(e); },
     });
   }
 

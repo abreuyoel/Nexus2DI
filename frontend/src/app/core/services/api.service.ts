@@ -638,6 +638,9 @@ export class ApiService {
   deleteSkuCompetencia(id: number): Observable<any> {
     return this.http.delete<any>(`${this.base}/api/sku-competencia/mapeos/${id}`);
   }
+  getDerivaPrecio(idCliente: number, umbralPct?: number): Observable<any[]> {
+    return this.http.get<any[]>(`${this.base}/api/sku-competencia/deriva-precio`, { params: this.params({ id_cliente: idCliente, umbral_pct: umbralPct }) });
+  }
 
   // --- PLAN DE ACCIÓN ---
   getPlanAccionPendientes(opts: { id_ruta?: number; id_cliente?: number; tipo_pendiente?: string; prioridad_ruta?: string; score_min?: number } = {}): Observable<any> {

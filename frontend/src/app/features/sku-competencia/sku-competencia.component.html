@@ -16,6 +16,28 @@
   </div>
 
   @if (clienteId) {
+  <!-- Tabs: Mapeo / Deriva de precio -->
+  <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl p-1 w-fit">
+    <button type="button" (click)="setTab('mapeo')"
+      class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all"
+      [class.bg-white]="activeTab() === 'mapeo'" [class.dark:bg-slate-900]="activeTab() === 'mapeo'"
+      [class.text-primary-600]="activeTab() === 'mapeo'" [class.dark:text-primary-400]="activeTab() === 'mapeo'"
+      [class.shadow-sm]="activeTab() === 'mapeo'"
+      [class.text-slate-500]="activeTab() !== 'mapeo'" [class.dark:text-slate-400]="activeTab() !== 'mapeo'">
+      <mat-icon class="!text-base">compare_arrows</mat-icon> Mapeo
+    </button>
+    <button type="button" (click)="setTab('deriva')"
+      class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-all"
+      [class.bg-white]="activeTab() === 'deriva'" [class.dark:bg-slate-900]="activeTab() === 'deriva'"
+      [class.text-primary-600]="activeTab() === 'deriva'" [class.dark:text-primary-400]="activeTab() === 'deriva'"
+      [class.shadow-sm]="activeTab() === 'deriva'"
+      [class.text-slate-500]="activeTab() !== 'deriva'" [class.dark:text-slate-400]="activeTab() !== 'deriva'">
+      <mat-icon class="!text-base">trending_up</mat-icon> Deriva de precio
+    </button>
+  </div>
+  }
+
+  @if (clienteId && activeTab() === 'mapeo') {
   <!-- Agregar SKU propio -->
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
     <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 block">Agregar SKU propio del
@@ -156,6 +178,96 @@
         Siguiente
       </button>
     </div>
+  </div>
+  }
+  }
+
+  @if (clienteId && activeTab() === 'deriva') {
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 shadow-sm">
+    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
+      Por cada par ya definido en <span class="font-bold">Mapeo</span>, se suaviza el spread de precio propio vs.
+      competencia (Holt amortiguado) y se alerta cuando la <span class="font-bold">tendencia proyectada</span> apunta
+      al umbral -- no cuando ya lo cruzó. Complementa las reglas estáticas de Power BI, no las reemplaza.
+    </p>
+    <div class="flex items-center gap-3">
+      <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Umbral de alerta</label>
+      <div class="flex items-center gap-1">
+        <input type="number" [(ngModel)]="umbralPct" min="1" max="100" step="1"
+          class="w-16 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 focus:border-primary-500 text-slate-800 dark:text-white rounded-lg px-2 py-1.5 text-sm font-bold outline-none text-center">
+        <span class="text-sm text-slate-400 font-bold">%</span>
+      </div>
+      <button type="button" (click)="loadDerivaPrecio()"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary-500/40 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 text-sm font-bold transition-all">
+        <mat-icon class="!text-base">refresh</mat-icon> Recalcular
+      </button>
+    </div>
+  </div>
+
+  @if (loadingDeriva()) {
+  <div class="flex flex-col items-center justify-center py-16 gap-4">
+    <mat-spinner diameter="40" strokeWidth="4"></mat-spinner>
+  </div>
+  } @else if (!derivaItems().length) {
+  <div class="py-16 text-center opacity-40">
+    <mat-icon class="!text-5xl">trending_up</mat-icon>
+    <p class="font-bold mt-2">Este cliente todavía no tiene pares SKU vs SKU definidos -- agregalos en la pestaña
+      Mapeo primero.</p>
+  </div>
+  } @else {
+  <div class="space-y-3">
+    @for (item of derivaItems(); track item.id_sku_competencia) {
+    <div class="bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-sm"
+      [class.border-rose-300]="item.estado === 'critico'" [class.dark:border-rose-800]="item.estado === 'critico'"
+      [class.border-amber-300]="item.estado === 'alerta'" [class.dark:border-amber-800]="item.estado === 'alerta'"
+      [class.border-yellow-200]="item.estado === 'atencion'" [class.dark:border-yellow-900]="item.estado === 'atencion'"
+      [class.border-slate-200]="item.estado === 'ok' || item.estado === 'sin_datos'" [class.dark:border-white/5]="item.estado === 'ok' || item.estado === 'sin_datos'">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div class="min-w-0">
+          <div class="font-black text-slate-800 dark:text-white text-sm truncate">{{ item.producto_cliente }}
+            <span class="text-slate-400 font-semibold">vs.</span> {{ item.producto_competencia }}</div>
+          <div class="text-xs text-slate-400 truncate">{{ item.marca_cliente || 'Sin marca' }} vs. {{
+            item.marca_competencia || 'Sin marca' }}</div>
+        </div>
+        <span class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black"
+          [class.bg-rose-50]="item.estado === 'critico'" [class.text-rose-600]="item.estado === 'critico'" [class.dark:bg-rose-950]="item.estado === 'critico'" [class.dark:text-rose-400]="item.estado === 'critico'"
+          [class.bg-amber-50]="item.estado === 'alerta'" [class.text-amber-600]="item.estado === 'alerta'" [class.dark:bg-amber-950]="item.estado === 'alerta'" [class.dark:text-amber-400]="item.estado === 'alerta'"
+          [class.bg-yellow-50]="item.estado === 'atencion'" [class.text-yellow-700]="item.estado === 'atencion'" [class.dark:bg-yellow-950]="item.estado === 'atencion'" [class.dark:text-yellow-400]="item.estado === 'atencion'"
+          [class.bg-emerald-50]="item.estado === 'ok'" [class.text-emerald-600]="item.estado === 'ok'" [class.dark:bg-emerald-950]="item.estado === 'ok'" [class.dark:text-emerald-400]="item.estado === 'ok'"
+          [class.bg-slate-100]="item.estado === 'sin_datos'" [class.text-slate-500]="item.estado === 'sin_datos'" [class.dark:bg-slate-800]="item.estado === 'sin_datos'" [class.dark:text-slate-400]="item.estado === 'sin_datos'">
+          <mat-icon class="!text-sm">
+            {{ item.estado === 'critico' ? 'error' : item.estado === 'alerta' ? 'trending_up' : item.estado === 'atencion' ? 'visibility' : item.estado === 'ok' ? 'check_circle' : 'help_outline' }}
+          </mat-icon>
+          {{ estadoDerivaLabel(item.estado) }}
+        </span>
+      </div>
+
+      @if (item.suficiente_historial) {
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-center">
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl py-2">
+          <div class="text-[10px] font-black text-slate-400 uppercase">Spread actual</div>
+          <div class="text-lg font-black text-slate-800 dark:text-white">{{ item.spread_actual_pct > 0 ? '+' : ''
+            }}{{ item.spread_actual_pct }}%</div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl py-2">
+          <div class="text-[10px] font-black text-slate-400 uppercase">Umbral</div>
+          <div class="text-lg font-black text-slate-800 dark:text-white">±{{ item.umbral_pct }}%</div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl py-2">
+          <div class="text-[10px] font-black text-slate-400 uppercase">Proyección (+{{ item.proyeccion.length }})</div>
+          <div class="text-lg font-black text-slate-800 dark:text-white">{{ item.proyeccion[item.proyeccion.length -
+            1] > 0 ? '+' : '' }}{{ item.proyeccion[item.proyeccion.length - 1] }}%</div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-800 rounded-xl py-2">
+          <div class="text-[10px] font-black text-slate-400 uppercase">z-score residuo</div>
+          <div class="text-lg font-black text-slate-800 dark:text-white">{{ item.z_score_ultimo_residuo }}</div>
+        </div>
+      </div>
+      } @else {
+      <p class="text-xs text-slate-400 mt-2 italic">Faltan {{ item.puntos_faltantes }} día(s) con precio capturado
+        para ambos SKU el mismo día (tiene {{ item.n_puntos }}).</p>
+      }
+    </div>
+    }
   </div>
   }
   }

@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -129,7 +129,17 @@ export class CargasPowerbiComponent implements OnInit {
     private api: ApiService,
     private sanitizer: DomSanitizer,
     private snackBar: MatSnackBar
-  ) {}
+  ) {
+    // Sin esto, filtrar/buscar mientras estás en una página > 1 deja
+    // currentPage apuntando a una página que ya no existe en el resultado
+    // filtrado -- paginatedClients() hace slice() fuera de rango y devuelve
+    // vacío, aunque totalPages ya haya bajado a 1 ("Página 5 de 1").
+    effect(() => {
+      this.searchQuery();
+      this.filterStatus();
+      this.currentPage.set(1);
+    });
+  }
 
   ngOnInit(): void {
     this.loadData();

@@ -11,6 +11,7 @@ from app.core.dependencies import require_permission
 from app.models.user import Usuario
 from app.models.sku_competencia import SkuCompetencia
 from app.models.producto import Producto, Marca
+from app.services.sku_competencia_precio_service import calcular_deriva_precio, UMBRAL_PCT_DEFAULT
 
 router = APIRouter(prefix="/api/sku-competencia", tags=["SKU vs SKU"])
 
@@ -101,6 +102,20 @@ def bulk_create_mapeo(data: MapeoMasivo, db: Session = Depends(get_db), _: Usuar
         db.add(n)
     db.commit()
     return {"detail": f"{len(nuevos)} competidor(es) agregado(s).", "agregados": len(nuevos), "ya_existian": len(ya)}
+
+
+@router.get("/deriva-precio")
+def get_deriva_precio(
+    id_cliente: int = Query(...),
+    umbral_pct: float = Query(UMBRAL_PCT_DEFAULT, gt=0, le=100),
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(require_permission('sku-competencia', 'read', fallback_roles=('admin',))),
+):
+    """S3 del roadmap: por cada par SKU propio/competencia ya definido acá,
+    suaviza el spread de precio (Holt amortiguado) y alerta cuando la
+    tendencia proyectada apunta al umbral -- ver
+    app/services/sku_competencia_precio_service.py para el detalle."""
+    return calcular_deriva_precio(db, id_cliente, umbral_pct)
 
 
 @router.delete("/mapeos/{id_sku_competencia}")
