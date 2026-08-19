@@ -1,3 +1,4 @@
+from sqlalchemy import select, text
 """Curva de cobertura de encuestas médicas -- roadmap predictivo, S4. Ver
 app/services/cobertura_encuestas_service.py para el diseño completo (ajuste
 logístico sobre el acumulado semanal de médicos registrados, por estado)."""
@@ -6,9 +7,10 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_db, get_async_db, SessionLocal
 from app.models.user import Usuario as User
 from app.routes.cliente_encuestador import check_rol_cliente_encuestador
 
@@ -31,7 +33,7 @@ def _recalcular_background():
 
 
 @router.post("/recalcular")
-def recalcular(
+async def recalcular(
     background_tasks: BackgroundTasks, sincrono: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -52,19 +54,17 @@ def recalcular(
 
 
 @router.get("/curva")
-def obtener_curva(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    check_rol_cliente_encuestador(current_user, db)
-    conn = db.connection().connection
-    cursor = conn.cursor()
-    cursor.execute("""
+async def obtener_curva(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    await check_rol_cliente_encuestador(current_user, db)
+    rows = (await db.execute(text("""
         SELECT estado, n_semanas_historial, n_medicos_total, curva_valida,
                asintota_l, tasa_crecimiento_k, semana_punto_medio_x0, r2,
                semana_inicio, serie_json, proyeccion_json, fecha_calculo
         FROM COBERTURA_ENCUESTAS_CURVA
         ORDER BY estado
-    """)
+    """))).fetchall()
     zonas = []
-    for row in cursor.fetchall():
+    for row in rows:
         (estado, n_semanas, n_medicos, curva_valida, L, k, x0, r2,
          semana_inicio, serie_json, proyeccion_json, fecha_calculo) = row
         zonas.append({

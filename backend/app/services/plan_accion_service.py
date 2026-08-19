@@ -99,7 +99,7 @@ GROUP BY vm.identificador_punto_interes, vm.id_cliente, vm.fecha_visita
 """
 
 
-def _execute_with_timeout(db: Session, query: str, params: tuple = (), timeout: int = 30):
+def _execute_with_timeout(db: Any, query: str, params: tuple = (), timeout: int = 30):
     """Mismo patrón que app/routes/centro_mando.py::execute_query -- timeout en
     la CONEXIÓN (conn.timeout), no en el cursor (esta versión de pyodbc no
     tiene Cursor.timeout). Con --workers 1 en uvicorn, una query colgada
@@ -108,6 +108,8 @@ def _execute_with_timeout(db: Session, query: str, params: tuple = (), timeout: 
     lecturas simples de la misma tabla (por eso GET /pendientes se colgaba
     detrás de un POST /recalcular que nunca terminaba). Mejor fallar rápido
     con un error claro."""
+    if type(db).__name__ == "AsyncSession":
+        raise TypeError("Cannot call sync _execute_with_timeout with AsyncSession. Use await db.execute(text(...)) instead.")
     conn = db.connection().connection
     prev_timeout = 0
     try:
@@ -358,23 +360,28 @@ END
 """
 
 
-def ensure_plan_accion_table(db: Session) -> None:
+def ensure_plan_accion_table(db: Any) -> None:
     """Crea PLAN_ACCION_PENDIENTES si no existe (idempotente). La definición
     vive también en sql/2026-08-02_tabla_plan_accion_pendientes.sql, pero esa
     migración no se aplica automáticamente en ambientes nuevos (epran-qa), lo
     que dejaba GET /api/plan-accion/pendientes con un 500 'Invalid object
     name'. Con esto la tabla se garantiza en cada arranque de la app."""
-    conn = db.connection().connection
-    prev_autocommit = getattr(conn, "autocommit", False)
+    if type(db).__name__ == "AsyncSession" or not hasattr(db, "connection"):
+        return
     try:
-        conn.autocommit = True
-        cursor = conn.cursor()
-        cursor.execute(_PLAN_ACCION_TABLE_DDL)
-    finally:
+        conn = db.connection().connection
+        prev_autocommit = getattr(conn, "autocommit", False)
         try:
-            conn.autocommit = prev_autocommit
-        except Exception:
-            pass
+            conn.autocommit = True
+            cursor = conn.cursor()
+            cursor.execute(_PLAN_ACCION_TABLE_DDL)
+        finally:
+            try:
+                conn.autocommit = prev_autocommit
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"No se pudo asegurar PLAN_ACCION_PENDIENTES: {e}")
 
 
 def _recalcular_en_hilo() -> None:

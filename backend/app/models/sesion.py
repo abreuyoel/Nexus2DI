@@ -19,4 +19,4 @@ class SesionActiva(Base):
     fecha_cierre = Column(DateTime, nullable=True)
     motivo_cierre = Column(String(100), nullable=True)
 
-    usuario = relationship("Usuario", back_populates="sesiones")
+    usuario = relationship("Usuario", back_populates="sesiones", lazy="noload")

@@ -428,7 +428,11 @@ export class ChatComponent implements OnInit, OnDestroy {
           this.applyReadReceipt(msg);
           return;
         }
-        this.messages.update((ms) => [...ms, this.mapGrupoMensaje(msg)]);
+        const mapped = this.mapGrupoMensaje(msg);
+        this.messages.update((ms) => {
+          if (ms.some((m) => m.id === mapped.id)) return ms;
+          return [...ms, mapped];
+        });
         this.connected.set(true);
         setTimeout(() => this.scrollToBottom(), 50);
         this.loadGrupos();
@@ -551,11 +555,34 @@ export class ChatComponent implements OnInit, OnDestroy {
     } else if (kind === 'grupo') {
       const id = this.activeId();
       if (id === null) return;
-      this.api.enviarMensajeGrupo(id, text).subscribe();
+      this.api.enviarMensajeGrupo(id, text).subscribe({
+        next: (msg) => {
+          if (msg) {
+            const mapped = this.mapGrupoMensaje(msg);
+            this.messages.update((ms) => {
+              if (ms.some((m) => m.id === mapped.id)) return ms;
+              return [...ms, mapped];
+            });
+            setTimeout(() => this.scrollToBottom(), 50);
+            this.loadGrupos();
+          }
+        }
+      });
     } else if (kind === 'grupo_visita') {
       const gv = this.activeGrupoVisita();
       if (!gv) return;
-      this.api.enviarMensajeGrupoVisita(gv.id_cliente, gv.tipo_grupo as 'operativo' | 'operativo_cliente', gv.id_visita, text).subscribe();
+      this.api.enviarMensajeGrupoVisita(gv.id_cliente, gv.tipo_grupo as 'operativo' | 'operativo_cliente', gv.id_visita, text).subscribe({
+        next: (msg) => {
+          if (msg) {
+            const mapped = this.mapGrupoMensaje(msg);
+            this.messages.update((ms) => {
+              if (ms.some((m) => m.id === mapped.id)) return ms;
+              return [...ms, mapped];
+            });
+            setTimeout(() => this.scrollToBottom(), 50);
+          }
+        }
+      });
     } else {
       return;
     }

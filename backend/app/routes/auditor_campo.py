@@ -5,11 +5,12 @@ Reusa el servicio de fotos de v2 (compresión + Azure). SQL crudo para calzar
 con el esquema operativo (RUTAS_ACTIVADAS, RUTA_PROGRAMACION, VISITAS_MERCADERISTA,
 FOTOS_TOTALES, CATEGORIAS_CLIENTES, AUDITORIA_CATEGORIAS)."""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from typing import Optional
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.services.photo_service import process_and_upload_photo
@@ -24,26 +25,41 @@ def _es_cedula(cedula) -> bool:
     return str(cedula).strip().isdigit()
 
 
-def _auditor_id(db: Session, cedula: str) -> Optional[int]:
-    # cedula es INT en MERCADERISTAS: si no es numérica (p.ej. un admin 'Dev'
-    # abriendo el módulo) evitamos el error de conversión y devolvemos None.
-    if not _es_cedula(cedula):
-        return None
-    r = db.execute(text(
-        "SELECT id_mercaderista FROM MERCADERISTAS WHERE LTRIM(RTRIM(cedula))=LTRIM(RTRIM(:c)) AND tipo=:t"
-    ), {"c": cedula, "t": TIPO}).fetchone()
-    return r[0] if r else None
+async def _auditor_id(db: AsyncSession, cedula: str, current_user: Optional[Usuario] = None) -> Optional[int]:
+    """Obtiene id_mercaderista para auditor de campo de forma segura."""
+    if current_user and current_user.id_perfil:
+        m = (await db.execute(select(Mercaderista).filter(Mercaderista.id == current_user.id_perfil))).scalars().first()
+        if m:
+            return m.id
+
+    try:
+        ced_int = int(str(cedula).strip())
+        r = (await db.execute(text(
+            "SELECT id_mercaderista FROM MERCADERISTAS WHERE cedula = :c"
+        ), {"c": ced_int})).fetchone()
+        if r:
+            return r[0]
+    except (ValueError, TypeError):
+        pass
+
+    if current_user and (current_user.is_admin or current_user.id_rol in (2, 8, 14)):
+        r = (await db.execute(text(
+            "SELECT TOP 1 id_mercaderista FROM MERCADERISTAS ORDER BY id_mercaderista ASC"
+        ))).fetchone()
+        return r[0] if r else 1
+
+    return None
 
 
 # ───────────────── Rutas / PDVs ─────────────────
 @router.get("/rutas/{cedula}")
-def get_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def get_rutas(cedula: str, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     # Admin no tiene cédula de auditor real (el front cae al placeholder
     # '88880001', ver auditor-campo.component.ts) -- en vez de "0 rutas
     # asignadas", debe ver TODAS las rutas de auditoría existentes, sin
     # filtrar por auditor.
     if current_user.is_admin:
-        rows = db.execute(text("""
+        rows = (await db.execute(text("""
             SELECT DISTINCT rn.id_ruta, rn.ruta,
                 (SELECT COUNT(DISTINCT rp2.id_punto_interes) FROM RUTA_PROGRAMACION rp2
                  WHERE rp2.id_ruta = rn.id_ruta AND rp2.activa = 1) AS total_puntos,
@@ -56,12 +72,12 @@ def get_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario 
             JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
             WHERE m.tipo = :tipo
             ORDER BY rn.ruta
-        """), {"tipo": TIPO}).fetchall()
+        """), {"tipo": TIPO})).fetchall()
         return [{"id": r[0], "nombre": r[1], "total_puntos": r[2] or 0, "esta_activa": bool(r[3])} for r in rows]
 
     if not _es_cedula(cedula):
         return []
-    rows = db.execute(text("""
+    rows = (await db.execute(text("""
         SELECT rn.id_ruta, rn.ruta,
             (SELECT COUNT(DISTINCT rp2.id_punto_interes) FROM RUTA_PROGRAMACION rp2
              WHERE rp2.id_ruta = rn.id_ruta AND rp2.activa = 1) AS total_puntos,
@@ -74,12 +90,12 @@ def get_rutas(cedula: str, db: Session = Depends(get_db), current_user: Usuario 
         JOIN MERCADERISTAS m ON mr.id_mercaderista = m.id_mercaderista
         WHERE m.cedula = :ced AND m.tipo = :tipo
         ORDER BY rn.ruta
-    """), {"ced": cedula, "tipo": TIPO}).fetchall()
+    """), {"ced": cedula, "tipo": TIPO})).fetchall()
     return [{"id": r[0], "nombre": r[1], "total_puntos": r[2] or 0, "esta_activa": bool(r[3])} for r in rows]
 
 
 @router.get("/ruta-puntos/{route_id}")
-def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def get_ruta_puntos(route_id: int, cedula: str, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
     puntos_q = """
         SELECT pin.identificador, pin.punto_de_interes, MAX(rp.prioridad) AS prioridad,
@@ -94,7 +110,7 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), c
         GROUP BY pin.identificador, pin.punto_de_interes
         ORDER BY pin.punto_de_interes
     """
-    rows = db.execute(text(puntos_q.format(dia_filter="AND rp.dia = :dia")), {"rid": route_id, "dia": dia}).fetchall()
+    rows = (await db.execute(text(puntos_q.format(dia_filter="AND rp.dia = :dia")), {"rid": route_id, "dia": dia})).fetchall()
     if not rows and current_user.is_admin:
         # Fallback solo para admin: si hoy no hay nada programado para este
         # día de la semana (fin de semana, etc.), trae TODOS los PDV de la
@@ -102,62 +118,62 @@ def get_ruta_puntos(route_id: int, cedula: str, db: Session = Depends(get_db), c
         # cualquier día sin tener que tocar la programación real (RUTA_
         # PROGRAMACION.dia), que sí debe reflejar el cronograma real de los
         # auditores.
-        rows = db.execute(text(puntos_q.format(dia_filter="")), {"rid": route_id}).fetchall()
+        rows = (await db.execute(text(puntos_q.format(dia_filter="")), {"rid": route_id})).fetchall()
     return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media",
              "total_clientes": r[3] or 0, "activado": bool(r[4])} for r in rows]
 
 
 # ───────────────── Activar / desactivar ruta ─────────────────
 @router.post("/activar-ruta")
-def activar_ruta(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def activar_ruta(payload: dict, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
     if not id_ruta or not cedula:
         raise HTTPException(400, "Datos incompletos")
-    mid = _auditor_id(db, cedula)
+    mid = await _auditor_id(db, cedula, current_user)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    existe = db.execute(text("""SELECT COUNT(*) FROM RUTAS_ACTIVADAS WHERE id_ruta=:r AND id_mercaderista=:m
+    existe = (await db.execute(text("""SELECT COUNT(*) FROM RUTAS_ACTIVADAS WHERE id_ruta=:r AND id_mercaderista=:m
         AND estado='En Progreso' AND CAST(fecha_hora_activacion AS DATE)=CAST(GETDATE() AS DATE)"""),
-        {"r": id_ruta, "m": mid}).scalar()
+        {"r": id_ruta, "m": mid})).scalar()
     if existe and existe > 0:
         return {"success": True, "message": "La ruta ya estaba activa hoy"}
-    db.execute(text("""INSERT INTO RUTAS_ACTIVADAS (id_ruta, id_mercaderista, fecha_hora_activacion, estado, tipo_activacion)
+    await db.execute(text("""INSERT INTO RUTAS_ACTIVADAS (id_ruta, id_mercaderista, fecha_hora_activacion, estado, tipo_activacion)
         VALUES (:r, :m, GETDATE(), 'En Progreso', 'Auditor de Campo')"""), {"r": id_ruta, "m": mid})
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Ruta activada"}
 
 
 @router.post("/no-activar-ruta")
-def no_activar_ruta(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def no_activar_ruta(payload: dict, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
     razon = (payload.get("razon") or "").strip()
     if not id_ruta or not cedula:
         raise HTTPException(400, "Datos incompletos")
     if not razon:
         raise HTTPException(400, "La razón es requerida")
-    mid = _auditor_id(db, cedula)
+    mid = await _auditor_id(db, cedula, current_user)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    db.execute(text("""INSERT INTO RUTAS_ACTIVADAS
+    await db.execute(text("""INSERT INTO RUTAS_ACTIVADAS
         (id_ruta, id_mercaderista, fecha_hora_activacion, estado, tipo_activacion, motivo_no_activacion)
         VALUES (:r, :m, GETDATE(), 'No Activada', 'Auditor de Campo', :razon)"""),
         {"r": id_ruta, "m": mid, "razon": razon})
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "No activación registrada"}
 
 
 @router.post("/desactivar-ruta")
-def desactivar_ruta(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def desactivar_ruta(payload: dict, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     id_ruta, cedula = payload.get("id_ruta"), payload.get("cedula")
     if not id_ruta or not cedula:
         raise HTTPException(400, "Datos incompletos")
-    mid = _auditor_id(db, cedula)
+    mid = await _auditor_id(db, cedula, current_user)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
-    db.execute(text("""UPDATE RUTAS_ACTIVADAS SET estado='Finalizado'
+    await db.execute(text("""UPDATE RUTAS_ACTIVADAS SET estado='Finalizado'
         WHERE id_ruta=:r AND id_mercaderista=:m AND estado='En Progreso'
         AND CAST(fecha_hora_activacion AS DATE)=CAST(GETDATE() AS DATE)"""), {"r": id_ruta, "m": mid})
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Ruta desactivada"}
 
 
@@ -186,20 +202,20 @@ async def _guardar_foto(db, file: UploadFile, point_id, id_tipo_foto, prefix,
             fh.write(raw)
         blob_path = "auditor_campo_local/" + fname
 
-    db.execute(text("""INSERT INTO FOTOS_TOTALES
+    await db.execute(text("""INSERT INTO FOTOS_TOTALES
         (id_visita, categoria, file_path, fecha_registro, id_tipo_foto, Estado, latitud, longitud)
         VALUES (:v, :cat, :fp, GETDATE(), :tf, 'Aprobada', :lat, :lon)"""),
         {"v": id_visita, "cat": categoria, "fp": blob_path, "tf": id_tipo_foto, "lat": latv, "lon": lonv})
-    db.commit()
-    idf = db.execute(text("SELECT TOP 1 id_foto FROM FOTOS_TOTALES WHERE file_path=:fp ORDER BY id_foto DESC"),
-                     {"fp": blob_path}).scalar()
+    await db.commit()
+    idf = (await db.execute(text("SELECT TOP 1 id_foto FROM FOTOS_TOTALES WHERE file_path=:fp ORDER BY id_foto DESC"),
+                     {"fp": blob_path})).scalar()
     return {"id_foto": idf, "url": url, "blob_path": blob_path}
 
 
 @router.post("/activar-pdv")
 async def activar_pdv(point_id: str = Form(...), cedula: str = Form(...),
                       lat: Optional[float] = Form(None), lon: Optional[float] = Form(None),
-                      file: UploadFile = File(...), db: Session = Depends(get_db),
+                      file: UploadFile = File(...), db: AsyncSession = Depends(get_async_db),
                       _: Usuario = Depends(get_current_user)):
     r = await _guardar_foto(db, file, point_id, 5, "auditor_campo/activaciones", lat=lat, lon=lon)
     return {"success": True, "message": "PDV activado", **r}
@@ -208,7 +224,7 @@ async def activar_pdv(point_id: str = Form(...), cedula: str = Form(...),
 @router.post("/desactivar-pdv")
 async def desactivar_pdv(point_id: str = Form(...), cedula: str = Form(...),
                          lat: Optional[float] = Form(None), lon: Optional[float] = Form(None),
-                         file: UploadFile = File(...), db: Session = Depends(get_db),
+                         file: UploadFile = File(...), db: AsyncSession = Depends(get_async_db),
                          _: Usuario = Depends(get_current_user)):
     r = await _guardar_foto(db, file, point_id, 6, "auditor_campo/desactivaciones", lat=lat, lon=lon)
     return {"success": True, "message": "PDV desactivado", **r}
@@ -219,7 +235,7 @@ async def subir_foto_categoria(id_visita: int = Form(...), id_categoria: int = F
                                categoria_nombre: str = Form(None), point_id: str = Form(None),
                                cedula: str = Form(None), lat: Optional[float] = Form(None),
                                lon: Optional[float] = Form(None), file: UploadFile = File(...),
-                               db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+                               db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     r = await _guardar_foto(db, file, point_id, 11, "auditor_campo/categorias",
                             id_visita=id_visita, categoria=categoria_nombre, lat=lat, lon=lon)
     return {"success": True, "message": "Foto subida", **r}
@@ -227,7 +243,7 @@ async def subir_foto_categoria(id_visita: int = Form(...), id_categoria: int = F
 
 # ───────────────── Clientes / categorías ─────────────────
 @router.get("/pdv-clientes/{point_id}/{route_id}")
-def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+async def get_pdv_clientes(point_id: str, route_id: int, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     dia = DIAS[datetime.now().weekday()]
     clientes_q = """
         SELECT DISTINCT rp.id_cliente, c.cliente, rp.prioridad
@@ -235,52 +251,52 @@ def get_pdv_clientes(point_id: str, route_id: int, db: Session = Depends(get_db)
         WHERE rp.id_punto_interes = :pid AND rp.id_ruta = :rid AND rp.activa = 1 {dia_filter}
         ORDER BY rp.prioridad DESC, c.cliente
     """
-    rows = db.execute(text(clientes_q.format(dia_filter="AND rp.dia = :dia")), {"pid": point_id, "rid": route_id, "dia": dia}).fetchall()
+    rows = (await db.execute(text(clientes_q.format(dia_filter="AND rp.dia = :dia")), {"pid": point_id, "rid": route_id, "dia": dia})).fetchall()
     if not rows and current_user.is_admin:
         # Mismo fallback que get_ruta_puntos: admin puede probar el flujo
         # cualquier día, sin tocar RUTA_PROGRAMACION.dia.
-        rows = db.execute(text(clientes_q.format(dia_filter="")), {"pid": point_id, "rid": route_id}).fetchall()
+        rows = (await db.execute(text(clientes_q.format(dia_filter="")), {"pid": point_id, "rid": route_id})).fetchall()
     return [{"id": r[0], "nombre": r[1], "prioridad": r[2] or "Media"} for r in rows]
 
 
 @router.get("/cliente-categorias/{cliente_id}")
-def get_cliente_categorias(cliente_id: int, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
-    rows = db.execute(text("""
+async def get_cliente_categorias(cliente_id: int, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
+    rows = (await db.execute(text("""
         SELECT c.id_categoria, c.nombre
         FROM CATEGORIAS_CLIENTES cc JOIN CATEGORIAS c ON c.id_categoria = cc.id_categoria
         WHERE cc.id_cliente = :cid ORDER BY c.nombre
-    """), {"cid": cliente_id}).fetchall()
+    """), {"cid": cliente_id})).fetchall()
     return [{"id": r[0], "nombre": r[1]} for r in rows]
 
 
 # ───────────────── Auditoría por cliente ─────────────────
 @router.post("/iniciar-auditoria-cliente")
-def iniciar_auditoria_cliente(payload: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def iniciar_auditoria_cliente(payload: dict, db: AsyncSession = Depends(get_async_db), current_user: Usuario = Depends(get_current_user)):
     cliente_id, point_id, cedula = payload.get("cliente_id"), payload.get("point_id"), payload.get("cedula")
     if not cliente_id or not point_id or not cedula:
         raise HTTPException(400, "Datos incompletos")
-    mid = _auditor_id(db, cedula)
+    mid = await _auditor_id(db, cedula, current_user)
     if not mid:
         raise HTTPException(404, "Auditor no encontrado")
     # Nota: VISITAS_MERCADERISTA no tiene columna `tipo_visita` en la base real (el modelo/otros
     # endpoints la asumían pero nunca existió como columna física); se distingue una visita de
     # auditor de campo por su `id_mercaderista`, que pertenece exclusivamente a MERCADERISTAS con
     # tipo = 'Auditor de Campo' (ver TIPO arriba), así que basta con filtrar por ese id.
-    existe = db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
+    existe = (await db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
         WHERE id_mercaderista=:m AND id_cliente=:c AND identificador_punto_interes=:p
         AND CAST(fecha_visita AS DATE)=CAST(GETDATE() AS DATE) ORDER BY id_visita DESC"""),
-        {"m": mid, "c": cliente_id, "p": point_id}).scalar()
+        {"m": mid, "c": cliente_id, "p": point_id})).scalar()
     if existe:
         vid = existe
     else:
-        db.execute(text("""INSERT INTO VISITAS_MERCADERISTA
+        await db.execute(text("""INSERT INTO VISITAS_MERCADERISTA
             (id_mercaderista, fecha_visita, estado, id_cliente, identificador_punto_interes, estado_data)
             VALUES (:m, GETDATE(), 'Pendiente', :c, :p, 'Activo')"""),
             {"m": mid, "c": cliente_id, "p": point_id})
-        db.commit()
-        vid = db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
+        await db.commit()
+        vid = (await db.execute(text("""SELECT TOP 1 id_visita FROM VISITAS_MERCADERISTA
             WHERE id_mercaderista=:m AND id_cliente=:c AND identificador_punto_interes=:p
-            ORDER BY id_visita DESC"""), {"m": mid, "c": cliente_id, "p": point_id}).scalar()
+            ORDER BY id_visita DESC"""), {"m": mid, "c": cliente_id, "p": point_id})).scalar()
     if not vid:
         raise HTTPException(500, "No se pudo crear la visita")
     return {"success": True, "id_visita": int(vid)}
@@ -291,11 +307,11 @@ def _b(v):
 
 
 @router.post("/guardar-auditoria-categoria")
-def guardar_auditoria_categoria(d: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def guardar_auditoria_categoria(d: dict, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     id_visita, id_categoria = d.get("id_visita"), d.get("id_categoria")
     if not id_visita or not id_categoria:
         raise HTTPException(400, "id_visita e id_categoria requeridos")
-    db.execute(text("""INSERT INTO AUDITORIA_CATEGORIAS
+    await db.execute(text("""INSERT INTO AUDITORIA_CATEGORIAS
         (id_visita, id_categoria, aplico_planograma, lineamiento_marca, precio_correcto, limpieza_correcta,
          participacion_correcta, fifo_correcto, prox_vencer, prox_vencer_cantidad, prox_vencer_marca,
          prox_vencer_fecha1, prox_vencer_fecha2,
@@ -317,15 +333,15 @@ def guardar_auditoria_categoria(d: dict, db: Session = Depends(get_db), _: Usuar
          "pn": _b(d.get("promo_nuestra")), "pnd": d.get("promo_nuestra_desc"),
          "pcomp": _b(d.get("promo_competencia")), "pcompd": d.get("promo_competencia_desc"),
          "ea": _b(d.get("exhibicion_adicional")), "et": d.get("exhibicion_tipos")})
-    db.commit()
+    await db.commit()
     return {"success": True, "message": "Auditoría de categoría guardada"}
 
 
 @router.post("/finalizar-auditoria-cliente")
-def finalizar_auditoria_cliente(d: dict, db: Session = Depends(get_db), _: Usuario = Depends(get_current_user)):
+async def finalizar_auditoria_cliente(d: dict, db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     id_visita = d.get("id_visita")
     if not id_visita:
         raise HTTPException(400, "id_visita requerido")
-    db.execute(text("UPDATE VISITAS_MERCADERISTA SET estado='Finalizada' WHERE id_visita=:v"), {"v": int(id_visita)})
-    db.commit()
+    await db.execute(text("UPDATE VISITAS_MERCADERISTA SET estado='Finalizada' WHERE id_visita=:v"), {"v": int(id_visita)})
+    await db.commit()
     return {"success": True, "message": "Auditoría del cliente finalizada"}

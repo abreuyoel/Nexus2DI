@@ -5,10 +5,11 @@ clientes auditados. Todo de solo lectura, mismo criterio de permisos que
 Centro de Mando "Gestión" (admin/analista)."""
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 from typing import Optional
 from datetime import date, timedelta
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import require_permission
 from app.models.user import Usuario
 
@@ -56,35 +57,35 @@ def _where_comun(desde, hasta, id_auditor, id_ruta, id_cliente, id_categoria):
 
 
 @router.get("/filtros")
-def get_filtros(db: Session = Depends(get_db), _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read'))):
+async def get_filtros(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read'))):
     """Catálogos para los dropdowns -- solo lo que efectivamente aparece en
     auditorías ya hechas (no el catálogo completo de mercaderistas/clientes)."""
-    auditores = db.execute(text("""
+    auditores = (await db.execute(text("""
         SELECT DISTINCT m.id_mercaderista, m.nombre
         FROM MERCADERISTAS m
         JOIN VISITAS_MERCADERISTA v ON v.id_mercaderista = m.id_mercaderista
         JOIN AUDITORIA_CATEGORIAS ac ON ac.id_visita = v.id_visita
         ORDER BY m.nombre
-    """)).fetchall()
-    rutas = db.execute(text("""
+    """))).fetchall()
+    rutas = (await db.execute(text("""
         SELECT DISTINCT rn.id_ruta, rn.ruta
         FROM RUTAS_NUEVAS rn
         JOIN MERCADERISTAS_RUTAS mr ON mr.id_ruta = rn.id_ruta
         ORDER BY rn.ruta
-    """)).fetchall()
-    clientes = db.execute(text("""
+    """))).fetchall()
+    clientes = (await db.execute(text("""
         SELECT DISTINCT c.id_cliente, c.cliente
         FROM CLIENTES c
         JOIN VISITAS_MERCADERISTA v ON v.id_cliente = c.id_cliente
         JOIN AUDITORIA_CATEGORIAS ac ON ac.id_visita = v.id_visita
         ORDER BY c.cliente
-    """)).fetchall()
-    categorias = db.execute(text("""
+    """))).fetchall()
+    categorias = (await db.execute(text("""
         SELECT DISTINCT cat.id_categoria, cat.nombre
         FROM CATEGORIAS cat
         JOIN AUDITORIA_CATEGORIAS ac ON ac.id_categoria = cat.id_categoria
         ORDER BY cat.nombre
-    """)).fetchall()
+    """))).fetchall()
     return {
         "auditores": [{"id": r[0], "nombre": r[1]} for r in auditores],
         "rutas": [{"id": r[0], "nombre": r[1]} for r in rutas],
@@ -94,14 +95,14 @@ def get_filtros(db: Session = Depends(get_db), _: Usuario = Depends(require_perm
 
 
 @router.get("/resumen")
-def get_resumen(
+async def get_resumen(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     id_auditor: Optional[int] = None,
     id_ruta: Optional[int] = None,
     id_cliente: Optional[int] = None,
     id_categoria: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read')),
 ):
     """KPIs + datos de gráficos + log filtrable, todo en una sola llamada
@@ -120,7 +121,7 @@ def get_resumen(
 
         where, params = _where_comun(desde, hasta, id_auditor, id_ruta, id_cliente, id_categoria)
 
-        rows = db.execute(text(f"""
+        rows = (await db.execute(text(f"""
             SELECT v.id_visita, v.fecha_visita,
                    m.id_mercaderista, m.nombre AS auditor,
                    c.id_cliente, c.cliente,
@@ -156,7 +157,7 @@ def get_resumen(
                     AND rinfo.id_mercaderista = v.id_mercaderista
             {where}
             ORDER BY v.fecha_visita DESC
-        """), params).fetchall()
+        """), params)).fetchall()
 
         log = []
         indicador_counts = {k: {"si": 0, "no": 0} for k, _lbl in INDICADORES}
@@ -239,11 +240,11 @@ def get_resumen(
         # de que exista una visita/cliente elegido), así que se cuentan por
         # prefijo de file_path + rango de fecha en vez de JOIN -- no se puede
         # acotar por auditor/cliente/categoría con este dato.
-        fotos_totales = db.execute(text("""
+        fotos_totales = (await db.execute(text("""
             SELECT COUNT(*) FROM FOTOS_TOTALES
             WHERE file_path LIKE 'auditor_campo/%'
               AND fecha_registro >= :d AND fecha_registro < DATEADD(day, 1, :h)
-        """), {"d": desde, "h": hasta}).scalar() or 0
+        """), {"d": desde, "h": hasta})).scalar() or 0
 
         return {
             "success": True, "desde": desde, "hasta": hasta,
@@ -285,12 +286,12 @@ def get_resumen(
 
 
 @router.get("/tendencia-competencia")
-def get_tendencia_competencia(
+async def get_tendencia_competencia(
     semanas: int = Query(16, ge=4, le=52),
     id_cliente: Optional[int] = None,
     id_ruta: Optional[int] = None,
     id_categoria: Optional[int] = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(require_permission('centro-mando-auditoria', 'read')),
 ):
     """Tendencia de presión competitiva por categoría (roadmap predictivo, item
@@ -313,7 +314,7 @@ def get_tendencia_competencia(
         hasta = hoy.isoformat()
         where, params = _where_comun(desde, hasta, None, id_ruta, id_cliente, id_categoria)
 
-        rows = db.execute(text(f"""
+        rows = (await db.execute(text(f"""
             SELECT v.fecha_visita, ac.id_categoria,
                    ISNULL(cat.nombre, CONCAT('Categoría ', ac.id_categoria)) AS categoria,
                    ac.competencia_actividad, ac.competencia_material_pop, ac.competencia_impulsadora
@@ -324,7 +325,7 @@ def get_tendencia_competencia(
             JOIN PUNTOS_INTERES1 p ON p.identificador = v.identificador_punto_interes
             LEFT JOIN CATEGORIAS cat ON cat.id_categoria = ac.id_categoria
             {where}
-        """), params).fetchall()
+        """), params)).fetchall()
 
         # Grilla canónica de semanas (lunes) -- todas las categorías se miden
         # contra estos mismos puntos en X, tengan o no auditorías esa semana.

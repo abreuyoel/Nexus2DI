@@ -1,7 +1,8 @@
+from sqlalchemy import select, update as sa_update
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app.db.session import get_db, SessionLocal
+from app.db.session import get_async_db
 from app.core.dependencies import get_current_user
 from app.models.user import Usuario
 from app.models.foto import NotificacionRechazoFoto
@@ -12,45 +13,44 @@ router = APIRouter(prefix="/api/notifications", tags=["Notificaciones"])
 
 
 @router.get("/rejection", response_model=List[NotificacionRechazoResponse])
-def get_rejection_notifications(
+async def get_rejection_notifications(
     cedula: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    query = db.query(NotificacionRechazoFoto)
+    stmt = select(NotificacionRechazoFoto).filter(NotificacionRechazoFoto.leida == False)
     if cedula:
-        query = query.filter(NotificacionRechazoFoto.mercaderista_cedula == cedula)
-    return query.filter(NotificacionRechazoFoto.leida == False).order_by(
-        NotificacionRechazoFoto.fecha_notificacion.desc()
-    ).limit(50).all()
+        stmt = stmt.filter(NotificacionRechazoFoto.mercaderista_cedula == cedula)
+    stmt = stmt.order_by(NotificacionRechazoFoto.fecha_notificacion.desc()).limit(50)
+    return (await db.execute(stmt)).scalars().all()
 
 
 @router.post("/mark-read/{notif_id}")
-def mark_as_read(
+async def mark_as_read(
     notif_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     _: Usuario = Depends(get_current_user),
 ):
-    notif = db.query(NotificacionRechazoFoto).filter(NotificacionRechazoFoto.id == notif_id).first()
+    notif = (await db.execute(select(NotificacionRechazoFoto).filter(NotificacionRechazoFoto.id == notif_id))).scalars().first()
     if not notif:
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     notif.leida = True
-    db.commit()
+    await db.commit()
     return {"message": "Notificación marcada como leída"}
 
 
 @router.post("/mark-all-read")
-def mark_all_read(
+async def mark_all_read(
     cedula: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    query = db.query(NotificacionRechazoFoto).filter(NotificacionRechazoFoto.leida == False)
+    stmt = sa_update(NotificacionRechazoFoto).where(NotificacionRechazoFoto.leida == False).values(leida=True)
     if cedula:
-        query = query.filter(NotificacionRechazoFoto.mercaderista_cedula == cedula)
-    updated = query.update({"leida": True})
-    db.commit()
-    return {"message": f"{updated} notificaciones marcadas como leídas"}
+        stmt = stmt.where(NotificacionRechazoFoto.mercaderista_cedula == cedula)
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"message": f"{result.rowcount} notificaciones marcadas como leídas"}
 
 
 @router.websocket("/ws/{user_id}")

@@ -68,7 +68,12 @@ def _get_client() -> "aioredis.Redis":
 def _get_listener_client() -> "aioredis.Redis":
     """Para el listener -- SIN socket_timeout de lectura: pubsub.listen()
     tiene que poder bloquear indefinidamente esperando el próximo mensaje,
-    eso es correcto, no un cuelgue."""
+    eso es correcto, no un cuelgue.
+
+    health_check_interval=15: redis-py envía un PING interno cada 15s sobre
+    la conexión idle, lo que evita que el NAT de Docker Desktop (o cualquier
+    firewall intermedio) cierre la sesión TCP por inactividad -- de ahí el
+    'Connection closed by server' que se veía al correr en local+Docker."""
     global _listener_client
     if _listener_client is None:
         _listener_client = aioredis.Redis(
@@ -78,6 +83,8 @@ def _get_listener_client() -> "aioredis.Redis":
             db=settings.REDIS_DB,
             decode_responses=True,
             socket_connect_timeout=5,
+            socket_keepalive=True,
+            health_check_interval=15,
         )
     return _listener_client
 
@@ -99,6 +106,7 @@ async def publish(room: str, message: dict) -> None:
 
 
 async def _listen_loop(manager) -> None:
+    global _listener_client
     backoff = 1
     while True:
         try:
@@ -124,6 +132,16 @@ async def _listen_loop(manager) -> None:
             raise
         except Exception as e:
             logger.warning(f"[redis_pubsub] listener caído, reintentando en {backoff}s: {e}")
+            # Descartar el cliente roto para que el próximo intento cree
+            # una conexión TCP nueva. Sin esto, _get_listener_client()
+            # devuelve la misma instancia rota (el global ya no es None)
+            # y subscribe() falla inmediatamente en cada reintento.
+            if _listener_client is not None:
+                try:
+                    await _listener_client.aclose()
+                except Exception:
+                    pass
+                _listener_client = None
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)
 

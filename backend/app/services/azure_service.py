@@ -8,9 +8,17 @@ from app.core.config import settings
 
 
 def _extract_account_key(conn_str: str) -> Optional[str]:
+    if not conn_str:
+        return None
     for part in conn_str.split(";"):
         if part.startswith("AccountKey="):
-            return part[len("AccountKey="):]
+            key = part[len("AccountKey="):].strip()
+            rem = len(key) % 4
+            if rem == 1:
+                key = key[:-1]
+            elif rem > 1:
+                key = key + ("=" * (4 - rem))
+            return key
     return None
 
 
@@ -58,24 +66,27 @@ class AzureStorageService:
 
     def get_sas_url(self, blob_name: str, hours: int = 2) -> str:
         """Return a SAS-signed URL valid for `hours` hours. Handles private containers and special characters in paths."""
-        account_key = _extract_account_key(settings.AZURE_STORAGE_CONNECTION_STRING)
         encoded = urllib.parse.quote(blob_name, safe="/")
         base = f"https://{settings.AZURE_ACCOUNT_NAME}.blob.core.windows.net/{settings.AZURE_CONTAINER_NAME}/{encoded}"
+        account_key = _extract_account_key(settings.AZURE_STORAGE_CONNECTION_STRING)
         if not account_key:
             return base
-        # Expiry redondeado a ventana diaria (UTC) -> URL idéntica todo el día y cacheable.
-        now = datetime.now(timezone.utc)
-        min_days = max(1, (hours + 23) // 24)
-        expiry = (now + timedelta(days=min_days + 1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        sas = generate_blob_sas(
-            account_name=settings.AZURE_ACCOUNT_NAME,
-            container_name=settings.AZURE_CONTAINER_NAME,
-            blob_name=blob_name,
-            account_key=account_key,
-            permission=BlobSasPermissions(read=True),
-            expiry=expiry,
-        )
-        return f"{base}?{sas}"
+        try:
+            # Expiry redondeado a ventana diaria (UTC) -> URL idéntica todo el día y cacheable.
+            now = datetime.now(timezone.utc)
+            min_days = max(1, (hours + 23) // 24)
+            expiry = (now + timedelta(days=min_days + 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            sas = generate_blob_sas(
+                account_name=settings.AZURE_ACCOUNT_NAME,
+                container_name=settings.AZURE_CONTAINER_NAME,
+                blob_name=blob_name,
+                account_key=account_key,
+                permission=BlobSasPermissions(read=True),
+                expiry=expiry,
+            )
+            return f"{base}?{sas}"
+        except Exception:
+            return base
 
     def get_blob_url(self, blob_name: str) -> str:
         encoded = urllib.parse.quote(blob_name, safe="/")

@@ -3,9 +3,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_permission
 from app.models.user import Usuario
 from app.models.cliente import Cliente
@@ -46,13 +47,13 @@ class ClientPowerBiSummary(BaseModel):
 
 
 @router.get("/summary", response_model=List[ClientPowerBiSummary])
-def get_cargas_powerbi_summary(
-    db: Session = Depends(get_db),
+async def get_cargas_powerbi_summary(
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission("cargas-powerbi", "read", ("admin", "analyst", "coordinador_general"))),
 ):
     """Obtiene el resumen de todos los clientes con la lista de sus Power BIs cargados."""
     # 1. Obtener todos los clientes ordenados por nombre
-    clientes = db.query(Cliente).order_by(Cliente.nombre).all()
+    clientes = (await db.execute(select(Cliente).order_by(Cliente.nombre))).scalars().all()
 
     # 2. Obtener todos los registros de dashboard_client
     query = text("""
@@ -60,7 +61,7 @@ def get_cargas_powerbi_summary(
         FROM dashboard_client
         ORDER BY id_cliente, ISNULL(es_principal, 0) DESC, fecha_creacion DESC, id_dashboard DESC
     """)
-    rows = db.execute(query).fetchall()
+    rows = (await db.execute(query)).fetchall()
 
     # Agrupar por id_cliente
     powerbis_by_client = {}
@@ -97,13 +98,13 @@ def get_cargas_powerbi_summary(
 
 
 @router.get("/client/{client_id}", response_model=List[PowerBiItem])
-def get_client_powerbis(
+async def get_client_powerbis(
     client_id: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     """Obtiene la lista de Power BIs activos para un cliente específico."""
-    cliente = db.query(Cliente).filter(Cliente.id == client_id).first()
+    cliente = (await db.execute(select(Cliente).filter(Cliente.id == client_id))).scalars().first()
     cliente_nombre = cliente.nombre if cliente else "Cliente"
 
     query = text("""
@@ -112,7 +113,7 @@ def get_client_powerbis(
         WHERE id_cliente = :client_id AND ISNULL(activo, 1) = 1
         ORDER BY ISNULL(es_principal, 0) DESC, fecha_creacion DESC, id_dashboard DESC
     """)
-    rows = db.execute(query, {"client_id": client_id}).fetchall()
+    rows = (await db.execute(query, {"client_id": client_id})).fetchall()
 
     return [
         PowerBiItem(
@@ -131,16 +132,16 @@ def get_client_powerbis(
 
 
 @router.post("", response_model=PowerBiItem, status_code=status.HTTP_201_CREATED)
-def create_cargas_powerbi(
+async def create_cargas_powerbi(
     payload: PowerBiCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission("cargas-powerbi", "write", ("admin", "analyst"))),
 ):
     """Crea una nueva carga de Power BI asignada a un cliente."""
     if not payload.url_html or not payload.url_html.strip():
         raise HTTPException(status_code=400, detail="El código iframe o URL de Power BI es obligatorio")
 
-    cliente = db.query(Cliente).filter(Cliente.id == payload.id_cliente).first()
+    cliente = (await db.execute(select(Cliente).filter(Cliente.id == payload.id_cliente))).scalars().first()
     if not cliente:
         raise HTTPException(status_code=404, detail="El cliente especificado no existe")
 
@@ -151,13 +152,13 @@ def create_cargas_powerbi(
         OUTPUT INSERTED.id_dashboard, INSERTED.id_cliente, INSERTED.nombre, INSERTED.url_html, INSERTED.tipo, INSERTED.fecha_creacion, INSERTED.activo
         VALUES (:id_cliente, :nombre, :url_html, :tipo, GETDATE(), 1)
     """)
-    row = db.execute(query, {
+    row = (await db.execute(query, {
         "id_cliente": payload.id_cliente,
         "nombre": nombre,
         "url_html": payload.url_html.strip(),
         "tipo": payload.tipo or "powerbi"
-    }).fetchone()
-    db.commit()
+    })).fetchone()
+    await db.commit()
 
     return PowerBiItem(
         id_dashboard=row[0],
@@ -172,15 +173,15 @@ def create_cargas_powerbi(
 
 
 @router.put("/{id_dashboard}", response_model=PowerBiItem)
-def update_cargas_powerbi(
+async def update_cargas_powerbi(
     id_dashboard: int,
     payload: PowerBiUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission("cargas-powerbi", "write", ("admin", "analyst"))),
 ):
     """Actualiza los datos de un Power BI cargado."""
     check_query = text("SELECT id_dashboard, id_cliente FROM dashboard_client WHERE id_dashboard = :id")
-    existing = db.execute(check_query, {"id": id_dashboard}).fetchone()
+    existing = (await db.execute(check_query, {"id": id_dashboard})).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Carga de Power BI no encontrada")
 
@@ -201,8 +202,8 @@ def update_cargas_powerbi(
 
     if updates:
         sql = f"UPDATE dashboard_client SET {', '.join(updates)} WHERE id_dashboard = :id"
-        db.execute(text(sql), params)
-        db.commit()
+        await db.execute(text(sql), params)
+        await db.commit()
 
     # Devolver el item actualizado
     query = text("""
@@ -211,7 +212,7 @@ def update_cargas_powerbi(
         LEFT JOIN CLIENTES c ON c.id_cliente = d.id_cliente
         WHERE d.id_dashboard = :id
     """)
-    row = db.execute(query, {"id": id_dashboard}).fetchone()
+    row = (await db.execute(query, {"id": id_dashboard})).fetchone()
 
     return PowerBiItem(
         id_dashboard=row[0],
@@ -226,42 +227,42 @@ def update_cargas_powerbi(
 
 
 @router.delete("/{id_dashboard}")
-def delete_cargas_powerbi(
+async def delete_cargas_powerbi(
     id_dashboard: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission("cargas-powerbi", "delete", ("admin", "analyst"))),
 ):
     """Elimina un Power BI asignado."""
     check_query = text("SELECT id_dashboard FROM dashboard_client WHERE id_dashboard = :id")
-    existing = db.execute(check_query, {"id": id_dashboard}).fetchone()
+    existing = (await db.execute(check_query, {"id": id_dashboard})).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Carga de Power BI no encontrada")
 
-    db.execute(text("DELETE FROM dashboard_client WHERE id_dashboard = :id"), {"id": id_dashboard})
-    db.commit()
+    await db.execute(text("DELETE FROM dashboard_client WHERE id_dashboard = :id"), {"id": id_dashboard})
+    await db.commit()
     return {"detail": "Power BI eliminado exitosamente"}
 
 
 @router.put("/{id_dashboard}/set-principal", response_model=PowerBiItem)
-def set_principal_powerbi(
+async def set_principal_powerbi(
     id_dashboard: int,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(require_permission("cargas-powerbi", "write", ("admin", "analyst"))),
 ):
     """Establece un Power BI como el principal/activo por defecto de su cliente."""
     check_query = text("SELECT id_dashboard, id_cliente FROM dashboard_client WHERE id_dashboard = :id")
-    existing = db.execute(check_query, {"id": id_dashboard}).fetchone()
+    existing = (await db.execute(check_query, {"id": id_dashboard})).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Carga de Power BI no encontrada")
 
     client_id = existing[1]
 
     # Desmarcar todos los demás reportes del mismo cliente
-    db.execute(text("UPDATE dashboard_client SET es_principal = 0 WHERE id_cliente = :cid"), {"cid": client_id})
+    await db.execute(text("UPDATE dashboard_client SET es_principal = 0 WHERE id_cliente = :cid"), {"cid": client_id})
 
     # Marcar este reporte como principal
-    db.execute(text("UPDATE dashboard_client SET es_principal = 1 WHERE id_dashboard = :id"), {"id": id_dashboard})
-    db.commit()
+    await db.execute(text("UPDATE dashboard_client SET es_principal = 1 WHERE id_dashboard = :id"), {"id": id_dashboard})
+    await db.commit()
 
     # Devolver item actualizado
     query = text("""
@@ -270,7 +271,7 @@ def set_principal_powerbi(
         LEFT JOIN CLIENTES c ON c.id_cliente = d.id_cliente
         WHERE d.id_dashboard = :id
     """)
-    row = db.execute(query, {"id": id_dashboard}).fetchone()
+    row = (await db.execute(query, {"id": id_dashboard})).fetchone()
 
     return PowerBiItem(
         id_dashboard=row[0],

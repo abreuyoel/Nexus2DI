@@ -11,6 +11,8 @@ from typing import List
 from sqlalchemy import cast, Date
 from sqlalchemy.orm import Session
 
+from app.core.timezone import get_adjusted_now, get_adjusted_today
+
 from app.models.mercaderista import Mercaderista, MercaderistaRuta
 from app.models.visita import Visita
 from app.models.ruta import RutaProgramacion, RutaActivada, Ruta
@@ -52,7 +54,7 @@ class PdvService:
         - Tiene al menos una visita real hoy y clientes por completar/desactivar
         """
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
         dia_numero = hoy.weekday()
         dia_es = DAY_MAP_ES[dia_numero]
 
@@ -247,7 +249,7 @@ class PdvService:
     ) -> dict:
         """Registra la activación de un PDV."""
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         # Verificar si ya está activado hoy (estado Activo)
         existente = (
@@ -267,7 +269,7 @@ class PdvService:
             mercaderista_id=merc.id,
             identificador_punto_interes=id_punto,
             ruta_id=id_ruta,
-            fecha_hora_activacion=datetime.now(),
+            fecha_hora_activacion=get_adjusted_now(self.db, merc.id),
             estado="Activo",
             tipo_activacion="mercaderista",
         )
@@ -283,7 +285,7 @@ class PdvService:
         """Registra la activación de una ruta completa a nivel de backend.
         Inserta un registro en RUTAS_ACTIVADAS que persiste entre sesiones del navegador."""
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         # Verificar si ya existe una activación para esta ruta hoy
         existente = (
@@ -301,7 +303,7 @@ class PdvService:
             if existente.estado != "activo":
                 existente.estado = "activo"
                 existente.tipo_activacion = "ruta"
-                existente.fecha_hora_activacion = datetime.now()
+                existente.fecha_hora_activacion = get_adjusted_now(self.db, merc.id)
                 self.db.commit()
                 print(f"[activar_ruta] 🔄 Reactivando ruta {id_ruta} (estaba '{existente.estado}') -> id={existente.id}")
                 return {"success": True, "id_activacion": existente.id, "ya_activado": False, "reactivado": True}
@@ -311,7 +313,7 @@ class PdvService:
         activacion = RutaActivada(
             mercaderista_id=merc.id,
             ruta_id=id_ruta,
-            fecha_hora_activacion=datetime.now(),
+            fecha_hora_activacion=get_adjusted_now(self.db, merc.id),
             estado="activo",
             tipo_activacion="ruta",
         )
@@ -328,7 +330,7 @@ class PdvService:
         Antes de finalizar, valida que no haya visitas pendientes en los PDVs
         de esta ruta para hoy. Si hay pendientes, rechaza la finalización."""
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
         dia_numero = hoy.weekday()
 
         # Aceptar ambas variantes de casing: "activo" (ruta) y "Activo" (pdv)
@@ -402,7 +404,7 @@ class PdvService:
         de get_pdv_activos() siga devolviendo el PDV.
         """
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
 
         # Buscar con ambas variantes de casing: "activo" (ruta) y "Activo" (pdv)
         activacion = (
@@ -441,7 +443,7 @@ class PdvService:
             mercaderista_id=merc.id,
             ruta_id=ruta_id,
             identificador_punto_interes=id_punto,
-            fecha_hora_activacion=datetime.now(),
+            fecha_hora_activacion=get_adjusted_now(self.db, merc.id),
             estado="Finalizado",
             tipo_activacion="pdv",
         )
@@ -474,7 +476,7 @@ class PdvService:
         estén visitados antes de permitir la desactivación.
         """
         merc = self._get_mercaderista(current_user)
-        hoy = date.today()
+        hoy = get_adjusted_today(self.db, merc.id)
         dia_numero = hoy.weekday()
 
         # Rutas del mercaderista

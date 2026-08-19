@@ -44,6 +44,9 @@ spec:
           envFrom:
             - configMapRef: { name: nexus2di-backend-config }
             - secretRef: { name: nexus2di-backend-secret }
+          env:
+            - name: UVICORN_WORKERS
+              value: "6"  # Aumentado a 6 para maximizar el uso de hilos concurrentes
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 10

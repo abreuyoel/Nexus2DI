@@ -318,8 +318,8 @@ export class ApiService {
   }
 
   // ── Admin: Grupos de Chat ──────────────────────────────────────────────
-  adminListarGruposChat(): Observable<any[]> {
-    return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos`);
+  adminListarGruposChat(q: string = '', page: number = 1, limit: number = 10): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/admin/chat-grupos`, { params: this.params({ q, page, limit }) });
   }
   adminListarClientesParaGrupos(q: string = ''): Observable<any[]> {
     return this.http.get<any[]>(`${this.base}/api/admin/chat-grupos/clientes`, { params: this.params({ q }) });

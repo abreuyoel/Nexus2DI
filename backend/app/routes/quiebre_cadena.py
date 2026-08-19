@@ -1,3 +1,4 @@
+from sqlalchemy import select
 """Quiebre por Cadena -- ver app/services/quiebre_cadena_service.py para el
 diseño completo y por qué es un módulo/permiso separado de N2 (quiebre.py).
 
@@ -8,8 +9,9 @@ posterior, condicionado a tener el ok de los clientes-marca relevantes.
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.db.session import get_db, get_async_db
 from app.core.dependencies import require_permission
 from app.services.quiebre_cadena_service import calcular_quiebre_por_cadena, DIAS_VENTANA_DEFAULT
 
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/api/quiebre-cadena", tags=["Quiebre por Cadena"])
 
 
 @router.get("")
-def get_quiebre_por_cadena(
+async def get_quiebre_por_cadena(
     dias_ventana: int = Query(DIAS_VENTANA_DEFAULT, ge=7, le=90),
     db: Session = Depends(get_db),
     _=Depends(require_permission("quiebre-cadena", "read", fallback_roles=("admin", "analyst"))),
