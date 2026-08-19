@@ -100,7 +100,7 @@ async def create_point(
 @router.get("/regions/list")
 async def get_regions(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(DepartamentoGeo.nombre).filter(DepartamentoGeo.activo == True).order_by(DepartamentoGeo.nombre))).scalars().all()
-    return [r[0] for r in rows]
+    return list(rows)
 
 
 @router.get("/cities/list")
@@ -123,25 +123,25 @@ async def get_cities(
 @router.get("/chains/list")
 async def get_chains(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(CanalVenta.nombre).filter(CanalVenta.activo == True).order_by(CanalVenta.nombre))).scalars().all()
-    return [r[0] for r in rows]
+    return list(rows)
 
 
 @router.get("/jerarquia_n2/list")
 async def get_jerarquia_n2(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(TipoNegocio.nombre).filter(TipoNegocio.activo == True).order_by(TipoNegocio.nombre))).scalars().all()
-    return [r[0] for r in rows]
+    return list(rows)
 
 
 @router.get("/jerarquia_n2_2/list")
 async def get_jerarquia_n2_2(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(SubtipoNegocio.nombre).filter(SubtipoNegocio.activo == True).order_by(SubtipoNegocio.nombre))).scalars().all()
-    return [r[0] for r in rows]
+    return list(rows)
 
 
 @router.get("/nivel_alcance/list")
 async def get_nivel_alcance(db: AsyncSession = Depends(get_async_db), _: Usuario = Depends(get_current_user)):
     rows = (await db.execute(select(Alcance.nombre).filter(Alcance.activo == True).order_by(Alcance.nombre))).scalars().all()
-    return [r[0] for r in rows]
+    return list(rows)
 
 
 @router.get("/count")

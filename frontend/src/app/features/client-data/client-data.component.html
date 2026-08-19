@@ -377,9 +377,13 @@
             <th mat-header-cell *matHeaderCellDef mat-sort-header class="text-right">Precio</th>
             <td mat-cell *matCellDef="let row">
               <div class="cell-price">
-                <span class="price-bs">{{ row.precio_bs | number:'1.2-2' }} Bs</span>
-                @if (row.precio_ds) {
-                  <span class="price-ds">$ {{ row.precio_ds | number:'1.2-2' }}</span>
+                @if (isPanama(row)) {
+                  <span class="price-bs">$ {{ row.precio_ds | number:'1.2-2' }}</span>
+                } @else {
+                  <span class="price-bs">{{ row.precio_bs | number:'1.2-2' }} Bs</span>
+                  @if (row.precio_ds) {
+                    <span class="price-ds">$ {{ row.precio_ds | number:'1.2-2' }}</span>
+                  }
                 }
               </div>
             </td>
@@ -437,8 +441,10 @@
                         <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Final</th>
                         <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Depósito</th>
                         <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Caras</th>
-                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Precio Bs</th>
-                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Precio $</th>
+                        <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">{{ isPanama(v) ? 'Precio $' : 'Precio Bs' }}</th>
+                        @if (!isPanama(v)) {
+                          <th class="text-center px-2 py-3 font-black uppercase tracking-wider text-[11px]">Precio $</th>
+                        }
                       </tr>
                     </thead>
                     <tbody>
@@ -449,8 +455,12 @@
                           <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.inv_final" [readonly]="!puedeEditar" class="w-20 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
                           <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.inv_deposito" [readonly]="!puedeEditar" class="w-20 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
                           <td class="px-2 py-2 text-center"><input type="number" [(ngModel)]="it.caras" [readonly]="!puedeEditar" class="w-16 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
-                          <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_bs" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
-                          <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_ds" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          @if (isPanama(v)) {
+                            <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_ds" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          } @else {
+                            <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_bs" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                            <td class="px-2 py-2 text-center"><input type="number" step="0.01" [(ngModel)]="it.precio_ds" [readonly]="!puedeEditar" class="w-24 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 read-only:opacity-60 read-only:cursor-not-allowed"></td>
+                          }
                         </tr>
                       }
                     </tbody>

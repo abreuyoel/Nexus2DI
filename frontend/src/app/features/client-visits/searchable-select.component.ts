@@ -75,15 +75,22 @@ export interface SelectOption {
     .ss-trigger {
       display: flex; align-items: center; gap: .5rem;
       width: 100%; padding: .55rem .75rem;
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.08);
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
       border-radius: .75rem;
-      color: inherit; cursor: pointer;
+      color: #0f172a; cursor: pointer;
       font: inherit; text-align: left;
       transition: border-color .15s, background .15s;
     }
-    .ss-trigger:hover { border-color: rgba(124,58,237,.5); }
-    .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.08); }
+    :host-context(.dark) .ss-trigger {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      color: inherit;
+    }
+    .ss-trigger:hover { border-color: #7c3aed; }
+    :host-context(.dark) .ss-trigger:hover { border-color: rgba(124,58,237,.5); }
+    .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.04); }
+    :host-context(.dark) .ss-open .ss-trigger { border-color: #7c3aed; background: rgba(124,58,237,.08); }
     .ss-trigger-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .7; }
     .ss-trigger-text { flex: 1; font-size: .875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ss-placeholder { opacity: .5; font-weight: 400; }
@@ -152,20 +159,20 @@ export interface SelectOption {
       font-size: .875rem; transition: all .15s;
     }
     :host-context(.dark) .ss-item { color: #cbd5e1; }
-    .ss-item:hover { background: #f1f5f9; color: #7c3aed; }
+    .ss-item:hover { background: #f1f5f9; color: #6d28d9; }
     :host-context(.dark) .ss-item:hover { background: rgba(255,255,255,0.05); color: #a78bfa; }
     
-    .ss-active { background: #f5f3ff; color: #7c3aed; font-weight: 600; }
+    .ss-active { background: #f5f3ff; color: #6d28d9; font-weight: 600; }
     :host-context(.dark) .ss-active { background: rgba(124,58,237,0.15); color: #a78bfa; }
 
     .ss-item-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; opacity: .7; }
     .ss-item-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ss-check { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; color: #7c3aed; }
+    .ss-check { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; color: #6d28d9; }
     :host-context(.dark) .ss-check { color: #a78bfa; }
 
     .ss-item-all { border-bottom: 1px solid #f1f5f9; border-radius: 0; margin-bottom: 4px; padding-bottom: .6rem; color: #64748b; }
     :host-context(.dark) .ss-item-all { border-bottom-color: rgba(255,255,255,0.05); color: #94a3b8; }
-    .ss-item-all:hover { color: #7c3aed; }
+    .ss-item-all:hover { color: #6d28d9; }
     :host-context(.dark) .ss-item-all:hover { color: #a78bfa; }
 
     .ss-empty {
