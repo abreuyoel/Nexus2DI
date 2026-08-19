@@ -216,11 +216,7 @@
   } @else {
   <div class="space-y-3">
     @for (item of derivaItems(); track item.id_sku_competencia) {
-    <div class="bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-sm"
-      [class.border-rose-300]="item.estado === 'critico'" [class.dark:border-rose-800]="item.estado === 'critico'"
-      [class.border-amber-300]="item.estado === 'alerta'" [class.dark:border-amber-800]="item.estado === 'alerta'"
-      [class.border-yellow-200]="item.estado === 'atencion'" [class.dark:border-yellow-900]="item.estado === 'atencion'"
-      [class.border-slate-200]="item.estado === 'ok' || item.estado === 'sin_datos'" [class.dark:border-white/5]="item.estado === 'ok' || item.estado === 'sin_datos'">
+    <div class="bg-white dark:bg-slate-900 border rounded-2xl p-4 shadow-sm" [ngClass]="claseBordeDeriva(item.estado)">
       <div class="flex items-start justify-between gap-3 flex-wrap">
         <div class="min-w-0">
           <div class="font-black text-slate-800 dark:text-white text-sm truncate">{{ item.producto_cliente }}

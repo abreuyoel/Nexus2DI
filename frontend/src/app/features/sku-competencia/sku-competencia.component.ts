@@ -59,6 +59,20 @@ export class SkuCompetenciaComponent implements OnInit {
     return { critico: 'Ya cruzó el umbral', alerta: 'Tendencia hacia el umbral', atencion: 'Movimiento inusual', ok: 'Estable', sin_datos: 'Sin historial suficiente' }[estado] || estado;
   }
 
+  // 'dark:border-white/5' con la sintaxis [class.x]="cond" rompe el parser
+  // de Angular (el '/' de la opacidad de Tailwind no es válido en un nombre
+  // de binding) -- por eso va como string entero vía [ngClass] en vez de
+  // varios [class.x] sueltos.
+  claseBordeDeriva(estado: string): string {
+    return {
+      critico: 'border-rose-300 dark:border-rose-800',
+      alerta: 'border-amber-300 dark:border-amber-800',
+      atencion: 'border-yellow-200 dark:border-yellow-900',
+      ok: 'border-slate-200 dark:border-white/5',
+      sin_datos: 'border-slate-200 dark:border-white/5',
+    }[estado] || 'border-slate-200 dark:border-white/5';
+  }
+
   // Filtros de productoras y categorías
   cargandoFiltros = signal(false);
   todasProductoras = signal<any[]>([]);

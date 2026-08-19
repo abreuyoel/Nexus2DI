@@ -404,8 +404,7 @@ type ProductoOcrPropuesto = {
         <div class="grid grid-cols-3 gap-2 mb-3">
           @for (m of metodosPago; track m) {
             <button (click)="pagoMetodo = m" class="px-2 py-2 rounded-xl text-xs font-bold border transition-colors"
-              [class.bg-amber-500]="pagoMetodo === m" [class.text-white]="pagoMetodo === m" [class.border-amber-500]="pagoMetodo === m"
-              [class.bg-slate-50]="pagoMetodo !== m" [class.dark:bg-slate-800]="pagoMetodo !== m" [class.text-slate-600]="pagoMetodo !== m" [class.dark:text-slate-300]="pagoMetodo !== m" [class.border-slate-200]="pagoMetodo !== m" [class.dark:border-white/10]="pagoMetodo !== m">{{ m }}</button>
+              [ngClass]="pagoMetodo === m ? 'bg-amber-500 text-white border-amber-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10'">{{ m }}</button>
           }
         </div>
         <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1 block">Referencia (opcional)</label>

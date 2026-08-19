@@ -96,11 +96,10 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from app.core.limiter import limiter
-# Sin este import, settings.FRONTEND_URL (usado más abajo para CORS) tira
-# NameError al arrancar -- crasheaba los 3 pods en CrashLoopBackOff en
-# producción (confirmado 2026-08-18, "settings" nunca se había importado
-# en este archivo).
-from app.core.config import settings
+# settings ya se importa arriba (línea ~19) -- ese import se agregó después
+# de que esto mismo faltara y tumbara los 3 pods en CrashLoopBackOff el
+# 2026-08-18 (NameError en settings.FRONTEND_URL, más abajo). Sin ese
+# import duplicado acá.
 
 app = FastAPI(
     title="EPRAN API",
