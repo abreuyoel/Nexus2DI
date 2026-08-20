@@ -355,7 +355,14 @@ export class PermissionsComponent implements OnInit {
       .filter(m => this.perms[m.clave].state !== 'inherit' || this.esFiltroProductos(m.clave))
       .map(m => ({
         module: m.clave,
-        can_read: this.perms[m.clave].state === 'allow',
+        // Si el módulo se fuerza a guardar SOLO por el toggle de "Solo
+        // propios" (state se quedó en 'inherit', el admin nunca tocó
+        // Lectura), no hay que mandar can_read=false -- eso apaga la
+        // lectura de verdad y con ella la visibilidad del módulo entero en
+        // el sidebar (le pasó a Flora Foods: activó "Solo propios",
+        // guardó, y "Productos" desapareció del menú). El toggle es sobre
+        // QUÉ ve, no sobre SI puede ver -- con 'inherit' se asume que sí.
+        can_read: this.perms[m.clave].state === 'inherit' ? true : this.perms[m.clave].state === 'allow',
         can_write: this.perms[m.clave].can_write,
         can_delete: this.perms[m.clave].can_delete,
         can_see_all: this.perms[m.clave].can_see_all,
