@@ -355,18 +355,21 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
         )
         stmt = stmt.filter(Categoria.id_categoria.in_(cats_subq))
 
-        # "Solo propios" (pedido por Flora Foods, 19 ago): reusa el mismo
-        # checkbox de usuario_permisos que ya existe para module='data'
-        # ("Categoría completa" / "Solo propios" en Permisos) -- no hace
-        # falta UI nueva, el admin ya lo puede marcar ahí. Cuando está en
-        # can_see_all=False, acota además de la categoría completa a solo
-        # los SKU que SKU_COMPETENCIA ya tiene marcados como propios de
-        # este cliente (id_producto_cliente) -- la misma fuente de verdad
-        # que usa Vendedor para decidir qué SKU vigilar, no una lista nueva.
+        # "Solo propios" (pedido por Flora Foods, 19-20 ago): reusa el mismo
+        # checkbox de usuario_permisos que ya existe para module='products'
+        # ("Categoría completa" / "Solo propios" en Permisos, fila
+        # "Productos" -- SEPARADA de "Data", que es un módulo distinto con
+        # su propia fila; primera versión de este fix la enganchó mal a
+        # 'data' por error) -- no hace falta UI nueva, el admin ya lo puede
+        # marcar ahí. Cuando está en can_see_all=False, acota además de la
+        # categoría completa a solo los SKU que SKU_COMPETENCIA ya tiene
+        # marcados como propios de este cliente (id_producto_cliente) -- la
+        # misma fuente de verdad que usa Vendedor para decidir qué SKU
+        # vigilar, no una lista nueva.
         perm = (await db.execute(
             select(UserPermission).filter(
                 UserPermission.user_id == current_user.id,
-                UserPermission.module == "data",
+                UserPermission.module == "products",
             )
         )).scalars().first()
         if perm and perm.can_read and not perm.can_see_all:
