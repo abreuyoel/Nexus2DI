@@ -42,10 +42,20 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   showEncuestaUserDropdown = false;
 
   // Filtros de fecha y estado
+  generalSearchQuery = signal<string>('');
   startDateFilter = signal<string>('');
   endDateFilter = signal<string>('');
   statusJornadaFilter = signal<'all' | 'active' | 'finished'>('all');
   statusEncuestaFilter = signal<'all' | 'correction' | 'ok'>('all');
+
+  // Paginación
+  Math = Math;
+  pageSize = signal<number>(10);
+  currentPageJornadas = signal<number>(1);
+  currentPageEncuestas = signal<number>(1);
+  currentPageMedicos = signal<number>(1);
+  currentPageCentros = signal<number>(1);
+  subTabEncuestas = signal<'encuestas' | 'centros'>('encuestas');
 
   // Location Modal
   showLocationModal = false;
@@ -76,11 +86,14 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   showJornadaModal = false;
   showEncuestaModal = false;
   showMedicoModal = false;
+  showCentroModal = false;
 
   // Formularios en Modal
   currentJornada: any = {};
   currentEncuesta: any = {};
   currentMedico: any = { consultorios: [] };
+  currentCentro: any = { nombre_centro: '', direccion_completa: '', ciudad: '', estado: '' };
+  readonly ESTADOS = ['Distrito Capital', 'Miranda'];
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   universidadesList: string[] = [];
 
@@ -116,6 +129,17 @@ export class SupervisorEncuestadoresComponent implements OnInit {
     this.http.get<any[]>(`${this.API}/encuestadores`).subscribe({
       next: (res) => this.encuestadores.set(res),
       error: () => this.snack.open('Error al cargar encuestadores', 'OK', { duration: 3000 })
+    });
+  }
+
+  loadCentros(): void {
+    this.http.get<any>(`${this.API}/centros`).subscribe({
+      next: (res) => {
+        this.centros.set(res.centros || []);
+      },
+      error: (err) => {
+        console.error('Error al cargar centros:', err);
+      }
     });
   }
 
@@ -229,6 +253,18 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   filteredJornadas() {
     let list = this.jornadas();
 
+    // Buscador general por texto / nombres
+    const query = this.generalSearchQuery().toLowerCase().trim();
+    if (query) {
+      list = list.filter(j =>
+        (j.username || '').toLowerCase().includes(query) ||
+        (j.ciudad || '').toLowerCase().includes(query) ||
+        (j.estado_geo || '').toLowerCase().includes(query) ||
+        (j.estado || '').toLowerCase().includes(query) ||
+        (j.notas || '').toLowerCase().includes(query)
+      );
+    }
+
     // Filtro por fecha
     if (this.startDateFilter()) {
       const start = new Date(this.startDateFilter() + 'T00:00:00');
@@ -252,6 +288,20 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   filteredEncuestas() {
     let list = this.encuestas();
 
+    // Buscador general por texto / nombres
+    const query = this.generalSearchQuery().toLowerCase().trim();
+    if (query) {
+      list = list.filter(e =>
+        (e.nombre_centro || '').toLowerCase().includes(query) ||
+        (e.username || '').toLowerCase().includes(query) ||
+        (e.ciudad || '').toLowerCase().includes(query) ||
+        (e.estado_geo || '').toLowerCase().includes(query) ||
+        (e.fuente_informacion || '').toLowerCase().includes(query) ||
+        (e.notas_generales || '').toLowerCase().includes(query) ||
+        (e.observacion_supervisor || '').toLowerCase().includes(query)
+      );
+    }
+
     // Filtro por fecha
     if (this.startDateFilter()) {
       const start = new Date(this.startDateFilter() + 'T00:00:00');
@@ -273,10 +323,15 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   }
 
   clearFilters(): void {
+    this.generalSearchQuery.set('');
     this.startDateFilter.set('');
     this.endDateFilter.set('');
     this.statusJornadaFilter.set('all');
     this.statusEncuestaFilter.set('all');
+    this.currentPageJornadas.set(1);
+    this.currentPageEncuestas.set(1);
+    this.currentPageMedicos.set(1);
+    this.currentPageCentros.set(1);
   }
 
   verDetalleJornada(idJornada: number): void {
@@ -529,12 +584,152 @@ export class SupervisorEncuestadoresComponent implements OnInit {
 
   onFilterChange(userId: any): void {
     this.selectedUserFilter.set(userId ? Number(userId) : null);
+    this.currentPageJornadas.set(1);
+    this.currentPageEncuestas.set(1);
+    this.currentPageMedicos.set(1);
     this.loadData();
   }
 
   switchTab(tab: 'jornadas' | 'encuestas' | 'medicos'): void {
     this.activeTab.set(tab);
+    this.currentPageJornadas.set(1);
+    this.currentPageEncuestas.set(1);
+    this.currentPageMedicos.set(1);
     this.loadData();
+  }
+
+  // --- MÉTODOS DE PAGINACIÓN ---
+
+  paginatedJornadas() {
+    const list = this.filteredJornadas();
+    const page = this.currentPageJornadas();
+    const size = this.pageSize();
+    const start = (page - 1) * size;
+    return list.slice(start, start + size);
+  }
+
+  totalPagesJornadas(): number {
+    return Math.ceil(this.filteredJornadas().length / this.pageSize()) || 1;
+  }
+
+  setPageJornadas(page: number): void {
+    if (page >= 1 && page <= this.totalPagesJornadas()) {
+      this.currentPageJornadas.set(page);
+    }
+  }
+
+  paginatedEncuestas() {
+    const list = this.filteredEncuestas();
+    const page = this.currentPageEncuestas();
+    const size = this.pageSize();
+    const start = (page - 1) * size;
+    return list.slice(start, start + size);
+  }
+
+  totalPagesEncuestas(): number {
+    return Math.ceil(this.filteredEncuestas().length / this.pageSize()) || 1;
+  }
+
+  setPageEncuestas(page: number): void {
+    if (page >= 1 && page <= this.totalPagesEncuestas()) {
+      this.currentPageEncuestas.set(page);
+    }
+  }
+
+  filteredMedicos() {
+    let list = this.medicos();
+    const query = this.generalSearchQuery().toLowerCase().trim();
+    if (!query) return list;
+
+    return list.filter(m => {
+      const fullNombre = `${m.nombre1 || ''} ${m.nombre2 || ''} ${m.apellido1 || ''} ${m.apellido2 || ''}`.toLowerCase();
+      const idExt = (m.id_medico_externo || '').toLowerCase();
+      const espec = (m.especialidad || '').toLowerCase();
+      const ciud = (m.ciudad || '').toLowerCase();
+      const consultoriosStr = (m.consultorios || []).map((c: any) => (c.nombre_clinica || '') + ' ' + (c.direccion_especifica || '')).join(' ').toLowerCase();
+      return fullNombre.includes(query) || idExt.includes(query) || espec.includes(query) || ciud.includes(query) || consultoriosStr.includes(query);
+    });
+  }
+
+  paginatedMedicos() {
+    const list = this.filteredMedicos();
+    const page = this.currentPageMedicos();
+    const size = this.pageSize();
+    const start = (page - 1) * size;
+    return list.slice(start, start + size);
+  }
+
+  totalPagesMedicos(): number {
+    return Math.ceil(this.filteredMedicos().length / this.pageSize()) || 1;
+  }
+
+  setPageMedicos(page: number): void {
+    if (page >= 1 && page <= this.totalPagesMedicos()) {
+      this.currentPageMedicos.set(page);
+    }
+  }
+
+  filteredCentros() {
+    let list = this.centros();
+    const query = this.generalSearchQuery().toLowerCase().trim();
+    if (!query) return list;
+    return list.filter(c =>
+      (c.nombre_centro || '').toLowerCase().includes(query) ||
+      (c.direccion_completa || '').toLowerCase().includes(query) ||
+      (c.ciudad || '').toLowerCase().includes(query) ||
+      (c.estado || '').toLowerCase().includes(query)
+    );
+  }
+
+  paginatedCentros() {
+    const list = this.filteredCentros();
+    const page = this.currentPageCentros();
+    const size = this.pageSize();
+    const start = (page - 1) * size;
+    return list.slice(start, start + size);
+  }
+
+  totalPagesCentros(): number {
+    return Math.ceil(this.filteredCentros().length / this.pageSize()) || 1;
+  }
+
+  setPageCentros(page: number): void {
+    if (page >= 1 && page <= this.totalPagesCentros()) {
+      this.currentPageCentros.set(page);
+    }
+  }
+
+  // --- CRUD CENTROS DE SALUD ---
+
+  openCentroModal(): void {
+    this.currentCentro = {
+      nombre_centro: '',
+      direccion_completa: '',
+      ciudad: 'Caracas',
+      estado: 'Distrito Capital'
+    };
+    this.showCentroModal = true;
+  }
+
+  saveCentro(): void {
+    if (!this.currentCentro.nombre_centro?.trim() || !this.currentCentro.direccion_completa?.trim()) {
+      this.snack.open('Nombre del centro y dirección completa son obligatorios', 'OK', { duration: 2500 });
+      return;
+    }
+
+    this.loading.set(true);
+    this.http.post<any>(`${this.API}/centros`, this.currentCentro).subscribe({
+      next: () => {
+        this.snack.open('Centro de salud creado exitosamente', 'OK', { duration: 2500 });
+        this.showCentroModal = false;
+        this.loadCentros();
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.snack.open('Error al crear el centro: ' + (err.error?.detail || err.message), 'OK', { duration: 3500 });
+        this.loading.set(false);
+      }
+    });
   }
 
   // --- CRUD JORNADAS ---
@@ -679,6 +874,39 @@ export class SupervisorEncuestadoresComponent implements OnInit {
           this.loading.set(false);
         }
       });
+    });
+  }
+
+  // --- CRUD CENTROS DE SALUD ---
+
+  openCentroModal(): void {
+    this.currentCentro = {
+      nombre_centro: '',
+      direccion_completa: '',
+      ciudad: 'Caracas',
+      estado: 'Distrito Capital'
+    };
+    this.showCentroModal = true;
+  }
+
+  saveCentro(): void {
+    if (!this.currentCentro.nombre_centro?.trim() || !this.currentCentro.direccion_completa?.trim()) {
+      this.snack.open('Nombre del centro y dirección completa son obligatorios', 'OK', { duration: 2500 });
+      return;
+    }
+
+    this.loading.set(true);
+    this.http.post<any>(`${this.API}/centros`, this.currentCentro).subscribe({
+      next: () => {
+        this.snack.open('Centro de salud creado exitosamente', 'OK', { duration: 2500 });
+        this.showCentroModal = false;
+        this.loadCentros();
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.snack.open('Error al crear el centro: ' + (err.error?.detail || err.message), 'OK', { duration: 3500 });
+        this.loading.set(false);
+      }
     });
   }
 
