@@ -1,8 +1,17 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ruta import Ruta
 from app.models.mercaderista import Mercaderista, MercaderistaRuta
+
+# IANA en vez de "restar 1 hora a mano": ninguno de los dos países usa
+# horario de verano hoy, así que numéricamente da lo mismo -- pero con la
+# zona real, si algún día cambia la regla (o se agrega un tercer país), el
+# cálculo se sigue ajustando solo. Autodocumentado también: "America/Panama"
+# dice qué es, "-1 hora" solo dice cuánto.
+TZ_VENEZUELA = ZoneInfo("America/Caracas")
+TZ_PANAMA = ZoneInfo("America/Panama")
 
 def is_panama_mercaderista(db, mercaderista_id: int) -> bool:
     """Retorna True si el mercaderista opera en Panamá.
@@ -31,13 +40,16 @@ def is_panama_mercaderista(db, mercaderista_id: int) -> bool:
 
 def get_adjusted_now(db, mercaderista_id: int) -> datetime:
     """Devuelve la fecha/hora actual (now) ajustada según el país de operación del mercaderista.
-    La hora del servidor corre en Venezuela (UTC-4).
-    Si el mercaderista está en Panamá (UTC-5), se resta 1 hora.
+
+    Se calcula con zoneinfo real (America/Caracas o America/Panama), no una
+    resta de horas a mano -- el servidor mismo puede estar en cualquier
+    zona, esto no depende de su reloj local para el cálculo del offset,
+    solo del instante UTC real. La columna de destino (FOTOS_TOTALES.
+    fecha_registro, etc.) es DATETIME naive, así que se devuelve naive
+    (tzinfo=None) representando la hora de pared del país correspondiente.
     """
-    now = datetime.now()
-    if is_panama_mercaderista(db, mercaderista_id):
-        return now - timedelta(hours=1)
-    return now
+    tz = TZ_PANAMA if is_panama_mercaderista(db, mercaderista_id) else TZ_VENEZUELA
+    return datetime.now(tz).replace(tzinfo=None)
 
 def get_adjusted_today(db, mercaderista_id: int) -> date:
     """Devuelve la fecha actual (date) ajustada según el país de operación del mercaderista.

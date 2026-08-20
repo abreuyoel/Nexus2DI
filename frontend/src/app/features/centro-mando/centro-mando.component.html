@@ -213,10 +213,10 @@
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
-          <span class="cm-metric-num orange">{{ resumenDia().rutas.planificadas - resumenDia().rutas.activas -
-            resumenDia().rutas.completadas }}</span>
-          <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().rutas.planificadas - resumenDia().rutas.activas -
-            resumenDia().rutas.completadas, resumenDia().rutas.planificadas) }}%</span>
+          <span class="cm-metric-num orange">{{ pendientes(resumenDia().rutas.planificadas, resumenDia().rutas.activas,
+            resumenDia().rutas.completadas) }}</span>
+          <span class="cm-metric-lbl">Pend. · {{ pct(pendientes(resumenDia().rutas.planificadas, resumenDia().rutas.activas,
+            resumenDia().rutas.completadas), resumenDia().rutas.planificadas) }}%</span>
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
@@ -249,11 +249,14 @@
           <!-- Pendiente = sin foto de activación NI de desactivación -- antes
                  restaba solo "completados" (act+des), así que un PDV recién
                  activado (solo foto de apertura, todavía sin cerrar) contaba
-                 como "pendiente" igual que uno sin ninguna foto. -->
-          <span class="cm-metric-num orange">{{ resumenDia().puntos_interes.planificados -
-            resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados }}</span>
-          <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().puntos_interes.planificados -
-            resumenDia().puntos_interes.activos - resumenDia().puntos_interes.completados,
+                 como "pendiente" igual que uno sin ninguna foto. Clampeado en
+                 0: un punto puede completarse sin haber estado planificado
+                 para HOY (cobertura fuera de día, ver resumen_dia()), lo que
+                 puede dejar completados > planificados. -->
+          <span class="cm-metric-num orange">{{ pendientes(resumenDia().puntos_interes.planificados,
+            resumenDia().puntos_interes.activos, resumenDia().puntos_interes.completados) }}</span>
+          <span class="cm-metric-lbl">Pend. · {{ pct(pendientes(resumenDia().puntos_interes.planificados,
+            resumenDia().puntos_interes.activos, resumenDia().puntos_interes.completados),
             resumenDia().puntos_interes.planificados) }}%</span>
         </div>
         <div class="cm-metric-sep"></div>
@@ -288,10 +291,10 @@
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
-          <span class="cm-metric-num orange">{{ resumenDia().clientes_tradex.planificados -
-            resumenDia().clientes_tradex.completados }}</span>
-          <span class="cm-metric-lbl">Pend. · {{ pct(resumenDia().clientes_tradex.planificados -
-            resumenDia().clientes_tradex.completados, resumenDia().clientes_tradex.planificados) }}%</span>
+          <span class="cm-metric-num orange">{{ pendientes(resumenDia().clientes_tradex.planificados, 0,
+            resumenDia().clientes_tradex.completados) }}</span>
+          <span class="cm-metric-lbl">Pend. · {{ pct(pendientes(resumenDia().clientes_tradex.planificados, 0,
+            resumenDia().clientes_tradex.completados), resumenDia().clientes_tradex.planificados) }}%</span>
         </div>
         <div class="cm-metric-sep"></div>
         <div class="cm-metric">
