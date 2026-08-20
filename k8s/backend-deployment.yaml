@@ -57,6 +57,21 @@ spec:
               # conexiones. Si se quiere subir de 2 en el futuro, subir
               # limits.cpu y bajar el pool por proceso en la misma
               # proporción ANTES, no después.
+              #
+              # OJO -- este valor es SOLO para producción (namespace
+              # default). QA corre en el MISMO servidor físico que
+              # producción y a propósito necesita menos carga para no
+              # saturarlo -- por eso el namespace "qa" corre con
+              # UVICORN_WORKERS=1, aplicado A MANO ahí (kubectl -n qa set
+              # env deployment/nexus2di-backend UVICORN_WORKERS=1), NO en
+              # este archivo. Ninguno de los dos pipelines de deploy
+              # (.github/workflows/deploy-*.yml) hace "kubectl apply" de
+              # este manifest -- solo "rollout restart", que reusa lo que
+              # ya esté viviendo en el cluster -- así que ese override en
+              # QA sobrevive a los deploys normales. Se pierde SOLO si
+              # alguien vuelve a correr "kubectl apply -f
+              # k8s/backend-deployment.yaml -n qa" a mano -- si eso pasa,
+              # hay que volver a poner UVICORN_WORKERS=1 en qa después.
               value: "2"
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
