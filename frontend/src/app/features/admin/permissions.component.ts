@@ -344,8 +344,15 @@ export class PermissionsComponent implements OnInit {
   save() {
     if (!this.selectedUserId) return;
     this.saving.set(true);
+    // Antes: si "Lectura" se dejaba en "Heredar", el módulo entero se
+    // descartaba del payload -- incluyendo el toggle de "Solo propios",
+    // que es un campo aparte (can_see_all) sin relación con el dropdown de
+    // Lectura. Resultado real (Flora Foods, 20 ago): activaba el toggle,
+    // apretaba Guardar, y no se guardaba NADA -- 0 filas en la base. Los
+    // módulos con el filtro especial (data/products) se mandan siempre,
+    // toquen o no el dropdown de Lectura.
     const permissions = this.modulos()
-      .filter(m => this.perms[m.clave].state !== 'inherit')
+      .filter(m => this.perms[m.clave].state !== 'inherit' || this.esFiltroProductos(m.clave))
       .map(m => ({
         module: m.clave,
         can_read: this.perms[m.clave].state === 'allow',
