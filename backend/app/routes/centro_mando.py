@@ -4,11 +4,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Dict, Any
 from datetime import date as _date, datetime, timedelta
 import calendar as _calendar
+import unicodedata
 from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin
 from app.models.user import Usuario
 
 router = APIRouter(prefix="/api/centro-mando", tags=["Centro de Mando"])
+
+
+def _norm_dia(s: Optional[str]) -> str:
+    """Normaliza tildes para comparar días de la semana. El picker de
+    Gestión de Rutas (route-detail-dialog.component.ts) guarda 'Miercoles'
+    y 'Sabado' SIN acento (v del picker), pero DIAS_ES/day_counts de acá
+    abajo usan 'Miércoles'/'Sábado' con acento -- un lookup de dict de
+    Python compara exacto y siempre daba 0 para esos dos días, aunque el
+    WHERE rp.dia IN (...) de SQL Server sí encontraba las filas bien (su
+    colación por defecto ignora acentos). 19-20 ago 2026: causaba que
+    CUALQUIER ruta programada para miércoles o sábado apareciera con
+    Planificados=0 todo el día, aunque el mercaderista sí trabajara."""
+    if not s:
+        return s
+    return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
 
 async def execute_query(db: AsyncSession, query: str, params: tuple = (), timeout: int = 0):
     conn = await db.connection()
@@ -303,11 +319,14 @@ async def resumen_dia(
         if d_hasta < d_desde:
             d_hasta = d_desde
 
-        # Calcular day_counts
-        day_counts = { 'Lunes':0, 'Martes':0, 'Miércoles':0, 'Jueves':0, 'Viernes':0, 'Sábado':0, 'Domingo':0 }
+        # Calcular day_counts -- claves SIN acento (normalizadas), ver
+        # _norm_dia(): RUTA_PROGRAMACION.dia puede venir con o sin tilde
+        # según cómo se haya guardado, y un dict de Python no perdona esa
+        # diferencia como sí lo hace la colación de SQL Server.
+        day_counts = { 'Lunes':0, 'Martes':0, 'Miercoles':0, 'Jueves':0, 'Viernes':0, 'Sabado':0, 'Domingo':0 }
         curr = d_desde
         while curr <= d_hasta:
-            day_counts[_dia_es(curr)] += 1
+            day_counts[_norm_dia(_dia_es(curr))] += 1
             curr += timedelta(days=1)
             
         days_in_range = [d for d, c in day_counts.items() if c > 0]
@@ -383,7 +402,7 @@ async def resumen_dia(
         for r in plan_hoy:
             mid = r[0]
             dia = r[1]
-            plan_counts[mid] = plan_counts.get(mid, 0) + day_counts.get(dia, 0)
+            plan_counts[mid] = plan_counts.get(mid, 0) + day_counts.get(_norm_dia(dia), 0)
         
         total_planificados = sum(plan_counts.values())
 
@@ -499,7 +518,7 @@ async def resumen_dia(
                     "pois_plan": 0, "pois_act": 0, "pois_com": 0,
                     "clientes_plan": 0, "clientes_act": 0, "clientes_com": 0
                 }
-            ruta_merc_pairs[k]["planificadas"] += day_counts.get(dia, 0)
+            ruta_merc_pairs[k]["planificadas"] += day_counts.get(_norm_dia(dia), 0)
 
         ra_q = """
             SELECT ra.id_ruta, ra.id_mercaderista, ra.estado, CAST(ra.fecha_hora_activacion AS DATE) as fd
@@ -619,8 +638,8 @@ async def resumen_dia(
                     "plan": 0, "act": 0, "com": 0,
                     "clientes_plan": 0, "clientes_act": 0, "clientes_com": 0
                 }
-            pois_status[key]["plan"] += day_counts.get(dia, 0)
-            pois_status[key]["clientes_plan"] += day_counts.get(dia, 0)
+            pois_status[key]["plan"] += day_counts.get(_norm_dia(dia), 0)
+            pois_status[key]["clientes_plan"] += day_counts.get(_norm_dia(dia), 0)
 
         for key, ent in pois_status.items():
             real = real_por_punto.get(key[0])
@@ -704,7 +723,7 @@ async def resumen_dia(
             t_plan = {}
             for id_punto, id_merc, id_cli, dia in tradex_rows:
                 key = (id_punto, id_merc, id_cli)
-                t_plan[key] = t_plan.get(key, 0) + day_counts.get(dia, 0)
+                t_plan[key] = t_plan.get(key, 0) + day_counts.get(_norm_dia(dia), 0)
                 
             clientes_plan = sum(t_plan.values())
             for key, plan_cnt in t_plan.items():
