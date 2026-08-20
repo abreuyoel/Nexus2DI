@@ -315,7 +315,13 @@ export class ClientDataComponent implements OnInit {
         'Inv. Depósito': it.inv_deposito,
         'Caras': it.caras,
         'Precio Bs': isPan ? null : it.precio_bs,
-        'Precio $': isPan ? it.precio_bs : it.precio_ds,
+        // Panamá no llena precio_bs (no hay bolívares) -- el precio real
+        // capturado por el mercaderista SIEMPRE queda en precio_ds, para
+        // Panamá y para Venezuela por igual (mismo campo que ya usa la
+        // tabla en pantalla, ver isPanama() ahí). Antes leía precio_bs acá
+        // para Panamá -- que da NULL siempre -- y el Excel salía vacío
+        // aunque la pantalla mostrara el precio en dólares bien.
+        'Precio $': it.precio_ds,
       };
     });
     const ws = XLSX.utils.json_to_sheet(data);
@@ -351,7 +357,9 @@ export class ClientDataComponent implements OnInit {
             'Inventario Final': item.inv_final,
             'Caras': item.caras,
             'Precio Bs': isPan ? null : item.precio_bs,
-            'Precio $': isPan ? item.precio_bs : item.precio_ds
+            // Mismo fix que exportarVisita(): precio_ds siempre, no
+            // precio_bs para Panamá (ver comentario ahí).
+            'Precio $': item.precio_ds
           };
         });
 
