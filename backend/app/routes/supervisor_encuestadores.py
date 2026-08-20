@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, desc, func, select, delete as sa_delete
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime, date
 from pydantic import BaseModel
@@ -546,8 +547,15 @@ async def create_medico_centro(
     
     if not dup:
         db.add(MedicoCentroEncuesta(id_encuesta=req.id_encuesta, id_medico=id_medico))
-    
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        detail = "No se pudo guardar: hay un dato duplicado o inválido."
+        if "id_medico_externo" in str(e.orig):
+            detail = "No se pudo guardar: la cédula/ID externo ya está en uso por otro médico."
+        raise HTTPException(status_code=409, detail=detail)
     return {"success": True, "id_medico": id_medico}
 
 @router.put("/medicos/{id_medico}")
@@ -593,7 +601,20 @@ async def update_medico(
         )
         db.add(c)
 
-    await db.commit()
+    # Antes esto no atrapaba nada: cualquier violación de constraint (ej.
+    # id_medico_externo duplicado -- UNIQUE+NOT NULL, ver medicos.id_medico_
+    # externo) subía como 500 genérico "Error interno del servidor", sin
+    # decir cuál campo chocó. Con esto el analista/supervisor al menos ve
+    # QUÉ chocó en vez de un error opaco -- no arregla la causa de fondo
+    # (eso necesita el dato real del médico que está fallando).
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        detail = "No se pudo guardar: hay un dato duplicado o inválido."
+        if "id_medico_externo" in str(e.orig):
+            detail = "No se pudo guardar: la cédula/ID externo ya está en uso por otro médico."
+        raise HTTPException(status_code=409, detail=detail)
     return {"success": True}
 
 @router.delete("/medicos/{id_medico}")

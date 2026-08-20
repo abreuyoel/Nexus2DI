@@ -46,7 +46,33 @@ spec:
             - secretRef: { name: nexus2di-backend-secret }
           env:
             - name: UVICORN_WORKERS
-              value: "6"  # Aumentado a 6 para maximizar el uso de hilos concurrentes
+              # Bajado de 6 a 2 (19 ago 2026, mismo día que se subió a 6):
+              # 6 workers compitiendo por los mismos 4 núcleos de
+              # limits.cpu de abajo es peor que el primer intento fallido
+              # del 4 de agosto (2 workers sobre "2" núcleos) -- y
+              # DB_POOL_SIZE/DB_MAX_OVERFLOW (configmap) están calibrados
+              # para 2 workers x 2 réplicas = 4 procesos x 25 conexiones =
+              # 100 total, el techo ya validado contra SQL Server. Con 6
+              # workers hubieran sido 12 procesos x 25 = hasta 300
+              # conexiones. Si se quiere subir de 2 en el futuro, subir
+              # limits.cpu y bajar el pool por proceso en la misma
+              # proporción ANTES, no después.
+              #
+              # OJO -- este valor es SOLO para producción (namespace
+              # default). QA corre en el MISMO servidor físico que
+              # producción y a propósito necesita menos carga para no
+              # saturarlo -- por eso el namespace "qa" corre con
+              # UVICORN_WORKERS=1, aplicado A MANO ahí (kubectl -n qa set
+              # env deployment/nexus2di-backend UVICORN_WORKERS=1), NO en
+              # este archivo. Ninguno de los dos pipelines de deploy
+              # (.github/workflows/deploy-*.yml) hace "kubectl apply" de
+              # este manifest -- solo "rollout restart", que reusa lo que
+              # ya esté viviendo en el cluster -- así que ese override en
+              # QA sobrevive a los deploys normales. Se pierde SOLO si
+              # alguien vuelve a correr "kubectl apply -f
+              # k8s/backend-deployment.yaml -n qa" a mano -- si eso pasa,
+              # hay que volver a poner UVICORN_WORKERS=1 en qa después.
+              value: "2"
           readinessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 10

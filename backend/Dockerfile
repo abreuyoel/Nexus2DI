@@ -59,11 +59,21 @@ USER 10001
 
 EXPOSE 8000
 
-# 1 solo worker: app/websockets/manager.py + app/services/realtime.py
-# mantienen las conexiones WebSocket activas en memoria de UN proceso — con
-# más workers, un evento emitido en el worker A nunca llegaría a un cliente
-# conectado al worker B. Ver plan de despliegue para el camino a escalar
-# (mover ese estado a pub/sub sobre Redis).
+# --workers vía env var UVICORN_WORKERS (forma shell del CMD, aportado por
+# zek3rdc 19 ago) -- esto es justo lo que hacía falta: el valor por
+# ambiente ya no vive hardcodeado en este archivo, así que un merge entre
+# main/qa nunca más lo puede pisar en silencio (ver el default "2" abajo,
+# que YA fue revertido sin querer dos veces en este archivo antes de este
+# cambio -- una vez el 11 ago por un merge de rama vieja, otra vez el 19 ago
+# por un valor "6" sin CPU/pool recalculado, ver k8s/backend-deployment.yaml).
+#
+# Default 2 (no 1): es el valor validado el 4 ago -- Fase A/B/C de
+# redis_pubsub.py ya sacan el estado de WebSocket de la memoria de un solo
+# proceso, así que 2 workers es seguro EN CUANTO limits.cpu y DB_POOL_SIZE
+# estén calibrados para esa cantidad de procesos (ver k8s/backend-
+# deployment.yaml y k8s/configmap-backend.yaml). Si se sube este número acá
+# o en el Deployment, hay que subir limits.cpu y bajar DB_POOL_SIZE/
+# DB_MAX_OVERFLOW en la misma proporción -- eso fue lo que faltó el 19 ago.
 #
 # --proxy-headers + --forwarded-allow-ips='*': sin esto, uvicorn ignora el
 # X-Forwarded-Proto que manda el nginx del frontend (ver frontend/nginx.conf)
@@ -73,6 +83,4 @@ EXPOSE 8000
 # '*' es seguro acá: este proceso solo es alcanzable vía el Service interno
 # del cluster (nunca expuesto directo a internet), así que no hay un
 # atacante externo que pueda falsificar el header saltándose a nginx.
-# Se cambió a la forma 'shell' del CMD para poder interpolar variables de entorno.
-# La variable UVICORN_WORKERS será inyectada por Kubernetes.
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1} --proxy-headers --forwarded-allow-ips='*'
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2} --proxy-headers --forwarded-allow-ips='*'
