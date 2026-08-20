@@ -7,11 +7,12 @@ import { environment } from '../../../environments/environment';
 import { EncuestadorOfflineQueueService } from './services/encuestador-offline-queue.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 import { MutableSearchSelectComponent } from './components/mutable-search-select.component';
+import { ConsultorioSearchSelectComponent, ConsultorioExistente } from './components/consultorio-search-select.component';
 
 @Component({
   selector: 'app-medico-form',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, MutableSearchSelectComponent],
+  imports: [CommonModule, RouterModule, FormsModule, MutableSearchSelectComponent, ConsultorioSearchSelectComponent],
   template: `
     <div class="p-6 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
       
@@ -194,8 +195,14 @@ import { MutableSearchSelectComponent } from './components/mutable-search-select
             
             <div class="grid grid-cols-1 md:grid-cols-4 gap-x-5 gap-y-5">
               <div class="md:col-span-2">
-                <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nombre de la Clínica/Centro <span class="text-red-500 dark:text-red-400">*</span></label>
-                <input type="text" [(ngModel)]="c.nombre_clinica" [name]="'clinica_' + i" class="w-full bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 rounded-lg p-2.5 text-slate-800 dark:text-white focus:border-indigo-500 transition-colors outline-none" required>
+                <app-consultorio-search-select
+                  label="Nombre de la Clínica/Centro"
+                  placeholder="Buscar o ingresar consultorio/clínica..."
+                  [options]="consultoriosExistentesList"
+                  [(value)]="c.nombre_clinica"
+                  (selectConsultorio)="onSeleccionarConsultorioExistente(i, $event)"
+                  (addNew)="onAddNewConsultorio($event)"
+                ></app-consultorio-search-select>
               </div>
               <div class="md:col-span-2">
                 <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1"># Piso / Consultorio</label>
@@ -282,6 +289,7 @@ export class MedicoFormComponent implements OnInit {
   especialidadesList: string[] = [];
   subespecialidadesList: string[] = [];
   universidadesList: string[] = [];
+  consultoriosExistentesList: ConsultorioExistente[] = [];
 
   // Estandarizado a pedido del cliente (2026-08-13): antes Estado/Ciudad eran
   // texto libre vía app-mutable-search-select (cualquier encuestador podía
@@ -341,6 +349,16 @@ export class MedicoFormComponent implements OnInit {
 
   ngOnInit() {
     this.offline.isOnline$.subscribe(v => this.isOnline = v);
+    this.http.get<any>(`${this.API}/consultorios-existentes`).subscribe({
+      next: res => {
+        this.consultoriosExistentesList = res.consultorios || [];
+        this.offline.cacheWrite('consultorios-existentes', res.consultorios || []);
+      },
+      error: async () => {
+        this.consultoriosExistentesList = (await this.offline.cacheRead('consultorios-existentes')) || [];
+      }
+    });
+
     this.http.get<any>(`${this.API}/catalogos`).subscribe({
       next: res => {
         this.catalogos = res;
@@ -636,6 +654,62 @@ export class MedicoFormComponent implements OnInit {
     this.especialidadesList = [...(this.catalogos.especialidades || [])];
     this.subespecialidadesList = [...(this.catalogos.subespecialidades || [])];
     this.universidadesList = [...(this.catalogos.universidades || [])];
+  }
+
+  onSeleccionarConsultorioExistente(index: number, selected: ConsultorioExistente) {
+    const c = this.consultorios[index];
+    if (!c || !selected) return;
+
+    c.nombre_clinica = selected.nombre_clinica;
+    if (selected.piso_consultorio) {
+      c.piso_consultorio = selected.piso_consultorio;
+    }
+    if (selected.direccion_especifica) {
+      c.direccion_especifica = selected.direccion_especifica;
+    }
+    if (selected.valor_consulta_rango) {
+      c.valor_consulta_rango = selected.valor_consulta_rango;
+    }
+    if (selected.promedio_pacientes_semanal_rango) {
+      c.promedio_pacientes_semanal_rango = selected.promedio_pacientes_semanal_rango;
+    }
+  }
+
+  async onAddNewConsultorio(value: string) {
+    const valorFormateado = value.trim();
+    if (!valorFormateado) return;
+
+    const existe = this.consultoriosExistentesList.some(
+      c => c.nombre_clinica.toLowerCase() === valorFormateado.toLowerCase()
+    );
+
+    if (!existe) {
+      const nuevoObj: ConsultorioExistente = {
+        nombre_clinica: valorFormateado,
+        direccion_especifica: '',
+        piso_consultorio: '',
+        valor_consulta_rango: '',
+        promedio_pacientes_semanal_rango: ''
+      };
+      this.consultoriosExistentesList.push(nuevoObj);
+      this.consultoriosExistentesList.sort((a, b) => a.nombre_clinica.localeCompare(b.nombre_clinica));
+
+      try {
+        await this.offline.postOrQueue(
+          `${this.API}/catalogos`,
+          { tipo: 'consultorio', nombre: valorFormateado },
+          { label: `Agregar consultorio: ${valorFormateado}` }
+        );
+
+        const cached = await this.offline.cacheRead('consultorios-existentes');
+        if (cached) {
+          cached.push(nuevoObj);
+          await this.offline.cacheWrite('consultorios-existentes', cached);
+        }
+      } catch (err) {
+        console.error('Error guardando catálogo consultorio:', err);
+      }
+    }
   }
 
   async onAddNewCatalogItem(event: { tipo: 'especialidad' | 'subespecialidad' | 'universidad' | 'estado' | 'ciudad', value: string }) {
