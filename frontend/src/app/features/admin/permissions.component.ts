@@ -83,14 +83,18 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
             </span>
             <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_write" class="w-5 h-5 accent-violet-600"></span>
             <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_delete" class="w-5 h-5 accent-violet-600"></span>
-            @if (root.clave !== 'data') {
+            @if (!esFiltroProductos(root.clave)) {
               <span class="text-center"><input type="checkbox" [(ngModel)]="perms[root.clave].can_see_all" class="w-5 h-5 accent-amber-500"></span>
             } @else {
               <span class="text-center text-slate-400 dark:text-slate-600 text-xs">↓</span>
             }
           </div>
-          <!-- ── Card especial: Filtro de productos para el módulo Data ── -->
-          @if (root.clave === 'data') {
+          <!-- ── Card especial: Filtro de productos propios/categoría completa --
+               antes solo vivía bajo 'data' -- Flora Foods (20 ago) pidió lo
+               mismo bajo 'products' (el catálogo real), que es un módulo y una
+               fila de permiso totalmente aparte, con su propio can_see_all --
+               ambos quedan controlados independiente uno del otro. -->
+          @if (esFiltroProductos(root.clave)) {
             <div class="px-5 py-4 border-b border-slate-100 dark:border-white/5"
                  [class]="perms[root.clave].can_see_all ? 'bg-slate-50 dark:bg-slate-800/30' : 'bg-amber-50 dark:bg-amber-950/25'">
               <div class="flex items-center justify-between gap-4">
@@ -103,7 +107,7 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
                   </div>
                   <div>
                     <p class="font-black text-sm" [class]="perms[root.clave].can_see_all ? 'text-slate-700 dark:text-slate-300' : 'text-amber-800 dark:text-amber-300'">
-                      Filtro de productos en la sección Data
+                      Filtro de productos en {{ root.nombre }}
                     </p>
                     <p class="text-xs mt-0.5 leading-relaxed" [class]="perms[root.clave].can_see_all ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-400'">
                       @if (perms[root.clave].can_see_all) {
@@ -157,6 +161,15 @@ interface Perm { state: 'inherit' | 'allow' | 'deny'; can_write: boolean; can_de
   `,
 })
 export class PermissionsComponent implements OnInit {
+  // Módulos que muestran la tarjeta especial de "Solo propios / Categoría
+  // completa" en vez del checkbox genérico de "Ver todo". Cada uno usa su
+  // PROPIA fila de usuario_permisos (perms[clave].can_see_all) -- activar
+  // "Solo propios" en Data no toca Productos, y viceversa.
+  private readonly MODULOS_FILTRO_PRODUCTOS = new Set(['data', 'products']);
+  esFiltroProductos(clave: string): boolean {
+    return this.MODULOS_FILTRO_PRODUCTOS.has(clave);
+  }
+
   users = signal<User[]>([]);
   modulos = signal<Modulo[]>([]);
   selectedUserId: number | null = null;
