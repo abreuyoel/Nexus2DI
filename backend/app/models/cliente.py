@@ -8,6 +8,14 @@ class Cliente(Base):
     id = Column("id_cliente", Integer, primary_key=True, index=True)
     nombre = Column("cliente", String(200), nullable=False)
     id_categoria = Column(Integer, nullable=False, default=1)
+    # Qué PRODUCTORA es "la propia" de este cliente -- usado por el filtro
+    # "Solo propios" de /productos-catalogos (permiso module='products',
+    # can_see_all=False). Nullable a propósito: la mayoría de los clientes
+    # no necesitan este acotamiento, solo los que piden ver únicamente su
+    # propio catálogo en vez de la categoría completa (ej. Flora Foods, 20
+    # ago 2026). Un solo id, no una tabla de muchos-a-muchos -- si algún
+    # cliente real necesita más de una productora, ahí se revisa.
+    id_productora = Column(Integer, ForeignKey("PRODUCTORAS.id_productora"), nullable=True)
 
 class CategoriaCliente(Base):
     __tablename__ = "CATEGORIAS_CLIENTES"
