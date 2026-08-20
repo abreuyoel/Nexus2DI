@@ -303,10 +303,29 @@ async def delete_jornada(
     if not j:
         raise HTTPException(status_code=404, detail="Jornada no encontrada")
 
-    await db.execute(sa_delete(EncuestaCentro).where(EncuestaCentro.id_jornada == id_jornada))
-    await db.delete(j)
-    await db.commit()
-    return {"success": True}
+    try:
+        # 1. Obtener IDs de las encuestas asociadas a esta jornada
+        encuestas_ids = (await db.execute(
+            select(EncuestaCentro.id_encuesta).filter(EncuestaCentro.id_jornada == id_jornada)
+        )).scalars().all()
+
+        # 2. Eliminar relaciones de médicos asociadas a esas encuestas (medico_centro_encuesta)
+        if encuestas_ids:
+            await db.execute(
+                sa_delete(MedicoCentroEncuesta).where(MedicoCentroEncuesta.id_encuesta.in_(encuestas_ids))
+            )
+
+        # 3. Eliminar encuestas de la jornada
+        await db.execute(sa_delete(EncuestaCentro).where(EncuestaCentro.id_jornada == id_jornada))
+
+        # 4. Eliminar la jornada
+        await db.delete(j)
+        await db.commit()
+        return {"success": True}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al eliminar jornada: {str(e)}")
+
 
 
 # --- ENCUESTAS ---
