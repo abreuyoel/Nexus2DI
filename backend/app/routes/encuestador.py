@@ -628,6 +628,77 @@ async def api_medico_editar(id_medico: int, req: MedicoCentroCreate, db: AsyncSe
     await db.commit()
     return {"success": True, "id_medico": id_medico}
 
+@router.get("/consultorios-existentes")
+async def api_consultorios_existentes(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    check_rol_encuestador(current_user)
+    
+    # 1. Centros de Salud
+    centros = (await db.execute(select(CentroSalud))).scalars().all()
+    
+    # 2. MedicoConsultorio registrados
+    consultorios = (await db.execute(select(MedicoConsultorio).order_by(desc(MedicoConsultorio.id_consultorio)))).scalars().all()
+    
+    resultado = {}
+    
+    # Pre-llenar desde Centros de Salud
+    for c in centros:
+        if not c.nombre_centro:
+            continue
+        norm_key = c.nombre_centro.strip().lower()
+        if norm_key not in resultado:
+            resultado[norm_key] = {
+                "nombre_clinica": c.nombre_centro.strip(),
+                "direccion_especifica": c.direccion_completa.strip() if c.direccion_completa else "",
+                "piso_consultorio": "",
+                "valor_consulta_rango": "",
+                "promedio_pacientes_semanal_rango": ""
+            }
+
+    # Enriquecer/añadir desde MedicoConsultorio
+    for mc in consultorios:
+        if not mc.nombre_clinica:
+            continue
+        norm_key = mc.nombre_clinica.strip().lower()
+        if norm_key not in resultado:
+            resultado[norm_key] = {
+                "nombre_clinica": mc.nombre_clinica.strip(),
+                "direccion_especifica": mc.direccion_especifica or "",
+                "piso_consultorio": mc.piso_consultorio or "",
+                "valor_consulta_rango": mc.valor_consulta_rango or "",
+                "promedio_pacientes_semanal_rango": mc.promedio_pacientes_semanal_rango or ""
+            }
+        else:
+            if not resultado[norm_key]["direccion_especifica"] and mc.direccion_especifica:
+                resultado[norm_key]["direccion_especifica"] = mc.direccion_especifica
+            if not resultado[norm_key]["piso_consultorio"] and mc.piso_consultorio:
+                resultado[norm_key]["piso_consultorio"] = mc.piso_consultorio
+            if not resultado[norm_key]["valor_consulta_rango"] and mc.valor_consulta_rango:
+                resultado[norm_key]["valor_consulta_rango"] = mc.valor_consulta_rango
+            if not resultado[norm_key]["promedio_pacientes_semanal_rango"] and mc.promedio_pacientes_semanal_rango:
+                resultado[norm_key]["promedio_pacientes_semanal_rango"] = mc.promedio_pacientes_semanal_rango
+
+    # 3. Items del catálogo de tipo 'consultorio'
+    cat_items = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "consultorio"))).scalars().all()
+    for cat_n in cat_items:
+        if not cat_n:
+            continue
+        norm_key = cat_n.strip().lower()
+        if norm_key not in resultado:
+            resultado[norm_key] = {
+                "nombre_clinica": cat_n.strip(),
+                "direccion_especifica": "",
+                "piso_consultorio": "",
+                "valor_consulta_rango": "",
+                "promedio_pacientes_semanal_rango": ""
+            }
+
+    consultorios_ordenados = sorted(list(resultado.values()), key=lambda x: x["nombre_clinica"].lower())
+
+    return {
+        "success": True,
+        "consultorios": consultorios_ordenados
+    }
+
 @router.get("/catalogos")
 async def api_catalogos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
@@ -637,7 +708,6 @@ async def api_catalogos(db: AsyncSession = Depends(get_async_db), current_user: 
     universidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
     estados = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "estado").order_by(CatalogoEncuestador.nombre))).scalars().all()
     ciudades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "ciudad").order_by(CatalogoEncuestador.nombre))).scalars().all()
-    universidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "universidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
 
     return {
         "valor_consulta_rangos": [
@@ -662,7 +732,7 @@ async def api_catalogos(db: AsyncSession = Depends(get_async_db), current_user: 
     }
 
 class CatalogoCreate(BaseModel):
-    tipo: str  # 'especialidad', 'subespecialidad', 'universidad', 'estado', 'ciudad'
+    tipo: str  # 'especialidad', 'subespecialidad', 'universidad', 'estado', 'ciudad', 'consultorio'
     nombre: str
 
 class CatalogoUpdate(BaseModel):
@@ -675,7 +745,7 @@ async def api_catalogos_create(req: CatalogoCreate, db: AsyncSession = Depends(g
     tipo = req.tipo.strip().lower()
     nombre = req.nombre.strip()
     
-    if tipo not in ("especialidad", "subespecialidad", "universidad", "estado", "ciudad"):
+    if tipo not in ("especialidad", "subespecialidad", "universidad", "estado", "ciudad", "consultorio"):
         raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
