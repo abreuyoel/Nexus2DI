@@ -491,7 +491,7 @@ export class UsersComponent implements OnInit {
   }
 
   loadData(): void {
-    this.api.getUsers().subscribe({
+    this.api.getUsers(5000).subscribe({
       next: data => { this.users.set(data); this.loading.set(false); },
       error: () => { this.loading.set(false); }
     });

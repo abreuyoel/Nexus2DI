@@ -22,7 +22,7 @@ export class ApiService {
     return p;
   }
 
-  getUsers(limit = 150, search?: string, id_rol?: number, rol?: string): Observable<User[]> {
+  getUsers(limit = 5000, search?: string, id_rol?: number, rol?: string): Observable<User[]> {
     const params: any = { limit };
     if (search) params.q = search;
     if (id_rol) params.id_rol = id_rol;
@@ -31,7 +31,7 @@ export class ApiService {
   }
 
   /** Lista ligera para selectores/dropdowns — sin JOINs, mucho más rápido */
-  getUsersSlim(limit = 300, search?: string, rol?: string, id_rol?: number): Observable<{id: number; username: string; id_rol: number; rol_nombre: string; activo: boolean}[]> {
+  getUsersSlim(limit = 5000, search?: string, rol?: string, id_rol?: number): Observable<{id: number; username: string; id_rol: number; rol_nombre: string; activo: boolean}[]> {
     const params: any = { limit };
     if (search) params.q = search;
     if (rol) params.rol = rol;
