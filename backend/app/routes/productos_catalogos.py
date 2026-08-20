@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_permission
-from app.models.user import Usuario
+from app.models.user import Usuario, UserPermission
 from app.models.producto import (
     Categoria, SubCategoria, Producto, Marca, Productora, Presentacion, Departamento,
     ClasificacionTamano,
 )
 from app.models.cliente import CategoriaCliente
+from app.models.sku_competencia import SkuCompetencia
 from app.schemas.producto_catalogo import (
     CategoriaCreate, CategoriaUpdate, CategoriaResponse,
     SubCategoriaCreate, SubCategoriaUpdate, SubCategoriaResponse,
@@ -353,6 +354,27 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
             CategoriaCliente.id_cliente == int(current_user.id_perfil)
         )
         stmt = stmt.filter(Categoria.id_categoria.in_(cats_subq))
+
+        # "Solo propios" (pedido por Flora Foods, 19 ago): reusa el mismo
+        # checkbox de usuario_permisos que ya existe para module='data'
+        # ("Categoría completa" / "Solo propios" en Permisos) -- no hace
+        # falta UI nueva, el admin ya lo puede marcar ahí. Cuando está en
+        # can_see_all=False, acota además de la categoría completa a solo
+        # los SKU que SKU_COMPETENCIA ya tiene marcados como propios de
+        # este cliente (id_producto_cliente) -- la misma fuente de verdad
+        # que usa Vendedor para decidir qué SKU vigilar, no una lista nueva.
+        perm = (await db.execute(
+            select(UserPermission).filter(
+                UserPermission.user_id == current_user.id,
+                UserPermission.module == "data",
+            )
+        )).scalars().first()
+        if perm and perm.can_read and not perm.can_see_all:
+            propios_subq = select(SkuCompetencia.id_producto_cliente).filter(
+                SkuCompetencia.id_cliente == int(current_user.id_perfil),
+                SkuCompetencia.activo == True,  # noqa: E712
+            )
+            stmt = stmt.filter(Producto.id_producto.in_(propios_subq))
     elif current_user is not None and current_user.rol == "client" and not current_user.id_perfil:
         # Cliente sin id_perfil configurado → sin acceso a productos
         return stmt.filter(Producto.id_producto == None)  # noqa: E711

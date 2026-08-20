@@ -672,7 +672,17 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   }
 
   pct(n: number, t: number) {
-    return t ? Math.round(n / t * 100) : 0;
+    return t ? Math.round(Math.max(0, n) / t * 100) : 0;
+  }
+
+  // Puntos/rutas completados hoy no siempre estaban en el plan del día
+  // (RUTA_PROGRAMACION.dia puede no incluir hoy y aun así el mercaderista
+  // haya cubierto el punto -- resumen_dia() lo cuenta igual, a propósito,
+  // ver el comentario de esa función). Plan - Act - Comp puede dar negativo
+  // en ese caso; se muestra 0 en vez de un "-4" que no significa nada para
+  // quien lo lee.
+  calcPendientes(planificados: number, activos: number, completados: number): number {
+    return Math.max(0, planificados - activos - completados);
   }
 
   getBarColor(pct: number): string {
