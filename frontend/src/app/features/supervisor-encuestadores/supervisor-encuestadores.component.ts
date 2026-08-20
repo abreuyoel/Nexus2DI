@@ -502,13 +502,6 @@ export class SupervisorEncuestadoresComponent implements OnInit {
     });
   }
 
-  loadCentros(): void {
-    this.http.get<any>(`${this.API}/centros`).subscribe({
-      next: (res) => this.centros.set(res.centros || []),
-      error: () => { }
-    });
-  }
-
   loadData(): void {
     this.loading.set(true);
     const userId = this.selectedUserFilter();
@@ -874,39 +867,6 @@ export class SupervisorEncuestadoresComponent implements OnInit {
           this.loading.set(false);
         }
       });
-    });
-  }
-
-  // --- CRUD CENTROS DE SALUD ---
-
-  openCentroModal(): void {
-    this.currentCentro = {
-      nombre_centro: '',
-      direccion_completa: '',
-      ciudad: 'Caracas',
-      estado: 'Distrito Capital'
-    };
-    this.showCentroModal = true;
-  }
-
-  saveCentro(): void {
-    if (!this.currentCentro.nombre_centro?.trim() || !this.currentCentro.direccion_completa?.trim()) {
-      this.snack.open('Nombre del centro y dirección completa son obligatorios', 'OK', { duration: 2500 });
-      return;
-    }
-
-    this.loading.set(true);
-    this.http.post<any>(`${this.API}/centros`, this.currentCentro).subscribe({
-      next: () => {
-        this.snack.open('Centro de salud creado exitosamente', 'OK', { duration: 2500 });
-        this.showCentroModal = false;
-        this.loadCentros();
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.snack.open('Error al crear el centro: ' + (err.error?.detail || err.message), 'OK', { duration: 3500 });
-        this.loading.set(false);
-      }
     });
   }
 
