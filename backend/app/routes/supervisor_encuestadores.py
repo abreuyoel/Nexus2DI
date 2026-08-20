@@ -178,18 +178,64 @@ async def get_jornada_detalle(
 
     # Obtener encuestas realizadas en esta jornada
     encuestas = (await db.execute(select(EncuestaCentro).filter(EncuestaCentro.id_jornada == id_jornada))).scalars().all()
+    if not encuestas:
+        return {
+            "id_jornada": jornada.id_jornada,
+            "username": u.username if u else "Desconocido",
+            "fecha_inicio": jornada.fecha_inicio.isoformat() if jornada.fecha_inicio else None,
+            "fecha_fin": jornada.fecha_fin.isoformat() if jornada.fecha_fin else None,
+            "estado": jornada.estado,
+            "ciudad": jornada.ciudad,
+            "estado_geo": jornada.estado_geo,
+            "notas": jornada.notas,
+            "encuestas": []
+        }
+
+    encuesta_ids = [e.id_encuesta for e in encuestas]
+    centro_ids = list(set([e.id_centro for e in encuestas if e.id_centro]))
+
+    # Cargar Centros por lote
+    centros_raw = (await db.execute(select(CentroSalud).filter(CentroSalud.id_centro.in_(centro_ids)))).scalars().all() if centro_ids else []
+    centros_by_id = {c.id_centro: c for c in centros_raw}
+
+    # Cargar Médicos y Consultorios por lote
+    medicos_rel_raw = (await db.execute(select(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta.in_(encuesta_ids)))).scalars().all()
+    medico_ids = list(set([mr.id_medico for mr in medicos_rel_raw if mr.id_medico]))
+
+    medicos_by_id = {}
+    consultorios_by_medico = {}
+    if medico_ids:
+        medicos_raw = (await db.execute(select(Medico).filter(Medico.id_medico.in_(medico_ids)))).scalars().all()
+        medicos_by_id = {m.id_medico: m for m in medicos_raw}
+
+        consultorios_raw = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico.in_(medico_ids)))).scalars().all()
+        for c in consultorios_raw:
+            if c.id_medico not in consultorios_by_medico:
+                consultorios_by_medico[c.id_medico] = []
+            consultorios_by_medico[c.id_medico].append({
+                "id_consultorio": c.id_consultorio,
+                "nombre_clinica": c.nombre_clinica,
+                "piso_consultorio": c.piso_consultorio,
+                "direccion_especifica": c.direccion_especifica,
+                "valor_consulta_rango": c.valor_consulta_rango,
+                "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango,
+                "horarios_json": c.horarios_json
+            })
+
+    medicos_rel_by_encuesta = {}
+    for mr in medicos_rel_raw:
+        if mr.id_encuesta not in medicos_rel_by_encuesta:
+            medicos_rel_by_encuesta[mr.id_encuesta] = []
+        medicos_rel_by_encuesta[mr.id_encuesta].append(mr.id_medico)
+
     encuestas_list = []
-    
     for e in encuestas:
-        centro = (await db.execute(select(CentroSalud).filter(CentroSalud.id_centro == e.id_centro))).scalars().first()
-        
-        # Obtener médicos registrados en esta encuesta
-        medicos_rel = (await db.execute(select(MedicoCentroEncuesta).filter(MedicoCentroEncuesta.id_encuesta == e.id_encuesta))).scalars().all()
+        centro = centros_by_id.get(e.id_centro)
+        rel_m_ids = medicos_rel_by_encuesta.get(e.id_encuesta, [])
         medicos_list = []
-        for mr in medicos_rel:
-            m = (await db.execute(select(Medico).filter(Medico.id_medico == mr.id_medico))).scalars().first()
+        for m_id in rel_m_ids:
+            m = medicos_by_id.get(m_id)
             if m:
-                consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().all()
                 medicos_list.append({
                     "id_medico": m.id_medico,
                     "id_medico_externo": m.id_medico_externo,
@@ -210,17 +256,9 @@ async def get_jornada_detalle(
                     "whatsapp": m.whatsapp,
                     "email": m.email,
                     "fecha_registro": m.fecha_registro.isoformat() if m.fecha_registro else None,
-                    "consultorios": [{
-                        "id_consultorio": c.id_consultorio,
-                        "nombre_clinica": c.nombre_clinica,
-                        "piso_consultorio": c.piso_consultorio,
-                        "direccion_especifica": c.direccion_especifica,
-                        "valor_consulta_rango": c.valor_consulta_rango,
-                        "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango,
-                        "horarios_json": c.horarios_json
-                    } for c in consultorios]
+                    "consultorios": consultorios_by_medico.get(m.id_medico, [])
                 })
-        
+
         encuestas_list.append({
             "id_encuesta": e.id_encuesta,
             "nombre_centro": centro.nombre_centro if centro else "Centro Desconocido",
@@ -303,10 +341,29 @@ async def delete_jornada(
     if not j:
         raise HTTPException(status_code=404, detail="Jornada no encontrada")
 
-    await db.execute(sa_delete(EncuestaCentro).where(EncuestaCentro.id_jornada == id_jornada))
-    await db.delete(j)
-    await db.commit()
-    return {"success": True}
+    try:
+        # 1. Obtener IDs de las encuestas asociadas a esta jornada
+        encuestas_ids = (await db.execute(
+            select(EncuestaCentro.id_encuesta).filter(EncuestaCentro.id_jornada == id_jornada)
+        )).scalars().all()
+
+        # 2. Eliminar relaciones de médicos asociadas a esas encuestas (medico_centro_encuesta)
+        if encuestas_ids:
+            await db.execute(
+                sa_delete(MedicoCentroEncuesta).where(MedicoCentroEncuesta.id_encuesta.in_(encuestas_ids))
+            )
+
+        # 3. Eliminar encuestas de la jornada
+        await db.execute(sa_delete(EncuestaCentro).where(EncuestaCentro.id_jornada == id_jornada))
+
+        # 4. Eliminar la jornada
+        await db.delete(j)
+        await db.commit()
+        return {"success": True}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al eliminar jornada: {str(e)}")
+
 
 
 # --- ENCUESTAS ---
@@ -449,9 +506,30 @@ async def list_medicos(
         )
     medicos = (await db.execute(stmt.order_by(Medico.apellido1, Medico.nombre1).limit(100))).scalars().all()
 
+    if not medicos:
+        return []
+
+    medicos_ids = [m.id_medico for m in medicos]
+    consultorios_raw = (await db.execute(
+        select(MedicoConsultorio).filter(MedicoConsultorio.id_medico.in_(medicos_ids))
+    )).scalars().all()
+
+    consultorios_by_medico = {}
+    for c in consultorios_raw:
+        if c.id_medico not in consultorios_by_medico:
+            consultorios_by_medico[c.id_medico] = []
+        consultorios_by_medico[c.id_medico].append({
+            "id_consultorio": c.id_consultorio,
+            "nombre_clinica": c.nombre_clinica,
+            "piso_consultorio": c.piso_consultorio,
+            "direccion_especifica": c.direccion_especifica,
+            "horarios_json": c.horarios_json,
+            "valor_consulta_rango": c.valor_consulta_rango,
+            "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango
+        })
+
     result = []
     for m in medicos:
-        consultorios = (await db.execute(select(MedicoConsultorio).filter(MedicoConsultorio.id_medico == m.id_medico))).scalars().all()
         result.append({
             "id_medico": m.id_medico,
             "id_medico_externo": m.id_medico_externo,
@@ -472,16 +550,7 @@ async def list_medicos(
             "email": m.email,
             "linkedin": m.linkedin,
             "instagram": m.instagram,
-            "consultorios": [
-                {
-                    "nombre_clinica": c.nombre_clinica,
-                    "piso_consultorio": c.piso_consultorio,
-                    "direccion_especifica": c.direccion_especifica,
-                    "horarios_json": c.horarios_json,
-                    "valor_consulta_rango": c.valor_consulta_rango,
-                    "promedio_pacientes_semanal_rango": c.promedio_pacientes_semanal_rango
-                } for c in consultorios
-            ]
+            "consultorios": consultorios_by_medico.get(m.id_medico, [])
         })
     return result
 
@@ -633,7 +702,13 @@ async def delete_medico_relacion(
     await db.commit()
     return {"success": True}
 
-# --- CENTROS (REUTILIZADOS) ---
+# --- CENTROS ---
+
+class CentroSaludCreateReq(BaseModel):
+    nombre_centro: str
+    direccion_completa: str
+    ciudad: Optional[str] = None
+    estado: Optional[str] = None
 
 @router.get("/centros")
 async def get_centros_list(
@@ -653,3 +728,35 @@ async def get_centros_list(
             } for c in centros
         ]
     }
+
+@router.post("/centros")
+async def create_centro_salud(
+    req: CentroSaludCreateReq,
+    db: AsyncSession = Depends(get_async_db),
+    _: User = Depends(require_permission("supervisor-encuestadores", "write", fallback_roles=("admin", "supervisor")))
+):
+    nombre = req.nombre_centro.strip()
+    direccion = req.direccion_completa.strip()
+    if not nombre or not direccion:
+        raise HTTPException(status_code=400, detail="El nombre del centro y la dirección completa son obligatorios.")
+
+    try:
+        nuevo_centro = CentroSalud(
+            nombre_centro=nombre,
+            direccion_completa=direccion,
+            ciudad=req.ciudad.strip() if req.ciudad else None,
+            estado=req.estado.strip() if req.estado else None
+        )
+        db.add(nuevo_centro)
+        await db.commit()
+        await db.refresh(nuevo_centro)
+        return {
+            "success": True,
+            "id_centro": nuevo_centro.id_centro,
+            "nombre_centro": nuevo_centro.nombre_centro,
+            "message": "Centro de salud creado exitosamente."
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al crear el centro de salud: {str(e)}")
+

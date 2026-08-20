@@ -178,7 +178,13 @@ async def delete_user(
         "id_perfil": user.id_perfil,
         "activo": user.activo
     }
-    db.delete(user)
+    
+    # Delete child records referencing user.id to avoid FK constraint violations
+    await db.execute(delete(UserPermission).where(UserPermission.user_id == user_id))
+    from app.models.sesion import SesionActiva
+    await db.execute(delete(SesionActiva).where(SesionActiva.user_id == user_id))
+
+    await db.delete(user)
 
     log_action(db, action="DELETE_USER", entity_type="Usuario",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
@@ -572,8 +578,11 @@ async def delete_encuestador_item(
 
     user = (await db.execute(select(Usuario).filter(Usuario.id_rol.in_((12, 13)), Usuario.id_perfil == enc.id))).scalars().first()
     if user:
-        db.delete(user)
+        await db.execute(delete(UserPermission).where(UserPermission.user_id == user.id))
+        from app.models.sesion import SesionActiva
+        await db.execute(delete(SesionActiva).where(SesionActiva.user_id == user.id))
+        await db.delete(user)
 
-    db.delete(enc)
+    await db.delete(enc)
     await db.commit()
     return {"message": "Encuestador eliminado"}
