@@ -13,9 +13,12 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
+import { HttpClient } from '@angular/common/http';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeService } from '../../core/services/realtime.service';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
+import { environment } from '../../../environments/environment';
 import { ClientCategoriesDialogComponent } from './client-categories-dialog.component';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
 
@@ -439,7 +442,16 @@ export class UsersComponent implements OnInit {
     password: ['']
   });
 
-  constructor(private api: ApiService, private auth: AuthService, private fb: FormBuilder, private snack: MatSnackBar, private realtime: RealtimeService, private dialog: MatDialog) { }
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private fb: FormBuilder,
+    private snack: MatSnackBar,
+    private realtime: RealtimeService,
+    private dialog: MatDialog,
+    private http: HttpClient,
+    private confirmSvc: ConfirmService
+  ) { }
 
   ngOnInit(): void {
     this.isClientePuro.set(this.auth.currentUser()?.id_rol === 1);
@@ -481,12 +493,25 @@ export class UsersComponent implements OnInit {
 
   toggleActivo(user: any): void {
     const nuevo = !user.activo;
-    this.api.updateUser(user.id, { activo: nuevo }).subscribe({
-      next: () => {
-        this.users.update(us => us.map(u => u.id === user.id ? { ...u, activo: nuevo } : u));
-        this.snack.open(nuevo ? 'Usuario activado' : 'Usuario desactivado', 'OK', { duration: 2500 });
-      },
-      error: () => this.snack.open('Error al cambiar estado', 'OK', { duration: 3000 }),
+    const accion = nuevo ? 'activar' : 'desactivar';
+    const nombre = user.username || `ID ${user.id}`;
+
+    this.confirmSvc.confirm(
+      `¿Deseas ${accion} al usuario "${nombre}"?`,
+      {
+        title: `${nuevo ? 'Activar' : 'Desactivar'} Usuario`,
+        confirmText: nuevo ? 'Activar' : 'Desactivar',
+        danger: !nuevo
+      }
+    ).then(ok => {
+      if (!ok) return;
+      this.api.updateUser(user.id, { activo: nuevo }).subscribe({
+        next: () => {
+          this.users.update(us => us.map(u => u.id === user.id ? { ...u, activo: nuevo } : u));
+          this.snack.open(nuevo ? 'Usuario activado' : 'Usuario desactivado', 'OK', { duration: 2500 });
+        },
+        error: (err) => this.snack.open('Error al cambiar estado: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 }),
+      });
     });
   }
 
@@ -669,14 +694,19 @@ export class UsersComponent implements OnInit {
   }
 
   deleteEncuestador(enc: any): void {
-    if (!confirm(`¿Deseas eliminar al encuestador ${enc.nombre}?`)) return;
-    this.api.deleteEncuestador(enc.id).subscribe({
-      next: () => {
-        this.reloadEncuestadores();
-        this.loadData();
-        this.snack.open('Encuestador eliminado', 'OK', { duration: 2500 });
-      },
-      error: () => this.snack.open('Error al eliminar encuestador', 'OK', { duration: 3000 })
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al encuestador "${enc.nombre}"?`,
+      { title: 'Eliminar Encuestador', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
+      this.api.deleteEncuestador(enc.id).subscribe({
+        next: () => {
+          this.reloadEncuestadores();
+          this.loadData();
+          this.snack.open('Encuestador eliminado', 'OK', { duration: 2500 });
+        },
+        error: (err) => this.snack.open('Error al eliminar encuestador: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
+      });
     });
   }
 
@@ -718,15 +748,19 @@ export class UsersComponent implements OnInit {
   }
 
   deleteAnalyst(a: any): void {
-    if (confirm(`¿Deseas eliminar al analista ${a.nombre}?`)) {
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al analista "${a.nombre}"?`,
+      { title: 'Eliminar Analista', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
       this.api.deleteAnalyst(a.id).subscribe({
         next: () => {
           this.api.getAnalystsList().subscribe(d => this.analysts.set(d));
           this.snack.open('Analista eliminado', 'OK', { duration: 2500 });
         },
-        error: () => this.snack.open('Error al eliminar analista', 'OK', { duration: 3000 })
+        error: (err) => this.snack.open('Error al eliminar analista: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
       });
-    }
+    });
   }
 
   // --- Clients CRUD ---
@@ -768,15 +802,19 @@ export class UsersComponent implements OnInit {
   }
 
   deleteClient(c: any): void {
-    if (confirm(`¿Deseas eliminar al cliente ${c.cliente || c.nombre}?`)) {
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al cliente "${c.cliente || c.nombre}"?`,
+      { title: 'Eliminar Cliente', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
       this.api.deleteClient(c.id).subscribe({
         next: () => {
           this.api.getClients().subscribe(d => this.clients.set(d));
           this.snack.open('Cliente eliminado', 'OK', { duration: 2500 });
         },
-        error: () => this.snack.open('Error al eliminar cliente', 'OK', { duration: 3000 })
+        error: (err) => this.snack.open('Error al eliminar cliente: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
       });
-    }
+    });
   }
 
   manageClientCategories(c: any): void {
@@ -823,15 +861,19 @@ export class UsersComponent implements OnInit {
   }
 
   deleteMercaderista(m: any): void {
-    if (confirm(`¿Deseas eliminar al mercaderista ${m.nombre}?`)) {
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al mercaderista "${m.nombre}"?`,
+      { title: 'Eliminar Mercaderista', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
       this.api.deleteMercaderista(m.id).subscribe({
         next: () => {
           this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
           this.snack.open('Mercaderista eliminado', 'OK', { duration: 2500 });
         },
-        error: () => this.snack.open('Error al eliminar mercaderista', 'OK', { duration: 3000 })
+        error: (err) => this.snack.open('Error al eliminar mercaderista: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
       });
-    }
+    });
   }
 
   // --- Supervisores CRUD ---
@@ -868,15 +910,19 @@ export class UsersComponent implements OnInit {
   }
 
   deleteSupervisor(s: any): void {
-    if (confirm(`¿Deseas eliminar al supervisor ${s.nombre}?`)) {
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al supervisor "${s.nombre}"?`,
+      { title: 'Eliminar Supervisor', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
       this.api.deleteSupervisor(s.id).subscribe({
         next: () => {
           this.reloadSupervisors();
           this.snack.open('Supervisor eliminado', 'OK', { duration: 2500 });
         },
-        error: () => this.snack.open('Error al eliminar supervisor', 'OK', { duration: 3000 })
+        error: (err) => this.snack.open('Error al eliminar supervisor: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
       });
-    }
+    });
   }
 
   // --- Auditores CRUD ---
@@ -931,13 +977,18 @@ export class UsersComponent implements OnInit {
   }
 
   deleteAuditor(auditor: any): void {
-    if (!confirm(`¿Deseas eliminar al auditor ${auditor.nombre}?`)) return;
-    this.api.deleteMercaderista(auditor.id).subscribe({
-      next: () => {
-        this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
-        this.snack.open('Auditor eliminado', 'OK', { duration: 2500 });
-      },
-      error: () => this.snack.open('Error al eliminar auditor', 'OK', { duration: 3000 })
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al auditor "${auditor.nombre}"?`,
+      { title: 'Eliminar Auditor', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
+      this.api.deleteMercaderista(auditor.id).subscribe({
+        next: () => {
+          this.api.getMercaderistas().subscribe(d => this.mercaderistas.set(d));
+          this.snack.open('Auditor eliminado', 'OK', { duration: 2500 });
+        },
+        error: (err) => this.snack.open('Error al eliminar auditor: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
+      });
     });
   }
 
@@ -957,15 +1008,20 @@ export class UsersComponent implements OnInit {
   }
 
   deleteUser(user: any): void {
-    if (confirm(`¿Estás seguro de eliminar el usuario "${user.username}"?`)) {
+    const nombre = user.username || `ID ${user.id}`;
+    this.confirmSvc.confirm(
+      `¿Estás seguro de eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`,
+      { title: 'Eliminar Usuario', confirmText: 'Eliminar', danger: true }
+    ).then(ok => {
+      if (!ok) return;
       this.api.deleteUser(user.id).subscribe({
         next: () => {
-          this.loadData();
-          this.snack.open('Usuario eliminado', 'OK', { duration: 2500 });
+          this.users.update(us => us.filter(u => u.id !== user.id));
+          this.snack.open('Usuario eliminado exitosamente', 'OK', { duration: 2500 });
         },
-        error: () => this.snack.open('Error al eliminar usuario', 'OK', { duration: 3000 })
+        error: (err) => this.snack.open('Error al eliminar usuario: ' + (err.error?.detail || err.message), 'OK', { duration: 3500 })
       });
-    }
+    });
   }
 
   reloadSupervisors(): void {
