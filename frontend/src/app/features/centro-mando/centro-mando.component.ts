@@ -681,7 +681,7 @@ export class CentroMandoComponent implements OnInit, OnDestroy {
   // ver el comentario de esa función). Plan - Act - Comp puede dar negativo
   // en ese caso; se muestra 0 en vez de un "-4" que no significa nada para
   // quien lo lee.
-  pendientes(planificados: number, activos: number, completados: number): number {
+  calcPendientes(planificados: number, activos: number, completados: number): number {
     return Math.max(0, planificados - activos - completados);
   }
 
