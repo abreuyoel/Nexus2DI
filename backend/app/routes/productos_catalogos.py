@@ -374,7 +374,18 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
                 UserPermission.module == "products",
             )
         )).scalars().first()
-        if perm and perm.can_read and not perm.can_see_all:
+        # OJO -- ya NO exige perm.can_read acá (20 ago, segundo intento). El
+        # toggle "Solo propios" del frontend solo controla can_see_all -- el
+        # can_read de esta misma fila depende del dropdown de "Lectura"
+        # (state === 'allow'), un control aparte que el admin nunca toca al
+        # activar el toggle. Con la condición vieja, activar "Solo propios"
+        # sin TAMBIÉN poner Lectura=Permitir para Productos no hacía nada
+        # (Flora Foods lo confirmó: activó el toggle, siguió viendo todo).
+        # "is False" estricto (no solo falsy) es clave: las filas migradas
+        # en bloque para el resto de los clientes (client_role_modules.sql)
+        # nunca tocan can_see_all y quedan en NULL -- tratar NULL como
+        # "restringir" les rompería el catálogo completo a todos los demás.
+        if perm is not None and perm.can_see_all is False:
             cliente_row = (await db.execute(
                 select(Cliente.id_productora).filter(Cliente.id == int(current_user.id_perfil))
             )).first()
@@ -464,7 +475,7 @@ async def mi_productora(db: AsyncSession = Depends(get_async_db), current_user: 
     )).scalars().first()
     return {
         "aplica": True,
-        "solo_propios_activo": bool(perm and perm.can_read and not perm.can_see_all),
+        "solo_propios_activo": bool(perm is not None and perm.can_see_all is False),
         "id_productora": row[0] if row else None,
         "productora_nombre": row[1] if row else None,
         "configurado": bool(row and row[0]),
