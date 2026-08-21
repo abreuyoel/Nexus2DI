@@ -54,7 +54,7 @@ export class DataComponent implements OnInit {
   );
 
   visitColumns = ['fecha', 'cliente', 'pdv', 'mercaderista', 'acciones'];
-  balanceColumns = ['producto', 'categoria', 'inv_inicial', 'inv_final', 'inv_deposito', 'caras', 'precio_bs', 'precio_usd'];
+  balanceColumns = ['producto', 'categoria', 'inv_inicial', 'inv_final', 'inv_deposito', 'caras', 'fefo', 'precio_bs', 'precio_usd'];
 
   /** ID de visita recibido por queryParam (?visita=N) para abrir su revisión
    *  directamente al entrar a Auditoría de Data. */
@@ -136,7 +136,10 @@ export class DataComponent implements OnInit {
     const formGroups = balances.map(b => this.fb.group({
       id_balance: [b.id], producto: [b.producto], categoria: [b.categoria],
       inv_inicial: [b.inv_inicial], inv_final: [b.inv_final], inv_deposito: [b.inv_deposito],
-      caras: [b.caras], precio_bs: [b.precio_bs], precio_usd: [b.precio_ds]
+      caras: [b.caras], precio_bs: [b.precio_bs], precio_usd: [b.precio_ds],
+      // Solo lectura acá (no viaja en saveChanges/UpdateBalanceItem) -- lo
+      // captura el mercaderista en la APK, esta pantalla solo lo muestra.
+      fefo: [{ value: b.FEFO, disabled: true }],
     }));
     this.balancesForm.setControl('balances', this.fb.array(formGroups));
   }
