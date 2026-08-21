@@ -22,6 +22,16 @@ def check_rol_encuestador(current_user: User):
     if current_user.id_rol not in (12, 13) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Acceso denegado. Solo para Encuestadores.")
 
+def check_rol_catalogos(current_user: User):
+    # Igual que check_rol_encuestador + Supervisor (6) -- pedido 21 ago para
+    # que Yusbel pueda limpiar duplicados del catálogo (Distrito capiral,
+    # variantes de UCV) sin depender de un admin. Deliberadamente NO se
+    # tocó check_rol_encuestador en sí: eso le daría a Supervisor acceso a
+    # TODO Encuestador (activar jornadas, cargar médicos como si fuera de
+    # campo), que es más de lo que se pidió -- esto es solo para /catalogos*.
+    if current_user.id_rol not in (12, 13, 6) and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Acceso denegado.")
+
 @router.get("/jornada-activa")
 async def api_jornada_activa(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     check_rol_encuestador(current_user)
@@ -666,7 +676,7 @@ async def api_consultorios_existentes(db: AsyncSession = Depends(get_async_db), 
 
 @router.get("/catalogos")
 async def api_catalogos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     
     especialidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "especialidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
     subespecialidades = (await db.execute(select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == "subespecialidad").order_by(CatalogoEncuestador.nombre))).scalars().all()
@@ -705,7 +715,7 @@ class CatalogoUpdate(BaseModel):
 
 @router.post("/catalogos")
 async def api_catalogos_create(req: CatalogoCreate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     
     tipo = req.tipo.strip().lower()
     nombre = req.nombre.strip()
@@ -740,7 +750,7 @@ async def api_catalogos_create(req: CatalogoCreate, db: AsyncSession = Depends(g
 
 @router.put("/catalogos/{id_catalogo}")
 async def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     
     nuevo_nombre = req.nombre.strip()
     if not nuevo_nombre:
@@ -780,7 +790,7 @@ async def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: AsyncS
 
 @router.get("/catalogos-gestion")
 async def api_catalogos_gestion(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     items = (await db.execute(select(CatalogoEncuestador).order_by(CatalogoEncuestador.tipo, CatalogoEncuestador.nombre))).scalars().all()
     
     # Pre-cargar conteos de médicos por campo para máxima velocidad
@@ -822,7 +832,7 @@ async def api_catalogos_gestion(db: AsyncSession = Depends(get_async_db), curren
 
 @router.get("/catalogos/{id_catalogo}/detalles")
 async def api_catalogos_detalles(id_catalogo: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     item = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
@@ -866,13 +876,89 @@ async def api_catalogos_detalles(id_catalogo: int, db: AsyncSession = Depends(ge
 
 @router.delete("/catalogos/{id_catalogo}")
 async def api_catalogos_delete(id_catalogo: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     item = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_catalogo))).scalars().first()
     if not item:
         raise HTTPException(status_code=404, detail="Elemento no encontrado")
     await db.delete(item)
     await db.commit()
     return {"success": True, "message": "Elemento eliminado"}
+
+# Tipo de catálogo -> columna real en Medico. Un solo lugar para esto en vez
+# de repetir el mismo if/elif por tercera vez (api_catalogos_update,
+# api_catalogos_fusionar, y los dos endpoints de huérfanos de acá abajo).
+_TIPO_COLUMNA_MEDICO = {
+    "especialidad": Medico.especialidad,
+    "subespecialidad": Medico.sub_especialidad,
+    "universidad": Medico.universidad_graduacion,
+    "estado": Medico.estado,
+    "ciudad": Medico.ciudad,
+}
+
+# OJO CON EL ORDEN: las rutas literales "/catalogos/huerfanos..." tienen que
+# quedar declaradas ANTES que "/catalogos/{id_origen}/fusionar" -- FastAPI
+# matchea por posición, y con el parametrizado primero, un POST a
+# /catalogos/huerfanos/fusionar intenta parsear "huerfanos" como el int de
+# {id_origen} y tira 422 antes de llegar nunca a esta función (pasó de
+# verdad, 21 ago). Si en algún momento se reordena este archivo, esto tiene
+# que seguir yendo primero.
+
+@router.get("/catalogos/huerfanos")
+async def api_catalogos_huerfanos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    """Valores que YA están en fichas de médicos pero nunca llegaron a
+    CATALOGO_ENCUESTADOR como fila propia -- ej. 'Distrito capiral' (typo),
+    que entró por el formulario web de supervisor cuando ese campo todavía
+    era texto libre (corregido 20-21 ago, ver commit del mismo día). El
+    catálogo normal (GET /catalogos) nunca los muestra porque no tienen
+    fila -- por eso el BI mostraba 3 estados y Catálogos mostraba 2. Sin
+    esto, un valor así no se puede fusionar (no hay id de origen)."""
+    check_rol_catalogos(current_user)
+    huerfanos = []
+    for tipo, columna in _TIPO_COLUMNA_MEDICO.items():
+        catalogados = set((await db.execute(
+            select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == tipo)
+        )).scalars().all())
+        rows = (await db.execute(
+            select(columna, func.count(Medico.id_medico))
+            .filter(columna.isnot(None), columna != "")
+            .group_by(columna)
+        )).all()
+        for valor, count in rows:
+            if valor not in catalogados:
+                huerfanos.append({"tipo": tipo, "valor": valor, "medicos_count": count})
+    return {"huerfanos": huerfanos}
+
+
+class HuerfanoFusionar(BaseModel):
+    tipo: str
+    valor_origen: str
+    id_destino: int
+
+@router.post("/catalogos/huerfanos/fusionar")
+async def api_huerfanos_fusionar(req: HuerfanoFusionar, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    """Igual que /catalogos/{id}/fusionar pero para un valor huérfano (sin
+    fila en CATALOGO_ENCUESTADOR) -- no hay nada que borrar del catálogo,
+    solo reasignar los médicos que usan ese texto suelto al valor correcto."""
+    check_rol_catalogos(current_user)
+    tipo = req.tipo.strip().lower()
+    if tipo not in _TIPO_COLUMNA_MEDICO:
+        raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
+
+    destino = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == req.id_destino))).scalars().first()
+    if not destino:
+        raise HTTPException(status_code=404, detail="Elemento destino no encontrado")
+    if destino.tipo != tipo:
+        raise HTTPException(status_code=400, detail="El destino no es del mismo tipo")
+
+    columna = _TIPO_COLUMNA_MEDICO[tipo]
+    await db.execute(update(Medico).where(columna == req.valor_origen).values({columna: destino.nombre}))
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
+    return {"success": True, "message": f"'{req.valor_origen}' fusionado dentro de '{destino.nombre}'"}
+
 
 class CatalogoFusionar(BaseModel):
     id_destino: int
@@ -888,7 +974,7 @@ async def api_catalogos_fusionar(id_origen: int, req: CatalogoFusionar, db: Asyn
     de esa vez). Fusionar es la operación real que hacía falta: todos los
     médicos que usaban el nombre de origen pasan al nombre de destino, y la
     fila de origen (ya redundante) se borra -- no un rename."""
-    check_rol_encuestador(current_user)
+    check_rol_catalogos(current_user)
     if id_origen == req.id_destino:
         raise HTTPException(status_code=400, detail="No se puede fusionar un elemento consigo mismo")
 
@@ -918,74 +1004,6 @@ async def api_catalogos_fusionar(id_origen: int, req: CatalogoFusionar, db: Asyn
         await db.rollback()
         raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
     return {"success": True, "message": f"'{nombre_origen}' fusionado dentro de '{nombre_destino}'"}
-
-# Tipo de catálogo -> columna real en Medico. Un solo lugar para esto en vez
-# de repetir el mismo if/elif por tercera vez (api_catalogos_update,
-# api_catalogos_fusionar, y los dos endpoints de huérfanos de acá abajo).
-_TIPO_COLUMNA_MEDICO = {
-    "especialidad": Medico.especialidad,
-    "subespecialidad": Medico.sub_especialidad,
-    "universidad": Medico.universidad_graduacion,
-    "estado": Medico.estado,
-    "ciudad": Medico.ciudad,
-}
-
-
-@router.get("/catalogos/huerfanos")
-async def api_catalogos_huerfanos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    """Valores que YA están en fichas de médicos pero nunca llegaron a
-    CATALOGO_ENCUESTADOR como fila propia -- ej. 'Distrito capiral' (typo),
-    que entró por el formulario web de supervisor cuando ese campo todavía
-    era texto libre (corregido 20-21 ago, ver commit del mismo día). El
-    catálogo normal (GET /catalogos) nunca los muestra porque no tienen
-    fila -- por eso el BI mostraba 3 estados y Catálogos mostraba 2. Sin
-    esto, un valor así no se puede fusionar (no hay id de origen)."""
-    check_rol_encuestador(current_user)
-    huerfanos = []
-    for tipo, columna in _TIPO_COLUMNA_MEDICO.items():
-        catalogados = set((await db.execute(
-            select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == tipo)
-        )).scalars().all())
-        rows = (await db.execute(
-            select(columna, func.count(Medico.id_medico))
-            .filter(columna.isnot(None), columna != "")
-            .group_by(columna)
-        )).all()
-        for valor, count in rows:
-            if valor not in catalogados:
-                huerfanos.append({"tipo": tipo, "valor": valor, "medicos_count": count})
-    return {"huerfanos": huerfanos}
-
-
-class HuerfanoFusionar(BaseModel):
-    tipo: str
-    valor_origen: str
-    id_destino: int
-
-@router.post("/catalogos/huerfanos/fusionar")
-async def api_huerfanos_fusionar(req: HuerfanoFusionar, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
-    """Igual que /catalogos/{id}/fusionar pero para un valor huérfano (sin
-    fila en CATALOGO_ENCUESTADOR) -- no hay nada que borrar del catálogo,
-    solo reasignar los médicos que usan ese texto suelto al valor correcto."""
-    check_rol_encuestador(current_user)
-    tipo = req.tipo.strip().lower()
-    if tipo not in _TIPO_COLUMNA_MEDICO:
-        raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
-
-    destino = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == req.id_destino))).scalars().first()
-    if not destino:
-        raise HTTPException(status_code=404, detail="Elemento destino no encontrado")
-    if destino.tipo != tipo:
-        raise HTTPException(status_code=400, detail="El destino no es del mismo tipo")
-
-    columna = _TIPO_COLUMNA_MEDICO[tipo]
-    await db.execute(update(Medico).where(columna == req.valor_origen).values({columna: destino.nombre}))
-    try:
-        await db.commit()
-    except IntegrityError as e:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
-    return {"success": True, "message": f"'{req.valor_origen}' fusionado dentro de '{destino.nombre}'"}
 
 # --- ENDPOINTS DE CORRECCIONES DE SUPERVISOR ---
 
