@@ -15,15 +15,34 @@ _DATA_MODULE_KEY = "data"
 
 
 async def _solo_propios_filter(user: Usuario, db: AsyncSession, alias: str = "b") -> tuple[str, dict]:
-    """Filtra los balances para mostrar SOLO los productos del propio cliente.
+    """Filtra los balances para mostrar SOLO los productos de la PRODUCTORA
+    propia del cliente -- misma fuente de verdad que "Solo propios" en el
+    módulo Productos (CLIENTES.id_productora, ver productos_catalogos.py
+    ::_producto_join). Se activa cuando el usuario cliente tiene una fila en
+    `usuario_permisos` con module='data' y can_see_all=False.
 
-    Se aplica cuando el usuario cliente tiene una fila en `usuario_permisos`
-    con module='data' y can_see_all=False (y can_read=True).
-    En ese caso el cliente solo ve sus productos (b.id_cliente = id_perfil),
-    NO toda la categoría (que incluiría productos de la competencia).
+    Antes esta función filtraba por `b.id_cliente = id_perfil`, lo cual no
+    hacía nada real: `visible_ids` (coordinator_client_ids, más arriba en
+    cada endpoint) ya restringe a esos mismos id_cliente, así que un balance
+    de OTRA productora seguía pasando el filtro igual -- confirmado 21 ago:
+    Flora Foods veía VIOLIFE (su propia productora) junto con Pepsico/
+    Mondelez/Lactalis/etc bajo el mismo id_cliente=69 (esas otras marcas se
+    trackean ahí para compartir categoría/market-share, no porque sean de
+    Flora Foods). El join real es por producto vía `id_product`, que en
+    BALANCES_TOTALES está poblado al 100% para este cliente (confirmado en
+    vivo) y sin huérfanos contra PRODUCTS.
 
-    Si no existe la fila, o can_see_all=True, se devuelve ('', {}) y
-    el comportamiento normal (toda la categoría) se mantiene.
+    "is False" estricto (no solo falsy): las filas migradas en bloque para
+    el resto de los clientes nunca tocan can_see_all y quedan en NULL --
+    tratar NULL como "restringir" les rompería la categoría completa a
+    todos los demás. Ya NO exige can_read=True (mismo motivo que en
+    productos_catalogos.py: el toggle "Solo propios" del frontend solo
+    controla can_see_all, un admin puede activarlo sin tocar el dropdown de
+    Lectura aparte).
+
+    Si no existe la fila, o can_see_all no es exactamente False, se
+    devuelve ('', {}) y el comportamiento normal (toda la categoría) se
+    mantiene.
     """
     if not user.is_client or not user.id_perfil:
         return "", {}
@@ -35,12 +54,30 @@ async def _solo_propios_filter(user: Usuario, db: AsyncSession, alias: str = "b"
         )
     )).scalars().first()
 
-    # Solo aplica si existe la fila, tiene lectura permitida y can_see_all=False
-    if perm and perm.can_read and not perm.can_see_all:
-        frag = f" AND {alias}.id_cliente = :solo_propios_id_cliente"
-        return frag, {"solo_propios_id_cliente": int(user.id_perfil)}
+    if not (perm is not None and perm.can_see_all is False):
+        return "", {}
 
-    return "", {}
+    from app.models.cliente import Cliente
+    cliente_row = (await db.execute(
+        select(Cliente.id_productora).filter(Cliente.id == int(user.id_perfil))
+    )).first()
+    id_productora_propia = cliente_row[0] if cliente_row else None
+
+    if not id_productora_propia:
+        # can_see_all=False pero nadie configuró CLIENTES.id_productora
+        # todavía -- mejor vacío explícito (mismo criterio que
+        # productos_catalogos.py) que la categoría completa, que es
+        # justo lo que "Solo propios" dice que NO debe pasar.
+        return " AND 1=0", {}
+
+    frag = f"""
+        AND EXISTS (
+            SELECT 1 FROM PRODUCTS sp_p
+            WHERE sp_p.id_product = {alias}.id_product
+              AND sp_p.id_productora = :solo_propios_id_productora
+        )
+    """
+    return frag, {"solo_propios_id_productora": int(id_productora_propia)}
 
 
 def _analyst_filter(user: Usuario, alias: str = "b"):
