@@ -346,28 +346,34 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
             return stmt.filter(Producto.id_producto == None)  # noqa: E711 -- sin clientes asignados, sin productos
         cats_subq = select(CategoriaCliente.id_categoria).filter(CategoriaCliente.id_cliente.in_(ids_cliente))
         stmt = stmt.filter(Categoria.id_categoria.in_(cats_subq))
-    # Cliente puro (id_rol=1): solo ve productos de sus categorías asignadas en CATEGORIAS_CLIENTES.
-    # id_perfil = id_cliente en CLIENTES.
+    # Cliente puro (id_rol=1): id_perfil = id_cliente en CLIENTES.
     elif current_user is not None and current_user.rol == "client" and current_user.id_perfil:
-        cats_subq = select(CategoriaCliente.id_categoria).filter(
-            CategoriaCliente.id_cliente == int(current_user.id_perfil)
-        )
-        stmt = stmt.filter(Categoria.id_categoria.in_(cats_subq))
-
         # "Solo propios" (pedido por Flora Foods, 19-20 ago): reusa el
         # checkbox de usuario_permisos que ya existe para module='products'
         # ("Categoría completa" / "Solo propios" en Permisos, fila
-        # "Productos"). Cuando está en can_see_all=False, acota además de
-        # la categoría completa a solo los productos cuya PRODUCTORA sea
-        # la que el cliente tiene configurada en CLIENTES.id_productora.
+        # "Productos"). Cuando está en can_see_all=False, el alcance del
+        # cliente pasa a ser directamente "todo lo que es de MI PRODUCTORA"
+        # (columna ya poblada en PRODUCTS/MARCAS, visible en la tabla como
+        # "Flora Food") -- ESTO REEMPLAZA el filtro de CATEGORIAS_CLIENTES
+        # de abajo, no se suma a él.
         #
         # Primer intento (20 ago) usaba SKU_COMPETENCIA.id_producto_cliente
         # -- se revirtió porque esa tabla es para pares de comparación
         # (qué SKU propio se enfrenta a cuál de la competencia, uno a uno),
         # no un catálogo completo de "todo lo mío" -- para Flora Foods
-        # estaba vacía o incompleta y el filtro daba 0 productos. La
-        # PRODUCTORA del catálogo (columna ya poblada en PRODUCTS/MARCAS,
-        # visible en la tabla como "Flora Food") es la fuente correcta.
+        # estaba vacía o incompleta y el filtro daba 0 productos.
+        #
+        # Segundo intento (20 ago) SUMABA el filtro de productora al de
+        # CATEGORIAS_CLIENTES en vez de reemplazarlo -- se corrigió (21 ago)
+        # porque CATEGORIAS_CLIENTES es un mapeo manual que puede quedar
+        # desactualizado respecto del catálogo real: a Flora Foods le
+        # faltaba ahí la categoría ARROZ, así que 9 de sus 31 productos
+        # reales (confirmado en vivo contra PRODUCTORAS/PRODUCTS) quedaban
+        # ocultos igual con "Solo propios" activado -- el módulo Data
+        # (client_data.py::_solo_propios_filter), que solo filtra por
+        # productora sin tocar CATEGORIAS_CLIENTES, sí mostraba los 31,
+        # y esa discrepancia (22 vs 31) fue la señal de que el filtro de
+        # categoría no debía seguir aplicando encima del de productora.
         perm = (await db.execute(
             select(UserPermission).filter(
                 UserPermission.user_id == current_user.id,
@@ -385,20 +391,31 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
         # en bloque para el resto de los clientes (client_role_modules.sql)
         # nunca tocan can_see_all y quedan en NULL -- tratar NULL como
         # "restringir" les rompería el catálogo completo a todos los demás.
-        if perm is not None and perm.can_see_all is False:
+        solo_propios_activo = perm is not None and perm.can_see_all is False
+
+        id_productora_propia = None
+        if solo_propios_activo:
             cliente_row = (await db.execute(
                 select(Cliente.id_productora).filter(Cliente.id == int(current_user.id_perfil))
             )).first()
             id_productora_propia = cliente_row[0] if cliente_row else None
-            if id_productora_propia:
-                stmt = stmt.filter(Productora.id_productora == id_productora_propia)
-            else:
-                # can_see_all=False pero nadie configuró CLIENTES.id_productora
-                # todavía -- mejor mostrar vacío y explícito (ver /productos-
-                # catalogos/mi-productora abajo, que el frontend puede usar
-                # para avisarlo) que mostrar la categoría completa igual,
-                # que es justo lo que "Solo propios" dice que NO debe pasar.
-                stmt = stmt.filter(Producto.id_producto == None)  # noqa: E711
+
+        if solo_propios_activo and id_productora_propia:
+            stmt = stmt.filter(Productora.id_productora == id_productora_propia)
+        elif solo_propios_activo:
+            # can_see_all=False pero nadie configuró CLIENTES.id_productora
+            # todavía -- mejor mostrar vacío y explícito (ver /productos-
+            # catalogos/mi-productora abajo, que el frontend puede usar
+            # para avisarlo) que mostrar la categoría completa igual,
+            # que es justo lo que "Solo propios" dice que NO debe pasar.
+            stmt = stmt.filter(Producto.id_producto == None)  # noqa: E711
+        else:
+            # Sin "Solo propios": alcance clásico por categorías asignadas
+            # en CATEGORIAS_CLIENTES.
+            cats_subq = select(CategoriaCliente.id_categoria).filter(
+                CategoriaCliente.id_cliente == int(current_user.id_perfil)
+            )
+            stmt = stmt.filter(Categoria.id_categoria.in_(cats_subq))
     elif current_user is not None and current_user.rol == "client" and not current_user.id_perfil:
         # Cliente sin id_perfil configurado → sin acceso a productos
         return stmt.filter(Producto.id_producto == None)  # noqa: E711
