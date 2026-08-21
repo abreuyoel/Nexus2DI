@@ -331,12 +331,14 @@ export class CatalogosComponent implements OnInit {
     this.loading.set(true);
     if (this.activeTab() === 'ciudades') {
       const depId = this.filterDepStr() ? +this.filterDepStr() : null;
-      this.api.listCiudades(depId ? { departamento_id: depId } : {}).subscribe({
+      const opts: any = { activo: true };
+      if (depId) opts.departamento_id = depId;
+      this.api.listCiudades(opts).subscribe({
         next: d => { this.items.set(d); this.loading.set(false); },
         error: () => this.loading.set(false)
       });
     } else {
-      this.api.listCatalog(this.activeTab()).subscribe({
+      this.api.listCatalog(this.activeTab(), true).subscribe({
         next: d => { this.items.set(d); this.loading.set(false); },
         error: () => this.loading.set(false)
       });
