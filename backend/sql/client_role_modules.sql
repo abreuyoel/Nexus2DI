@@ -8,7 +8,7 @@ IF NOT EXISTS (SELECT 1 FROM MODULOS WHERE clave = 'dashboard-powerbi')
 BEGIN
     INSERT INTO MODULOS (clave, nombre, id_padre, tipo, ruta, icono, orden, activo)
     VALUES ('dashboard-powerbi', 'Power BI', 1, 'modulo', '/dashboard?view=powerbi', 'bar_chart', 11, 1);
-END
+ENDa
 GO
 
 -- ============================================================
