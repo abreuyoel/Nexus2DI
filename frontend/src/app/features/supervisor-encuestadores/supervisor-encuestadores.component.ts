@@ -93,12 +93,34 @@ export class SupervisorEncuestadoresComponent implements OnInit {
   currentEncuesta: any = {};
   currentMedico: any = { consultorios: [] };
   currentCentro: any = { nombre_centro: '', direccion_completa: '', ciudad: '', estado: '' };
-  readonly ESTADOS = ['Distrito Capital', 'Miranda'];
   diasList = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   universidadesList: string[] = [];
+  // Especialidad/Sub-especialidad/Estado/Ciudad del médico eran texto
+  // libre acá (a diferencia de Universidad, que ya usaba app-searchable-
+  // select) -- esa es la puerta por la que entraron "Distrito capiral"
+  // (typo de Distrito Capital) y variantes tipo "ucv" que la APK sí
+  // bloquea con un dropdown real. El viejo ESTADOS=['Distrito Capital',
+  // 'Miranda'] hardcodeado era además una lista fija, no el catálogo real
+  // (que hoy puede tener más estados).
+  especialidadesList: string[] = [];
+  subespecialidadesList: string[] = [];
+  estadosList: string[] = [];
+  ciudadesList: string[] = [];
 
   get universidadesOpts(): SelectOption[] {
     return (this.universidadesList || []).map(u => ({ value: u, label: u }));
+  }
+  get especialidadesOpts(): SelectOption[] {
+    return (this.especialidadesList || []).map(e => ({ value: e, label: e }));
+  }
+  get subespecialidadesOpts(): SelectOption[] {
+    return (this.subespecialidadesList || []).map(e => ({ value: e, label: e }));
+  }
+  get estadosOpts(): SelectOption[] {
+    return (this.estadosList || []).map(e => ({ value: e, label: e }));
+  }
+  get ciudadesOpts(): SelectOption[] {
+    return (this.ciudadesList || []).map(c => ({ value: c, label: c }));
   }
 
   ngOnInit(): void {
@@ -121,6 +143,10 @@ export class SupervisorEncuestadoresComponent implements OnInit {
     this.http.get<any>(`${environment.apiUrl}/api/encuestador/catalogos`).subscribe({
       next: (res) => {
         this.universidadesList = res.universidades || [];
+        this.especialidadesList = res.especialidades || [];
+        this.subespecialidadesList = res.subespecialidades || [];
+        this.estadosList = res.estados || [];
+        this.ciudadesList = res.ciudades || [];
       }
     });
   }

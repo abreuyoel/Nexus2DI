@@ -934,13 +934,27 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Especialidad *</label>
-            <input type="text" [(ngModel)]="currentMedico.especialidad"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <app-searchable-select
+              [options]="especialidadesOpts"
+              [value]="currentMedico.especialidad"
+              (valueChange)="currentMedico.especialidad = $event"
+              placeholder="Seleccionar especialidad..."
+              searchPlaceholder="Buscar especialidad..."
+              allLabel="Sin asignar"
+              icon="psychology"
+            ></app-searchable-select>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Sub-Especialidad</label>
-            <input type="text" [(ngModel)]="currentMedico.sub_especialidad"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <app-searchable-select
+              [options]="subespecialidadesOpts"
+              [value]="currentMedico.sub_especialidad"
+              (valueChange)="currentMedico.sub_especialidad = $event"
+              placeholder="Seleccionar sub-especialidad..."
+              searchPlaceholder="Buscar sub-especialidad..."
+              allLabel="Sin asignar"
+              icon="biotech"
+            ></app-searchable-select>
           </div>
         </div>
 
@@ -1002,13 +1016,27 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Ciudad *</label>
-            <input type="text" [(ngModel)]="currentMedico.ciudad"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <app-searchable-select
+              [options]="ciudadesOpts"
+              [value]="currentMedico.ciudad"
+              (valueChange)="currentMedico.ciudad = $event"
+              placeholder="Seleccionar ciudad..."
+              searchPlaceholder="Buscar ciudad..."
+              allLabel="Sin asignar"
+              icon="location_city"
+            ></app-searchable-select>
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado *</label>
-            <input type="text" [(ngModel)]="currentMedico.estado"
-              class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:border-violet-500 outline-none">
+            <app-searchable-select
+              [options]="estadosOpts"
+              [value]="currentMedico.estado"
+              (valueChange)="currentMedico.estado = $event"
+              placeholder="Seleccionar estado..."
+              searchPlaceholder="Buscar estado..."
+              allLabel="Sin asignar"
+              icon="map"
+            ></app-searchable-select>
           </div>
         </div>
 
@@ -1507,7 +1535,7 @@
           <label class="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Estado</label>
           <select [(ngModel)]="currentCentro.estado"
             class="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white focus:border-emerald-500 outline-none transition-colors text-sm">
-            <option *ngFor="let est of ESTADOS" [value]="est">{{ est }}</option>
+            <option *ngFor="let est of estadosList" [value]="est">{{ est }}</option>
           </select>
         </div>
         <div>
