@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, desc, func, select, update, delete as sa_delete
+from sqlalchemy.exc import IntegrityError
 from typing import List, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
@@ -765,8 +766,16 @@ async def api_catalogos_update(id_catalogo: int, req: CatalogoUpdate, db: AsyncS
             await db.execute(update(Medico).where(Medico.estado == viejo_nombre).values(estado=nuevo_nombre))
         elif item.tipo == "ciudad":
             await db.execute(update(Medico).where(Medico.ciudad == viejo_nombre).values(ciudad=nuevo_nombre))
-            
-    await db.commit()
+
+    # Antes esto no atrapaba nada -- cualquier choque (ej. otro catálogo del
+    # mismo tipo ya con ese nombre, si hay UNIQUE ahí) subía como 500 opaco
+    # "Error interno del servidor" sin decir qué pasó. 20 ago: reportado al
+    # editar especialidad desde Encuestador > Configuración.
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"No se pudo guardar: {str(e.orig) or 'dato duplicado o inválido'}")
     return {"success": True, "message": "Elemento actualizado correctamente"}
 
 @router.get("/catalogos-gestion")
