@@ -7,6 +7,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../../core/services/api.service';
 import { SearchableSelectComponent, SelectOption } from '../../client-visits/searchable-select.component';
+import { ConfirmService } from '../../../shared/components/confirm-dialog/confirm.service';
 
 type CatalogKey = 'tipo-negocio' | 'subtipo-negocio' | 'alcance' | 'canal-venta' | 'departamentos' | 'ciudades';
 
@@ -63,13 +64,13 @@ interface TabDef {
         @if (activeTab() === 'ciudades') {
           <div class="space-y-1 w-full md:w-64">
             <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Departamento</label>
-            <app-searchable-select [options]="departamentoOpts()" [(value)]="newCiudadDepStr"
+            <app-searchable-select [options]="departamentoOpts()" [value]="newCiudadDepStr()" (valueChange)="newCiudadDepStr.set($event || '')"
               placeholder="— Selecciona —" searchPlaceholder="Buscar departamento..." allLabel="Sin asignar" icon="map"></app-searchable-select>
           </div>
         }
         <div class="space-y-1 flex-1">
           <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nuevo</label>
-          <input [(ngModel)]="newName" (keyup.enter)="add()" [placeholder]="'Nombre de ' + currentTab().label.toLowerCase()"
+          <input [ngModel]="newName()" (ngModelChange)="newName.set($event)" (keyup.enter)="add()" [placeholder]="'Nombre de ' + currentTab().label.toLowerCase()"
             class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none w-full">
         </div>
         <button (click)="add()" [disabled]="!canAdd() || saving()"
@@ -85,18 +86,18 @@ interface TabDef {
   <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm p-4 flex flex-col md:flex-row items-stretch md:items-center gap-3">
     <div class="relative flex-1 min-w-52">
       <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-base">search</mat-icon>
-      <input [(ngModel)]="searchText" (ngModelChange)="onSearchChange()" placeholder="Buscar..."
+      <input [ngModel]="searchText()" (ngModelChange)="onSearchChange($event)" placeholder="Buscar por nombre..."
         class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400 outline-none">
     </div>
     @if (activeTab() === 'ciudades') {
       <div class="w-full md:w-64">
-        <app-searchable-select [options]="departamentoOpts()" [(value)]="filterDepStr" (valueChange)="onFilterDepChange()"
+        <app-searchable-select [options]="departamentoOpts()" [value]="filterDepStr()" (valueChange)="onFilterDepChange($event)"
           placeholder="Todos los departamentos" searchPlaceholder="Buscar departamento..." allLabel="Todos" icon="filter_list"></app-searchable-select>
       </div>
     }
     <div class="flex items-center gap-2 shrink-0">
       <span class="text-xs font-black text-slate-500 uppercase tracking-widest">Pág.</span>
-      <select [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()"
+      <select [ngModel]="pageSize()" (ngModelChange)="onPageSizeChange($event)"
         class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-primary-500 rounded-xl px-2 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none">
         <option [ngValue]="20">20</option>
         <option [ngValue]="50">50</option>
@@ -217,6 +218,7 @@ interface TabDef {
 export class CatalogosComponent implements OnInit {
   private api = inject(ApiService);
   private snack = inject(MatSnackBar);
+  private confirmSvc = inject(ConfirmService);
 
   tabs: TabDef[] = [
     { key: 'tipo-negocio', label: 'Tipo de Negocio', icon: 'category', hint: 'Categorización principal del establecimiento (antes Jerarquía Nivel 2)' },
@@ -238,11 +240,11 @@ export class CatalogosComponent implements OnInit {
   editName = '';
   editDepStr = '';
 
-  newName = '';
-  newCiudadDepStr = '';
-  filterDepStr = '';
-  searchText = '';
-  pageSize = 20;
+  newName = signal('');
+  newCiudadDepStr = signal('');
+  filterDepStr = signal('');
+  searchText = signal('');
+  pageSize = signal(20);
   page = signal(0);
 
   departamentoOpts = computed<SelectOption[]>(() =>
@@ -251,41 +253,45 @@ export class CatalogosComponent implements OnInit {
 
   currentTab = computed(() => this.tabs.find(t => t.key === this.activeTab())!);
   canAdd = computed(() => {
-    if (!this.newName.trim()) return false;
-    if (this.activeTab() === 'ciudades' && !this.newCiudadDepStr) return false;
+    if (!this.newName().trim()) return false;
+    if (this.activeTab() === 'ciudades' && !this.newCiudadDepStr()) return false;
     return true;
   });
 
   filteredItems = computed(() => {
-    const q = this.searchText.trim().toLowerCase();
+    const q = this.searchText().trim().toLowerCase();
     let list = this.items();
-    if (this.activeTab() === 'ciudades' && this.filterDepStr) {
-      const depId = +this.filterDepStr;
+    const depStr = this.filterDepStr();
+    if (this.activeTab() === 'ciudades' && depStr) {
+      const depId = +depStr;
       list = list.filter(it => this.asCiudad(it).departamento_id === depId);
     }
     if (q) {
-      list = list.filter(it => it.nombre.toLowerCase().includes(q));
+      list = list.filter(it => (it.nombre || '').toLowerCase().includes(q));
     }
     return list;
   });
 
   paginatedItems = computed(() => {
-    const start = this.page() * this.pageSize;
-    return this.filteredItems().slice(start, start + this.pageSize);
+    const start = this.page() * this.pageSize();
+    return this.filteredItems().slice(start, start + this.pageSize());
   });
 
-  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredItems().length / this.pageSize)));
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredItems().length / this.pageSize())));
 
-  onSearchChange(): void {
+  onSearchChange(val: string): void {
+    this.searchText.set(val || '');
     this.page.set(0);
   }
 
-  onFilterDepChange(): void {
+  onFilterDepChange(val?: string): void {
+    if (val !== undefined) this.filterDepStr.set(val);
     this.page.set(0);
     this.loadList();
   }
 
-  onPageSizeChange(): void {
+  onPageSizeChange(val: number): void {
+    this.pageSize.set(+val);
     this.page.set(0);
   }
 
@@ -306,9 +312,10 @@ export class CatalogosComponent implements OnInit {
   switchTab(key: CatalogKey): void {
     this.activeTab.set(key);
     this.editingId.set(null);
-    this.newName = '';
-    this.filterDepStr = '';
-    this.searchText = '';
+    this.newName.set('');
+    this.newCiudadDepStr.set('');
+    this.filterDepStr.set('');
+    this.searchText.set('');
     this.page.set(0);
     this.loadList();
   }
@@ -323,7 +330,7 @@ export class CatalogosComponent implements OnInit {
   loadList(): void {
     this.loading.set(true);
     if (this.activeTab() === 'ciudades') {
-      const depId = this.filterDepStr ? +this.filterDepStr : null;
+      const depId = this.filterDepStr() ? +this.filterDepStr() : null;
       this.api.listCiudades(depId ? { departamento_id: depId } : {}).subscribe({
         next: d => { this.items.set(d); this.loading.set(false); },
         error: () => this.loading.set(false)
@@ -339,19 +346,19 @@ export class CatalogosComponent implements OnInit {
   add(): void {
     if (!this.canAdd()) return;
     this.saving.set(true);
-    const nombre = this.newName.trim();
+    const nombre = this.newName().trim();
+    const depStr = this.newCiudadDepStr();
     const op = this.activeTab() === 'ciudades'
-      ? this.api.createCiudad({ nombre, departamento_id: +this.newCiudadDepStr })
+      ? this.api.createCiudad({ nombre, departamento_id: +depStr })
       : this.api.createCatalogItem(this.activeTab(), { nombre });
     op.subscribe({
       next: () => {
         this.saving.set(false);
-        this.newName = '';
-        this.newCiudadDepStr = '';
-        // refrescar departamentos si se creó uno
+        this.newName.set('');
+        this.newCiudadDepStr.set('');
         if (this.activeTab() === 'departamentos') this.loadDepartamentos();
         this.loadList();
-        this.snack.open('Agregado', 'OK', { duration: 2000 });
+        this.snack.open('Agregado exitosamente', 'OK', { duration: 2500 });
       },
       error: (err) => {
         this.saving.set(false);
@@ -400,8 +407,15 @@ export class CatalogosComponent implements OnInit {
     });
   }
 
-  remove(item: CatalogItem | CiudadItem): void {
-    if (!confirm(`¿Eliminar "${item.nombre}"?`)) return;
+  async remove(item: CatalogItem | CiudadItem): Promise<void> {
+    const ok = await this.confirmSvc.confirm(`¿Estás seguro de eliminar el ítem "${item.nombre}" del catálogo?`, {
+      title: 'Eliminar ítem del catálogo',
+      confirmText: 'Sí, eliminar',
+      cancelText: 'Cancelar',
+      danger: true,
+    });
+    if (!ok) return;
+
     const op = this.activeTab() === 'ciudades'
       ? this.api.deleteCiudad(item.id)
       : this.api.deleteCatalogItem(this.activeTab(), item.id);
@@ -409,16 +423,28 @@ export class CatalogosComponent implements OnInit {
       next: () => {
         if (this.activeTab() === 'departamentos') this.loadDepartamentos();
         this.loadList();
-        this.snack.open('Eliminado', 'OK', { duration: 2000 });
+        this.snack.open('Ítem eliminado exitosamente', 'OK', { duration: 2500 });
       },
-      error: (err) => {
+      error: async (err) => {
         const detail = err?.error?.detail;
         if (typeof detail === 'object' && detail?.usage_count) {
-          // Conflicto por uso: ofrecer forzar
-          const msg = `${detail.message}\n\nEjemplos de PDV: ${(detail.sample_pdv_ids || []).join(', ')}\n\n¿Forzar eliminación de todos modos?`;
-          if (confirm(msg)) this.forceRemove(item);
+          const count = detail.usage_count;
+          const unidad = count === 1 ? 'punto de venta' : 'puntos de venta';
+          const sampleList = (detail.sample_pdv_ids || []).slice(0, 5).join('\n• ');
+          const sampleMsg = sampleList ? `\n\nPuntos de venta afectados:\n• ${sampleList}` : '';
+
+          const userFriendlyMsg = `El ítem "${item.nombre}" está actualmente asignado a ${count} ${unidad}.${sampleMsg}\n\nSi eliminas este valor, los puntos de venta vinculados quedarán sin esta categoría.\n\nNota: Esta acción quedará registrada en el módulo de Auditoría. Si borras este valor por error, contacta a tu supervisor o administrador para restablecerlo.\n\n¿Deseas proceder con la eliminación de todos modos?`;
+
+          const forceOk = await this.confirmSvc.confirm(userFriendlyMsg, {
+            title: 'Categoría en Uso por PDVs',
+            confirmText: 'Sí, forzar eliminación',
+            cancelText: 'Conservar ítem',
+            danger: true
+          });
+          if (forceOk) this.forceRemove(item);
         } else {
-          this.snack.open(typeof detail === 'string' ? detail : 'Error al eliminar', 'OK', { duration: 5000 });
+          const errorMsg = typeof detail === 'string' ? detail : 'Ocurrió un error al intentar eliminar el elemento';
+          this.snack.open(errorMsg, 'OK', { duration: 4000 });
         }
       }
     });

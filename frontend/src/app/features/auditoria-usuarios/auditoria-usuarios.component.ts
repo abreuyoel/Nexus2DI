@@ -1,11 +1,13 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 
 const ROL_NAMES: Record<number, string> = {
   1: 'Cliente',
@@ -82,7 +84,7 @@ export interface GroupedUserAudit {
   standalone: true,
   imports: [
     CommonModule, FormsModule, MatIconModule, MatButtonModule,
-    MatProgressSpinnerModule, MatTooltipModule
+    MatProgressSpinnerModule, MatTooltipModule, MatSnackBarModule
   ],
   templateUrl: './auditoria-usuarios.component.html',
   styleUrl: './auditoria-usuarios.component.scss'
@@ -101,8 +103,20 @@ export class AuditoriaUsuariosComponent implements OnInit {
   fechaFin = '';
 
   viewMode = signal<'grouped' | 'all'>('grouped');
+  mainTab = signal<'usuarios' | 'pdvs'>('usuarios');
 
+  // --- PDV AUDIT SIGNALS ---
   selectedLog = signal<any | null>(null);
+  pdvLogs = signal<any[]>([]);
+  pdvTotal = signal(0);
+  pdvSkip = signal(0);
+  pdvLimit = 50;
+  pdvActionFilter = '';
+  pdvSearchText = '';
+  pdvStatusFilter = '';
+  restoringPdvId = signal<number | null>(null);
+  selectedPdvLog = signal<any | null>(null);
+  showPdvModal = signal(false);
   selectedUserHistory = signal<GroupedUserAudit | null>(null);
   showModal = signal(false);
   showHistoryModal = signal(false);
@@ -137,10 +151,13 @@ export class AuditoriaUsuariosComponent implements OnInit {
     return Array.from(map.values());
   });
 
-  constructor(private api: ApiService) {}
+  private api = inject(ApiService);
+  private snack = inject(MatSnackBar);
+  private confirmSvc = inject(ConfirmService);
 
   ngOnInit(): void {
     this.loadLogs();
+    this.loadPdvLogs();
   }
 
   loadLogs(): void {
@@ -181,9 +198,154 @@ export class AuditoriaUsuariosComponent implements OnInit {
     this.searchText = '';
     this.fechaInicio = '';
     this.fechaFin = '';
-    this.viewMode.set('grouped');
     this.skip.set(0);
     this.loadLogs();
+  }
+
+  // --- METODOS DE AUDITORIA DE PDVS ---
+
+  loadPdvLogs(): void {
+    this.loading.set(true);
+    this.api.getPdvAuditLogs({
+      offset: this.pdvSkip(),
+      limit: this.pdvLimit,
+      action: this.pdvActionFilter || undefined,
+      search: this.pdvSearchText || undefined,
+      status: this.pdvStatusFilter || undefined,
+    }).subscribe({
+      next: (res) => {
+        this.pdvLogs.set(res?.items || []);
+        this.pdvTotal.set(res?.total || 0);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.pdvLogs.set([]);
+        this.loading.set(false);
+      }
+    });
+  }
+
+  onPdvFilterChange(): void {
+    this.pdvSkip.set(0);
+    this.loadPdvLogs();
+  }
+
+  resetPdvFilters(): void {
+    this.pdvActionFilter = '';
+    this.pdvSearchText = '';
+    this.pdvStatusFilter = '';
+    this.pdvSkip.set(0);
+    this.loadPdvLogs();
+  }
+
+  async restorePdv(log: any): Promise<void> {
+    const pdvName = log.entity_name || log.entity_id || 'este registro';
+    const isCatalog = (log.action || '').includes('CATALOG');
+    const label = isCatalog ? 'el ítem de catálogo' : 'el punto de venta';
+
+    const ok = await this.confirmSvc.confirm(
+      `¿Estás seguro de restablecer ${label} "${pdvName}" a su estado original?`,
+      {
+        title: 'Restablecer Registro',
+        confirmText: 'Sí, restablecer',
+        cancelText: 'Cancelar',
+        danger: false
+      }
+    );
+    if (!ok) return;
+
+    this.restoringPdvId.set(log.id);
+    this.api.restorePdvFromAudit(log.id).subscribe({
+      next: (res: any) => {
+        this.restoringPdvId.set(null);
+        this.loadPdvLogs();
+        this.snack.open(res?.message || 'Restablecido con éxito', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        this.restoringPdvId.set(null);
+        this.snack.open(err?.error?.detail || 'Error al restablecer', 'OK', { duration: 4000 });
+      }
+    });
+  }
+
+  approvePdv(log: any): void {
+    this.api.approvePdvAudit(log.id).subscribe({
+      next: () => {
+        this.loadPdvLogs();
+      },
+      error: (err) => alert('Error al aprobar: ' + (err.error?.detail || err.message))
+    });
+  }
+
+  openPdvDetailModal(log: any): void {
+    this.selectedPdvLog.set(log);
+    this.showPdvModal.set(true);
+  }
+
+  getPdvDiffItems(log: any): DiffItem[] {
+    if (!log || !log.changes) return [];
+    const changes = typeof log.changes === 'string' ? JSON.parse(log.changes) : log.changes;
+    const before = changes.before || changes.old || {};
+    const after = changes.after || changes.new || {};
+
+    const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]));
+    const diffs: DiffItem[] = [];
+
+    const labels: Record<string, string> = {
+      'nombre': 'Nombre',
+      'catalog': 'Tipo de Catálogo',
+      'activo': 'Estado Activo',
+      'direccion': 'Dirección',
+      'latitud': 'Latitud',
+      'longitud': 'Longitud',
+      'departamento': 'Región / Depto',
+      'ciudad': 'Ciudad',
+      'localidad': 'Localidad',
+      'cadena': 'Cadena / Canal',
+      'jerarquia_n2': 'Tipo Negocio',
+      'jerarquia_n2_2': 'Subtipo Negocio',
+      'radio': 'Radio (m)',
+      'tiempo_minimo': 'Tiempo Mínimo',
+      'nivel_de_alcance': 'Nivel Alcance',
+      'rif': 'RIF'
+    };
+
+    for (const k of keys) {
+      const oldVal = before[k] !== undefined && before[k] !== null ? String(before[k]) : '—';
+      const newVal = after[k] !== undefined && after[k] !== null ? String(after[k]) : '—';
+
+      if (oldVal !== newVal) {
+        diffs.push({
+          field: labels[k] || k,
+          oldVal,
+          newVal,
+          icon: k === 'catalog' ? 'category' : 'storefront'
+        });
+      }
+    }
+
+    return diffs;
+  }
+
+  getPdvActionBadgeClass(action: string): string {
+    if (action === 'CREATE_POINT' || action === 'CREATE_CATALOG_ITEM') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+    if (action === 'UPDATE_POINT' || action === 'UPDATE_CATALOG_ITEM') return 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300';
+    if (action === 'DELETE_POINT' || action === 'DELETE_CATALOG_ITEM') return 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
+    if (action === 'RESTORE_POINT' || action === 'RESTORE_CATALOG_ITEM') return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+    return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300';
+  }
+
+  getPdvActionLabel(action: string): string {
+    if (action === 'CREATE_POINT') return 'Creación de PDV';
+    if (action === 'UPDATE_POINT') return 'Edición de PDV';
+    if (action === 'DELETE_POINT') return 'Eliminación de PDV';
+    if (action === 'RESTORE_POINT') return 'PDV Restablecido';
+    if (action === 'CREATE_CATALOG_ITEM') return 'Creación de Catálogo';
+    if (action === 'UPDATE_CATALOG_ITEM') return 'Edición de Catálogo';
+    if (action === 'DELETE_CATALOG_ITEM') return 'Eliminación de Catálogo';
+    if (action === 'RESTORE_CATALOG_ITEM') return 'Catálogo Restablecido';
+    return action;
   }
 
   setViewMode(mode: 'grouped' | 'all'): void {
