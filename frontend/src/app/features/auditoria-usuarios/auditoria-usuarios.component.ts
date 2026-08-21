@@ -226,6 +226,29 @@ export class AuditoriaUsuariosComponent implements OnInit {
     });
   }
 
+  pdvPage = computed(() => Math.floor(this.pdvSkip() / this.pdvLimit) + 1);
+  pdvTotalPages = computed(() => Math.max(1, Math.ceil(this.pdvTotal() / this.pdvLimit)));
+
+  nextPdvPage(): void {
+    if (this.pdvSkip() + this.pdvLimit < this.pdvTotal()) {
+      this.pdvSkip.set(this.pdvSkip() + this.pdvLimit);
+      this.loadPdvLogs();
+    }
+  }
+
+  prevPdvPage(): void {
+    if (this.pdvSkip() > 0) {
+      this.pdvSkip.set(Math.max(0, this.pdvSkip() - this.pdvLimit));
+      this.loadPdvLogs();
+    }
+  }
+
+  onPdvLimitChange(limit: number): void {
+    this.pdvLimit = +limit;
+    this.pdvSkip.set(0);
+    this.loadPdvLogs();
+  }
+
   onPdvFilterChange(): void {
     this.pdvSkip.set(0);
     this.loadPdvLogs();
