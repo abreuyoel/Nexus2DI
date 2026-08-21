@@ -155,11 +155,17 @@ export class RoutesComponent implements OnInit {
     this.api.getClients().subscribe(d => this.clients.set(d ?? []));
   }
 
-  loadRoutes(): void {
-    this.loading.set(true);
+  loadRoutes(resetPagination = true, showSpinner = true): void {
+    if (showSpinner) this.loading.set(true);
     this.api.getRoutes().subscribe({
-      next: (data) => { this.routes.set(data); this.loading.set(false); this.resetPage(); },
-      error: () => this.loading.set(false),
+      next: (data) => {
+        this.routes.set(data);
+        if (showSpinner) this.loading.set(false);
+        if (resetPagination) this.resetPage();
+      },
+      error: () => {
+        if (showSpinner) this.loading.set(false);
+      },
     });
   }
 
@@ -264,7 +270,6 @@ export class RoutesComponent implements OnInit {
     });
   }
 
-  // ── Acciones de ruta ──────────────────────────────────────
   viewPoints(ruta: Ruta, startEdit = false): void {
     const ref = this.dialog.open(RouteDetailDialogComponent, {
       data: { ruta, startEdit },
@@ -273,7 +278,11 @@ export class RoutesComponent implements OnInit {
       panelClass: 'custom-dialog',
       autoFocus: false,
     });
-    ref.afterClosed().subscribe(() => this.loadRoutes());
+    ref.afterClosed().subscribe((hasChanges) => {
+      if (hasChanges) {
+        this.loadRoutes(false, false);
+      }
+    });
   }
 
   duplicateRoute(ruta: Ruta): void {

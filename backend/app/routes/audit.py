@@ -255,6 +255,13 @@ async def restore_pdv_from_audit(
             if key in before_data:
                 setattr(punto, key, before_data[key])
 
+    # Reactivar cualquier programación de ruta que haya sido desactivada al eliminar
+    from sqlalchemy import text
+    await db.execute(
+        text("UPDATE RUTA_PROGRAMACION SET activa = 1 WHERE id_punto_interes = :pid"),
+        {"pid": point_id},
+    )
+
     log_entry.status = "RESTORED"
     log_action(db, action="RESTORE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
@@ -263,7 +270,8 @@ async def restore_pdv_from_audit(
                changes={"restored_from_log_id": audit_id, "data": before_data})
 
     await db.commit()
-    return {"message": f"Punto de venta '{point_id}' restablecido exitosamente"}
+    pdv_nombre = before_data.get("nombre", point_id)
+    return {"message": f"Punto de venta '{pdv_nombre}' ({point_id}) restablecido exitosamente"}
 
 
 @router.post("/pdvs/{audit_id}/approve")
