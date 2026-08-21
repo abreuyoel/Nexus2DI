@@ -20,7 +20,14 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "centro-mando": {"read": True},
         "centro-mando-auditoria": {"read": True},
         "plan-accion": {"read": True},
-        "routes": {"read": True, "write": True},
+        # "delete" faltaba acá (21 ago) -- un analista con esta fila ya
+        # seedeada quedaba con can_delete=False EXPLICITO, lo cual además
+        # bloquea el fallback por rol que de otro modo le habría dado
+        # acceso (require_permission: si existe la fila, manda ella sola,
+        # no cae al fallback). Confirmado en vivo: analistas SIN esta fila
+        # sí podían eliminar puntos de RUTA_PROGRAMACION (via fallback),
+        # los que SÍ tenían la fila (seedeada o tocada desde Permisos) no.
+        "routes": {"read": True, "write": True, "delete": True},
         "routes.asignar_merc": {"read": True, "write": True},
         "clientes-rutas": {"read": True, "write": True},
         # "frecuencias-pdvs-cliente" pasó a tener acciones propias
@@ -94,6 +101,19 @@ ROLE_DEFAULT_PERMISSIONS: dict[str, dict[str, dict[str, bool]]] = {
         "chat": {"read": True},
         "data": {"read": True},
         "centro-mando": {"read": True},
+    },
+    # Supervisor no tenía entrada acá -- todo su acceso (incluido /routes,
+    # ver app.routes.ts) venía de arrays de roles hardcodeados en el
+    # frontend, sin fila propia en usuario_permisos. Eso funciona bien para
+    # LECTURA (roleGuard cae al array si no hay fila explícita) pero
+    # 'routes'.write/delete en el BACKEND (require_permission) no tiene
+    # fallback para id_rol=6 -- sin esta fila, un supervisor no puede
+    # crear/editar/eliminar PDVs de RUTA_PROGRAMACION aunque el admin se lo
+    # habilite manualmente después (21 ago, pedido explícito). Solo se
+    # agrega 'routes' acá -- no se reseedea todo el resto del acceso de
+    # supervisor, que sigue viniendo del fallback existente.
+    "supervisor": {
+        "routes": {"read": True, "write": True, "delete": True},
     },
 }
 
