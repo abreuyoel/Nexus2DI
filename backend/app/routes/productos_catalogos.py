@@ -365,15 +365,18 @@ async def _producto_join(db: AsyncSession, current_user: Optional[Usuario] = Non
         #
         # Segundo intento (20 ago) SUMABA el filtro de productora al de
         # CATEGORIAS_CLIENTES en vez de reemplazarlo -- se corrigió (21 ago)
-        # porque CATEGORIAS_CLIENTES es un mapeo manual que puede quedar
-        # desactualizado respecto del catálogo real: a Flora Foods le
-        # faltaba ahí la categoría ARROZ, así que 9 de sus 31 productos
-        # reales (confirmado en vivo contra PRODUCTORAS/PRODUCTS) quedaban
-        # ocultos igual con "Solo propios" activado -- el módulo Data
-        # (client_data.py::_solo_propios_filter), que solo filtra por
-        # productora sin tocar CATEGORIAS_CLIENTES, sí mostraba los 31,
-        # y esa discrepancia (22 vs 31) fue la señal de que el filtro de
-        # categoría no debía seguir aplicando encima del de productora.
+        # porque el join de Categoria de acá arriba (vía SubCategoria) puede
+        # NO COINCIDIR con PRODUCTS.id_categoria (columna directa que
+        # también existe en la tabla): confirmado en vivo que 9 de los 31
+        # productos de Flora Foods (los VIOLIFE, subcategoría 79
+        # "ESPECIALIDADES") tenían SUBCATEGORIAS.id_categoria=80 ("ARROZ")
+        # pero PRODUCTS.id_categoria=44 ("QUESOS", lo correcto -- Flora
+        # Foods no vende arroz). Es un problema de datos en SUBCATEGORIAS
+        # que resultó afectar 1594 productos en TODO el catálogo, no solo
+        # Flora Foods (pendiente de limpieza aparte, más grande). Mientras
+        # eso no se resuelva a nivel de datos, "Solo propios" no debe
+        # depender de esa cadena -- la productora sola ya es un alcance
+        # completo y correcto sin pasar por Categoria/SubCategoria.
         perm = (await db.execute(
             select(UserPermission).filter(
                 UserPermission.user_id == current_user.id,
