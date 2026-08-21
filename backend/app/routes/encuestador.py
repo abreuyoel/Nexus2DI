@@ -874,6 +874,51 @@ async def api_catalogos_delete(id_catalogo: int, db: AsyncSession = Depends(get_
     await db.commit()
     return {"success": True, "message": "Elemento eliminado"}
 
+class CatalogoFusionar(BaseModel):
+    id_destino: int
+
+@router.post("/catalogos/{id_origen}/fusionar")
+async def api_catalogos_fusionar(id_origen: int, req: CatalogoFusionar, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    """Une dos entradas del mismo tipo en una sola -- para el caso real de
+    'Distrito capiral' (typo) vs 'Distrito Capital', o 'UCV' / 'Universidad
+    Central de Venezuela' / 'Universidad Central de Venezuela (UCV)' todas
+    representando lo mismo. PUT /catalogos/{id} (renombrar) no sirve acá:
+    si el nombre destino ya existe como su propia fila, el rename choca
+    contra esa restricción (409, reportado 20 ago -- la causa real del 500
+    de esa vez). Fusionar es la operación real que hacía falta: todos los
+    médicos que usaban el nombre de origen pasan al nombre de destino, y la
+    fila de origen (ya redundante) se borra -- no un rename."""
+    check_rol_encuestador(current_user)
+    if id_origen == req.id_destino:
+        raise HTTPException(status_code=400, detail="No se puede fusionar un elemento consigo mismo")
+
+    origen = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == id_origen))).scalars().first()
+    destino = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == req.id_destino))).scalars().first()
+    if not origen or not destino:
+        raise HTTPException(status_code=404, detail="Elemento no encontrado")
+    if origen.tipo != destino.tipo:
+        raise HTTPException(status_code=400, detail="Solo se puede fusionar dentro del mismo tipo de catálogo")
+
+    nombre_origen, nombre_destino = origen.nombre, destino.nombre
+    if origen.tipo == "especialidad":
+        await db.execute(update(Medico).where(Medico.especialidad == nombre_origen).values(especialidad=nombre_destino))
+    elif origen.tipo == "subespecialidad":
+        await db.execute(update(Medico).where(Medico.sub_especialidad == nombre_origen).values(sub_especialidad=nombre_destino))
+    elif origen.tipo == "universidad":
+        await db.execute(update(Medico).where(Medico.universidad_graduacion == nombre_origen).values(universidad_graduacion=nombre_destino))
+    elif origen.tipo == "estado":
+        await db.execute(update(Medico).where(Medico.estado == nombre_origen).values(estado=nombre_destino))
+    elif origen.tipo == "ciudad":
+        await db.execute(update(Medico).where(Medico.ciudad == nombre_origen).values(ciudad=nombre_destino))
+
+    await db.delete(origen)
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
+    return {"success": True, "message": f"'{nombre_origen}' fusionado dentro de '{nombre_destino}'"}
+
 # --- ENDPOINTS DE CORRECCIONES DE SUPERVISOR ---
 
 class EncuestaCentroUpdate(BaseModel):

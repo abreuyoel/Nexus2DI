@@ -272,6 +272,11 @@ export interface CatalogoItem {
                       <span class="material-icons text-sm">edit</span>
                     </button>
 
+                    <!-- Botón Fusionar (con otro del mismo tipo -- ej. dos variantes de la misma universidad) -->
+                    <button (click)="abrirFusionModal(item)" title="Fusionar con otro ítem del mismo tipo" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-violet-50 dark:bg-slate-800 dark:hover:bg-violet-950/60 text-slate-500 hover:text-violet-600 dark:text-slate-400 dark:hover:text-violet-400 flex items-center justify-center transition-all">
+                      <span class="material-icons text-sm">call_merge</span>
+                    </button>
+
                     <!-- Botón Eliminar -->
                     <button (click)="eliminarItem(item)" title="Eliminar ítem" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-950/60 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 flex items-center justify-center transition-all">
                       <span class="material-icons text-sm">delete</span>
@@ -391,6 +396,54 @@ export interface CatalogoItem {
         </div>
       </div>
 
+      <!-- ── Modal: Fusionar dos ítems del mismo tipo ── -->
+      <div *ngIf="showMergeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+
+          <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
+            <h3 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+              <span class="material-icons text-violet-500">call_merge</span>
+              Fusionar Ítem de Catálogo
+            </h3>
+            <button (click)="showMergeModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <span class="material-icons text-lg">close</span>
+            </button>
+          </div>
+
+          <div class="space-y-4" *ngIf="itemFusionando">
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Todos los médicos que hoy usan <strong class="text-slate-700 dark:text-slate-200">"{{ itemFusionando.nombre }}"</strong>
+              van a pasar al valor que elijas abajo, y esta entrada duplicada se va a borrar. Usalo para unir variantes del
+              mismo valor real (ej. dos formas de escribir la misma universidad o el mismo estado).
+            </p>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Fusionar dentro de</label>
+              <select [(ngModel)]="fusionDestinoId" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-800 dark:text-white outline-none focus:border-violet-500">
+                <option [ngValue]="null" disabled>Elegí el valor correcto...</option>
+                <option *ngFor="let opt of opcionesFusionDestino" [ngValue]="opt.id">{{ opt.nombre }} ({{ opt.medicos_count }} médicos)</option>
+              </select>
+            </div>
+
+            <div *ngIf="itemFusionando.medicos_count > 0" class="p-3 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-xl text-xs text-violet-800 dark:text-violet-300">
+              <strong class="font-bold flex items-center gap-1"><span class="material-icons text-sm">info</span> Reasignación en cascada:</strong>
+              {{ itemFusionando.medicos_count }} médicos van a quedar con el nuevo valor automáticamente.
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <button (click)="showMergeModal = false" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition-all">
+              Cancelar
+            </button>
+            <button (click)="guardarFusion()" [disabled]="!fusionDestinoId" class="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-violet-600/20 flex items-center gap-1.5">
+              <span class="material-icons text-sm">call_merge</span>
+              Fusionar
+            </button>
+          </div>
+
+        </div>
+      </div>
+
       <!-- MODAL: VER DETALLES Y MÉDICOS ASOCIADOS -->
       <div *ngIf="showDetailModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
@@ -486,6 +539,16 @@ export class ConfiguracionEncuestadorComponent implements OnInit {
   detalleItem: CatalogoItem | null = null;
   detalleMedicos: any[] = [];
 
+  // Fusionar: distinto de "editar" -- editar renombra una fila sola;
+  // fusionar une DOS filas del mismo tipo (ej. "Distrito capiral" con typo
+  // y "Distrito Capital" ya existente por separado) en una, reasignando a
+  // todos los médicos que usaban la de origen. Renombrar a un nombre que
+  // ya existe como su propia fila choca con la restricción de unicidad --
+  // por eso hace falta esta operación aparte, no alcanza con "Editar".
+  showMergeModal = false;
+  itemFusionando: CatalogoItem | null = null;
+  fusionDestinoId: number | null = null;
+
   ngOnInit() {
     this.cargarCatalogos();
   }
@@ -571,6 +634,32 @@ export class ConfiguracionEncuestadorComponent implements OnInit {
       },
       error: err => {
         this.confirmDialog.info('Error al modificar: ' + (err.error?.detail || err.message));
+      }
+    });
+  }
+
+  abrirFusionModal(item: CatalogoItem) {
+    this.itemFusionando = item;
+    this.fusionDestinoId = null;
+    this.showMergeModal = true;
+  }
+
+  get opcionesFusionDestino(): CatalogoItem[] {
+    if (!this.itemFusionando) return [];
+    return this.items.filter(i => i.tipo === this.itemFusionando!.tipo && i.id !== this.itemFusionando!.id);
+  }
+
+  guardarFusion() {
+    if (!this.itemFusionando || !this.fusionDestinoId) return;
+    this.http.post<any>(`${this.API}/catalogos/${this.itemFusionando.id}/fusionar`, { id_destino: this.fusionDestinoId }).subscribe({
+      next: () => {
+        this.showMergeModal = false;
+        this.itemFusionando = null;
+        this.fusionDestinoId = null;
+        this.cargarCatalogos();
+      },
+      error: err => {
+        this.confirmDialog.info('Error al fusionar: ' + (err.error?.detail || err.message));
       }
     });
   }
