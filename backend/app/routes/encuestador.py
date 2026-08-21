@@ -919,6 +919,74 @@ async def api_catalogos_fusionar(id_origen: int, req: CatalogoFusionar, db: Asyn
         raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
     return {"success": True, "message": f"'{nombre_origen}' fusionado dentro de '{nombre_destino}'"}
 
+# Tipo de catálogo -> columna real en Medico. Un solo lugar para esto en vez
+# de repetir el mismo if/elif por tercera vez (api_catalogos_update,
+# api_catalogos_fusionar, y los dos endpoints de huérfanos de acá abajo).
+_TIPO_COLUMNA_MEDICO = {
+    "especialidad": Medico.especialidad,
+    "subespecialidad": Medico.sub_especialidad,
+    "universidad": Medico.universidad_graduacion,
+    "estado": Medico.estado,
+    "ciudad": Medico.ciudad,
+}
+
+
+@router.get("/catalogos/huerfanos")
+async def api_catalogos_huerfanos(db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    """Valores que YA están en fichas de médicos pero nunca llegaron a
+    CATALOGO_ENCUESTADOR como fila propia -- ej. 'Distrito capiral' (typo),
+    que entró por el formulario web de supervisor cuando ese campo todavía
+    era texto libre (corregido 20-21 ago, ver commit del mismo día). El
+    catálogo normal (GET /catalogos) nunca los muestra porque no tienen
+    fila -- por eso el BI mostraba 3 estados y Catálogos mostraba 2. Sin
+    esto, un valor así no se puede fusionar (no hay id de origen)."""
+    check_rol_encuestador(current_user)
+    huerfanos = []
+    for tipo, columna in _TIPO_COLUMNA_MEDICO.items():
+        catalogados = set((await db.execute(
+            select(CatalogoEncuestador.nombre).filter(CatalogoEncuestador.tipo == tipo)
+        )).scalars().all())
+        rows = (await db.execute(
+            select(columna, func.count(Medico.id_medico))
+            .filter(columna.isnot(None), columna != "")
+            .group_by(columna)
+        )).all()
+        for valor, count in rows:
+            if valor not in catalogados:
+                huerfanos.append({"tipo": tipo, "valor": valor, "medicos_count": count})
+    return {"huerfanos": huerfanos}
+
+
+class HuerfanoFusionar(BaseModel):
+    tipo: str
+    valor_origen: str
+    id_destino: int
+
+@router.post("/catalogos/huerfanos/fusionar")
+async def api_huerfanos_fusionar(req: HuerfanoFusionar, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
+    """Igual que /catalogos/{id}/fusionar pero para un valor huérfano (sin
+    fila en CATALOGO_ENCUESTADOR) -- no hay nada que borrar del catálogo,
+    solo reasignar los médicos que usan ese texto suelto al valor correcto."""
+    check_rol_encuestador(current_user)
+    tipo = req.tipo.strip().lower()
+    if tipo not in _TIPO_COLUMNA_MEDICO:
+        raise HTTPException(status_code=400, detail="Tipo de catálogo inválido")
+
+    destino = (await db.execute(select(CatalogoEncuestador).filter(CatalogoEncuestador.id == req.id_destino))).scalars().first()
+    if not destino:
+        raise HTTPException(status_code=404, detail="Elemento destino no encontrado")
+    if destino.tipo != tipo:
+        raise HTTPException(status_code=400, detail="El destino no es del mismo tipo")
+
+    columna = _TIPO_COLUMNA_MEDICO[tipo]
+    await db.execute(update(Medico).where(columna == req.valor_origen).values({columna: destino.nombre}))
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"No se pudo fusionar: {str(e.orig) or 'error de integridad'}")
+    return {"success": True, "message": f"'{req.valor_origen}' fusionado dentro de '{destino.nombre}'"}
+
 # --- ENDPOINTS DE CORRECCIONES DE SUPERVISOR ---
 
 class EncuestaCentroUpdate(BaseModel):

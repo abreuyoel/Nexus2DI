@@ -112,6 +112,31 @@ export interface CatalogoItem {
         </div>
       </div>
 
+      <!-- Valores huérfanos: ya están en fichas de médicos pero nunca tuvieron
+           fila propia en el catálogo (ej. "Distrito capiral", un typo que entró
+           por texto libre antes de este fix) -- por eso el BI puede mostrar más
+           valores de los que aparecen acá abajo. Solo se muestra si hay algo. -->
+      <div *ngIf="huerfanos.length > 0" class="bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-900/50 rounded-3xl p-5 shadow-sm space-y-3">
+        <div class="flex items-center gap-2">
+          <span class="material-icons text-amber-500">warning_amber</span>
+          <h3 class="text-sm font-black text-amber-800 dark:text-amber-300">Valores sin catalogar ({{ huerfanos.length }})</h3>
+        </div>
+        <p class="text-xs text-amber-700 dark:text-amber-400">
+          Ya están en fichas de médicos pero nunca se agregaron como catálogo oficial -- por eso el BI puede mostrarlos
+          como una barra propia aunque no aparezcan en la lista de abajo. Fusionalos con el valor correcto.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <div *ngFor="let h of huerfanos" class="flex items-center gap-2 bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 rounded-xl pl-3 pr-1.5 py-1.5">
+            <span [ngClass]="getTipoBadgeClass(h.tipo)" class="text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase">{{ formatTipoLabel(h.tipo) }}</span>
+            <span class="text-xs font-bold text-slate-700 dark:text-slate-200">{{ h.valor }}</span>
+            <span class="text-[10px] text-slate-400">{{ h.medicos_count }} méd.</span>
+            <button (click)="abrirFusionHuerfano(h)" title="Fusionar con un valor del catálogo" class="w-6 h-6 rounded-lg bg-violet-100 hover:bg-violet-200 dark:bg-violet-950/60 dark:hover:bg-violet-900 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+              <span class="material-icons !text-sm">call_merge</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Filters and Search Bar Container -->
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-5 rounded-3xl shadow-sm space-y-4">
         
@@ -444,6 +469,48 @@ export interface CatalogoItem {
         </div>
       </div>
 
+      <!-- ── Modal: Fusionar un valor huérfano (sin fila propia) con el catálogo ── -->
+      <div *ngIf="showHuerfanoMergeModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+
+          <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4">
+            <h3 class="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+              <span class="material-icons text-amber-500">warning_amber</span>
+              Fusionar Valor Sin Catalogar
+            </h3>
+            <button (click)="showHuerfanoMergeModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <span class="material-icons text-lg">close</span>
+            </button>
+          </div>
+
+          <div class="space-y-4" *ngIf="huerfanoFusionando">
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              <strong class="text-slate-700 dark:text-slate-200">"{{ huerfanoFusionando.valor }}"</strong> no tiene fila propia
+              en el catálogo -- solo existe en fichas de médicos. Los {{ huerfanoFusionando.medicos_count }} médicos que lo usan
+              van a pasar al valor del catálogo que elijas abajo.
+            </p>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Fusionar dentro de</label>
+              <select [(ngModel)]="huerfanoFusionDestinoId" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-sm text-slate-800 dark:text-white outline-none focus:border-violet-500">
+                <option [ngValue]="null" disabled>Elegí el valor correcto...</option>
+                <option *ngFor="let opt of opcionesFusionHuerfanoDestino" [ngValue]="opt.id">{{ opt.nombre }} ({{ opt.medicos_count }} médicos)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <button (click)="showHuerfanoMergeModal = false" class="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition-all">
+              Cancelar
+            </button>
+            <button (click)="guardarFusionHuerfano()" [disabled]="!huerfanoFusionDestinoId" class="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-violet-600/20 flex items-center gap-1.5">
+              <span class="material-icons text-sm">call_merge</span>
+              Fusionar
+            </button>
+          </div>
+
+        </div>
+      </div>
+
       <!-- MODAL: VER DETALLES Y MÉDICOS ASOCIADOS -->
       <div *ngIf="showDetailModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
@@ -551,6 +618,56 @@ export class ConfiguracionEncuestadorComponent implements OnInit {
 
   ngOnInit() {
     this.cargarCatalogos();
+    this.cargarHuerfanos();
+  }
+
+  // Valores que ya están en fichas de médicos pero nunca llegaron a tener
+  // fila propia en el catálogo (ej. "Distrito capiral", que entró por el
+  // formulario web de supervisor cuando ese campo era texto libre --
+  // corregido 20-21 ago). Sin esto no hay id de origen para fusionar.
+  huerfanos: { tipo: string; valor: string; medicos_count: number }[] = [];
+  loadingHuerfanos = false;
+  showHuerfanoMergeModal = false;
+  huerfanoFusionando: { tipo: string; valor: string; medicos_count: number } | null = null;
+  huerfanoFusionDestinoId: number | null = null;
+
+  cargarHuerfanos() {
+    this.loadingHuerfanos = true;
+    this.http.get<any>(`${this.API}/catalogos/huerfanos`).subscribe({
+      next: res => { this.huerfanos = res.huerfanos || []; this.loadingHuerfanos = false; },
+      error: () => { this.loadingHuerfanos = false; }
+    });
+  }
+
+  abrirFusionHuerfano(h: { tipo: string; valor: string; medicos_count: number }) {
+    this.huerfanoFusionando = h;
+    this.huerfanoFusionDestinoId = null;
+    this.showHuerfanoMergeModal = true;
+  }
+
+  get opcionesFusionHuerfanoDestino(): CatalogoItem[] {
+    if (!this.huerfanoFusionando) return [];
+    return this.items.filter(i => i.tipo === this.huerfanoFusionando!.tipo);
+  }
+
+  guardarFusionHuerfano() {
+    if (!this.huerfanoFusionando || !this.huerfanoFusionDestinoId) return;
+    this.http.post<any>(`${this.API}/catalogos/huerfanos/fusionar`, {
+      tipo: this.huerfanoFusionando.tipo,
+      valor_origen: this.huerfanoFusionando.valor,
+      id_destino: this.huerfanoFusionDestinoId,
+    }).subscribe({
+      next: () => {
+        this.showHuerfanoMergeModal = false;
+        this.huerfanoFusionando = null;
+        this.huerfanoFusionDestinoId = null;
+        this.cargarCatalogos();
+        this.cargarHuerfanos();
+      },
+      error: err => {
+        this.confirmDialog.info('Error al fusionar: ' + (err.error?.detail || err.message));
+      }
+    });
   }
 
   cargarCatalogos() {
