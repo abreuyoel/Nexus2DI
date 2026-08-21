@@ -514,7 +514,9 @@ async def delete_catalog_item(
         )
         await db.commit()
         return {"message": "Eliminado exitosamente", "usage_count": usage, "force": force}
-    except Exception:
+    except Exception as ex:
+        import logging
+        logging.getLogger("app.routes.catalogos").warning(f"Hard delete para '{item_nombre}' (id={item_id}) bloqueado por restricciones SQL Server, aplicando inactivación (soft-delete): {ex}")
         await db.rollback()
         item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
         if item and hasattr(item, "activo"):
