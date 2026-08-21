@@ -1363,8 +1363,60 @@ async def get_activaciones(
         for r in gpd_rows:
             fs = r[0].strftime('%Y-%m-%d'); cl = r[1]; gpd_f.add(fs)
             if cl not in gpd_c: gpd_c[cl] = {}
-            gpd_c[cl][fs] = {"total":r[2],"ejecutadas":r[3],"completas":r[4],
-                             "label":f"{r[3]}/{r[2]}","pct":round(r[3]/r[2]*100,0) if r[2] else 0}
+            gpd_c[cl][fs] = {"total":r[2],"ejecutadas":r[3],"completas":r[4]}
+
+        # ── Piso real de "total" -- RUTA_PROGRAMACION, no solo VISITAS_
+        # MERCADERISTA (21 ago 2026). El "total" de arriba (COUNT DISTINCT
+        # vm4.id_visita) solo cuenta visitas que YA se crearon -- una fila
+        # en VISITAS_MERCADERISTA nace recién cuando el mercaderista arranca
+        # algo en el PDV (epran_backend, crearVisita/CREAR_VISITA), no
+        # cuando se programa la ruta. Un cliente con 57 PDVs agendados hoy
+        # pero solo 9 arrancados mostraba "9/9 = 100%" -- el 84% que ni
+        # siquiera se intentó quedaba invisible, justo lo opuesto de lo que
+        # este tablero dice servir ("ver el ritmo diario de ejecución").
+        # RUTA_PROGRAMACION es la agenda real, pero por DÍA DE LA SEMANA
+        # (recurrente), no por fecha puntual -- se resuelve fecha->día acá
+        # en Python (mismo patrón que resumen-dia/_norm_dia) y se cruza por
+        # cliente. Mismo criterio que _desglose() más arriba (pp_act/
+        # pc_act): el denominador nunca puede quedar por debajo de lo que
+        # realmente ocurrió (visitas no planificadas incluidas).
+        gpd_dates = [(_date.today() - timedelta(days=i)) for i in range(7)]
+        gpd_dias_semana = sorted({_norm_dia(_dia_es(d)) for d in gpd_dates})
+        ph_dias = ",".join("?" for _ in gpd_dias_semana)
+        plan_gpd_af = ""
+        plan_gpd_ap: list = []
+        if is_analyst and analista_id:
+            plan_gpd_af = """
+                AND EXISTS (SELECT 1 FROM analistas_rutas ar_g
+                    WHERE ar_g.id_ruta = rp5.id_ruta AND ar_g.id_analista = ?)
+            """
+            plan_gpd_ap.append(analista_id)
+        if cliente_id:
+            plan_gpd_af += " AND c5.id_cliente = ?"
+            plan_gpd_ap.append(cliente_id)
+        plan_gpd_query = f"""
+            SELECT rp5.dia, c5.cliente, COUNT(DISTINCT rp5.id_punto_interes) AS n
+            FROM RUTA_PROGRAMACION rp5
+            JOIN CLIENTES c5 ON c5.id_cliente = rp5.id_cliente
+            WHERE rp5.activa = 1 AND rp5.dia IN ({ph_dias}){plan_gpd_af}
+            GROUP BY rp5.dia, c5.cliente
+        """
+        plan_gpd_rows = await execute_query(db, plan_gpd_query, tuple(gpd_dias_semana) + tuple(plan_gpd_ap))
+        planned_by_dia_cliente: dict = {}
+        for r in plan_gpd_rows:
+            key = (_norm_dia(r[0]), r[1])
+            planned_by_dia_cliente[key] = planned_by_dia_cliente.get(key, 0) + int(r[2])
+
+        for cl, dias in gpd_c.items():
+            for fs, v in dias.items():
+                fecha_obj = datetime.strptime(fs, '%Y-%m-%d').date()
+                dia_semana = _norm_dia(_dia_es(fecha_obj))
+                planificados = planned_by_dia_cliente.get((dia_semana, cl), 0)
+                total_final = max(planificados, v["total"])
+                v["total"] = total_final
+                v["label"] = f"{v['ejecutadas']}/{total_final}"
+                v["pct"] = round(v["ejecutadas"] / total_final * 100, 0) if total_final else 0
+
         gestion_por_dia = {"fechas":sorted(list(gpd_f),reverse=True),
                            "clientes":[{"cliente":k,"dias":gpd_c[k]} for k in sorted(gpd_c.keys())]}
 
