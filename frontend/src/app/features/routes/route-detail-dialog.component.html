@@ -35,7 +35,7 @@
           <mat-icon class="!text-base">{{ editingRoute() ? 'close' : 'edit' }}</mat-icon>
           {{ editingRoute() ? 'Cancelar' : 'Editar Ruta' }}
         </button>
-        <button (click)="dialogRef.close()"
+        <button (click)="closeDialog()"
           class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all">
           <mat-icon class="!text-lg">close</mat-icon>
         </button>
