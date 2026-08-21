@@ -1,4 +1,21 @@
 <div class="p-6 max-w-7xl mx-auto space-y-6">
+  <!-- Sub-Navegación Principal: Usuarios vs PDVs -->
+  <div class="flex items-center gap-2 mb-2 border-b border-slate-200 dark:border-white/10 pb-3">
+    <button (click)="mainTab.set('usuarios')"
+      [class]="mainTab() === 'usuarios'
+        ? 'px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-md'
+        : 'px-5 py-2.5 bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-semibold rounded-xl text-sm flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors'">
+      <mat-icon class="!text-lg">shield</mat-icon> Auditoría de Usuarios y Permisos
+    </button>
+    <button (click)="mainTab.set('pdvs'); loadPdvLogs()"
+      [class]="mainTab() === 'pdvs'
+        ? 'px-5 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm flex items-center gap-2 shadow-md'
+        : 'px-5 py-2.5 bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-semibold rounded-xl text-sm flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors'">
+      <mat-icon class="!text-lg">storefront</mat-icon> Auditoría de PDVs (Puntos de Venta)
+    </button>
+  </div>
+
+  <div *ngIf="mainTab() === 'usuarios'" class="space-y-6">
   <!-- Header Card -->
   <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
     <div class="space-y-1">
@@ -536,3 +553,220 @@
     </div>
   </div>
 }
+</div>
+
+<!-- ========================================== -->
+<!-- SECCION AUDITORIA DE PDVS (PUNTOS DE VENTA) -->
+<!-- ========================================== -->
+<div *ngIf="mainTab() === 'pdvs'" class="space-y-6">
+  <!-- Header Card PDVs -->
+  <div class="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+        <mat-icon class="!text-2xl">storefront</mat-icon>
+      </div>
+      <div>
+        <h1 class="text-2xl font-black tracking-tight">Auditoría de PDVs (Puntos de Venta)</h1>
+        <p class="text-xs text-emerald-200/80 font-medium">Control de modificaciones, creaciones y borrados de puntos de venta con opción de restablecer.</p>
+      </div>
+    </div>
+    <div class="px-4 py-2 bg-white/10 rounded-2xl border border-white/10 text-xs font-bold text-emerald-200">
+      Total Registros: {{ pdvTotal() }}
+    </div>
+  </div>
+
+  <!-- Search & Filter Controls PDVs -->
+  <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 p-5 shadow-sm space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Buscar Nombre o ID de PDV</label>
+        <div class="relative">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 !text-lg pointer-events-none">search</mat-icon>
+          <input type="text" [(ngModel)]="pdvSearchText" (input)="onPdvFilterChange()" placeholder="Ej: CAR001, Supermercado..."
+            class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-emerald-500">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Filtrar por Acción</label>
+        <select [(ngModel)]="pdvActionFilter" (change)="onPdvFilterChange()"
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-emerald-500">
+          <option value="">Todas las acciones</option>
+          <option value="CREATE_POINT">Creación de PDV</option>
+          <option value="UPDATE_POINT">Edición de PDV</option>
+          <option value="DELETE_POINT">Eliminación de PDV</option>
+          <option value="RESTORE_POINT">Restablecido</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Estado</label>
+        <select [(ngModel)]="pdvStatusFilter" (change)="onPdvFilterChange()"
+          class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 dark:text-white outline-none focus:border-emerald-500">
+          <option value="">Todos los estados</option>
+          <option value="OK">Registrado / OK</option>
+          <option value="RESTORED">Restablecido</option>
+          <option value="APPROVED">Aprobado</option>
+        </select>
+      </div>
+
+      <div class="flex items-end gap-2">
+        <button (click)="resetPdvFilters()"
+          class="w-full py-2 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors flex items-center justify-center gap-2">
+          <mat-icon class="!text-base">restart_alt</mat-icon> Limpiar Filtros
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading()" class="py-16 text-center">
+    <mat-spinner diameter="40" class="mx-auto text-emerald-600"></mat-spinner>
+    <p class="text-slate-500 font-semibold text-sm mt-3">Cargando auditoría de PDVs...</p>
+  </div>
+
+  <!-- Tabla de Auditoría de PDVs -->
+  <div *ngIf="!loading()" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-wider">
+            <th class="p-4">Fecha / Hora</th>
+            <th class="p-4">Punto de Venta (PDV)</th>
+            <th class="p-4">Acción</th>
+            <th class="p-4">Usuario / Ejecutor</th>
+            <th class="p-4">Cambios / Comparativa</th>
+            <th class="p-4 text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-white/5 text-sm">
+          <tr *ngFor="let log of pdvLogs()" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+            <td class="p-4 text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
+              {{ log.timestamp | date:'dd/MM/yyyy HH:mm:ss' }}
+            </td>
+            <td class="p-4">
+              <div class="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <mat-icon class="text-emerald-500 !text-base">storefront</mat-icon>
+                {{ log.entity_name || log.entity_id }}
+              </div>
+              <div class="text-xs font-mono text-slate-400">ID: {{ log.entity_id }}</div>
+            </td>
+            <td class="p-4">
+              <span [class]="getPdvActionBadgeClass(log.action)" class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                {{ getPdvActionLabel(log.action) }}
+              </span>
+            </td>
+            <td class="p-4">
+              <div class="font-bold text-slate-800 dark:text-slate-200 text-xs">{{ log.username || 'Sistema' }}</div>
+              <div class="text-[10px] text-slate-400 font-semibold uppercase">{{ log.rol || 'N/A' }}</div>
+            </td>
+            <td class="p-4">
+              <div class="space-y-1 max-w-xs">
+                <div *ngFor="let diff of getPdvDiffItems(log).slice(0, 3)" class="text-xs flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                  <span class="font-bold text-slate-700 dark:text-slate-200">{{ diff.field }}:</span>
+                  <span class="text-rose-500 line-through text-[11px]">{{ diff.oldVal }}</span>
+                  <mat-icon class="!text-xs text-slate-400">arrow_forward</mat-icon>
+                  <span class="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">{{ diff.newVal }}</span>
+                </div>
+                <div *ngIf="getPdvDiffItems(log).length > 3" class="text-[11px] text-indigo-500 font-bold italic">
+                  +{{ getPdvDiffItems(log).length - 3 }} campos más...
+                </div>
+                <div *ngIf="!getPdvDiffItems(log).length" class="text-xs text-slate-400 italic">
+                  Sin diferencias directas
+                </div>
+              </div>
+            </td>
+            <td class="p-4 text-right whitespace-nowrap">
+              <div class="flex items-center justify-end gap-2">
+                <button (click)="openPdvDetailModal(log)"
+                  class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                  <mat-icon class="!text-xs">visibility</mat-icon> Detalle
+                </button>
+                <button *ngIf="log.action.includes('DELETE') || log.action.includes('UPDATE')" (click)="restorePdv(log)"
+                  [disabled]="restoringPdvId() === log.id || log.status === 'RESTORED'"
+                  class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm">
+                  <mat-icon class="!text-xs">restore</mat-icon> {{ log.status === 'RESTORED' ? 'Restablecido' : 'Restablecer' }}
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="!pdvLogs().length">
+            <td colspan="6" class="p-8 text-center text-slate-500 italic">No se encontraron registros de auditoría de PDVs.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Detalle Auditoría PDV -->
+<div *ngIf="showPdvModal()" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+  <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="p-6 bg-slate-900 text-white border-b border-white/10 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400">
+          <mat-icon class="!text-xl">storefront</mat-icon>
+        </div>
+        <div>
+          <h2 class="text-lg font-black">{{ selectedPdvLog()?.entity_name || selectedPdvLog()?.entity_id }}</h2>
+          <p class="text-xs text-slate-400">Detalle de cambios del PDV — {{ selectedPdvLog()?.timestamp | date:'dd/MM/yyyy HH:mm:ss' }}</p>
+        </div>
+      </div>
+      <button (click)="showPdvModal.set(false)" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="p-6 overflow-y-auto space-y-6 flex-1">
+      <!-- Info Header -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/5 text-xs">
+        <div>
+          <span class="text-slate-400 block font-semibold uppercase text-[10px]">Acción</span>
+          <span [class]="getPdvActionBadgeClass(selectedPdvLog()?.action)" class="px-2 py-0.5 rounded text-[10px] font-black uppercase">
+            {{ getPdvActionLabel(selectedPdvLog()?.action) }}
+          </span>
+        </div>
+        <div>
+          <span class="text-slate-400 block font-semibold uppercase text-[10px]">Ejecutor</span>
+          <span class="font-bold text-slate-800 dark:text-slate-200">{{ selectedPdvLog()?.username || 'Sistema' }}</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block font-semibold uppercase text-[10px]">Estado</span>
+          <span class="font-bold text-emerald-500">{{ selectedPdvLog()?.status || 'OK' }}</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block font-semibold uppercase text-[10px]">ID PDV</span>
+          <span class="font-mono text-slate-800 dark:text-slate-200">{{ selectedPdvLog()?.entity_id }}</span>
+        </div>
+      </div>
+
+      <!-- Comparativa Antes vs Despues -->
+      <div>
+        <h3 class="text-sm font-black text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+          <mat-icon class="text-indigo-500 !text-base">compare</mat-icon> Comparativa Antes vs Después
+        </h3>
+        <div class="space-y-2">
+          <div *ngFor="let diff of getPdvDiffItems(selectedPdvLog())" class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-white/5 grid grid-cols-3 gap-2 text-xs">
+            <span class="font-bold text-slate-700 dark:text-slate-300">{{ diff.field }}</span>
+            <span class="text-rose-500 font-medium line-through">{{ diff.oldVal }}</span>
+            <span class="text-emerald-500 font-bold">{{ diff.newVal }}</span>
+          </div>
+          <div *ngIf="!getPdvDiffItems(selectedPdvLog()).length" class="p-4 text-center text-slate-400 text-xs italic">
+            Sin diferencias registradas o es una creación directa.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-white/5 flex items-center justify-between">
+      <button *ngIf="selectedPdvLog()?.action === 'DELETE_POINT' || selectedPdvLog()?.action === 'UPDATE_POINT'"
+        (click)="restorePdv(selectedPdvLog()); showPdvModal.set(false)"
+        class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-sm">
+        <mat-icon class="!text-sm">restore</mat-icon> Restablecer este PDV
+      </button>
+      <button (click)="showPdvModal.set(false)" class="px-5 py-2 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors ml-auto">
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>

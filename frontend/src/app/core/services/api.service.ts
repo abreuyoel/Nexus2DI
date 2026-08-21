@@ -219,6 +219,15 @@ export class ApiService {
   getCentroMandoAuditoriaFiltros(): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/filtros`); }
   getCentroMandoAuditoriaResumen(opts: { desde?: string; hasta?: string; id_auditor?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/resumen`, { params: this.params(opts) }); }
   getAuditoriaUsuarios(opts: { skip?: number; limit?: number; accion?: string; ejecutor?: string; search?: string; fecha_inicio?: string; fecha_fin?: string } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/auditoria-usuarios`, { params: this.params(opts) }); }
+  getPdvAuditLogs(opts: { offset?: number; limit?: number; action?: string; username?: string; search?: string; status?: string } = {}): Observable<any> {
+    return this.http.get<any>(`${this.base}/api/audit/pdvs`, { params: this.params(opts) });
+  }
+  restorePdvFromAudit(auditId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/audit/pdvs/${auditId}/restore`, {});
+  }
+  approvePdvAudit(auditId: number): Observable<any> {
+    return this.http.post<any>(`${this.base}/api/audit/pdvs/${auditId}/approve`, {});
+  }
   getCentroMandoAuditoriaTendenciaCompetencia(opts: { semanas?: number; id_ruta?: number; id_cliente?: number; id_categoria?: number } = {}): Observable<any> { return this.http.get<any>(`${this.base}/api/centro-mando-auditoria/tendencia-competencia`, { params: this.params(opts) }); }
   deleteMercFoto(fotoId: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/merc/foto/${fotoId}`); }
 
@@ -441,16 +450,16 @@ export class ApiService {
   // ABM de catálogos (crear/borrar) — categorías/subcategorías ya tienen sus métodos arriba
   createCatDepartamento(data: any): Observable<any> { return this.http.post<any>(`${this.base}/api/productos-catalogos/departamentos`, data); }
   updateCatDepartamento(id: number, data: any): Observable<any> { return this.http.put<any>(`${this.base}/api/productos-catalogos/departamentos/${id}`, data); }
-  deleteCatDepartamento(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/departamentos/${id}`); }
+  deleteCatDepartamento(id: number, force: boolean = false): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/departamentos/${id}${force ? '?force=true' : ''}`); }
   createCatMarca(data: any): Observable<any> { return this.http.post<any>(`${this.base}/api/productos-catalogos/marcas`, data); }
   updateCatMarca(id: number, data: any): Observable<any> { return this.http.put<any>(`${this.base}/api/productos-catalogos/marcas/${id}`, data); }
-  deleteCatMarca(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/marcas/${id}`); }
+  deleteCatMarca(id: number, force: boolean = false): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/marcas/${id}${force ? '?force=true' : ''}`); }
   createCatPresentacion(data: any): Observable<any> { return this.http.post<any>(`${this.base}/api/productos-catalogos/presentaciones`, data); }
   updateCatPresentacion(id: number, data: any): Observable<any> { return this.http.put<any>(`${this.base}/api/productos-catalogos/presentaciones/${id}`, data); }
-  deleteCatPresentacion(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/presentaciones/${id}`); }
+  deleteCatPresentacion(id: number, force: boolean = false): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/presentaciones/${id}${force ? '?force=true' : ''}`); }
   createCatTamano(data: any): Observable<any> { return this.http.post<any>(`${this.base}/api/productos-catalogos/tamanos`, data); }
   updateCatTamano(id: number, data: any): Observable<any> { return this.http.put<any>(`${this.base}/api/productos-catalogos/tamanos/${id}`, data); }
-  deleteCatTamano(id: number): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/tamanos/${id}`); }
+  deleteCatTamano(id: number, force: boolean = false): Observable<any> { return this.http.delete<any>(`${this.base}/api/productos-catalogos/tamanos/${id}${force ? '?force=true' : ''}`); }
 
   getProductosCategorias(): Observable<string[]> {
     return this.http.get<string[]>(`${this.base}/api/atencion-cliente/productos/listado/categorias`);
@@ -466,8 +475,8 @@ export class ApiService {
   updateCatalogosCategoria(id: number, data: any): Observable<any> {
     return this.http.put<any>(`${this.base}/api/productos-catalogos/categorias/${id}`, data);
   }
-  deleteCatalogosCategoria(id: number): Observable<any> {
-    return this.http.delete<any>(`${this.base}/api/productos-catalogos/categorias/${id}`);
+  deleteCatalogosCategoria(id: number, force: boolean = false): Observable<any> {
+    return this.http.delete<any>(`${this.base}/api/productos-catalogos/categorias/${id}${force ? '?force=true' : ''}`);
   }
 
   getCatalogosSubCategorias(idCategoria?: number): Observable<any[]> {
@@ -481,8 +490,8 @@ export class ApiService {
   updateCatalogosSubCategoria(id: number, data: any): Observable<any> {
     return this.http.put<any>(`${this.base}/api/productos-catalogos/subcategorias/${id}`, data);
   }
-  deleteCatalogosSubCategoria(id: number): Observable<any> {
-    return this.http.delete<any>(`${this.base}/api/productos-catalogos/subcategorias/${id}`);
+  deleteCatalogosSubCategoria(id: number, force: boolean = false): Observable<any> {
+    return this.http.delete<any>(`${this.base}/api/productos-catalogos/subcategorias/${id}${force ? '?force=true' : ''}`);
   }
 
 

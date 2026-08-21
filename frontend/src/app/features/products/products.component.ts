@@ -9,6 +9,7 @@ import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { HasPermDirective } from '../../core/directives/has-perm.directive';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
+import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 
 interface Producto {
   id: number;
@@ -598,7 +599,12 @@ export class ProductsComponent implements OnInit {
     comentario: [''],
   });
 
-  constructor(private api: ApiService, private fb: FormBuilder, private snack: MatSnackBar) { }
+  constructor(
+    private api: ApiService,
+    private fb: FormBuilder,
+    private snack: MatSnackBar,
+    private confirmSvc: ConfirmService
+  ) { }
 
   ngOnInit(): void {
     this.loadProductos();
@@ -758,8 +764,17 @@ export class ProductsComponent implements OnInit {
   }
 
   deleteProducto(p: Producto): void {
-    if (!confirm(`¿Eliminar "${p.producto_gu}"?`)) return;
-    this.api.deleteProducto(p.id).subscribe({ next: () => { this.loadProductos(); this.snack.open('Producto eliminado', 'OK', { duration: 3000 }); }, error: () => this.snack.open('Error al eliminar', 'OK', { duration: 3000 }) });
+    this.confirmSvc.confirm(`¿Estás seguro de eliminar el producto "${p.producto_gu}"? Esta acción no se puede deshacer.`, {
+      title: 'Eliminar Producto',
+      confirmText: 'Eliminar',
+      danger: true
+    }).then(ok => {
+      if (!ok) return;
+      this.api.deleteProducto(p.id).subscribe({
+        next: () => { this.loadProductos(); this.snack.open('Producto eliminado', 'OK', { duration: 3000 }); },
+        error: (err) => this.snack.open('Error al eliminar: ' + (err.error?.detail || err.message), 'OK', { duration: 3000 })
+      });
+    });
   }
 
   // ── Catálogos (ABM) ──
@@ -801,18 +816,51 @@ export class ProductsComponent implements OnInit {
     obs.subscribe({ next: () => { this.newName = ''; this.newParent = null; this.loadCatalogs(); this.snack.open('Agregado', 'OK', { duration: 2000 }); }, error: (e) => this.snack.open(e?.error?.detail ?? 'Error al agregar', 'OK', { duration: 4000 }) });
   }
 
-  delCatItem(id: number): void {
-    if (!confirm('¿Eliminar este elemento del catálogo?')) return;
-    let obs;
-    switch (this.catTab()) {
-      case 'departamentos': obs = this.api.deleteCatDepartamento(id); break;
-      case 'categorias': obs = this.api.deleteCatalogosCategoria(id); break;
-      case 'subcategorias': obs = this.api.deleteCatalogosSubCategoria(id); break;
-      case 'marcas': obs = this.api.deleteCatMarca(id); break;
-      case 'presentaciones': obs = this.api.deleteCatPresentacion(id); break;
-      case 'tamanos': obs = this.api.deleteCatTamano(id); break;
-      default: return;
+  delCatItem(id: number, force: boolean = false): void {
+    const doDelete = () => {
+      let obs;
+      switch (this.catTab()) {
+        case 'departamentos': obs = this.api.deleteCatDepartamento(id, force); break;
+        case 'categorias': obs = this.api.deleteCatalogosCategoria(id, force); break;
+        case 'subcategorias': obs = this.api.deleteCatalogosSubCategoria(id, force); break;
+        case 'marcas': obs = this.api.deleteCatMarca(id, force); break;
+        case 'presentaciones': obs = this.api.deleteCatPresentacion(id, force); break;
+        case 'tamanos': obs = this.api.deleteCatTamano(id, force); break;
+        default: return;
+      }
+      obs.subscribe({
+        next: () => { this.loadCatalogs(); this.snack.open('Eliminado', 'OK', { duration: 2000 }); },
+        error: (err) => {
+          if (err.status === 409 && !force) {
+            const detail = err.error?.detail;
+            const msg = typeof detail === 'string' ? detail : (detail?.message || 'Este elemento está siendo utilizado por otros registros.');
+            this.confirmSvc.confirm(`${msg}\n\n¿Deseas forzar la eliminación de todos modos?`, {
+              title: 'Elemento en Uso - Conflicto',
+              confirmText: 'Forzar Eliminación',
+              danger: true
+            }).then(forceOk => {
+              if (forceOk) {
+                this.delCatItem(id, true);
+              }
+            });
+          } else {
+            const errorMsg = typeof err.error?.detail === 'string' ? err.error.detail : (err.error?.detail?.message || err.message);
+            this.snack.open('Error al eliminar: ' + errorMsg, 'OK', { duration: 4000 });
+          }
+        }
+      });
+    };
+
+    if (!force) {
+      this.confirmSvc.confirm('¿Deseas eliminar este elemento del catálogo?', {
+        title: 'Eliminar ítem del catálogo',
+        confirmText: 'Eliminar',
+        danger: true
+      }).then(ok => {
+        if (ok) doDelete();
+      });
+    } else {
+      doDelete();
     }
-    obs.subscribe({ next: () => { this.loadCatalogs(); this.snack.open('Eliminado', 'OK', { duration: 2000 }); }, error: (e) => this.snack.open(e?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 }) });
   }
 }
