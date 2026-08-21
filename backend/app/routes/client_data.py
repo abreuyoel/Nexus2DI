@@ -165,21 +165,28 @@ async def get_client_data_filters(
     """), query_params)
     pdvs = res_pdvs.fetchall()
 
-    # Get distinct cadenas
+    # Get distinct cadenas -- jerarquia_nivel_2_2 es donde de verdad vive la
+    # cadena (Aikoz, Grupo Rey, Jumbo...), confirmado contra PUNTOS_INTERES1
+    # real (20 ago, reporte de Panamá). jerarquia_nivel_2 es tipo de canal
+    # (Supermercado, Restaurante...) -- antes esto estaba invertido: "cadena"
+    # apuntaba a jerarquia_nivel_2 (mostraba "Supermercado") y "región" a
+    # jerarquia_nivel_2_2 (mostraba "Grupo Rey"), ninguno de los dos correcto.
     res_cadenas = await db.execute(text(f"""
-        SELECT DISTINCT p.jerarquia_nivel_2 as cadena
-        FROM BALANCES_TOTALES b
-        JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
-        {where_clause} AND p.jerarquia_nivel_2 IS NOT NULL
-    """), query_params)
-    cadenas = res_cadenas.scalars().all()
-
-    # Get distinct regions
-    res_reg = await db.execute(text(f"""
-        SELECT DISTINCT p.jerarquia_nivel_2_2 as region
+        SELECT DISTINCT p.jerarquia_nivel_2_2 as cadena
         FROM BALANCES_TOTALES b
         JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
         {where_clause} AND p.jerarquia_nivel_2_2 IS NOT NULL
+    """), query_params)
+    cadenas = res_cadenas.scalars().all()
+
+    # Get distinct regions -- región real es PUNTOS_INTERES1.departamento
+    # (Panamá, Distrito Capital, Anzoátegui...), no ninguna de las dos
+    # jerarquías (que son tipo de canal y cadena, ninguna es geografía).
+    res_reg = await db.execute(text(f"""
+        SELECT DISTINCT p.departamento as region
+        FROM BALANCES_TOTALES b
+        JOIN PUNTOS_INTERES1 p ON b.identificador_pdv = p.identificador
+        {where_clause} AND p.departamento IS NOT NULL
     """), query_params)
     regiones = res_reg.scalars().all()
 
@@ -237,8 +244,8 @@ async def get_client_data_filters(
 _SORT_COLUMNS = {
     "fecha_balance": "b.fecha_balance",
     "visita_id": "b.id_visita",
-    "region": "p.jerarquia_nivel_2_2",
-    "cadena": "p.jerarquia_nivel_2",
+    "region": "p.departamento",
+    "cadena": "p.jerarquia_nivel_2_2",
     "pdv_nombre": "p.punto_de_interes",
     "mercaderista": "b.mercaderista",
     "producto": "b.producto",
@@ -332,11 +339,11 @@ async def get_client_balances(
         params["producto"] = producto
 
     if cadena:
-        base_query += " AND p.jerarquia_nivel_2 = :cadena"
+        base_query += " AND p.jerarquia_nivel_2_2 = :cadena"
         params["cadena"] = cadena
 
     if region:
-        base_query += " AND p.jerarquia_nivel_2_2 = :region"
+        base_query += " AND p.departamento = :region"
         params["region"] = region
 
     if pdv:
@@ -385,8 +392,8 @@ async def get_client_balances(
             b.id_balance,
             b.fecha_balance,
             b.id_visita as visita_id,
-            p.jerarquia_nivel_2_2 as region,
-            p.jerarquia_nivel_2 as cadena,
+            p.departamento as region,
+            p.jerarquia_nivel_2_2 as cadena,
             p.punto_de_interes as pdv_nombre,
             p.departamento as departamento,
             rc.cuadrante as cuadrante,
