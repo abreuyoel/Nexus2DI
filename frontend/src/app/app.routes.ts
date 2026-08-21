@@ -209,6 +209,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/auditoria-data/auditoria-data.component').then((m) => m.AuditoriaDataComponent),
       },
       {
+        path: 'audit',
+        canActivate: [roleGuard],
+        data: { roles: ['admin'] },
+        loadComponent: () => import('./features/admin/audit-log/audit-log.component').then((m) => m.AuditLogComponent),
+      },
+      {
         path: 'auditoria-usuarios',
         canActivate: [roleGuard],
         data: { roles: ['admin', 'analyst', 'auditor'] },

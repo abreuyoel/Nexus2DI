@@ -9,52 +9,77 @@ import { ConfirmService } from './confirm.service';
   imports: [CommonModule, FormsModule],
   template: `
     @if (svc.request(); as r) {
-      <div class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" (mousedown)="onBackdrop($event, r)">
-        <div class="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 shadow-2xl overflow-hidden" (mousedown)="$event.stopPropagation()">
-          <div class="px-5 pt-5 pb-4">
-            @if (r.title) {
-              <h3 class="text-base font-semibold text-white mb-1.5">{{ r.title }}</h3>
-            }
-            <p class="text-sm text-slate-300 whitespace-pre-line leading-relaxed">{{ r.message }}</p>
+      <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200" (mousedown)="onBackdrop($event, r)">
+        <div class="w-full max-w-md rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden flex flex-col scale-in-95 duration-200" (mousedown)="$event.stopPropagation()">
+          
+          <!-- Top Header with Glowing Badge Icon -->
+          <div class="p-6 pb-2 flex items-start gap-4">
+            <div [class]="r.danger ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : r.mode === 'info' ? 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'"
+              class="w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 shadow-sm">
+              <span class="material-icons text-2xl">{{ r.danger ? 'warning' : r.mode === 'info' ? 'info' : 'help' }}</span>
+            </div>
 
-            @if (r.items?.length) {
-              <ul class="mt-3 max-h-56 overflow-y-auto space-y-1 rounded-lg bg-white/5 border border-white/8 p-2.5">
+            <div class="space-y-1 flex-1">
+              @if (r.title) {
+                <h3 class="text-lg font-black tracking-tight text-slate-900 dark:text-white">
+                  {{ r.title }}
+                </h3>
+              }
+              <p class="text-xs font-semibold text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                {{ r.message }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Items list if provided -->
+          @if (r.items?.length) {
+            <div class="px-6 py-2">
+              <div class="max-h-48 overflow-y-auto space-y-1 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/5 p-3">
                 @for (item of r.items; track $index) {
-                  <li class="text-xs text-slate-300 border-b border-white/5 last:border-b-0 pb-1 last:pb-0">{{ item }}</li>
+                  <div class="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <span class="material-icons text-sm text-slate-400">chevron_right</span>
+                    <span>{{ item }}</span>
+                  </div>
                 }
-              </ul>
-            }
+              </div>
+            </div>
+          }
 
-            @if (r.mode === 'prompt') {
+          <!-- Prompt input textarea if prompt mode -->
+          @if (r.mode === 'prompt') {
+            <div class="px-6 py-2">
               <textarea
-                class="mt-3 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 resize-none"
+                class="w-full rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 resize-none font-medium"
                 rows="3"
                 [placeholder]="r.inputPlaceholder || ''"
                 [(ngModel)]="r.inputValue"
-                #promptInput
               ></textarea>
-            }
-          </div>
+            </div>
+          }
 
-          <div class="flex border-t border-white/8">
+          <!-- Action Buttons -->
+          <div class="p-6 pt-4 flex items-center justify-end gap-3 bg-slate-50/50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-white/5">
             @if (r.mode !== 'info') {
               <button
                 type="button"
-                class="flex-1 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-white/5 transition"
-                (click)="cancel(r)"
-              >
+                class="px-5 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                (click)="cancel(r)">
                 {{ r.cancelText || 'Cancelar' }}
               </button>
             }
+
             <button
               type="button"
-              class="flex-1 px-4 py-3 text-sm font-semibold transition border-l border-white/8"
-              [class]="r.danger ? 'text-red-400 hover:bg-red-500/10' : 'text-sky-400 hover:bg-sky-500/10'"
-              (click)="confirm(r)"
-            >
+              [class]="r.danger
+                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/20'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20'"
+              class="px-6 py-2.5 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+              (click)="confirm(r)">
+              <span class="material-icons text-base">{{ r.danger ? 'delete' : 'check_circle' }}</span>
               {{ r.confirmText || (r.mode === 'info' ? 'Entendido' : 'Confirmar') }}
             </button>
           </div>
+
         </div>
       </div>
     }

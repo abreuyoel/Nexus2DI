@@ -75,6 +75,28 @@ async def list_points(
     return rows
 
 
+def _pdv_to_dict(punto: PuntoInteres) -> dict:
+    if not punto:
+        return {}
+    return {
+        "id": punto.id,
+        "nombre": getattr(punto, "nombre", ""),
+        "direccion": getattr(punto, "direccion", ""),
+        "latitud": getattr(punto, "latitud", ""),
+        "longitud": getattr(punto, "longitud", ""),
+        "departamento": getattr(punto, "departamento", ""),
+        "jerarquia_n2": getattr(punto, "jerarquia_n2", ""),
+        "jerarquia_n2_2": getattr(punto, "jerarquia_n2_2", ""),
+        "ciudad": getattr(punto, "ciudad", ""),
+        "localidad": getattr(punto, "localidad", ""),
+        "cadena": getattr(punto, "cadena", ""),
+        "radio": getattr(punto, "radio", ""),
+        "tiempo_minimo": getattr(punto, "tiempo_minimo", 15),
+        "nivel_de_alcance": getattr(punto, "nivel_de_alcance", ""),
+        "rif": getattr(punto, "rif", ""),
+    }
+
+
 @router.post("", response_model=PuntoInteresResponse, status_code=201)
 @router.post("/", response_model=PuntoInteresResponse, status_code=201, include_in_schema=False)
 async def create_point(
@@ -94,11 +116,12 @@ async def create_point(
     db.add(punto)
     db.flush()
 
+    pdv_dict = _pdv_to_dict(punto)
     log_action(db, action="CREATE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=punto.id, entity_name=getattr(punto, 'nombre', str(punto.id)),
-               changes=data.model_dump())
+               changes={"before": None, "after": pdv_dict})
     await db.commit()
     await db.refresh(punto)
     return punto
@@ -293,12 +316,14 @@ async def delete_point(
         )
 
     nombre = getattr(punto, 'nombre', point_id)
+    before_dict = _pdv_to_dict(punto)
     await db.delete(punto)
 
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
-               entity_id=point_id, entity_name=nombre)
+               entity_id=point_id, entity_name=nombre,
+               changes={"before": before_dict, "after": None})
     await db.commit()
     return {"message": "Punto eliminado"}
 
@@ -314,15 +339,18 @@ async def update_point(
     punto = (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == point_id))).scalars().first()
     if not punto:
         raise HTTPException(status_code=404, detail="Punto no encontrado")
-    changes = data.model_dump(exclude_none=True)
-    for key, value in changes.items():
+
+    before_dict = _pdv_to_dict(punto)
+    changes_input = data.model_dump(exclude_none=True)
+    for key, value in changes_input.items():
         setattr(punto, key, value)
 
+    after_dict = _pdv_to_dict(punto)
     log_action(db, action="UPDATE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=point_id, entity_name=getattr(punto, 'nombre', point_id),
-               changes=changes)
+               changes={"before": before_dict, "after": after_dict})
     await db.commit()
     await db.refresh(punto)
     return punto

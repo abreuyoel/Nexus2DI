@@ -69,7 +69,7 @@ export class ShellComponent implements OnInit {
     { label: 'Rutas', icon: 'route', route: '/routes', roles: ['admin', 'analyst'], module: 'rutas' },
     { label: 'Puntos de Venta', icon: 'store', route: '/points', roles: ['admin', 'supervisor', 'atc'] },
     { label: 'Usuarios', icon: 'people', route: '/users', roles: ['admin'], module: 'users' },
-    { label: 'Auditoría de Usuarios', icon: 'admin_panel_settings', route: '/auditoria-usuarios', roles: ['admin', 'analyst', 'auditor'], module: 'auditoria-usuarios' },
+    { label: 'Auditoría General (Usuarios / PDVs)', icon: 'admin_panel_settings', route: '/auditoria-usuarios', roles: ['admin', 'analyst', 'auditor'], module: 'auditoria-usuarios' },
     { label: 'Permisos', icon: 'admin_panel_settings', route: '/permissions', roles: ['admin'] },
     { label: 'Productos', icon: 'inventory_2', route: '/products', roles: ['admin', 'atc'] },
     { label: 'Categorías Cliente', icon: 'category', route: '/client-categories', roles: ['admin'] },

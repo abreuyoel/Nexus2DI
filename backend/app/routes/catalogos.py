@@ -1,5 +1,5 @@
 from sqlalchemy import select, update, func
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Type
@@ -7,6 +7,8 @@ from app.db.session import get_db, get_async_db
 from app.core.dependencies import get_current_user, require_analyst_or_admin, require_permission
 from app.models.user import Usuario
 from app.models.punto import PuntoInteres
+from app.services.audit_service import log_action
+from app.core.request_ip import get_client_ip
 from app.models.ruta import Ruta
 from app.models.catalogo import (
     TipoNegocio, SubtipoNegocio, Alcance, CanalVenta, DepartamentoGeo, Ciudad,
@@ -41,8 +43,20 @@ async def _count_usage(db: AsyncSession, usage_model, usage_column, value: str) 
 
 
 async def _list_usage_ids(db: AsyncSession, usage_column, sample_column, value: str, limit: int = 5) -> list[str]:
-    rows = (await db.execute(select(sample_column).filter(usage_column == value).limit(limit))).scalars().all()
-    return [r[0] for r in rows]
+    if sample_column == PuntoInteres.id:
+        stmt = select(PuntoInteres.id, PuntoInteres.nombre).filter(usage_column == value).limit(limit)
+        rows = (await db.execute(stmt)).all()
+        result = []
+        for r in rows:
+            pdv_id, pdv_nombre = r[0], r[1]
+            if pdv_nombre:
+                result.append(f"{pdv_nombre} (ID: {pdv_id})")
+            else:
+                result.append(f"ID: {pdv_id}")
+        return result
+    else:
+        rows = (await db.execute(select(sample_column).filter(usage_column == value).limit(limit))).scalars().all()
+        return [str(r) for r in rows if r]
 
 
 def _ciudad_to_response(c: Ciudad) -> dict:
@@ -170,7 +184,7 @@ async def delete_ciudad(
             },
         )
 
-    db.delete(c)
+    await db.delete(c)
     await db.commit()
     return {"message": "Eliminada", "usage_count": usage, "force": force}
 
@@ -276,7 +290,7 @@ async def delete_servicio(
             },
         )
 
-    db.delete(item)
+    await db.delete(item)
     await db.commit()
     return {"message": "Eliminado", "usage_count": usage, "force": force}
 
@@ -341,8 +355,9 @@ async def list_catalog(
 async def create_catalog_item(
     catalog: str,
     data: CatalogoCreate,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
-    _: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write')),
 ):
     Model = _resolve_generic(catalog)
     nombre = data.nombre.strip()
@@ -350,6 +365,21 @@ async def create_catalog_item(
         raise HTTPException(status_code=409, detail=f"Ya existe '{nombre}'")
     item = Model(nombre=nombre, activo=data.activo)
     db.add(item)
+    await db.flush()
+
+    log_action(
+        db,
+        action="CREATE_CATALOG_ITEM",
+        entity_type="PuntoInteres",
+        user_id=current_user.id,
+        username=current_user.username,
+        rol=current_user.rol,
+        ip_address=get_client_ip(request),
+        entity_id=str(item.id),
+        entity_name=f"Catálogo {catalog}: {nombre}",
+        changes={"before": None, "after": {"id": item.id, "nombre": nombre, "catalog": catalog}},
+    )
+
     await db.commit()
     await db.refresh(item)
     return item
@@ -360,8 +390,9 @@ async def update_catalog_item(
     catalog: str,
     item_id: int,
     data: CatalogoUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
-    _: Usuario = Depends(require_permission('points', 'write')),
+    current_user: Usuario = Depends(require_permission('points', 'write')),
 ):
     Model = _resolve_generic(catalog)
     item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
@@ -369,6 +400,7 @@ async def update_catalog_item(
         raise HTTPException(status_code=404, detail="No encontrado")
 
     old_nombre = item.nombre
+    before_dict = {"id": item.id, "nombre": old_nombre, "activo": item.activo, "catalog": catalog}
 
     if data.nombre is not None:
         nuevo = data.nombre.strip()
@@ -384,6 +416,20 @@ async def update_catalog_item(
     if data.activo is not None:
         item.activo = data.activo
 
+    after_dict = {"id": item.id, "nombre": item.nombre, "activo": item.activo, "catalog": catalog}
+    log_action(
+        db,
+        action="UPDATE_CATALOG_ITEM",
+        entity_type="PuntoInteres",
+        user_id=current_user.id,
+        username=current_user.username,
+        rol=current_user.rol,
+        ip_address=get_client_ip(request),
+        entity_id=str(item_id),
+        entity_name=f"Catálogo {catalog}: {item.nombre}",
+        changes={"before": before_dict, "after": after_dict},
+    )
+
     await db.commit()
     await db.refresh(item)
     return item
@@ -393,9 +439,10 @@ async def update_catalog_item(
 async def delete_catalog_item(
     catalog: str,
     item_id: int,
+    request: Request,
     force: bool = Query(False, description="Si true, elimina aunque hayan PDV referenciados"),
     db: AsyncSession = Depends(get_async_db),
-    _: Usuario = Depends(require_permission('points', 'delete')),
+    current_user: Usuario = Depends(require_permission('points', 'delete')),
 ):
     Model = _resolve_generic(catalog)
     item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
@@ -416,6 +463,79 @@ async def delete_catalog_item(
             },
         )
 
-    db.delete(item)
-    await db.commit()
-    return {"message": "Eliminado", "usage_count": usage, "force": force}
+    affected_pdv_ids = []
+    if usage_model is PuntoInteres and item.nombre:
+        try:
+            rows = (await db.execute(select(PuntoInteres.id).filter(usage_column == item.nombre))).scalars().all()
+            affected_pdv_ids = [str(r) for r in rows if r]
+        except Exception:
+            affected_pdv_ids = []
+
+    if force:
+        from sqlalchemy import text
+        try:
+            if catalog == "tipo-negocio":
+                await db.execute(text("DELETE FROM HORAS_PROMEDIO_EJECUCION WHERE id_tipo_negocio = :iid"), {"iid": item_id})
+                await db.execute(text("UPDATE PUNTOS_INTERES1 SET jerarquia_n2 = NULL WHERE jerarquia_n2 = :name"), {"name": item.nombre})
+            elif catalog == "subtipo-negocio":
+                await db.execute(text("UPDATE PUNTOS_INTERES1 SET jerarquia_n2_2 = NULL WHERE jerarquia_n2_2 = :name"), {"name": item.nombre})
+            elif catalog == "alcance":
+                await db.execute(text("UPDATE PUNTOS_INTERES1 SET nivel_de_alcance = NULL WHERE nivel_de_alcance = :name"), {"name": item.nombre})
+            elif catalog == "canal-venta":
+                await db.execute(text("UPDATE PUNTOS_INTERES1 SET cadena = NULL WHERE cadena = :name"), {"name": item.nombre})
+            elif catalog == "departamentos":
+                await db.execute(text("UPDATE PUNTOS_INTERES1 SET departamento = NULL WHERE departamento = :name"), {"name": item.nombre})
+        except Exception:
+            pass
+
+    item_nombre = item.nombre
+    before_state = {
+        "id": item_id,
+        "nombre": item_nombre,
+        "catalog": catalog,
+        "activo": item.activo,
+        "affected_pdv_ids": affected_pdv_ids
+    }
+
+    try:
+        await db.delete(item)
+        log_action(
+            db,
+            action="DELETE_CATALOG_ITEM",
+            entity_type="PuntoInteres",
+            user_id=current_user.id,
+            username=current_user.username,
+            rol=current_user.rol,
+            ip_address=get_client_ip(request),
+            entity_id=str(item_id),
+            entity_name=f"Catálogo {catalog}: {item_nombre}",
+            changes={"before": before_state, "after": None},
+            status="APPROVED" if force else "OK"
+        )
+        await db.commit()
+        return {"message": "Eliminado exitosamente", "usage_count": usage, "force": force}
+    except Exception:
+        await db.rollback()
+        item = (await db.execute(select(Model).filter(Model.id == item_id))).scalars().first()
+        if item and hasattr(item, "activo"):
+            item.activo = False
+            log_action(
+                db,
+                action="DELETE_CATALOG_ITEM",
+                entity_type="PuntoInteres",
+                user_id=current_user.id,
+                username=current_user.username,
+                rol=current_user.rol,
+                ip_address=get_client_ip(request),
+                entity_id=str(item_id),
+                entity_name=f"Catálogo {catalog}: {item_nombre}",
+                changes={"before": before_state, "after": {"id": item_id, "nombre": item_nombre, "catalog": catalog, "activo": False}},
+                status="DEACTIVATED"
+            )
+            await db.commit()
+            return {"message": "Ítem desactivado correctamente (vinculado a registros del sistema)", "usage_count": usage, "force": force}
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Este catálogo está vinculado a registros históricos en la base de datos. Se ha marcado como inactivo."
+            )
