@@ -800,24 +800,41 @@ export class ConfiguracionEncuestadorComponent implements OnInit {
     });
   }
 
-  async eliminarItem(item: CatalogoItem) {
-    const advertencia = item.medicos_count > 0
-      ? `Actualmente hay ${item.medicos_count} médicos usando este valor. ¿Deseas eliminarlo de todas formas?`
-      : `¿Estás seguro de eliminar "${item.nombre}" del catálogo de ${this.formatTipoLabel(item.tipo)}?`;
+  async eliminarItem(item: CatalogoItem, force: boolean = false) {
+    if (!force) {
+      const advertencia = item.medicos_count > 0
+        ? `Actualmente hay ${item.medicos_count} médicos usando este valor. ¿Deseas eliminarlo de todas formas?`
+        : `¿Estás seguro de eliminar "${item.nombre}" del catálogo de ${this.formatTipoLabel(item.tipo)}?`;
 
-    const ok = await this.confirmDialog.confirm(advertencia, {
-      title: 'Eliminar ítem del catálogo',
-      confirmText: 'Sí, eliminar',
-      danger: true
-    });
-    if (!ok) return;
+      const ok = await this.confirmDialog.confirm(advertencia, {
+        title: 'Eliminar ítem del catálogo',
+        confirmText: 'Sí, eliminar',
+        danger: true
+      });
+      if (!ok) return;
+    }
 
-    this.http.delete<any>(`${this.API}/catalogos/${item.id}`).subscribe({
+    const url = force ? `${this.API}/catalogos/${item.id}?force=true` : `${this.API}/catalogos/${item.id}`;
+    this.http.delete<any>(url).subscribe({
       next: () => {
         this.cargarCatalogos();
       },
-      error: err => {
-        this.confirmDialog.info('Error al eliminar: ' + (err.error?.detail || err.message));
+      error: async (err) => {
+        if (err.status === 409 && !force) {
+          const detail = err.error?.detail;
+          const msg = typeof detail === 'string' ? detail : (detail?.message || 'Este elemento está siendo utilizado por otros registros.');
+          const forceOk = await this.confirmDialog.confirm(`${msg}\n\n¿Deseas forzar la eliminación de todos modos?`, {
+            title: 'Elemento en Uso - Conflicto',
+            confirmText: 'Forzar Eliminación',
+            danger: true
+          });
+          if (forceOk) {
+            this.eliminarItem(item, true);
+          }
+        } else {
+          const errorMsg = typeof err.error?.detail === 'string' ? err.error.detail : (err.error?.detail?.message || err.message);
+          this.confirmDialog.info('Error al eliminar: ' + errorMsg);
+        }
       }
     });
   }
