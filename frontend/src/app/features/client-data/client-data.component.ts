@@ -37,8 +37,8 @@ import { SearchableSelectComponent, SelectOption } from '../client-visits/search
 })
 export class ClientDataComponent implements OnInit {
   displayedColumns: string[] = [
-    'fecha_balance', 'visita_id', 'region', 'cadena', 'pdv_nombre', 
-    'mercaderista', 'producto', 'inv_inicial', 'inv_final', 'caras', 'precio_bs'
+    'fecha_balance', 'visita_id', 'region', 'cadena', 'pdv_nombre',
+    'mercaderista', 'producto', 'inv_inicial', 'inv_final', 'caras', 'precio_bs', 'fefo'
   ];
   
   dataSource = new MatTableDataSource<any>([]);
@@ -322,6 +322,7 @@ export class ClientDataComponent implements OnInit {
         // para Panamá -- que da NULL siempre -- y el Excel salía vacío
         // aunque la pantalla mostrara el precio en dólares bien.
         'Precio $': it.precio_ds,
+        'FEFO': it.fefo ? this.datePipe.transform(it.fefo, 'dd/MM/yyyy') : '',
       };
     });
     const ws = XLSX.utils.json_to_sheet(data);
@@ -359,7 +360,8 @@ export class ClientDataComponent implements OnInit {
             'Precio Bs': isPan ? null : item.precio_bs,
             // Mismo fix que exportarVisita(): precio_ds siempre, no
             // precio_bs para Panamá (ver comentario ahí).
-            'Precio $': item.precio_ds
+            'Precio $': item.precio_ds,
+            'FEFO': item.fefo ? this.datePipe.transform(item.fefo, 'dd/MM/yyyy') : '',
           };
         });
 

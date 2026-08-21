@@ -290,6 +290,7 @@ _SORT_COLUMNS = {
     "inv_final": "b.inv_final",
     "caras": "b.caras",
     "precio_bs": "b.precio_bs",
+    "fefo": "b.FEFO",
 }
 
 
@@ -443,7 +444,8 @@ async def get_client_balances(
             b.inv_deposito,
             b.caras,
             b.precio_bs,
-            b.precio_ds
+            b.precio_ds,
+            b.FEFO as fefo
         {base_query}
         ORDER BY {order_col} {order_dir}
     """
@@ -474,7 +476,13 @@ async def get_client_balances(
             "inv_deposito": row.inv_deposito,
             "caras": row.caras,
             "precio_bs": row.precio_bs,
-            "precio_ds": row.precio_ds
+            "precio_ds": row.precio_ds,
+            # FIFO/FEFO -- fecha del primer vencimiento en el inventario del
+            # PDV, capturada por el mercaderista en la APK (BALANCES_TOTALES.
+            # FEFO). Pedido explícito (21 ago 2026): que se vea en Data,
+            # Auditoría de Data y el Excel -- antes no se exponía en ningún
+            # lado pese a que ya se cargaba.
+            "fefo": str(row.fefo) if row.fefo else None,
         })
 
     return {"total": total, "items": results}

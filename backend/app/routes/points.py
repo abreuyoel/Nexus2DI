@@ -17,6 +17,21 @@ from app.core.request_ip import get_client_ip
 router = APIRouter(prefix="/api/points", tags=["Puntos de Interés"])
 
 
+from app.models.audit import AuditLog
+
+
+async def _get_deleted_pdv_ids(db: AsyncSession) -> set[str]:
+    """Obtiene los IDs de PDVs que han sido eliminados/desactivados (tienen un
+    AuditLog DELETE_POINT pendiente de restablecer)."""
+    stmt = select(AuditLog.entity_id).filter(
+        AuditLog.entity_type == "PuntoInteres",
+        AuditLog.action == "DELETE_POINT",
+        (AuditLog.status.is_(None) | (AuditLog.status != "RESTORED"))
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return set(r for r in rows if r)
+
+
 async def _apply_client_pdv_filter(query, current_user: Usuario, db: AsyncSession):
     """Si el usuario es cliente puro (id_rol=1), restringe la consulta de
     PuntoInteres a los que están en RUTA_PROGRAMACION para su id_cliente
@@ -43,14 +58,21 @@ async def list_points(
     jerarquia_n2_2: Optional[str] = None,
     nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
+    include_deleted: bool = Query(False),
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     query = select(PuntoInteres)
-    # Filtrar PDVs por cliente si es rol 'client'
     query = await _apply_client_pdv_filter(query, current_user, db)
+
+    # Excluir PDVs eliminados/soft-deleted a menos que se solicite include_deleted=True
+    if not include_deleted:
+        deleted_ids = await _get_deleted_pdv_ids(db)
+        if deleted_ids:
+            query = query.filter(PuntoInteres.id.not_in(list(deleted_ids)))
+
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -231,11 +253,18 @@ async def count_points(
     jerarquia_n2_2: Optional[str] = None,
     nivel_de_alcance: Optional[str] = None,
     search: Optional[str] = None,
+    include_deleted: bool = Query(False),
     db: AsyncSession = Depends(get_async_db),
     current_user: Usuario = Depends(get_current_user),
 ):
     query = select(func.count()).select_from(PuntoInteres)
     query = await _apply_client_pdv_filter(query, current_user, db)
+
+    if not include_deleted:
+        deleted_ids = await _get_deleted_pdv_ids(db)
+        if deleted_ids:
+            query = query.filter(PuntoInteres.id.not_in(list(deleted_ids)))
+
     if region:
         query = query.filter(PuntoInteres.departamento == region)
     if ciudad:
@@ -319,11 +348,12 @@ async def delete_point(
         msg = (f"El punto de venta '{nombre}' fue desasignado de las rutas activas y enviado a Auditoría. "
                f"Se conservó el registro base para proteger sus {visitas_count} visita(s) registrada(s).")
 
-    # 3. Registrar SIEMPRE en Auditoría para permitir restablecimiento
+    # 3. Registrar SIEMPRE en Auditoría con status="DELETED" para permitir restablecimiento y ocultar de listas activas
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=point_id, entity_name=nombre,
+               status="DELETED",
                changes={
                    "before": before_dict,
                    "after": None,

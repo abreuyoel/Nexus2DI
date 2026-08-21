@@ -51,6 +51,13 @@ class BalanceResponse(BaseModel):
     precio_bs: Optional[float] = None
     precio_ds: Optional[float] = None
     visita_id: Optional[int] = None
+    # FIFO/FEFO -- fecha del primer vencimiento en el inventario del PDV,
+    # capturada por el mercaderista en la APK (BALANCES_TOTALES.FEFO, columna
+    # ya en mayúsculas en la tabla real -- de ahí el nombre del campo acá
+    # también en mayúsculas: from_attributes mapea por nombre exacto de
+    # atributo contra el modelo Balance, que usa "FEFO" igual). Pedido
+    # explícito (21 ago 2026): que se vea en Auditoría de Data.
+    FEFO: Optional[date] = None
 
     class Config:
         from_attributes = True

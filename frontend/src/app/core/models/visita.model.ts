@@ -50,6 +50,11 @@ export interface Balance {
   precio_bs?: number;
   precio_ds?: number;
   visita_id?: number;
+  /** FIFO/FEFO -- fecha del primer vencimiento capturada por el mercaderista.
+   *  El backend (BalanceResponse) lo expone como "FEFO" (mayúsculas, igual
+   *  que la columna real de BALANCES_TOTALES), no lo normalicé a snake_case
+   *  para no divergir del nombre real de la columna en la base. */
+  FEFO?: string;
 }
 
 export interface ChatMensajeLector {
