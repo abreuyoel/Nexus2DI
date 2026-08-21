@@ -31,6 +31,7 @@ export class RouteDetailDialogComponent implements OnInit {
   clients = signal<any[]>([]);
   routePoints = signal<any[]>([]);
   futureChanges = signal<any[]>([]);
+  hasChanges = false;
 
   activeTab = signal<'masivo' | 'points' | 'changes'>('points');
   editingRoute = signal(false);
@@ -70,9 +71,22 @@ export class RouteDetailDialogComponent implements OnInit {
     private snack: MatSnackBar
   ) {}
 
+  closeDialog(): void {
+    this.dialogRef.close(this.hasChanges);
+  }
+
   ngOnInit(): void {
     this.ruta = { ...this.data.ruta };
     if (this.data.startEdit) this.editingRoute.set(true);
+
+    this.dialogRef.backdropClick().subscribe(() => {
+      this.dialogRef.close(this.hasChanges);
+    });
+    this.dialogRef.keydownEvents().subscribe(event => {
+      if (event.key === 'Escape') {
+        this.dialogRef.close(this.hasChanges);
+      }
+    });
 
     // Derivar tipo de "Ruta E1" / "Ruta T12" / "Ruta A2"
     const n = this.ruta.nombre ?? '';
@@ -137,6 +151,7 @@ export class RouteDetailDialogComponent implements OnInit {
     this.api.updateRoute(this.ruta.id, this.editRouteForm.value).subscribe({
       next: (updated) => {
         this.ruta = { ...this.ruta, ...updated };
+        this.hasChanges = true;
         this.savingRoute.set(false);
         this.editingRoute.set(false);
         this.snack.open('Ruta actualizada', 'OK', { duration: 3000 });
@@ -226,6 +241,7 @@ export class RouteDetailDialogComponent implements OnInit {
     this.savingBulk.set(true);
     this.api.bulkApply(this.ruta.id, { inserts }).subscribe({
       next: (res) => {
+        this.hasChanges = true;
         this.savingBulk.set(false);
         this.editorRows.set([]);
         this.loadRoutePoints();
@@ -254,6 +270,7 @@ export class RouteDetailDialogComponent implements OnInit {
     const nuevo = !p.activo;
     this.api.setPointActive(p.id, nuevo).subscribe({
       next: () => {
+        this.hasChanges = true;
         this.routePoints.update(list => list.map(x => x.id === p.id ? { ...x, activo: nuevo } : x));
       },
       error: () => this.snack.open('No se pudo cambiar el estado', 'OK', { duration: 3000 })
@@ -263,7 +280,7 @@ export class RouteDetailDialogComponent implements OnInit {
   removePoint(point: any): void {
     if (!confirm('¿Eliminar este punto de la ruta?')) return;
     this.api.removePointFromRoute(point.id).subscribe({
-      next: () => { this.loadRoutePoints(); this.snack.open('Punto eliminado', 'OK', { duration: 3000 }); }
+      next: () => { this.hasChanges = true; this.loadRoutePoints(); this.snack.open('Punto eliminado', 'OK', { duration: 3000 }); }
     });
   }
 
@@ -282,6 +299,7 @@ export class RouteDetailDialogComponent implements OnInit {
     if (ids.length === 0) return;
     this.api.bulkApply(this.ruta.id, { deletes: ids.map(id => ({ programacion_id: id })) }).subscribe({
       next: (res) => {
+        this.hasChanges = true;
         this.selectedProgIds.set(new Set());
         this.loadRoutePoints();
         this.snack.open(res?.message ?? msg, 'OK', { duration: 3500 });
@@ -365,6 +383,7 @@ export class RouteDetailDialogComponent implements OnInit {
     this.savingFuture.set(true);
     this.api.scheduleChange(this.ruta.id, payload).subscribe({
       next: () => {
+        this.hasChanges = true;
         this.savingFuture.set(false);
         this.closeFutureModal();
         this.api.getFutureChanges(this.ruta.id).subscribe(d => this.futureChanges.set(d));

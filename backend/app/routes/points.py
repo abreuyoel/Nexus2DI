@@ -281,51 +281,59 @@ async def delete_point(
 ):
     punto = (await db.execute(select(PuntoInteres).filter(PuntoInteres.id == point_id))).scalars().first()
     if not punto:
-        raise HTTPException(status_code=404, detail="Punto no encontrado")
+        raise HTTPException(status_code=404, detail="Punto de venta no encontrado")
 
-    # Sin este chequeo, el DELETE le pega directo a alguna de las llaves
-    # foráneas reales que apuntan a PUNTOS_INTERES1.identificador y SQL
-    # Server lo rechaza -- eso salía como 500 sin manejar. Antes solo se
-    # revisaba VISITAS_MERCADERISTA; RUTA_PROGRAMACION (el PDV programado en
-    # una ruta activa) es la más común y quedaba sin cubrir.
-    #
-    # OJO: ACTIVACIONES está en el modelo SQLAlchemy (app/models/activacion.py)
-    # pero la tabla NUNCA se creó en la base real -- confirmado por el error
-    # "Invalid object name 'ACTIVACIONES'" en producción. Por eso NO se
-    # revisa acá aunque tenga FK declarada; si en el futuro se crea la tabla
-    # de verdad, hay que agregarla de nuevo a esta lista.
     from sqlalchemy import text
-    tablas_bloqueantes = [
-        ("VISITAS_MERCADERISTA", "identificador_punto_interes", "visitas registradas"),
-        ("RUTA_PROGRAMACION", "id_punto_interes", "programación de rutas"),
-        ("FRECUENCIAS_PDVS_CLIENTE", "id_punto_interes", "frecuencias de visita configuradas"),
-    ]
-    motivos = []
-    for tabla, columna, etiqueta in tablas_bloqueantes:
-        existe = (await db.execute(
-            text(f"SELECT TOP 1 1 FROM {tabla} WHERE {columna} = :pid"),
-            {"pid": point_id},
-        )).first()
-        if existe:
-            motivos.append(etiqueta)
-    if motivos:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No se puede eliminar: este punto de venta tiene {', '.join(motivos)}. "
-                   "Desactivalo en la programación de rutas en vez de borrarlo.",
-        )
-
     nombre = getattr(punto, 'nombre', point_id)
     before_dict = _pdv_to_dict(punto)
-    await db.delete(punto)
 
+    # 1. Verificar si tiene visitas históricas registradas
+    visitas_count = (await db.execute(
+        text("SELECT COUNT(*) FROM VISITAS_MERCADERISTA WHERE identificador_punto_interes = :pid"),
+        {"pid": point_id},
+    )).scalar() or 0
+
+    # 2. Desactivar / limpiar de programaciones de ruta y frecuencias activas
+    rutas_desactivadas = 0
+    res_rutas = await db.execute(
+        text("UPDATE RUTA_PROGRAMACION SET activa = 0 WHERE id_punto_interes = :pid AND activa = 1"),
+        {"pid": point_id},
+    )
+    if hasattr(res_rutas, 'rowcount') and res_rutas.rowcount:
+        rutas_desactivadas = res_rutas.rowcount
+
+    # Limpiar frecuencias de PDV
+    await db.execute(
+        text("DELETE FROM FRECUENCIAS_PDVS_CLIENTE WHERE id_punto_interes = :pid"),
+        {"pid": point_id},
+    )
+
+    is_hard_deleted = False
+    if visitas_count == 0:
+        # Sin visitas registradas: se puede eliminar el registro físico de la BD sin romper FKs
+        await db.delete(punto)
+        is_hard_deleted = True
+        msg = f"El punto de venta '{nombre}' fue eliminado y registrado en Auditoría con opción a restablecer."
+    else:
+        # Con visitas registradas: se desasigna de rutas para no romper el historial de visitas ni FKs
+        msg = (f"El punto de venta '{nombre}' fue desasignado de las rutas activas y enviado a Auditoría. "
+               f"Se conservó el registro base para proteger sus {visitas_count} visita(s) registrada(s).")
+
+    # 3. Registrar SIEMPRE en Auditoría para permitir restablecimiento
     log_action(db, action="DELETE_POINT", entity_type="PuntoInteres",
                user_id=current_user.id, username=current_user.username, rol=current_user.rol,
                ip_address=get_client_ip(request),
                entity_id=point_id, entity_name=nombre,
-               changes={"before": before_dict, "after": None})
+               changes={
+                   "before": before_dict,
+                   "after": None,
+                   "hard_deleted": is_hard_deleted,
+                   "visitas_count": visitas_count,
+                   "rutas_desactivadas": rutas_desactivadas
+               })
     await db.commit()
-    return {"message": "Punto eliminado"}
+    return {"message": msg, "hard_deleted": is_hard_deleted, "visitas_count": visitas_count}
+
 
 
 @router.put("/{point_id}", response_model=PuntoInteresResponse)

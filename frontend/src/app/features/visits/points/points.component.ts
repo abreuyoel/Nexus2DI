@@ -1114,19 +1114,28 @@ export class PointsComponent implements OnInit, OnDestroy {
 
   async deletePoint(p: PuntoInteres): Promise<void> {
     console.log('[PointsComponent] deletePoint called for point:', p);
-    const ok = await this.confirmSvc.confirm(`¿Eliminar "${p.nombre || p.id}"? Esta acción no se puede deshacer.`, {
-      title: 'Eliminar punto de venta', confirmText: 'Eliminar', cancelText: 'Cancelar', danger: true,
-    });
+    const ok = await this.confirmSvc.confirm(
+      `¿Eliminar o desasignar el punto de venta "${p.nombre || p.id}"?\n\nEsta acción lo removerá de las rutas activas y quedará registrada en Auditoría con opción a restablecer.`,
+      {
+        title: 'Eliminar punto de venta',
+        confirmText: 'Sí, eliminar',
+        cancelText: 'Cancelar',
+        danger: true,
+      }
+    );
     if (!ok) return;
     this.api.deletePoint(p.id).subscribe({
-      next: () => {
-        console.log('[PointsComponent] deletePoint success');
+      next: (res: any) => {
+        console.log('[PointsComponent] deletePoint success response:', res);
         this.loadAll();
-        this.snack.open('PDV eliminado', 'OK', { duration: 3000 });
+        const msg = res?.message || 'Punto de venta procesado en Auditoría';
+        this.snack.open(msg, 'OK', { duration: 6000 });
       },
       error: (err) => {
         console.error('[PointsComponent] deletePoint error:', err);
-        this.snack.open(err?.error?.detail ?? 'Error al eliminar', 'OK', { duration: 4000 });
+        const detail = err?.error?.detail;
+        const msg = typeof detail === 'string' ? detail : 'Error al eliminar el punto de venta';
+        this.snack.open(msg, 'OK', { duration: 5000 });
       }
     });
   }
