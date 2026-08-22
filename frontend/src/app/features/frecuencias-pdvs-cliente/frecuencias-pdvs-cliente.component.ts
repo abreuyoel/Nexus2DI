@@ -8,7 +8,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/services/api.service';
 import { ConfirmService } from '../../shared/components/confirm-dialog/confirm.service';
 import { SearchableSelectComponent, SelectOption } from '../client-visits/searchable-select.component';
-import { exportFrecuenciaTemplate, parseFrecuenciaTemplate } from '../../shared/utils/excel.utils';
+import { exportFrecuenciaTemplate, parseFrecuenciaTemplate, exportRejectedFrecuencias } from '../../shared/utils/excel.utils';
 
 
 const FRECUENCIA_HINTS: { valor: number; texto: string }[] = [
@@ -311,7 +311,15 @@ export class FrecuenciasPdvsClienteComponent implements OnInit {
         this.bulkSaving.set(false);
         this.showBulk.set(false);
         this.selectedFile = null;
-        this.snack.open(`Procesado con éxito: ${res.creados} creados, ${res.actualizados} actualizados`, 'OK', { duration: 4000 });
+
+        const omitidos = res.omitidos?.length || 0;
+        let msg = `Procesado: ${res.creados} creados, ${res.actualizados} actualizados`;
+        if (omitidos) {
+          msg += ` — ${omitidos} PDVs omitidos (descargando reporte)`;
+          const clienteName = this.clienteNombre(this.bulkCliente!) || `Cliente_${this.bulkCliente}`;
+          exportRejectedFrecuencias(clienteName, res.omitidos);
+        }
+        this.snack.open(msg, 'OK', { duration: omitidos ? 6000 : 4000 });
         this.cargar();
       },
       error: (err) => {
