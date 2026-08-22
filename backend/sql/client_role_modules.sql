@@ -1,6 +1,6 @@
 -- ============================================================
 -- Rol Cliente: Módulos y permisos por defecto
--- Ejecutar una sola vez en la base de datos de producción.
+-- Ejecutar una sola vez en la base de datos de praoducción.
 -- ============================================================
 
 -- 1. Sub-módulo Power BI como hijo del Dashboard (id_padre = 1)
