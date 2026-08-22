@@ -3,7 +3,7 @@ un PDV para un cliente dado."""
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Form
 import io
-import pandas as pd
+from openpyxl import load_workbook
 from sqlalchemy import text, select, delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -90,7 +90,8 @@ async def pdvs_disponibles_cliente(
     """PDVs unicos donde aparece el cliente en RUTA_PROGRAMACION, marcando la
     frecuencia ya asignada (si existe) para poder editarla en la carga masiva.
     Si el que pregunta es analista, solo ve los PDVs de ESE cliente que caen
-    dentro de sus propias rutas asignadas (analistas_rutas)."""
+    dentro de sus propias rutas asignadas (analistas_rutas).
+    Optimizado: una sola query con LEFT JOIN en vez de 2 queries separadas."""
     if not (await db.execute(select(Cliente).filter(Cliente.id == id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
     scope_sql = ""
@@ -102,27 +103,30 @@ async def pdvs_disponibles_cliente(
         """
         params["analista_id"] = int(current_user.id_perfil)
     rows = (await db.execute(text(f"""
-        SELECT DISTINCT rp.id_punto_interes, rp.punto_interes
+        SELECT DISTINCT
+            rp.id_punto_interes,
+            rp.punto_interes,
+            f.id_frecuencia_pdv_cliente,
+            f.frecuencia_semanal,
+            f.observaciones
         FROM RUTA_PROGRAMACION rp
+        LEFT JOIN FRECUENCIAS_PDVS_CLIENTE f
+            ON f.id_punto_interes = rp.id_punto_interes
+            AND f.id_cliente = rp.id_cliente
         WHERE rp.id_cliente = :cid AND rp.activa = 1 AND rp.id_punto_interes IS NOT NULL
         {scope_sql}
         ORDER BY rp.punto_interes
     """), params)).fetchall()
-    existentes = {
-        f.id_punto_interes: f
-        for f in (await db.execute(select(FrecuenciaPdvCliente).filter(FrecuenciaPdvCliente.id_cliente == id_cliente))).scalars().all()
-    }
-    resultado = []
-    for pdv_id, pdv_nombre in rows:
-        ex = existentes.get(pdv_id)
-        resultado.append({
-            "id_punto_interes": pdv_id,
-            "pdv_nombre": pdv_nombre,
-            "id_frecuencia": ex.id if ex else None,
-            "frecuencia_semanal": float(ex.frecuencia_semanal) if ex else None,
-            "observaciones": ex.observaciones if ex else None,
-        })
-    return resultado
+    return [
+        {
+            "id_punto_interes": r.id_punto_interes,
+            "pdv_nombre": r.punto_interes,
+            "id_frecuencia": r.id_frecuencia_pdv_cliente,
+            "frecuencia_semanal": float(r.frecuencia_semanal) if r.frecuencia_semanal is not None else None,
+            "observaciones": r.observaciones,
+        }
+        for r in rows
+    ]
 
 
 @router.post("/bulk")
@@ -236,83 +240,154 @@ async def importar_excel_frecuencias(
     """
     Recibe el archivo Excel cargado por el usuario, valida que corresponda al cliente,
     y realiza el upsert de frecuencias de forma masiva y optimizada en la base de datos.
+
+    Optimizado: usa openpyxl read_only (no pandas) + bulk SQL (no N+1 queries).
     """
     if not (await db.execute(select(Cliente).filter(Cliente.id == id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
-        
+
     try:
-        contents = file.file.read()
-        df_meta = pd.read_excel(io.BytesIO(contents), sheet_name="Frecuencias", header=None, nrows=8)
-        
-        if df_meta.shape[0] < 5 or df_meta.shape[1] < 2:
+        # ── 1. Leer archivo de forma async ──────────────────────────────
+        contents = await file.read()
+
+        # ── 2. Parsear con openpyxl read_only (ligero, sin pandas) ──────
+        wb = load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+
+        if "Frecuencias" not in wb.sheetnames:
+            wb.close()
+            raise HTTPException(400, "No se encontró la hoja 'Frecuencias' en el archivo.")
+
+        ws = wb["Frecuencias"]
+
+        # ── 3. Validar metadatos (filas 1-8) ────────────────────────────
+        # En openpyxl read_only, iterar las primeras filas para obtener B5
+        meta_rows = []
+        for i, row in enumerate(ws.iter_rows(min_row=1, max_row=8, max_col=2, values_only=True), 1):
+            meta_rows.append(row)
+            if i >= 8:
+                break
+
+        if len(meta_rows) < 5 or len(meta_rows[4]) < 2:
+            wb.close()
             raise HTTPException(400, "Formato de cabecera inválido en la hoja Frecuencias.")
-            
-        id_cliente_excel_raw = df_meta.iloc[4, 1]
+
+        id_cliente_excel_raw = meta_rows[4][1]  # Fila 5 (índice 4), Columna B (índice 1)
         try:
             id_cliente_excel = int(id_cliente_excel_raw)
         except (ValueError, TypeError):
-            raise HTTPException(400, f"No se pudo leer el ID del cliente en la celda B5 del archivo. Encontrado: {id_cliente_excel_raw}")
-            
-        if id_cliente_excel != id_cliente:
+            wb.close()
             raise HTTPException(
-                400, 
+                400,
+                f"No se pudo leer el ID del cliente en la celda B5 del archivo. Encontrado: {id_cliente_excel_raw}"
+            )
+
+        if id_cliente_excel != id_cliente:
+            wb.close()
+            raise HTTPException(
+                400,
                 f"El cliente del archivo ({id_cliente_excel}) no coincide con el seleccionado ({id_cliente})."
             )
-            
-        df_data = pd.read_excel(io.BytesIO(contents), sheet_name="Frecuencias", skiprows=8)
-        
-        if len(df_data.columns) < 5:
-            raise HTTPException(400, "El archivo debe tener al menos 5 columnas en la sección de datos.")
-            
-        col_id_pdv = df_data.columns[0]
-        col_freq = df_data.columns[3] # columna de frecuencia semanal (índice 3 en 0-indexed)
-        col_obs = df_data.columns[4]  # columna de observaciones (índice 4 en 0-indexed)
-        
-        creados = 0
-        actualizados = 0
-        
-        for _, row in df_data.iterrows():
-            id_pdv = str(row[col_id_pdv]).strip()
-            if not id_pdv or id_pdv == "nan" or pd.isna(row[col_id_pdv]):
+
+        # ── 4. Extraer datos (desde fila 10, saltando cabecera fila 9) ──
+        items = []
+        for row in ws.iter_rows(min_row=10, values_only=True):
+            if not row or len(row) < 5:
                 continue
-                
-            freq_raw = row[col_freq]
-            if pd.isna(freq_raw) or str(freq_raw).strip() == "":
+
+            id_pdv_raw = row[0]
+            if id_pdv_raw is None:
                 continue
-                
+            id_pdv = str(id_pdv_raw).strip()
+            if not id_pdv or id_pdv.lower() == "none":
+                continue
+
+            freq_raw = row[3]  # Columna D: Frecuencia Semanal
+            if freq_raw is None or str(freq_raw).strip() == "":
+                continue
+
             try:
                 freq_str = str(freq_raw).replace(",", ".")
                 freq_val = float(freq_str)
             except (ValueError, TypeError):
                 continue
-                
-            obs_raw = row[col_obs]
-            obs_val = str(obs_raw).strip() if not pd.isna(obs_raw) else None
-            
-            existente = (await db.execute(
-                select(FrecuenciaPdvCliente).filter_by(
-                    id_cliente=id_cliente, id_punto_interes=id_pdv
-                )
-            )).scalars().first()
-            
-            if existente:
-                existente.frecuencia_semanal = freq_val
-                existente.observaciones = obs_val
-                existente.activo = True
-                existente.id_usuario = current_user.id
-                existente.fecha_modificacion = datetime.utcnow()
-                actualizados += 1
+
+            obs_raw = row[4]  # Columna E: Observaciones
+            obs_val = str(obs_raw).strip() if obs_raw is not None and str(obs_raw).strip() else None
+
+            items.append({
+                "id_pdv": id_pdv,
+                "freq": freq_val,
+                "obs": obs_val,
+            })
+
+        wb.close()
+
+        if not items:
+            raise HTTPException(400, "El archivo no contiene registros válidos para procesar.")
+
+        # ── 5. Bulk upsert: 1 SELECT + 1 INSERT batch + 1 UPDATE batch ─
+        # Un solo SELECT para traer todos los existentes del cliente
+        existing_rows = (await db.execute(
+            select(
+                FrecuenciaPdvCliente.id,
+                FrecuenciaPdvCliente.id_punto_interes,
+            ).filter_by(id_cliente=id_cliente)
+        )).fetchall()
+        existing_map = {r.id_punto_interes: r.id for r in existing_rows}
+
+        to_insert = []
+        to_update = []
+        now = datetime.utcnow()
+
+        for item in items:
+            existing_id = existing_map.get(item["id_pdv"])
+            if existing_id is not None:
+                to_update.append({
+                    "fid": existing_id,
+                    "freq": item["freq"],
+                    "obs": item["obs"],
+                    "uid": current_user.id,
+                    "now": now,
+                })
             else:
-                db.add(FrecuenciaPdvCliente(
-                    id_cliente=id_cliente, id_punto_interes=id_pdv,
-                    frecuencia_semanal=freq_val, observaciones=obs_val,
-                    activo=True, id_usuario=current_user.id,
-                ))
-                creados += 1
-                
+                to_insert.append({
+                    "id_cliente": id_cliente,
+                    "id_pdv": item["id_pdv"],
+                    "freq": item["freq"],
+                    "obs": item["obs"],
+                    "uid": current_user.id,
+                })
+
+        # Batch INSERT (nuevos registros)
+        if to_insert:
+            await db.execute(
+                text("""
+                    INSERT INTO FRECUENCIAS_PDVS_CLIENTE
+                        (id_cliente, id_punto_interes, frecuencia_semanal, observaciones, activo, id_usuario)
+                    VALUES
+                        (:id_cliente, :id_pdv, :freq, :obs, 1, :uid)
+                """),
+                to_insert,
+            )
+
+        # Batch UPDATE (registros existentes)
+        if to_update:
+            await db.execute(
+                text("""
+                    UPDATE FRECUENCIAS_PDVS_CLIENTE
+                    SET frecuencia_semanal = :freq,
+                        observaciones = :obs,
+                        activo = 1,
+                        id_usuario = :uid,
+                        fecha_modificacion = :now
+                    WHERE id_frecuencia_pdv_cliente = :fid
+                """),
+                to_update,
+            )
+
         await db.commit()
-        return {"creados": creados, "actualizados": actualizados}
-        
+        return {"creados": len(to_insert), "actualizados": len(to_update)}
+
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
