@@ -369,3 +369,97 @@ export function parseFrecuenciaTemplate(file: File): Promise<ParsedTemplateResul
     reader.readAsArrayBuffer(file);
   });
 }
+
+/**
+ * Genera y descarga un Excel con los PDVs que fueron omitidos durante la
+ * importación masiva de frecuencias, junto con la razón de cada omisión.
+ */
+export function exportRejectedFrecuencias(
+  clienteNombre: string,
+  omitidos: { id_punto_interes: string; frecuencia_semanal: number; observaciones: string | null; razon: string }[],
+): void {
+  if (!omitidos || omitidos.length === 0) return;
+
+  const borderStyle = {
+    top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+    right: { style: 'thin', color: { rgb: 'CBD5E1' } },
+  };
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: 'B91C1C' } },
+    font: { name: 'Segoe UI', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: borderStyle,
+  };
+
+  const cellStyle = {
+    font: { name: 'Segoe UI', sz: 10, color: { rgb: '1E293B' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: borderStyle,
+  };
+
+  const cellCenter = {
+    ...cellStyle,
+    alignment: { horizontal: 'center', vertical: 'center' },
+  };
+
+  const reasonStyle = {
+    font: { name: 'Segoe UI', sz: 10, bold: true, color: { rgb: 'B91C1C' } },
+    fill: { fgColor: { rgb: 'FEF2F2' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+    border: borderStyle,
+  };
+
+  const rows: any[] = [];
+
+  // Título
+  rows.push([{
+    v: `REPORTE DE PDVs OMITIDOS — ${clienteNombre.toUpperCase()}`,
+    t: 's',
+    s: {
+      font: { name: 'Segoe UI', sz: 14, bold: true, color: { rgb: 'B91C1C' } },
+      alignment: { horizontal: 'left', vertical: 'center' },
+    },
+  }]);
+  rows.push([{
+    v: `Fecha: ${new Date().toLocaleString()} | Total omitidos: ${omitidos.length}`,
+    t: 's',
+    s: { font: { name: 'Segoe UI', sz: 10, color: { rgb: '64748B' } } },
+  }]);
+  rows.push([]);
+
+  // Cabeceras
+  rows.push([
+    { v: 'ID PDV', t: 's', s: headerStyle },
+    { v: 'FRECUENCIA SEMANAL', t: 's', s: headerStyle },
+    { v: 'OBSERVACIONES', t: 's', s: headerStyle },
+    { v: 'RAZÓN DE OMISIÓN', t: 's', s: headerStyle },
+  ]);
+
+  // Datos
+  for (const item of omitidos) {
+    rows.push([
+      { v: item.id_punto_interes, t: 's', s: cellCenter },
+      { v: item.frecuencia_semanal, t: 'n', s: cellCenter },
+      { v: item.observaciones || '', t: 's', s: cellStyle },
+      { v: item.razon, t: 's', s: reasonStyle },
+    ]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 40 },
+    { wch: 55 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Omitidos');
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const cleanName = clienteNombre.replace(/[^a-zA-Z0-9]/g, '_');
+  XLSX.writeFile(wb, `PDVs_Omitidos_${cleanName}_${dateStr}.xlsx`);
+}

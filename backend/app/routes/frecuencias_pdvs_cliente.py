@@ -243,6 +243,9 @@ async def importar_excel_frecuencias(
 
     Optimizado: usa openpyxl read_only (no pandas) + bulk SQL (no N+1 queries).
     """
+    import logging
+    log = logging.getLogger("app")
+
     if not (await db.execute(select(Cliente).filter(Cliente.id == id_cliente))).scalars().first():
         raise HTTPException(404, "Cliente no existe")
 
@@ -260,7 +263,6 @@ async def importar_excel_frecuencias(
         ws = wb["Frecuencias"]
 
         # ── 3. Validar metadatos (filas 1-8) ────────────────────────────
-        # En openpyxl read_only, iterar las primeras filas para obtener B5
         meta_rows = []
         for i, row in enumerate(ws.iter_rows(min_row=1, max_row=8, max_col=2, values_only=True), 1):
             meta_rows.append(row)
@@ -291,17 +293,18 @@ async def importar_excel_frecuencias(
         # ── 4. Extraer datos (desde fila 10, saltando cabecera fila 9) ──
         items = []
         for row in ws.iter_rows(min_row=10, values_only=True):
-            if not row or len(row) < 5:
-                continue
+            # openpyxl read_only puede devolver tuplas más cortas si las
+            # últimas celdas están vacías — rellenar a 5 columnas mínimo
+            cells = tuple(row) + (None,) * max(0, 5 - len(row)) if row else (None,) * 5
 
-            id_pdv_raw = row[0]
+            id_pdv_raw = cells[0]
             if id_pdv_raw is None:
                 continue
             id_pdv = str(id_pdv_raw).strip()
             if not id_pdv or id_pdv.lower() == "none":
                 continue
 
-            freq_raw = row[3]  # Columna D: Frecuencia Semanal
+            freq_raw = cells[3]  # Columna D: Frecuencia Semanal
             if freq_raw is None or str(freq_raw).strip() == "":
                 continue
 
@@ -311,7 +314,7 @@ async def importar_excel_frecuencias(
             except (ValueError, TypeError):
                 continue
 
-            obs_raw = row[4]  # Columna E: Observaciones
+            obs_raw = cells[4]  # Columna E: Observaciones
             obs_val = str(obs_raw).strip() if obs_raw is not None and str(obs_raw).strip() else None
 
             items.append({
@@ -325,71 +328,85 @@ async def importar_excel_frecuencias(
         if not items:
             raise HTTPException(400, "El archivo no contiene registros válidos para procesar.")
 
-        # ── 5. Bulk upsert: 1 SELECT + 1 INSERT batch + 1 UPDATE batch ─
-        # Un solo SELECT para traer todos los existentes del cliente
-        existing_rows = (await db.execute(
-            select(
-                FrecuenciaPdvCliente.id,
-                FrecuenciaPdvCliente.id_punto_interes,
-            ).filter_by(id_cliente=id_cliente)
-        )).fetchall()
-        existing_map = {r.id_punto_interes: r.id for r in existing_rows}
-
-        to_insert = []
-        to_update = []
+        # ── 5. Bulk upsert via temp table — todo server-side ───────────
         now = datetime.utcnow()
 
-        for item in items:
-            existing_id = existing_map.get(item["id_pdv"])
-            if existing_id is not None:
-                to_update.append({
-                    "fid": existing_id,
-                    "freq": item["freq"],
-                    "obs": item["obs"],
-                    "uid": current_user.id,
-                    "now": now,
-                })
-            else:
-                to_insert.append({
-                    "id_cliente": id_cliente,
-                    "id_pdv": item["id_pdv"],
-                    "freq": item["freq"],
-                    "obs": item["obs"],
-                    "uid": current_user.id,
-                })
-
-        # Batch INSERT (nuevos registros)
-        if to_insert:
-            await db.execute(
-                text("""
-                    INSERT INTO FRECUENCIAS_PDVS_CLIENTE
-                        (id_cliente, id_punto_interes, frecuencia_semanal, observaciones, activo, id_usuario)
-                    VALUES
-                        (:id_cliente, :id_pdv, :freq, :obs, 1, :uid)
-                """),
-                to_insert,
+        # 5a. Crear tabla temporal y poblarla con los items del Excel
+        await db.execute(text("""
+            CREATE TABLE #freq_import (
+                id_pdv VARCHAR(50) COLLATE DATABASE_DEFAULT,
+                freq   NUMERIC(5,2),
+                obs    VARCHAR(500) COLLATE DATABASE_DEFAULT
             )
+        """))
+        await db.execute(
+            text("INSERT INTO #freq_import (id_pdv, freq, obs) VALUES (:id_pdv, :freq, :obs)"),
+            items,
+        )
 
-        # Batch UPDATE (registros existentes)
-        if to_update:
-            await db.execute(
-                text("""
-                    UPDATE FRECUENCIAS_PDVS_CLIENTE
-                    SET frecuencia_semanal = :freq,
-                        observaciones = :obs,
-                        activo = 1,
-                        id_usuario = :uid,
-                        fecha_modificacion = :now
-                    WHERE id_frecuencia_pdv_cliente = :fid
-                """),
-                to_update,
+        # 5b. UPDATE existentes (1 sola query, join server-side)
+        upd_result = await db.execute(text("""
+            UPDATE f
+            SET f.frecuencia_semanal  = t.freq,
+                f.observaciones       = t.obs,
+                f.activo              = 1,
+                f.id_usuario          = :uid,
+                f.fecha_modificacion  = :now
+            FROM FRECUENCIAS_PDVS_CLIENTE f
+            INNER JOIN #freq_import t ON f.id_punto_interes = t.id_pdv
+            WHERE f.id_cliente = :cid
+        """), {"uid": current_user.id, "now": now, "cid": id_cliente})
+        actualizados = upd_result.rowcount
+
+        # 5c. INSERT nuevos (solo PDVs que existen en PUNTOS_INTERES1, 1 query)
+        ins_result = await db.execute(text("""
+            INSERT INTO FRECUENCIAS_PDVS_CLIENTE
+                (id_cliente, id_punto_interes, frecuencia_semanal, observaciones, activo, id_usuario)
+            SELECT :cid, t.id_pdv, t.freq, t.obs, 1, :uid
+            FROM #freq_import t
+            INNER JOIN PUNTOS_INTERES1 p ON p.identificador = t.id_pdv
+            WHERE NOT EXISTS (
+                SELECT 1 FROM FRECUENCIAS_PDVS_CLIENTE f
+                WHERE f.id_cliente = :cid AND f.id_punto_interes = t.id_pdv
             )
+        """), {"cid": id_cliente, "uid": current_user.id})
+        creados = ins_result.rowcount
 
+        # 5d. Obtener omitidos (PDVs del Excel que no existen en catálogo)
+        omitidos_rows = (await db.execute(text("""
+            SELECT t.id_pdv, t.freq, t.obs
+            FROM #freq_import t
+            WHERE NOT EXISTS (
+                SELECT 1 FROM PUNTOS_INTERES1 p WHERE p.identificador = t.id_pdv
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM FRECUENCIAS_PDVS_CLIENTE f
+                WHERE f.id_cliente = :cid AND f.id_punto_interes = t.id_pdv
+            )
+        """), {"cid": id_cliente})).fetchall()
+
+        omitidos = [
+            {
+                "id_punto_interes": r[0],
+                "frecuencia_semanal": float(r[1]) if r[1] is not None else 0,
+                "observaciones": r[2],
+                "razon": "PDV no existe en el catálogo de Puntos de Interés",
+            }
+            for r in omitidos_rows
+        ]
+
+        await db.execute(text("DROP TABLE #freq_import"))
         await db.commit()
-        return {"creados": len(to_insert), "actualizados": len(to_update)}
+
+        result: dict = {"creados": creados, "actualizados": actualizados}
+        if omitidos:
+            result["omitidos"] = omitidos
+        return result
 
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
+        log.exception("importar-excel falló: %s", e)
         raise HTTPException(500, f"Error al procesar el archivo Excel en el servidor: {str(e)}")
+
 
